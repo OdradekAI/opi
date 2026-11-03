@@ -17,8 +17,8 @@
 #![forbid(unsafe_code)]
 
 use std::sync::{
-    Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
 };
 
 use futures_util::StreamExt;
@@ -363,7 +363,7 @@ async fn main() {
     let mut report: Vec<serde_json::Value> = Vec::new();
 
     // 1. The redirect policy is owned SDK surface with a declared default.
-    let owned_default = HttpClient::new().redirect_policy() == RedirectPolicy::Limited(10)
+    let owned_default = HttpClient::new().redirect_policy() == RedirectPolicy::Limited(20)
         && HttpClientBuilder::new()
             .redirects(RedirectPolicy::None)
             .build()
@@ -374,7 +374,7 @@ async fn main() {
         &mut report,
         "redirect-policy-owned-default",
         owned_default,
-        "HttpClient default is Limited(10) and configurable".to_owned(),
+        "HttpClient default is Limited(20) and configurable".to_owned(),
     );
 
     // 2. Same-origin redirect keeps the protected authorization header with
@@ -467,7 +467,7 @@ async fn main() {
     )
     .await
     .expect("redirect loop terminates");
-    let limit_ok = matches!(&error, ProviderError::Network(summary) if summary.as_str() == "too many redirects")
+    let limit_ok = matches!(&error, ProviderError::StreamFailure(failure) if matches!(failure.cause(), ProviderError::Network(summary) if summary.as_str() == "too many redirects"))
         && server.stats.requests().len() == 3;
     check(
         &mut report,
@@ -646,7 +646,7 @@ async fn main() {
     )
     .await
     .expect("EOF case terminates");
-    let stage_ok = matches!(acquisition, ProviderError::Network(_))
+    let stage_ok = matches!(&acquisition, ProviderError::StreamFailure(failure) if matches!(failure.cause(), ProviderError::Network(_)))
         && is_post_acceptance_stream_failure(&eof_error)
         && eof_server.stats.requests().len() == 1;
     check(

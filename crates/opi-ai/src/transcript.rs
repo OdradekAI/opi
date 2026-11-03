@@ -23,6 +23,13 @@
 //! whose temporal placement the transport cannot honor, before any request
 //! is built.
 //!
+//! Every system message validates tool declarations first, then exact section
+//! name uniqueness before installation. Duplicate programmatic section names
+//! return [`TranscriptError::DuplicateSectionName`]; separate later messages
+//! may still update the same name. Sections use a JSON object on serialization:
+//! deserialization observes the parser's first-position, last-value handling
+//! and cannot recover raw duplicate keys that the parser already discarded.
+//!
 //! The pinned TypeScript reference is
 //! `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts` (upstream-deprecated
 //! `hasToolRedefinitions` is deliberately not ported). Two documented Rust
@@ -68,10 +75,14 @@ pub struct SystemMessage {
     /// later messages append.
     pub content: String,
     /// Named, ordered prompt sections rendered verbatim after `content`.
+    /// Names must be exactly unique within one programmatic message before
+    /// transcript installation; empty, whitespace and case-distinct names
+    /// remain valid. Later separate messages may update the same name.
     /// Serialized as a JSON object in section order; a `null` value removes
     /// the section. A deserialized object with duplicate names keeps the
     /// first position and the last value, matching JavaScript object
-    /// assignment semantics.
+    /// assignment semantics. Installation cannot recover duplicate raw keys
+    /// that the JSON parser already discarded.
     #[serde(
         default,
         skip_serializing_if = "Vec::is_empty",
@@ -145,7 +156,8 @@ pub struct Context {
 /// The prompt and tool declarations live in the transcript's system messages,
 /// never in independent runtime fields. Construction through
 /// [`normalize_context`] and deserialization of the transparent message list
-/// both validate declaration batches before installing them.
+/// both validate tool declarations and exact section-name uniqueness within
+/// each system message before installing it.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct TranscriptContext {
@@ -160,10 +172,25 @@ impl<'de> Deserialize<'de> for TranscriptContext {
     }
 }
 
+fn validate_system_message(message: &SystemMessage) -> Result<(), TranscriptError> {
+    validate_tool_batch(&message.tools_added)?;
+    for (index, section) in message.sections.iter().enumerate() {
+        if message.sections[..index]
+            .iter()
+            .any(|other| other.name == section.name)
+        {
+            return Err(TranscriptError::DuplicateSectionName {
+                name: section.name.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 fn validate_messages(messages: &[Message]) -> Result<(), TranscriptError> {
     for message in messages {
         if let Message::System(system) = message {
-            validate_tool_batch(&system.tools_added)?;
+            validate_system_message(system)?;
         }
     }
     Ok(())
@@ -183,17 +210,18 @@ impl TranscriptContext {
     /// Install a system change at the end of the chronology.
     ///
     /// Tool declarations are validated first (non-empty unique names and a
-    /// schema that compiles under the private dialect engine); installation
-    /// fails with a typed error before the message is appended, so an invalid
-    /// declaration never enters the transcript.
+    /// schema that compiles under the private dialect engine), then section
+    /// names must be exactly unique within this message. Installation fails
+    /// with a typed error before the message is appended, leaving the entire
+    /// prior transcript unchanged.
     pub fn append_system_change(&mut self, change: SystemMessage) -> Result<(), TranscriptError> {
-        validate_tool_batch(&change.tools_added).map_err(TranscriptError::InvalidDeclaration)?;
+        validate_system_message(&change)?;
         self.messages.push(Message::System(change));
         Ok(())
     }
 }
 
-/// Errors from transcript projection and declaration installation.
+/// Errors from transcript projection and system message installation.
 #[derive(Debug, Error, PartialEq)]
 pub enum TranscriptError {
     /// Strict projection cannot honor the transcript's temporal placement on
@@ -208,6 +236,10 @@ pub enum TranscriptError {
     /// A tool declaration failed validation before installation.
     #[error(transparent)]
     InvalidDeclaration(#[from] ToolDeclarationError),
+    /// One system message contains the same exact section name more than
+    /// once; repeating a name in a separate later message is a valid update.
+    #[error("ambiguous system section batch: {name:?} declared twice")]
+    DuplicateSectionName { name: String },
 }
 
 impl From<TranscriptError> for crate::provider::ProviderError {
@@ -268,7 +300,9 @@ pub fn create_initial_system_message(
 /// [`TranscriptContext`].
 ///
 /// Returns an error before installation if the shorthand tools or any embedded
-/// system message contains an invalid or ambiguous declaration batch.
+/// system message contains an invalid or ambiguous tool declaration batch,
+/// or if one embedded system message repeats an exact section name. Section
+/// names are compared without trimming or case normalization.
 pub fn normalize_context(context: Context) -> Result<TranscriptContext, TranscriptError> {
     validate_tool_batch(&context.tools)?;
     validate_messages(&context.messages)?;

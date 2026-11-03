@@ -23,7 +23,7 @@ use crate::auth::ExternalAccountSupplier;
 use crate::auth::adc::executable::retrieve_executable_subject_token;
 use crate::auth::adc::native::{
     AdcNativeInput, AdcResolutionError, AdcResolvedToken, AdcSourceTransport, GaxiosBudget,
-    ReqwestAdcTransport, send_with_gaxios_retry,
+    ReqwestAdcTransport, checked_expiration, send_with_gaxios_retry,
 };
 use crate::auth::adc::subject::{
     CertificateSubject, SubjectFormat, aws_region, aws_security_credentials, aws_subject_token,
@@ -708,7 +708,9 @@ pub(crate) async fn resolve_external_account(
     let Some(impersonation_url) = file.service_account_impersonation_url.as_deref() else {
         return Ok(AdcResolvedToken {
             access_token: SecretString::from(access_token),
-            expires_at: expires_in.map(|secs| now + time::Duration::seconds(secs)),
+            expires_at: expires_in
+                .map(|secs| checked_expiration(now, secs))
+                .transpose()?,
             quota_project: None,
             rotated_refresh_token: None,
             source: federation_source,

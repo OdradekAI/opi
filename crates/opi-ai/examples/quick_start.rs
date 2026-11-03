@@ -1,46 +1,44 @@
-//! Complete ordinary quick start: register the Anthropic route with injected
-//! auth, resolve the caller-owned model record, and drive one chat call to
-//! its single final message through the neutral entry.
+//! Complete ordinary quick start: register lazy builtins, select a model,
+//! and drive one chat call to its single final message through the neutral entry.
 //!
 //! Compile: `cargo check -p opi-ai --examples`.
 //! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
 
+use std::future::Future;
 use std::sync::Arc;
 
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
+use opi_ai::CallFailure;
+use opi_ai::http::HttpClient;
+use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
+use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript;
-use opi_ai::{
-    AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, SimpleOptions, StaticAuthResolver,
-};
-use secrecy::SecretString;
+use opi_ai::{AmbientAuthContext, AuthContext, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // SDK construction never reads product configuration: auth is injected
-    // per route (AIR-021).
+/// Construct and statically select without reading authentication sources.
+pub(crate) fn setup(
+    context: Arc<dyn AuthContext>,
+    client: Arc<HttpClient>,
+    overrides: &BuiltinOverrides,
+) -> Result<(Models, ChatModelRecord), Box<dyn std::error::Error>> {
     let mut models = Models::new();
-    models.register_route(
-        Box::new(AnthropicProvider::new(None)),
-        Arc::new(StaticAuthResolver::new(
-            AuthScheme::ApiKey,
-            SecretString::from(std::env::var("ANTHROPIC_API_KEY")?),
-        )),
-        AuthProvenanceSource::Environment {
-            name: "ANTHROPIC_API_KEY".into(),
-        },
-        Default::default(),
-    )?;
-
-    // Caller-owned record: provider id, bare model id, and the exact wire
-    // from the registry's model metadata - valid without catalog membership.
+    models.set_auth_context(context.clone());
+    register_builtin(&mut models, context, client, overrides)?;
     let info = models
-        .get_model("anthropic", "claude-sonnet-4-5-20250514")
-        .ok_or("claude-sonnet-4-5-20250514 is not in the builtin anthropic catalog")?;
-    let record = ChatModelRecord::new("anthropic", info);
+        .get_model("anthropic", "claude-sonnet-4-5")
+        .ok_or("claude-sonnet-4-5 is not in the builtin anthropic catalog")?;
+    Ok((models, ChatModelRecord::new("anthropic", info)))
+}
 
+/// Build the actual owned call; authentication starts only on first poll.
+pub(crate) fn start(
+    models: &Models,
+    record: ChatModelRecord,
+) -> Result<
+    impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<>,
+    Box<dyn std::error::Error>,
+> {
     // Canonical transcript input (AIR-020): the system prompt and tool
     // declarations fold into one leading system message at normalization.
     let context = transcript::normalize_context(transcript::Context {
@@ -57,7 +55,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let request = Request {
         projection: Default::default(),
         transport: TransportPreference::default(),
-        model: "anthropic:claude-sonnet-4-5-20250514".into(),
+        model: "anthropic:claude-sonnet-4-5".into(),
         context,
         max_tokens: Some(1024),
         temperature: None,
@@ -74,18 +72,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         telemetry_context: None,
     };
 
-    // Neutral entry: construction freezes the owned call, authentication
-    // starts on the first poll, and `complete_simple` drains to the single
-    // final outcome (`Ok(AssistantMessage)` or one `Err(CallFailure)`).
-    let message = models
-        .complete_simple(record, request, SimpleOptions::default())
+    Ok(models.complete_simple(record, request, SimpleOptions::default()))
+}
+
+pub(crate) async fn finish(
+    call: impl Future<Output = Result<AssistantMessage, CallFailure>>,
+) -> Result<AssistantMessage, Box<dyn std::error::Error>> {
+    let message = call
         .await
         .map_err(|failure| format!("call failed: {:?}", failure.cause()))?;
-
     for content in &message.content {
         if let AssistantContent::Text { text, .. } = content {
             println!("{text}");
         }
     }
+    Ok(message)
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let (models, record) = setup(
+        Arc::new(AmbientAuthContext),
+        Arc::new(HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )?;
+    let call = start(&models, record)?;
+    finish(call).await?;
     Ok(())
 }

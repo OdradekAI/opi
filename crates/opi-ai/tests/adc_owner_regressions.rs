@@ -730,3 +730,95 @@ async fn aws_subject_region_suffix_and_environment_precedence() {
         }
     }
 }
+
+mod external_account_sts_expiry {
+    use opi_ai::auth::adc::native::{
+        AdcAuthSelection, AdcNativeInput, AdcResolutionError, AdcSourceHttpError, AdcSourceRequest,
+        AdcSourceResponse, AdcSourceTransport, FixedAdcClock, ScopedAdcEnv, resolve_adc_native,
+    };
+    use opi_ai::auth::{AuthContext, AuthContextError};
+    use opi_ai::credential::BoxAuthFuture;
+    use std::sync::Mutex;
+
+    struct NoAmbient;
+    impl AuthContext for NoAmbient {
+        fn env(&self, _: &str) -> Result<Option<String>, AuthContextError> {
+            Ok(None)
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+            panic!("explicit source must not probe ambient files")
+        }
+    }
+    struct Source {
+        ttl: i64,
+        calls: Mutex<usize>,
+    }
+    impl AdcSourceTransport for Source {
+        fn send(
+            &self,
+            request: AdcSourceRequest,
+        ) -> BoxAuthFuture<'_, Result<AdcSourceResponse, AdcSourceHttpError>> {
+            assert_eq!(request.url, "https://sts.googleapis.com/v1/token");
+            *self.calls.lock().unwrap() += 1;
+            let body = serde_json::to_vec(
+                &serde_json::json!({"access_token":"synthetic-access", "expires_in":self.ttl}),
+            )
+            .unwrap();
+            Box::pin(async move {
+                Ok(AdcSourceResponse {
+                    status: 200,
+                    headers: vec![],
+                    body,
+                })
+            })
+        }
+    }
+    async fn check(ttl: i64) {
+        let dir = tempfile::tempdir().unwrap();
+        let subject = dir.path().join("subject.txt");
+        std::fs::write(&subject, "synthetic-subject").unwrap();
+        let config = dir.path().join("source.json");
+        std::fs::write(&config, serde_json::to_vec(&serde_json::json!({
+        "type":"external_account",
+        "audience":"//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/a",
+        "subject_token_type":"urn:ietf:params:oauth:token-type:jwt",
+        "token_url":"https://sts.googleapis.com/v1/token",
+        "credential_source":{"file":subject}
+    })).unwrap()).unwrap();
+        let source = Source {
+            ttl,
+            calls: Mutex::new(0),
+        };
+        let scoped = ScopedAdcEnv::default();
+        let now = time::OffsetDateTime::from_unix_timestamp(1_700_000_000).unwrap();
+        let clock = FixedAdcClock::new(now);
+        let input = AdcNativeInput::new(
+            AdcAuthSelection::CredentialsFile(config),
+            &scoped,
+            &NoAmbient,
+            &source,
+            &clock,
+        );
+        let result = resolve_adc_native(&input).await;
+        assert_eq!(*source.calls.lock().unwrap(), 1);
+        if ttl == i64::MAX {
+            assert!(
+                matches!(result, Err(AdcResolutionError::InvalidTokenResponse)),
+                "unrepresentable selected STS expiry must fail typed: {result:?}"
+            );
+        } else {
+            assert_eq!(
+                result.unwrap().unwrap().expires_at,
+                Some(now + time::Duration::seconds(ttl))
+            );
+        }
+    }
+    #[tokio::test]
+    async fn external_account_sts_ordinary_expiry_control() {
+        check(3600).await;
+    }
+    #[tokio::test]
+    async fn external_account_sts_extreme_expiry_must_fail_typed() {
+        check(i64::MAX).await;
+    }
+}
