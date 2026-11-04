@@ -95,8 +95,11 @@ reconstruct missing appendices, and do not add historical disposition fields.
 Reports without appendices remain fully consumable. A later appendix changes
 the index binding and invalidates an already approved plan.
 
-One closure batch requires one root change and one predicate proving every
-member closed. New product meaning, public contract, authority, scope or
+One closure batch requires one root change and one predicate proving its
+assigned portion of every member. For a compound finding, list each required
+batch in `closure_batches`, retain one source disposition, and require their
+conjunction for source closure under the shared disposition contract.
+New product meaning, public contract, authority, scope or
 contested trade-off remains `DRAFT-UNRESOLVED` for the owning authority.
 
 Behavioral fixes require discriminating red-before evidence before production

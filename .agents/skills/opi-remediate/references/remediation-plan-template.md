@@ -17,7 +17,7 @@ directory. The JSONL contract is
 
 ## Current Finding Verification
 
-| Source run / Finding ID | Verification and counter-evidence | Source and final severity + rationale | Closure key/family | Batch | Decision / remaining obligations |
+| Source run / Finding ID | Verification and counter-evidence | Source and final severity + rationale | Closure key/family | Closure batches | Decision / remaining obligations |
 |---|---|---|---|---|---|
 | ... | ... | ... | ... | ... | ... |
 
@@ -49,13 +49,15 @@ disposition's `remaining_obligations`; any such gap keeps the whole plan draft.
 
 ### Batch B1: <one behavioral closure>
 
+**Root change**: <one bounded root>
 **Closure predicate**: <one falsifiable outcome>
 **Dependencies**: []
 **Verification union**: <deduplicated checks>
 
 #### Fix B1.1: <short title>
 
-- **Finding source(s)**: <one or more exact audit_run_id + owning findings_sha256 + finding ID keys>
+- **Finding source(s)**: <audit_run_id> / <owning findings_sha256> / <finding ID>
+- **Assigned portion**: <whole finding, or this batch's obligation for each compound finding>
 - **Decision**: <exact decision>
 - **Verification status**: Confirmed | Partially confirmed
 - **File(s)**: `<paths>`
@@ -69,6 +71,9 @@ disposition's `remaining_obligations`; any such gap keeps the whole plan draft.
 
     <deduplicated verification union>
 
+For each compound finding, identify its ordered `closure_batches` and the check
+that proves the source closure predicate as their conjunction.
+
 ## Exclusions
 
 | Source run / Finding ID | Disposition | Refuted claim / retained observation | Remaining obligation and authority |
@@ -77,14 +82,18 @@ disposition's `remaining_obligations`; any such gap keeps the whole plan draft.
 ```
 
 Use a JSON array such as `["B1"]` for dependent batches and declare batches in
-topological order. Their IDs must match the non-null disposition batch IDs
-exactly. For timing-sensitive behavior, the closure predicate identifies event
+topological order. Their IDs must match the union of disposition
+`closure_batches` exactly; each disposition's array follows that order. For
+timing-sensitive behavior, the closure predicate identifies event
 order, exact counts/budgets and forbidden late actions under the matrix's proof
 rules. A no-change plan has no batch or Fix headings; use the shared contract's
 no-change result branch without inventing a modification.
 
-Every source key in the indexed strict union must appear in a fix or exclusion
-and in exactly one plan disposition. Similar IDs never merge. After
+Every source key in the indexed strict union appears in exactly one plan
+disposition. A fix appears in every batch named by its non-empty
+`closure_batches`; an exclusion has `closure_batches: []`. A compound finding
+retains its single source identity and requires every assigned batch predicate
+plus their conjunction for closure. Similar IDs never merge. After
 validation, present the emitted `plan_sha256`; never write that digest into the
 plan itself because it hashes the exact plan bytes. Any active-index byte change
 invalidates the plan binding and its approval, including a later advisory

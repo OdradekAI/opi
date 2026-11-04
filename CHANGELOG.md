@@ -2,6 +2,11 @@
 
 ### Breaking Changes
 
+- workflows: remediation finding dispositions replace scalar `closure_batch`
+  with the required ordered `closure_batches` array. Compound findings retain
+  one source disposition and close only when every assigned batch predicate and
+  their conjunction pass. Regenerate fixed plans and obtain approval for their
+  new digests; the old scalar format is rejected.
 - `opi-ai` (0.x): the exhaustive `TranscriptError` enum gains
   `DuplicateSectionName { name: String }`. Normalization and system-change
   append now reject duplicate exact section names within one programmatic

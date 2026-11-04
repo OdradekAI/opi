@@ -26,7 +26,7 @@
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md": "9e3d6ef690c3a794bc9c47ddc2dce04840f98d8881649be1ab2e8db0df287fd5",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md": "411d2f6d262b1afc22e84c73213dffd0eb890ed70e210dfa497d2a5d021cd31d",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-backends.md": "acb7f5f798b3384c63d36ad9af844b580755e2ea792ce3e2d32d9d3af2f15e81",
-    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "0c05c6a7fbc2a15bf1c727687af35848032e48ca3969588066c6a6777ff267e0",
+    "docs/research/pi-ai-opi-ai-alignment/acceptance-matrix.md": "c831586339910f9496a64e6b3c9390a0b7a2a366d37230222874a5f399099a5d",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-design-readiness.md": "b74c0b09afd31bc06cf8d5d1df834a6af9d53f2d08c3653aa492ed36396c4eba",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md": "878d15231e734dc03772e1f1bd48cb8ffe2252a2818748e4b8630af43a2e8a76",
     "docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-ws.md": "61547ccfc0549018d2fd4042ade8edac3547599b412e12ea2479821b40f67a8f",
@@ -36,7 +36,7 @@
     "docs/research/pi-ai-opi-ai-alignment/replay-contracts.md": "223b21e1aa590d0e4646d99cd7f6792a694c7d8bf0f34b31dd6380979d324fa4",
     "docs/research/pi-ai-opi-ai-alignment/sdk-target-proposal.md": "4f84b93681a6dce3bea494d0553e81a1f5cb3aec5ad62635eda93a8ee1f5a75c"
   },
-  "task_graph_confirmed_at": "2026-11-01T05:28:40.216676+00:00",
+  "task_graph_confirmed_at": "2026-11-04T05:19:49.508078+00:00",
   "current_phase": 20,
   "tasks": [],
   "phase_exit": {
@@ -855,5 +855,16 @@
     }
   },
   "session_notes": [],
-  "verify_runs": []
+  "verify_runs": [
+    {
+      "stage": "plan",
+      "wf_ref": null,
+      "folded_count": 0,
+      "flagged_count": 1,
+      "rejected_count": 5,
+      "ran_at": "2026-11-04T05:10:44.035792+00:00",
+      "task_id": null,
+      "criterion_id": null
+    }
+  ]
 }

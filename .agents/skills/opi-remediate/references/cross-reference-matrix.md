@@ -22,7 +22,8 @@ For every `(audit_run_id, id)`:
 2. search current counter-evidence and alternate paths;
 3. assign `Confirmed`, `Partially confirmed`, `Cannot confirm`, or `Refuted`;
 4. retain source severity and record evidence/rationale for any final change;
-5. define `closure_key`, `family_key`, decision, and exact disposition.
+5. define `closure_key`, `family_key`, ordered `closure_batches`, decision, and
+   exact disposition.
 
 For a refuted or narrowed claim, record the minimum proposition that failed,
 the strongest counter-evidence, the observations that still hold, and which
@@ -81,16 +82,24 @@ without `lineage`, `prior_occurrences` or `prior_disposition` fields.
 
 ## Closure clustering
 
-Two findings may share a closure batch only when all are true:
+Finding portions may share a closure batch only when all are true:
 
 1. they have one falsifiable closure predicate;
-2. one root change is expected to satisfy it for every member;
+2. one root change is expected to satisfy every assigned portion;
 3. one red-before/green-after evidence pair discriminates closure;
 4. they can be reviewed and reverted as one bounded change.
 
 Shared files, family keys, severity, or suggested refactors are insufficient.
 Use `family_key` to describe adjacent current paths without merging their
 closure predicates.
+
+Decompose a compound finding into the batches needed for its distinct roots.
+List them in the source disposition's `closure_batches` in execution order and
+state the source closure predicate as their conjunction. Repeat the exact
+source key in each assigned batch narrative, with that batch's portion, paths
+and proof. Keep one JSONL disposition and one current-verification row for the
+source finding; close it only after every assigned predicate and the conjunction
+are proved. Dependencies order prerequisites without combining separate roots.
 
 For asynchronous state, retry, cancellation or resource-lifetime findings,
 express the closure predicate as the required event order, counts or budgets,
@@ -104,15 +113,15 @@ when applicable. A final state alone cannot prove an intermediate invariant.
 
 ## Coverage
 
-Every current finding appears exactly once:
+Every current finding has exactly one disposition:
 
-- in one planned fix; or
+- a fix with non-empty `closure_batches`, represented in each assigned batch; or
 - in exclusions as Refuted, Cannot confirm, Info/no-action, Returned to
-  shaping, or Deferred by a currently registered source.
+  shaping, or Deferred by a currently registered source, with `closure_batches: []`.
 
 The matrix must contain no source outside the current index. Each disposition
 binds its owning member's `audit_run_id` and `findings_sha256`.
 
-| Batch | Closure key/predicate | Family | Current finding IDs | Current reviewer coverage | Verification | Decision |
+| Batch | Assigned closure predicate | Family | Current finding IDs and assigned portions | Current reviewer coverage | Verification | Decision |
 |---|---|---|---|---|---|---|
 | B1 | ... | ... | ... | ... | ... | ... |

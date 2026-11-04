@@ -37,7 +37,7 @@ Plan and result stages use this record shape:
   "closure_key": "session.runtime-binding",
   "family_key": "session.durability",
   "decision": "fix:persist-runtime-binding",
-  "closure_batch": "B1",
+  "closure_batches": ["B1"],
   "change_kind": "behavioral",
   "changed_paths": ["crates/opi-agent/src/session.rs"],
   "red_before": {
@@ -56,19 +56,20 @@ Plan and result stages use this record shape:
 `source.audit_run_id` identifies one indexed member and
 `source.findings_sha256` matches that owning member metadata exactly.
 `(audit_run_id, id)` identifies the source finding. Every indexed finding
-appears exactly once in a fix or explicit exclusion; extra or older source
+has exactly one fix or explicit exclusion disposition; extra or older source
 identities are invalid. Findings with the same textual ID or repair remain
 separate source records and require separate dispositions, although they may
-share a closure batch and verification evidence.
+share closure batches and verification evidence.
 
 Reviewer disagreement is not a vote. Among dependency-ready batches, the highest
 source severity controls scheduling priority while every source severity and rationale remains
 unchanged. A final severity change or `Refuted` disposition requires independent
 current evidence; another peer's contrary conclusion is insufficient.
 
-`closure_key` names one falsifiable behavior. `family_key` clusters adjacent
-findings only inside the current set. Historical `lineage`,
-`prior_occurrences`, and `prior_disposition` fields are forbidden.
+`closure_key` names the source finding's falsifiable closure predicate. For a
+compound finding, it is the conjunction of its assigned batch predicates.
+`family_key` clusters adjacent findings only inside the current set. Historical
+`lineage`, `prior_occurrences`, and `prior_disposition` fields are forbidden.
 An appendix may suggest verification work, but cannot assign a disposition,
 severity, closure batch or new source key. Independently verify any candidate raw
 proof and its applicability at `remediation_head`; record the resulting current
@@ -94,9 +95,11 @@ its linked requirements `met` or remove their proof obligations. Any non-empty
 array keeps the entire plan `DRAFT-UNRESOLVED`; exclusions do not bypass this
 gate. New evidence that changes an approved disposition requires a new plan.
 
-Use `fix:<decision>` only for `Confirmed` or `Partially confirmed` findings,
-with a non-null closure batch and non-empty changed paths. An exclusion uses
-`no-action:<reason>`, `closure_batch: null`, `changed_paths: []`, and
+`closure_batches` is a required ordered array of unique, non-empty batch IDs,
+listed in plan execution order. Use `fix:<decision>` only for `Confirmed` or
+`Partially confirmed` findings, with non-empty `closure_batches` and changed
+paths. An exclusion uses `no-action:<reason>`, `closure_batches: []`,
+`changed_paths: []`, and
 `change_kind: metadata`: that metadata is the disposition, not a product edit.
 Its result status is `Refuted`, `Cannot confirm`, `Info/No action`, `Returned to
 shaping`, or `Deferred by registered source`, never `Closed` or `Not closed`.
@@ -115,8 +118,9 @@ At plan stage, `green_after.observed` is `not-run`, and no
 source`, `Returned to shaping`, `Info/No action`, `Refuted`, or `Cannot
 confirm`.
 
-Older plans missing required fields must be regenerated and validated before
-use; the resulting bytes have a new plan digest and require new apply approval.
+The old scalar `closure_batch` field is invalid, including alongside
+`closure_batches`. Regenerate and validate older plans using the required array;
+the resulting bytes have a new plan digest and require new apply approval.
 Adding fields to an approved plan does not preserve its approval.
 
 ## Evidence work and closure dependencies
@@ -128,13 +132,40 @@ external local probes need no fictitious production edit. Record actual commands
 and observations; a compiler or fixture-setup failure is not a behavioral red.
 Evidence work cannot become an apply-time conditional choice of product meaning.
 
+Each closure batch has one root change and one falsifiable predicate for the
+portion of each finding assigned to it. A compound finding lists each required
+batch in `closure_batches`; its exact source key appears in every assigned
+batch's fix narrative, while its JSONL disposition appears exactly once.
+The disposition's changed paths and evidence cover all assigned portions.
+Shared prerequisites and distinct mechanisms retain their own batch predicates;
+sharing a source finding does not merge their roots.
+Singleton contributors to the same batch must share one `closure_key`. A
+compound contributor's key names its whole conjunction, so it is excluded from
+that per-batch key comparison and may share batches with singleton contributors.
+
+Each Fix has exactly one non-empty `- **Finding source(s)**:` field. Its value
+is a semicolon-separated list of `audit_run_id / findings_sha256 / id` tuples,
+with optional whitespace around separators and optional inline backticks around
+each tuple or component. Use literal values only, without links or other prose.
+The union of these exact tuples within each batch must equal the source
+dispositions assigning that batch: missing, unknown or unassigned tuples fail
+validation. A source may appear in multiple Fix items within its assigned batch.
+
 Each planned closure batch has one `### Batch <id>: <title>` heading and one
 `**Dependencies**` JSON array of earlier batch IDs (`[]` for none). These headings
-and the non-null disposition `closure_batch` values must name exactly the same
-batches. IDs and dependency entries are unique; unknown dependencies, self-edges,
-cycles and a declaration before its prerequisites are invalid. Execute in that
-topological order and require each prerequisite to pass before continuing.
-This does not admit a subset of an unresolved plan.
+must name exactly the union of all disposition `closure_batches`. Batch IDs and
+dependency entries are unique; unknown dependencies, self-edges, cycles and a
+declaration before its prerequisites are invalid. Each disposition's batch array
+follows that declaration order. Execute in that topological order and require
+each prerequisite to pass before continuing.
+
+A result keeps one disposition per source key and its exact planned
+`closure_batches`. Mark it `Closed` only after every listed batch predicate and
+the source finding's conjunction are proved. Record the batch observations and
+the conjunction in its observed green-after evidence; a passing subset cannot
+close the source finding. The whole plan still requires no unresolved decision
+or remaining obligation before apply; multiple batches grant no partial-apply
+or obligation waiver.
 
 ## Plan approval identity
 

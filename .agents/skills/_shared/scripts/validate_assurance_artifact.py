@@ -139,7 +139,7 @@ DISPOSITION_FIELDS = {
     "closure_key",
     "family_key",
     "decision",
-    "closure_batch",
+    "closure_batches",
     "change_kind",
     "changed_paths",
     "green_after",
@@ -1032,6 +1032,13 @@ def validate_finding_disposition(
     prefix: str,
 ) -> list[str]:
     errors: list[str] = []
+    extra = sorted(
+        record.keys()
+        - DISPOSITION_FIELDS
+        - {"red_before", "red_before_not_applicable", "remediation_status"}
+    )
+    if extra:
+        errors.append(prefix + "unexpected fields: " + ", ".join(extra))
     missing = missing_fields(record, DISPOSITION_FIELDS)
     if missing:
         errors.append(prefix + "missing fields: " + ", ".join(missing))
@@ -1084,9 +1091,11 @@ def validate_finding_disposition(
     for field in ("final_severity_rationale", "closure_key", "family_key", "decision"):
         if not nonempty_string(record.get(field)):
             errors.append(prefix + f"{field} must be non-empty")
-    closure_batch = record.get("closure_batch")
-    if closure_batch is not None and not nonempty_string(closure_batch):
-        errors.append(prefix + "closure_batch must be null or non-empty")
+    closure_batches = record.get("closure_batches")
+    if not string_list(closure_batches):
+        errors.append(prefix + "closure_batches must be an array of non-empty strings")
+    elif len(set(closure_batches)) != len(closure_batches):
+        errors.append(prefix + "closure_batches must contain unique batch IDs")
     if record.get("change_kind") not in CHANGE_KINDS:
         errors.append(prefix + "invalid change_kind")
     if not string_list(record.get("changed_paths")):
@@ -1095,13 +1104,13 @@ def validate_finding_disposition(
     if isinstance(decision, str) and decision.startswith("fix:"):
         if record.get("verification_status") not in {"Confirmed", "Partially confirmed"}:
             errors.append(prefix + "fix requires Confirmed or Partially confirmed")
-        if not nonempty_string(closure_batch) or not string_list(
+        if not string_list(closure_batches, allow_empty=False) or not string_list(
             record.get("changed_paths"), allow_empty=False
         ):
-            errors.append(prefix + "fix requires a closure batch and changed paths")
+            errors.append(prefix + "fix requires closure_batches and changed paths")
     elif isinstance(decision, str) and decision.startswith("no-action:"):
         if (
-            closure_batch is not None
+            closure_batches != []
             or record.get("changed_paths") != []
             or record.get("change_kind") != "metadata"
         ):
@@ -1288,9 +1297,12 @@ def validate_disposition_records(
             if key in seen_sources:
                 errors.append(prefix + "duplicate source disposition")
             seen_sources.add(key)
-        batch = record.get("closure_batch")
+        batches = record.get("closure_batches")
         closure_key = record.get("closure_key")
-        if nonempty_string(batch) and nonempty_string(closure_key):
+        # A compound source key describes the conjunction, not each branch.
+        # Singleton contributors still require one shared batch predicate.
+        if string_list(batches) and len(batches) == 1 and nonempty_string(closure_key):
+            batch = batches[0]
             previous = batch_keys.setdefault(batch, closure_key)
             if previous != closure_key:
                 errors.append(f"closure batch {batch} has multiple closure keys")
@@ -1321,6 +1333,64 @@ def read_text(path: Path, errors: list[str]) -> str:
         return ""
 
 
+def parse_finding_sources(value: str) -> set[tuple[str, str, str]] | None:
+    """Parse literal semicolon-separated run / digest / finding tuples."""
+    sources: set[tuple[str, str, str]] = set()
+    for item in value.split(";"):
+        item = item.strip()
+        if item.startswith("`") and item.endswith("`") and item.count("`") == 2:
+            item = item[1:-1]
+        parts = [part.strip() for part in item.split("/")]
+        if len(parts) != 3:
+            return None
+        for index, part in enumerate(parts):
+            if part.startswith("`") and part.endswith("`") and part.count("`") == 2:
+                part = part[1:-1]
+            if re.fullmatch(r"[^\s`/;]+", part) is None:
+                return None
+            parts[index] = part
+        if SHA256_RE.fullmatch(parts[1]) is None:
+            return None
+        sources.add((parts[0], parts[1], parts[2]))
+    return sources
+
+
+def validate_batch_sources(
+    name: str, block: str, records: list[dict[str, Any]]
+) -> list[str]:
+    """Bind each batch's Fix fields to its exact assigned source tuples."""
+    errors: list[str] = []
+    assigned: set[tuple[str, str, str]] = set()
+    for record in records:
+        batches = record.get("closure_batches")
+        source = record.get("source")
+        if string_list(batches) and name in batches and isinstance(source, dict):
+            fields = tuple(source.get(field) for field in ("audit_run_id", "findings_sha256", "id"))
+            if all(nonempty_string(field) for field in fields):
+                assigned.add(fields)
+    mentioned: set[tuple[str, str, str]] = set()
+    fixes = list(re.finditer(r"(?m)^#### Fix\s+[^\n]+$", block))
+    for index, fix in enumerate(fixes):
+        end = fixes[index + 1].start() if index + 1 < len(fixes) else len(block)
+        fields = re.findall(
+            r"(?m)^- \*\*Finding source\(s\)\*\*:[ \t]*(.*)$",
+            block[fix.end():end],
+        )
+        sources = parse_finding_sources(fields[0]) if len(fields) == 1 else None
+        if not sources:
+            errors.append(
+                f"batch {name} {fix.group(0)}: Finding source(s) must be one non-empty "
+                "semicolon-separated run / findings SHA-256 / id tuple list"
+            )
+        else:
+            mentioned.update(sources)
+    for source in sorted(assigned - mentioned):
+        errors.append(f"batch {name} is missing assigned Finding source(s): {' / '.join(source)}")
+    for source in sorted(mentioned - assigned):
+        errors.append(f"batch {name} has unassigned Finding source(s): {' / '.join(source)}")
+    return errors
+
+
 def validate_batch_dependencies(text: str, records: list[dict[str, Any]]) -> list[str]:
     """Check declared batches as a topologically ordered graph, without scheduling."""
     errors: list[str] = []
@@ -1331,18 +1401,26 @@ def validate_batch_dependencies(text: str, records: list[dict[str, Any]]) -> lis
     if len(set(names)) != len(names):
         errors.append("duplicate closure batch header")
     expected = {
-        record["closure_batch"]
+        batch
         for record in records
-        if nonempty_string(record.get("closure_batch"))
+        if string_list(record.get("closure_batches"))
+        for batch in record["closure_batches"]
     }
     if set(names) != expected:
         errors.append("batch headers must exactly cover disposition closure batches")
     positions = {name: index for index, name in enumerate(names)}
+    for record in records:
+        batches = record.get("closure_batches")
+        if string_list(batches) and all(batch in positions for batch in batches):
+            if batches != sorted(batches, key=positions.__getitem__):
+                errors.append("closure_batches must follow declared batch order")
     for index, heading in enumerate(headings):
         name = heading.group(1)
         end = headings[index + 1].start() if index + 1 < len(headings) else len(text)
-        block = text[heading.end():end].split("#### Fix", 1)[0]
-        fields = re.findall(r"(?m)^\*\*Dependencies\*\*:[ \t]*(.*)$", block)
+        block = re.split(r"(?m)^#{1,3}[ \t]+", text[heading.end():end], maxsplit=1)[0]
+        errors.extend(validate_batch_sources(name, block, records))
+        preamble = block.split("#### Fix", 1)[0]
+        fields = re.findall(r"(?m)^\*\*Dependencies\*\*:[ \t]*(.*)$", preamble)
         try:
             dependencies = json.loads(fields[0]) if len(fields) == 1 else None
         except json.JSONDecodeError:
@@ -1446,10 +1524,10 @@ def validate_plan(path: Path) -> list[str]:
             decision = record.get("decision")
             if nonempty_string(decision) and decision.startswith("pending:"):
                 errors.append(f"READY-FOR-APPLY has pending decision for {finding_id}")
-            if record.get("closure_batch") is None and not str(decision).startswith(
+            if not record.get("closure_batches") and not str(decision).startswith(
                 "no-action:"
             ):
-                errors.append(f"READY-FOR-APPLY missing closure batch for {finding_id}")
+                errors.append(f"READY-FOR-APPLY missing closure_batches for {finding_id}")
             if record.get("change_kind") == "behavioral":
                 red = record.get("red_before")
                 if not check_record(red) or not str(red.get("observed", "")).startswith(
@@ -1544,7 +1622,7 @@ def stable_disposition_drift(
         "closure_key",
         "family_key",
         "decision",
-        "closure_batch",
+        "closure_batches",
         "change_kind",
         "changed_paths",
         "red_before",
@@ -1600,7 +1678,7 @@ def validate_result(path: Path) -> list[str]:
         if re.search(r"(?m)^#### Fix\s", plan_text) or any(
             record.get("record_kind") != "finding-disposition"
             or not str(record.get("decision", "")).startswith("no-action:")
-            or record.get("closure_batch") is not None
+            or record.get("closure_batches") != []
             or record.get("changed_paths") != []
             for record in plan_records + result_records
         ):
@@ -1637,14 +1715,12 @@ def validate_result(path: Path) -> list[str]:
         result_record = result_by_source[key]
         if stable_disposition_drift(plan_by_source[key], result_record):
             errors.append(f"result {key[1]} drifts from plan-stage disposition")
-        if (
-            result_record.get("change_kind") == "behavioral"
-            and result_record.get("remediation_status") == "Closed"
-        ):
+        if result_record.get("remediation_status") == "Closed":
             red = result_record.get("red_before")
             green = result_record.get("green_after")
-            if not check_record(red) or not str(red.get("observed", "")).startswith(
-                "FAIL"
+            if result_record.get("change_kind") == "behavioral" and (
+                not check_record(red)
+                or not str(red.get("observed", "")).startswith("FAIL")
             ):
                 errors.append(f"result {key[1]} Closed requires observed FAIL red-before")
             if not check_record(green) or not str(green.get("observed", "")).startswith(

@@ -44,7 +44,14 @@ For each dependency-ordered batch:
 2. make only the planned minimum change;
 3. run its green-after check;
 4. run the missing part of its verification union;
-5. record exact paths, commands/results, and `Closed` or `Not closed`.
+5. record exact paths, commands/results, and whether its assigned predicate
+   passed.
+
+Keep one result disposition per source finding. Its planned `closure_batches`
+remain unchanged; mark the finding `Closed` only after every listed batch
+predicate and their source-level conjunction are proved. Record those batch
+outcomes and the conjunction in observed green-after evidence. A successful
+batch alone cannot close a compound finding.
 
 Use the criterion's required evidence class and actual production consumer.
 Record test identities and executed counts, original exits and relevant

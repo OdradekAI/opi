@@ -153,7 +153,7 @@ def disposition_record(
         "closure_key": "session.runtime-binding",
         "family_key": "session.durability",
         "decision": "fix:persist-runtime-binding",
-        "closure_batch": "B1",
+        "closure_batches": ["B1"],
         "change_kind": "behavioral",
         "changed_paths": ["crates/opi-agent/src/session.rs"],
         "red_before": {
@@ -167,6 +167,11 @@ def disposition_record(
             "observed": "not-run",
         },
     }
+
+
+def finding_source_tuple(record: dict[str, object]) -> str:
+    source = record["source"]
+    return " / ".join(str(source[field]) for field in ("audit_run_id", "findings_sha256", "id"))
 
 
 def incidental_record(*, changed_path: str) -> dict[str, object]:
@@ -448,6 +453,7 @@ class AssuranceFixture(unittest.TestCase):
             for record in records
             if record.get("record_kind") == "finding-disposition"
         )
+        finding_sources = "; ".join(finding_source_tuple(record) for record in records)
         plan_path.write_text(
             "# Phase 17 Remediation Plan\n\n"
             f"**Status**: {status}\n"
@@ -459,6 +465,7 @@ class AssuranceFixture(unittest.TestCase):
             "### Batch B1: Runtime binding\n\n"
             "**Dependencies**: []\n\n"
             "#### Fix B1.1: Persist the runtime binding\n\n"
+            f"- **Finding source(s)**: {finding_sources}\n"
             "- **Closure predicate**: reconstructed sessions retain the binding\n"
             "- **Red-before**: `cargo test binding` -> FAIL\n"
             "- **Green-after**: `cargo test binding` -> PASS\n",
@@ -1138,7 +1145,7 @@ class RemediationValidatorTests(AssuranceFixture):
         first, second = self.write_two_member_failed_set()
         records = self.dispositions_for(first, second)
         self.assertEqual(records[0]["closure_key"], records[1]["closure_key"])
-        self.assertEqual(records[0]["closure_batch"], records[1]["closure_batch"])
+        self.assertEqual(records[0]["closure_batches"], records[1]["closure_batches"])
         plan_path, _ = self.write_plan(dispositions=records)
 
         result = run_validator("plan", plan_path)
