@@ -2,16 +2,16 @@
 
 **Status**: READY-FOR-APPLY
 **Audit index SHA-256**: `e1b34739db46331707a93ab0f6f9336ed6386a4564b0215d8488ce288319f0ae`
-**Remediation head**: `68e276822185346db0bf57e31175dcac599ef7c7`
+**Remediation head**: `2eee4afebc911482d969ead8452115a4a7f9592d`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: committed prerequisite=`68e276822185346db0bf57e31175dcac599ef7c7`; staged=[]; unstaged=["docs/snapshots/phase20/assurance/remediation.plan.md", "docs/snapshots/phase20/assurance/remediation.plan.dispositions.jsonl"] (owned fixed outputs carried-in-and-touched); untracked=[].
+**Dirty-worktree baseline**: committed source=`2eee4afebc911482d969ead8452115a4a7f9592d`; staged=[]; unstaged=[]; untracked=[] at replanning admission. Only the fixed plan pair is generated afterward; B01 is already committed.
 **Unresolved decisions**: none
 
 ## Admission and observable completion
 
 Validate the active set -> verify: `validate_assurance_artifact.py audit-set` PASS before semantic consumption; raw index SHA-256 above was independently computed. Verify every source key -> verify: exactly28 dispositions (21 Codex +7 Pi), with full member run/digest identities. Seal fixed pair -> verify: dispositions, plan validator, documentation check and whitespace check. This run delivers the sealed READY-FOR-APPLY plan after final validation; it makes no product repair, apply result, requirement-met assertion or Phase verdict.
 
-Only the current indexed set supplies findings. Cnnn abbreviates the full Codex run below and Pnnn the full Pi run; `nnn` is the suffix of `P20-AUD-nnn`. Abbreviations do not merge duplicate textual IDs. Original severities, linked requirement states and evidence remain untouched. A clean tracked fixed plan pair is replaced without reading its earlier contents; existing result files remain unread and unchanged, and are not results of this plan.
+Only the current indexed set supplies findings. Cnnn abbreviates the full Codex run below and Pnnn the full Pi run; `nnn` is the suffix of `P20-AUD-nnn`. Abbreviations do not merge duplicate textual IDs. Original severities, linked requirement states and evidence remain untouched. The active approved design is resealed after an observed execution-order blocker; only its clean tracked fixed plan outputs are replaced. Existing result files remain unread and unchanged, and are not results of this plan.
 
 | Member | Full run | Findings SHA-256 | Audit head |
 |---|---|---|---|
@@ -20,15 +20,38 @@ Only the current indexed set supplies findings. Cnnn abbreviates the full Codex 
 
 Original runtime reproduction evidence was inspected at the previous committed head in a unique `git archive` export, never a Git worktree: `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-plan-jqdki4yk\source`. Its `.claude/skills` symlink required directory-type rematerialization after Windows tar extraction; link target and committed file contents stayed unchanged. The original export tar SHA-256 is `705e8104d5d051225355351d28d78e72b3cc98d942d0b95a701cb7ed95fb3b7f`; after all planning checks, all1672 regular files matched its exact bytes. A separate archive for the private product classifier appends only `#[cfg(test)]` instrumentation; its original production prefix and893 crate/build inputs were compared. External probe crates use path dependencies into the archive solely for planning reproduction, not as claimed distributable-package proof.
 
-The user subsequently authorized Git commits. Workflow/source-binding prerequisite commit `68e276822185346db0bf57e31175dcac599ef7c7` is now the remediation source baseline. A fresh unique `git archive` export at `C:\Users\Luiz\AppData\Local\Temp\opi-p20-commit-rebind-m2s4_bwe\source` was checked against the original archive: all1672 regular files and path/mode sets are verified; only the10 committed workflow/ledger/changelog paths differ. Every production crate, Cargo manifest/lockfile, fixture, package runner, CI file and registered normative source retains identical bytes. Original probes therefore retain their applicability without relabeling their original commands, exits or source identities. Fresh archive SHA256 `7135479bfd3e8a0b29cc7093d0ae474e049dd90e552254b0151eefb6c8ad494a`; exact applicability receipt `D:\Luiz\Odradek\opi-remediation-evidence\phase20\commit-rebind-68e2768\source-applicability.json` SHA256 `f30212e988d96295d8c7a9d65a30ff79bec5b2aafbb4ec35d98451941d9b4ed2`; durable archive `D:\Luiz\Odradek\opi-remediation-evidence\phase20\commit-rebind-68e2768\source.tar`. The new export is the current inspection baseline, while earlier probe paths and receipts remain immutable observed evidence.
+The user subsequently authorized Git commits. Workflow/source-binding prerequisite commit `68e276822185346db0bf57e31175dcac599ef7c7` was the original planning source baseline. A fresh unique `git archive` export at `C:\Users\Luiz\AppData\Local\Temp\opi-p20-commit-rebind-m2s4_bwe\source` was checked against the original archive: all1672 regular files and path/mode sets are verified; only the10 committed workflow/ledger/changelog paths differ. At that original comparison, every production crate, manifest/lockfile, fixture, package runner, CI file and registered normative source retained identical bytes. Original execution identities stay immutable; the later B01 delta is separately qualified and replayed below. Fresh archive SHA256 `7135479bfd3e8a0b29cc7093d0ae474e049dd90e552254b0151eefb6c8ad494a`; exact applicability receipt `D:\Luiz\Odradek\opi-remediation-evidence\phase20\commit-rebind-68e2768\source-applicability.json` SHA256 `f30212e988d96295d8c7a9d65a30ff79bec5b2aafbb4ec35d98451941d9b4ed2`; durable archive `D:\Luiz\Odradek\opi-remediation-evidence\phase20\commit-rebind-68e2768\source.tar`. That export records the original planning inspection. The present inspection uses the later B01 commit and unique archive below; earlier probes retain their original execution identities.
 
 Current source baseline remains valid through future commits touching only this Phase fixed plan pair, under the shared source-baseline rule. Any other intervening committed change, including required ledger/source reconciliation, requires a fresh plan. The active index and all member digests must remain exact. No history report, earlier remediation result or eval artifact supplied a disposition. The sole raw-proof candidate used was the exact delivery-evidence document identified below; its historical conclusion was not adopted.
+
+## Current source baseline and executable verification schedule
+
+Current baseline is `2eee4afebc911482d969ead8452115a4a7f9592d`. The user authorized only B01's three-path commit after fresh red3executed/1pass/2fail/exit101 and final9+5passing auth tests, affected all-target clippy, format/doc/diff checks. Exact tested bytes match the sole-parent commit; no complete remediation result is claimed. Commit association receipt `D:/Luiz/Odradek/opi-remediation-evidence/phase20/apply-20261104T144841-722b4977/b01-commit-association.json` SHA256 `278039b9a57e8e768b8a58cd89d38d32ddf9fad855762ef63d61047e2b14ac42` binds the exact tested input receipt SHA256 `0c7fa52df9d3d2e27ff16d03b2b256ba391eaa2e608015ddf02e185125dfea3e`, authorized three-path scope and sole parent. Current unique archive: `C:\Users\Luiz\AppData\Local\Temp\opi-p20-replan-a8v0alf0\source`; durable tar `D:\Luiz\Odradek\opi-remediation-evidence\phase20\replan-2eee4af-d0303afe\source.tar` SHA256 `2c404dd65986793e318e12ff1f46f086545796363dfad7174f73e55fa6eca62a`;1672regularfiles and both symlinks verified. Source-export receipt `D:\Luiz\Odradek\opi-remediation-evidence\phase20\replan-2eee4af-d0303afe\source-export.json` SHA256 `86bf87f0bb56eb8593a94d6eb45ff7151da25734b130b3d6bfcc97f3c72e7dc6`; applicability receipt `D:\Luiz\Odradek\opi-remediation-evidence\phase20\replan-2eee4af-d0303afe\source-applicability.json` SHA256 `1083cb6f1b12915d911be788d234b4866dec6d9f541a2b717da5ab11193ff3d5`.
+
+Relative to68e2768 only B01 production/test/changelog and fixed plan bytes changed. Manifests/lock/registered sources/ledgers/frozen audit are unchanged. Original red receipts retain actual source, commands, exits and controls; no earlier execution is relabeled. Exact probe source/lock was copied with only its opi-ai manifest path changed to the new archive. Fresh13probe run:6pass/7fail/0ignored/exit101; C001's scoped cases now pass while ADC Referer, nonchat privacy, terminal consistency, retry-cap/overflow and float-null still fail at the same assertions. Receipt `D:\Luiz\Odradek\opi-remediation-evidence\phase20\replan-2eee4af-d0303afe\current-source-probes.json` SHA256 `7dd5e110b52379536c61e5adca713b39af8e12ba86344ef2f037b14721728674`. Fresh8SDKprobe run:3pass/5fail/0ignored/exit101, retaining exact budget/default-store/modality/received-fact failures and controls. Receipt `D:\Luiz\Odradek\opi-remediation-evidence\phase20\replan-2eee4af-d0303afe\current-sdk-probes.json` SHA256 `eba710d479b0878de9300df70ae01ca1ba86b534c26ab27953451d8eea58da57`. These are source probes, not package/native acceptance.
+
+The extracted Windows `.claude/skills` directory symlink required rematerialization before isolated documentation checking. Original setup check exit1 and corrected check exit0 are retained; all1672regularfiles and logical symlink targets still match the unchanged tar. Receipt `D:/Luiz/Odradek/opi-remediation-evidence/phase20/replan-2eee4af-d0303afe/export-alias-rematerialization.json` SHA256 `2a6547b40db23a9cc478c740b17bd670098db8194352323990e331bdda256411`. This was archive alias setup, not behavioral red or a product change.
+
+The strict union remains28dispositions:25fixes/3no-actions,98formal batches, with C018's71batch conjunction and156criterion records unchanged. B13 precedes B02; B14 precedes B03; explicit edges cover their other full-suite consumers. Current openrouter feasibility execution42pass/1fail/0ignored/exit101 establishes the B14 prerequisite. It is no incidental defect or permitted failed gate.
+
+Each `Verification union` and local `Green-after` is an immediate gate: all its checks must pass before advancing. Introduce each batch's own planned assertions and retain existing controls. Mandatory final-source cross-validation executes at its actual downstream owner, avoiding forward cycles without dropping checks:
+
+| Local root | Mandatory downstream proof owner / source closure |
+|---|---|
+| B22-B27 | C009 requires all six local predicates; final workspace and B91/B17/B95/B92 integration/package/native proof remain mandatory later. |
+| B90 | Admission/filesystem/negative checks gate B90; actual B91/B17 integration is already explicitly a later obligation. |
+| B09 | Local SDK/product/snapshot/default-owner checks first; B19/final workspace and B17/B95/B92 final package/native coverage remain mandatory. |
+| B98 | Local floor/state/ACK/product/caller/workspace checks first; B17/B95 consumers and B92 native evidence are later mandatory C018 conjuncts. |
+| B96 | Local identity/public-consumer/workspace checks first; B17/B95 final artifacts and B92 native execution remain mandatory C018 conjuncts. |
+| B99 | Local CONNECT/HTTP/proxy/TLS/WS/caller/workspace checks first; B91 ordinary/union families, B17/B95 consumers and B92 native1.97.1 remain mandatory C018 conjuncts. |
+
+A downstream failure blocks the complete result/source conjunction. No local pass substitutes for final candidate bytes, package/graph identity, named executed counts or native provenance. B92 still needs Linux/macOS/Windows; the user will provide macOS access at final commit/CI stage. That is a materialization boundary, not native green or publication/dispatch authority. New fixed plan bytes require a new exact apply invocation; the old digest is not approval for this plan.
 
 ## Current Finding Verification
 
 | Source run / Finding ID | Verification and counter-evidence | Source and final severity + rationale | Closure key/family | Batch | Decision / remaining obligations |
 |---|---|---|---|---|---|
-| C001 / P20-AUD-001 | Confirmed: builtin.rs:106-110 filters only base context;183-225 retains scoped env but reads candidate via self.env; key() uses scoped context only for auxiliary Cloudflare fields. SDK contracts108 requires per-field scoped override and empty/missing distinction; spec INV-001+PRIN-004. Counter-evidence:  | Major -> Major; Mandatory existing behavior fails at a public/consumer boundary; current independent evidence supports original Major severity. | auth.stored-scoped-env-candidate / auth.selected-source | B01 | fix:resolve-builtin-key-candidates-through-scoped-context; No additional planning obligation; green-after still required. |
+| C001 / P20-AUD-001 | Refuted at current remediation head only: authorized B01 commit, exact tested-source association and current-archive nonempty/empty wire controls. Original observation remains valid at audit head. | Major -> Major; original impact retained; no new root defect at this source baseline. | auth.stored-scoped-env-candidate / auth.selected-source | none | no-action:already-repaired-at-remediation-head; linked broad auth/package/native gates remain mandatory. |
 | C002 / P20-AUD-002 | Confirmed: http.rs:382-399 leaves reqwest referer default enabled; native.rs:352-379 builds default ADC GET client through it;393-408 dispatches. readiness-transport-auth31-37 explicitly identifies unwanted reqwest Referer vs source behavior and frozen-source header ownership. Counter-evidence:  | Major -> Major; Mandatory existing behavior fails at a public/consumer boundary; current independent evidence supports original Major severity. | http.adc-no-unsolicited-referer / http.source-redirect | B02 | fix:disable-automatic-referer-generation; No additional planning obligation; green-after still required. |
 | C003 / P20-AUD-003 | Confirmed: openrouter_images.rs:335-341,469-486,509-530 copies raw JSON message to error_message and sanitized typed summary; images.rs:221-238 retains raw message. cloudflare.rs:203-216 joins raw envelope strings; system_one.rs parse/failure paths and classifier.rs:301-315 retain them. ProviderErrorSummary::from_untrusted649-655 intentionally discards upstream bytes; sanitized666-674 uses http::safe_excerpt551 pattern-only defense. SDK contracts189, RDF-06 and V-13 require redacted typed diagnostic defaults. Counter-evidence:  | Major -> Major; Mandatory existing behavior fails at a public/consumer boundary; current independent evidence supports original Major severity. | diagnostics.nonchat-untrusted-body / diagnostics.provider-failure | B03 | fix:close-nonchat-untrusted-error-summary-boundary; No additional planning obligation; green-after still required. |
 | C004 / P20-AUD-004 | Confirmed: models.rs:1843-1851 wraps preparation failure using with_projection; provider.rs:899-908 preserves it in StreamFailure. harness.rs:100-126 only direct CredentialNeeded/Revoked/AccountIdMissing; interactive766, rpc1100, runner840/882/919 all call it. Counterevidence interactive_auth269 recurses only for presentation; stream collector unwrap is a different boundary. continuation_contract121-159 stops at direct-variant assertion before steering check. Current test-only archive executes actual private product classifier after public Models.prepare_call; three independent missing classifications reproduced. Input manifest compares893 crate/build files; only appended cfg(test) module differs. Counter-evidence:  | Major -> Major; Mandatory existing behavior fails at a public/consumer boundary; current independent evidence supports original Major severity. | product.auth-preparation-classification / auth.consumer-migration | B04 | fix:classify-auth-causes-through-streamfailure-envelope; No additional planning obligation; green-after still required. |
@@ -115,29 +138,29 @@ All batches below are the sealed plan; execution requires a new explicit apply i
 
 For each behavioral batch, migrate the sealed distinguishing temporary assertions and controls into the listed owning repository tests before production edits, run them red, then rerun them green. The original observed external red remains bound above. If replaying an external probe, change only its opi-ai path to the actually tested candidate export, retain probe source bytes/registry identities, rebuild and record actual source/executable hashes; green against the old archive cannot close a fix. All newly created/modified test binaries or filters must actually execute. Preserve raw input/known usage/privacy and forbid unapproved fallback/retry. Read the full current Unreleased section before additive entries; released history is immutable.
 
-### Batch B01: resolve builtin key candidates through scoped context
+### Batch B13: advertise scripted redirect connection close
 
-**Closure predicate**: On actual builtin Groq Models wire, env-only stored GROQ_API_KEY wins over same ambient field; an explicit empty scoped key admits zero generation sends; explicit stored key retains priority.
+**Closure predicate**: The scripted redirect response declares its actual close lifetime; both explicit and genuine default pooled clients pass20 hops and reject21 with exactly21 sends and typed too-many-redirects, with no pooling-disable workaround.
 **Dependencies**: []
-**Verification union**: cargo test -p opi-ai --test builtin_auth_ownership; cargo test -p opi-ai --test builtin_scoped_env; cargo clippy -p opi-ai --all-targets -- -D warnings
+**Verification union**: cargo test -p opi-ai --test http_acceptance --offline --locked on current native host; exact source_qualified_default_redirect_budget_has_exact_twenty_hop_boundary also on owning native Linux rustc1.97.1, genuine default pooling and unchanged20/21-hop assertions; retain raw commands/counts/host/cache identities; cargo clippy -p opi-ai --all-targets --offline --locked -- -D warnings
 
-#### Fix B01.1: resolve builtin key candidates through scoped context
+#### Fix B13.1: advertise scripted redirect connection close
 
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-001
-- **Decision**: fix:resolve-builtin-key-candidates-through-scoped-context
+- **Finding source(s)**: phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-001
+- **Decision**: fix:advertise-scripted-redirect-connection-close
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/auth/builtin.rs`, `crates/opi-ai/tests/builtin_auth_ownership.rs`, `CHANGELOG.md`
-- **Change kind**: behavioral
-- **Change**: Use existing scoped_context(self.context.clone(), &scoped) for candidate lookups, preserving source order and field-presence masking. Remove self.env only if no remaining uses. Add paired nonempty/empty regression on actual adapter and retain direct-key/auxiliary-context controls.
-- **Closure predicate**: On actual builtin Groq Models wire, env-only stored GROQ_API_KEY wins over same ambient field; an explicit empty scoped key admits zero generation sends; explicit stored key retains priority.
-- **Red-before**: python D:/Luiz/Odradek/opi/scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test --manifest-path C:/Users/Luiz/AppData/Local/Temp/opi-p20-plan-auth-probes-08ct7l_l/Cargo.toml --offline --locked --test probes -- --nocapture -> Final suite: scoped_env_key_must_win FAIL sent Bearer synthetic-ambient (one send), expected synthetic-scoped; scoped_empty_must_mask_ambient FAIL succeeded and sent once.
-- **Green-after**: cargo test -p opi-ai --test builtin_auth_ownership; cargo test -p opi-ai --test builtin_scoped_env -> On actual builtin Groq Models wire, env-only stored GROQ_API_KEY wins over same ambient field; an explicit empty scoped key admits zero generation sends; explicit stored key retains priority.
+- **File(s)**: `crates/opi-ai/tests/http_acceptance.rs`
+- **Change kind**: test-only
+- **Change**: Add Connection: close to the scripted redirect response; retain default pooling and all20/21-hop send/body/auth assertions. Do not change HttpClient behavior.
+- **Closure predicate**: The scripted redirect response declares its actual close lifetime; both explicit and genuine default pooled clients pass20 hops and reject21 with exactly21 sends and typed too-many-redirects, with no pooling-disable workaround.
+- **Red-before**: python3 scripts/opi-cargo-cache.py run --target /mnt/e/opi/cargo-targets/opi-8abcf38f9871653e -- test -p opi-ai --test http_acceptance --offline --locked source_qualified_default_redirect_budget_has_exact_twenty_hop_boundary -- --exact --nocapture; cwd /tmp/opi-p20-linux-redirect-vww67bxm/source -> FAIL baseline0passed/1failed on native WSL Linux rustc1.97.1, explicit=false Network; after only scripted redirect Connection: close header1passed/0failed. Product source unchanged. Before log 9f9a3da3bfdb458654010152041090703ff2ce44ed63089f69def12659bd47b7; control log 33ecc72247fdbd512106182f8799834262b76837fc0a347b04d5edbe1872d527
+- **Green-after**: cargo test -p opi-ai --test http_acceptance --offline --locked on current native host; cargo +1.97.1 test -p opi-ai --test http_acceptance --offline --locked source_qualified_default_redirect_budget_has_exact_twenty_hop_boundary -- --exact --nocapture on owning native Linux; cargo clippy -p opi-ai --all-targets --offline --locked -- -D warnings -> The scripted redirect response declares its actual close lifetime; both explicit and genuine default pooled clients pass20 hops and reject21 with exactly21 sends and typed too-many-redirects, with no pooling-disable workaround.
 - **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
 
 ### Batch B02: disable automatic referer generation
 
 **Closure predicate**: Actual ADC default GET source redirect sends exactly source+target, follows source hop budget, removes cross-origin protected auth per current contract, and adds no unsolicited Referer/source query secret; explicitly supplied lawful headers retain their contract.
-**Dependencies**: []
+**Dependencies**: ["B13"]
 **Verification union**: cargo test -p opi-ai --test adc_owner_regressions; cargo test -p opi-ai --test http_acceptance; cargo clippy -p opi-ai --all-targets -- -D warnings
 
 #### Fix B02.1: disable automatic referer generation
@@ -153,10 +176,29 @@ For each behavioral batch, migrate the sealed distinguishing temporary assertion
 - **Green-after**: cargo test -p opi-ai --test adc_owner_regressions; cargo test -p opi-ai --test http_acceptance -> Actual ADC default GET source redirect sends exactly source+target, follows source hop budget, removes cross-origin protected auth per current contract, and adds no unsolicited Referer/source query secret; explicitly supplied lawful headers retain their contract.
 - **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
 
+### Batch B14: correct shared chat strict default assertions
+
+**Closure predicate**: Both profiles assert false for unconstrained tools on capable wires, explicit Require/Prefer retain strict conversion, and unsupported capability preserves the source omission/refusal contract.
+**Dependencies**: []
+**Verification union**: cargo test -p opi-ai --test mistral_fixtures; cargo test -p opi-ai --test openrouter_fixtures; cargo clippy -p opi-ai --all-targets -- -D warnings
+
+#### Fix B14.1: correct shared chat strict default assertions
+
+- **Finding source(s)**: phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-002
+- **Decision**: fix:correct-shared-chat-strict-default-assertions
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-ai/tests/mistral_fixtures.rs`, `crates/opi-ai/tests/openrouter_fixtures.rs`
+- **Change kind**: test-only
+- **Change**: Correct the two stale default assertions and add explicit constrained/unconstrained/capability controls while preserving developer-role/max-token assertions.
+- **Closure predicate**: Both profiles assert false for unconstrained tools on capable wires, explicit Require/Prefer retain strict conversion, and unsupported capability preserves the source omission/refusal contract.
+- **Red-before**: python scripts/opi-cargo-cache.py run --target E:\opi\cargo-targets\opi-72fa37a0fa044958 -- test -p opi-ai --test mistral_fixtures --offline --locked mistral_profile_inherits_shared_compat_flags -- --exact --nocapture; python scripts/opi-cargo-cache.py run --target E:\opi\cargo-targets\opi-72fa37a0fa044958 -- test -p opi-ai --test openrouter_fixtures --offline --locked openrouter_profile_inherits_shared_compat_flags -- --exact --nocapture -> FAIL: both exact cases executed separately,0passed/1failed each; strict false disagrees with old true assertion.
+- **Green-after**: cargo test -p opi-ai --test mistral_fixtures; cargo test -p opi-ai --test openrouter_fixtures -> Both profiles assert false for unconstrained tools on capable wires, explicit Require/Prefer retain strict conversion, and unsupported capability preserves the source omission/refusal contract.
+- **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
+
 ### Batch B03: close nonchat untrusted error summary boundary
 
 **Closure predicate**: For image HTTP400 and classifier HTTP200 success:false with arbitrary synthetic provider text, default result Debug/error_message/typed cause expose no canary while preserving operation identity, Error, HTTP status or typed class, known usage, and zero extra sends.
-**Dependencies**: []
+**Dependencies**: ["B14"]
 **Verification union**: cargo test -p opi-ai --test openrouter_fixtures; cargo test -p opi-ai --test classifier_contract; cargo clippy -p opi-ai --all-targets -- -D warnings
 
 #### Fix B03.1: close nonchat untrusted error summary boundary
@@ -271,25 +313,31 @@ For each behavioral batch, migrate the sealed distinguishing temporary assertion
 
 **Closure predicate**: Models::new and from_registry each own an independent local credential store; fake flow login succeeds and acknowledges it without injection, one instance cannot observe another login, explicit store replacement remains owner and construction reads no environment/store/network or runtime.
 **Dependencies**: []
-**Verification union**: cargo test -p opi-ai --test oauth_flows; cargo test -p opi-ai --test provider_collection; cargo test -p opi-ai --test external_sdk; cargo clippy -p opi-ai --all-targets -- -D warnings
+**Verification union**: cargo test -p opi-ai --test oauth_flows --test provider_collection --test external_sdk --test builtin_auth_ownership --test auth_contracts --offline --locked; cargo test -p opi-coding-agent --test list_models --offline --locked; cargo clippy -p opi-ai -p opi-coding-agent --all-targets --offline --locked -- -D warnings
 
 #### Fix B09.1: initialize independent memory credential store in constructors
 
 - **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-012
 - **Decision**: fix:initialize-independent-memory-credential-store-in-constructors
 - **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/models.rs`, `crates/opi-ai/tests/oauth_flows.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-ai/tests/external_sdk.rs`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `CHANGELOG.md`
+- **File(s)**: `crates/opi-ai/src/models.rs`, `crates/opi-ai/tests/oauth_flows.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-ai/tests/external_sdk.rs`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `CHANGELOG.md`, `crates/opi-ai/tests/builtin_auth_ownership.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-coding-agent/tests/list_models.rs`
 - **Change kind**: behavioral
-- **Change**: Initialize each Models constructor with its own existing InMemoryCredentialStore; preserve explicit store replacement and zero-I/O/lazy construction. Synchronize the stale absent-store rustdoc and both READMEs. Add fake login/ACK, from_registry, two-instance isolation and explicit injected-store controls; record Unreleased.
+- **Change**: Initialize each Models constructor with its own existing InMemoryCredentialStore and preserve explicit replacement, lazy construction and instance isolation. Preserve the existing set_probe configuration contract through a private implicit-memory versus explicitly-attached store ownership distinction: actual credentials win; only Ok(None) from constructor-owned memory may consult an injected label-only probe. Explicit-store absence/error remains authoritative; resolvers and dispatch never consume probes. Synchronize affected store/default rustdoc and both READMEs, plus default barrier/flow-removal assumptions. Add fake login/ACK, ownership-priority and actual product listing controls; preserve zero interaction, zero secret reads and fail-closed source errors; record Unreleased.
 - **Closure predicate**: Models::new and from_registry each own an independent local credential store; fake flow login succeeds and acknowledges it without injection, one instance cannot observe another login, explicit store replacement remains owner and construction reads no environment/store/network or runtime.
 - **Red-before**: python C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-plan-jqdki4yk\source\scripts\opi-cargo-cache.py run --target E:\opi\cargo-targets\opi-72fa37a0fa044958 -- test --manifest-path C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-plan-jqdki4yk\sdk-current-probes\Cargo.toml --offline --locked --lib -- --nocapture -> FAIL: CredentialStore Backend(no credential store attached), fake flow_count0; injected-memory-store control PASS, flow_count1.
-- **Green-after**: cargo test -p opi-ai --test oauth_flows; cargo test -p opi-ai --test provider_collection; cargo test -p opi-ai --test external_sdk -> Models::new and from_registry each own an independent local credential store; fake flow login succeeds and acknowledges it without injection, one instance cannot observe another login, explicit store replacement remains owner and construction reads no environment/store/network or runtime.
+- **Green-after**: cargo test -p opi-ai --test oauth_flows --test provider_collection --test external_sdk --test builtin_auth_ownership --test auth_contracts --offline --locked; cargo test -p opi-coding-agent --test list_models --offline --locked; cargo clippy -p opi-ai -p opi-coding-agent --all-targets --offline --locked -- -D warnings -> Models::new and from_registry each own an independent local credential store; fake flow login succeeds and acknowledges it without injection, one instance cannot observe another login, explicit store replacement remains owner and construction reads no environment/store/network or runtime. Existing snapshot/configuration and actual listing behavior remain; explicit empty/failing stores do not fall back; probes never authenticate.
 - **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
+
+**Existing-consumer synchronization**: In `builtin_auth_ownership::remove_and_clear_keep_auth_only_flows_and_remove_model_owned_flows`, use a dedicated noninteractive fake flow returning typed `LoginCancelled` without calling any presenter method. Retained flows produce that nested `ModelsError::AuthResolution` cause; removed model-owned flows return `UnknownOAuthFlow` before the fake flow runs. Preserve presenter no-interaction assertions. In `auth_contracts`, replace only the default `mutation_barrier().is_none()` expectation with an empty constructor-owned barrier/isolation assertion; retain shared explicit-store cutoff/error and snapshot controls. Extend `list_models` stored-only/presence fixtures through actual `available_model_entries`, retaining redaction, zero secret reads and corrupt/operational-probe refusal. Product `provider_factory.rs` stays unchanged: its existing descriptor/probe consumer remains supported.
+
+**Bilingual default-store contract**: English: Models constructors own independent memory credential stores without external discovery. Descriptor configuration checks prefer actual default-store credentials; only empty implicit memory may consult redacted probe metadata. An explicitly attached store remains authoritative, including absence/errors. Probes never supply authentication or authorize dispatch. Persistent catalog/product stores remain explicit. Chinese: Models 构造器各自拥有独立的内存凭据存储，不主动发现外部来源。descriptor 配置检查优先读取默认存储中的实际凭据；只有隐式默认存储缺少条目时才可使用脱敏 probe 元数据。显式接入的存储始终具有权威性，包括缺失和错误。probe 不提供认证，也不授权生成请求。持久化目录／产品存储仍需显式接入。 Qualify README catalog-store and optional product-store wording; do not describe those stores as absence of SDK local memory.
+
+**Downstream final-source proof**: B19 and final workspace gates, plus B17/B95/B92 package/native consumers, remain mandatory. All local B09 source/consumer regression checks must pass before continuing; downstream ownership waives no final gate.
 
 ### Batch B10: derive image modalities from text capability
 
 **Closure predicate**: One image request always includes image first exactly once; Text present yields [image,text], otherwise [image], regardless of record list ordering/duplicates/absence; ordinary successful result parsing is preserved.
-**Dependencies**: []
+**Dependencies**: ["B14"]
 **Verification union**: cargo test -p opi-ai --test openrouter_fixtures; cargo clippy -p opi-ai --all-targets -- -D warnings
 
 #### Fix B10.1: derive image modalities from text capability
@@ -308,7 +356,7 @@ For each behavioral batch, migrate the sealed distinguishing temporary assertion
 ### Batch B11: preserve received image result on response callback failure or cancel
 
 **Closure predicate**: After successful full JSON acquisition, callback fires once; callback error/cancel yields Error/Aborted with correct typed cause while preserving received output,id,usage,cost and original unknowns; exactly one request, no fallback/retry, invalid JSON does not notify callback.
-**Dependencies**: []
+**Dependencies**: ["B14"]
 **Verification union**: cargo test -p opi-ai --test openrouter_fixtures; cargo clippy -p opi-ai --all-targets -- -D warnings
 
 #### Fix B11.1: preserve received image result on response callback failure or cancel
@@ -343,44 +391,6 @@ For each behavioral batch, migrate the sealed distinguishing temporary assertion
 - **Green-after**: cargo test -p opi-ai --test schema_public; cargo test -p opi-ai --test schema_engine -> Public compile({type:null}) plus validate_tool_arguments accepts 0, -0, 0.0 and -0.0 as normalized Null without mutating raw; nonzero and literal strings are rejected.
 - **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
 
-### Batch B13: advertise scripted redirect connection close
-
-**Closure predicate**: The scripted redirect response declares its actual close lifetime; both explicit and genuine default pooled clients pass20 hops and reject21 with exactly21 sends and typed too-many-redirects, with no pooling-disable workaround.
-**Dependencies**: []
-**Verification union**: cargo test -p opi-ai --test http_acceptance; cargo clippy -p opi-ai --all-targets -- -D warnings
-
-#### Fix B13.1: advertise scripted redirect connection close
-
-- **Finding source(s)**: phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-001
-- **Decision**: fix:advertise-scripted-redirect-connection-close
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/tests/http_acceptance.rs`
-- **Change kind**: test-only
-- **Change**: Add Connection: close to the scripted redirect response; retain default pooling and all20/21-hop send/body/auth assertions. Do not change HttpClient behavior.
-- **Closure predicate**: The scripted redirect response declares its actual close lifetime; both explicit and genuine default pooled clients pass20 hops and reject21 with exactly21 sends and typed too-many-redirects, with no pooling-disable workaround.
-- **Red-before**: python3 scripts/opi-cargo-cache.py run --target /mnt/e/opi/cargo-targets/opi-8abcf38f9871653e -- test -p opi-ai --test http_acceptance --offline --locked source_qualified_default_redirect_budget_has_exact_twenty_hop_boundary -- --exact --nocapture; cwd /tmp/opi-p20-linux-redirect-vww67bxm/source -> FAIL baseline0passed/1failed on native WSL Linux rustc1.97.1, explicit=false Network; after only scripted redirect Connection: close header1passed/0failed. Product source unchanged. Before log 9f9a3da3bfdb458654010152041090703ff2ce44ed63089f69def12659bd47b7; control log 33ecc72247fdbd512106182f8799834262b76837fc0a347b04d5edbe1872d527
-- **Green-after**: cargo test -p opi-ai --test http_acceptance -> The scripted redirect response declares its actual close lifetime; both explicit and genuine default pooled clients pass20 hops and reject21 with exactly21 sends and typed too-many-redirects, with no pooling-disable workaround.
-- **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
-
-### Batch B14: correct shared chat strict default assertions
-
-**Closure predicate**: Both profiles assert false for unconstrained tools on capable wires, explicit Require/Prefer retain strict conversion, and unsupported capability preserves the source omission/refusal contract.
-**Dependencies**: []
-**Verification union**: cargo test -p opi-ai --test mistral_fixtures; cargo test -p opi-ai --test openrouter_fixtures; cargo clippy -p opi-ai --all-targets -- -D warnings
-
-#### Fix B14.1: correct shared chat strict default assertions
-
-- **Finding source(s)**: phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-002
-- **Decision**: fix:correct-shared-chat-strict-default-assertions
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/tests/mistral_fixtures.rs`, `crates/opi-ai/tests/openrouter_fixtures.rs`
-- **Change kind**: test-only
-- **Change**: Correct the two stale default assertions and add explicit constrained/unconstrained/capability controls while preserving developer-role/max-token assertions.
-- **Closure predicate**: Both profiles assert false for unconstrained tools on capable wires, explicit Require/Prefer retain strict conversion, and unsupported capability preserves the source omission/refusal contract.
-- **Red-before**: python scripts/opi-cargo-cache.py run --target E:\opi\cargo-targets\opi-72fa37a0fa044958 -- test -p opi-ai --test mistral_fixtures --offline --locked mistral_profile_inherits_shared_compat_flags -- --exact --nocapture; python scripts/opi-cargo-cache.py run --target E:\opi\cargo-targets\opi-72fa37a0fa044958 -- test -p opi-ai --test openrouter_fixtures --offline --locked openrouter_profile_inherits_shared_compat_flags -- --exact --nocapture -> FAIL: both exact cases executed separately,0passed/1failed each; strict false disagrees with old true assertion.
-- **Green-after**: cargo test -p opi-ai --test mistral_fixtures; cargo test -p opi-ai --test openrouter_fixtures -> Both profiles assert false for unconstrained tools on capable wires, explicit Require/Prefer retain strict conversion, and unsupported capability preserves the source omission/refusal contract.
-- **Test impact**: add/update; retain existing safety and valid-source controls; delete none.
-
 ### Batch B15: retain affinity when cache retention disabled
 
 **Closure predicate**: Disabled cache retention suppresses prompt_cache_key but preserves the three explicitly enabled session-affinity headers; direct/default/format controls retain their expected headers.
@@ -403,7 +413,7 @@ For each behavioral batch, migrate the sealed distinguishing temporary assertion
 ### Batch B16: use false default with original unconstrained schema
 
 **Closure predicate**: For an unannotated tool, real Conversations request sends strict:false and original parameters without inserted additionalProperties/required; explicit Require remains strict:true with converted schema.
-**Dependencies**: []
+**Dependencies**: ["B14"]
 **Verification union**: cargo test -p opi-ai --test mistral_fixtures; cargo clippy -p opi-ai --all-targets -- -D warnings
 
 #### Fix B16.1: use false default with original unconstrained schema
@@ -422,7 +432,7 @@ For each behavioral batch, migrate the sealed distinguishing temporary assertion
 ### Batch B19: preserve source classifier declaration enumeration
 
 **Closure predicate**: Classifier question and choice declarations retain pinned own-property enumeration: canonical uint32 keys0..4294967294 numeric first, other strings first-insertion order; replacement keeps slot and remove/reinsert appends ordinary keys. All four wires inherit that order, Llama sequential sends/labels/ties use it, outputs retain their existing maps.
-**Dependencies**: []
+**Dependencies**: ["B13", "B14", "B04", "B09", "B15"]
 **Verification union**: cargo test -p opi-ai --test classifier_contract --offline --locked; cargo test --workspace --all-targets --offline --locked; cargo clippy --workspace --all-targets --offline --locked -- -D warnings
 
 #### Fix B19.1: preserve source classifier declaration enumeration
@@ -568,7 +578,9 @@ This content is to integrate under the current changelog style during the owning
 
 **Closure predicate**: All selected source booleans, optional affinity/fallback fields, exact true defaults, explicitfalse, empty-versus-absent and fallback local rates survive executable record import/store/restore; invalid typed values and morethan3targets fail before commit; extension precedence remains exact.
 **Dependencies**: []
-**Verification union**: model_wire_metadata/catalog_operations source and owned roundtrip,invalidtypes,max3,allliteral caller compile; preserve explicit caller policy; full-source conjunction and applicable final workspace gates.
+**Verification union**: model_wire_metadata/catalog_operations source and owned roundtrip,invalidtypes,max3,allliteral caller compile; preserve explicit caller policy; applicable checks for the implemented branch and changed targets.
+
+**Downstream final-source proof**: C009 requires all B22-B27 predicates after all six local branches pass. Final workspace gates and B91/B17/B95/B92 integration/package/native proof remain mandatory at those declared owners. No descendant gates this local branch.
 
 #### Fix B22.1: anthropic.complete-source-metadata
 
@@ -587,7 +599,9 @@ This content is to integrate under the current changelog style during the owning
 
 **Closure predicate**: With cacheenabled, supportsCacheControlOnToolsfalse suppresses only tool cache_control; supportsLongCacheRetentionfalse retains ephemeral markers but omits1h TTL; true/default and Disabled controls obey their branches
 **Dependencies**: ["B22"]
-**Verification union**: sourceplain default markers,explicitfalse tools,explicitfalse TTL,independent combinations,true defaults,requestDisabled,owned x-opi generic opt-out,inline tool changes last initial-tool marker; full-source conjunction and applicable final workspace gates.
+**Verification union**: sourceplain default markers,explicitfalse tools,explicitfalse TTL,independent combinations,true defaults,requestDisabled,owned x-opi generic opt-out,inline tool changes last initial-tool marker; applicable checks for the implemented branch and changed targets.
+
+**Downstream final-source proof**: C009 requires all B22-B27 predicates after all six local branches pass. Final workspace gates and B91/B17/B95/B92 integration/package/native proof remain mandatory at those declared owners. No descendant gates this local branch.
 
 #### Fix B23.1: anthropic.cache-marker-compat
 
@@ -606,7 +620,9 @@ This content is to integrate under the current changelog style during the owning
 
 **Closure predicate**: Exact full nonempty sessionId uses x-session-affinity when enabled/defaultformat, x-session-id for explicit/inferredOpenRouter, explicitfalse/no id emits neither, model/caller headers and null tombstones preserve source precedence
 **Dependencies**: ["B22"]
-**Verification union**: Fireworksexplicittrue,OpenRouterprovider,OpenRouterURLalias,explicitfalseoverride,explicitformatOpenRouter,empty/nosession,cacheDisabled,headeroverride/tombstone,OAuthbranch; full-source conjunction and applicable final workspace gates.
+**Verification union**: Fireworksexplicittrue,OpenRouterprovider,OpenRouterURLalias,explicitfalseoverride,explicitformatOpenRouter,empty/nosession,cacheDisabled,headeroverride/tombstone,OAuthbranch; applicable checks for the implemented branch and changed targets.
+
+**Downstream final-source proof**: C009 requires all B22-B27 predicates after all six local branches pass. Final workspace gates and B91/B17/B95/B92 integration/package/native proof remain mandatory at those declared owners. No descendant gates this local branch.
 
 #### Fix B24.1: anthropic.affinity-headers
 
@@ -625,7 +641,9 @@ This content is to integrate under the current changelog style during the owning
 
 **Closure predicate**: Sameidentity nonblank thinking with missing/empty/whitespace signature becomes thinking with signatureempty iff flagtrue, otherwise text; real nonblank signature/redacted payload stay unchanged; crossidentity discard and blankunsigned behavior remain source-consistent
 **Dependencies**: ["B22"]
-**Verification union**: true/false x None/empty/whitespace/nonblank signature x blank/nonblankthinking,redacted,crossidentity; full-source conjunction and applicable final workspace gates.
+**Verification union**: true/false x None/empty/whitespace/nonblank signature x blank/nonblankthinking,redacted,crossidentity; applicable checks for the implemented branch and changed targets.
+
+**Downstream final-source proof**: C009 requires all B22-B27 predicates after all six local branches pass. Final workspace gates and B91/B17/B95/B92 integration/package/native proof remain mandatory at those declared owners. No descendant gates this local branch.
 
 #### Fix B25.1: anthropic.empty-signature-replay
 
@@ -644,7 +662,9 @@ This content is to integrate under the current changelog style during the owning
 
 **Closure predicate**: For flagged model with thinkingnotdisabled, sameprovider+exactAnthropicMessageswire historical supported effort markers precede corresponding assistant turns and current effort marker ends transcript; wire adaptive block_binding drop_block/output_confighigh/bothbetas and terminal provider_thinking_level match source; disabled/unflagged controls omit managed sequence
 **Dependencies**: ["B22"]
-**Verification union**: activecurrenteffort,omittedhigh,historicalsameprovider,differentprovider/unsupportedhistorical,nohistory,explicitoffallowed/offnull,unflagged,tempomission,replyStart/Done/failurestamp; full-source conjunction and applicable final workspace gates.
+**Verification union**: activecurrenteffort,omittedhigh,historicalsameprovider,differentprovider/unsupportedhistorical,nohistory,explicitoffallowed/offnull,unflagged,tempomission,replyStart/Done/failurestamp; applicable checks for the implemented branch and changed targets.
+
+**Downstream final-source proof**: C009 requires all B22-B27 predicates after all six local branches pass. Final workspace gates and B91/B17/B95/B92 integration/package/native proof remain mandatory at those declared owners. No descendant gates this local branch.
 
 #### Fix B26.1: anthropic.mid-conversation-effort
 
@@ -663,7 +683,9 @@ This content is to integrate under the current changelog style during the owning
 
 **Closure predicate**: Nonempty allowed list emits ordered modelonly fallbacks and exactbeta; absent/empty omitsboth. Leading fallback marker is accepted without fakecontent, later output retains requested model and reportedresponseModel, midoutputfallback returns typed StreamError with canonicalpartial. Local cost resolution selects only matching sameprovider+responseModel allowed rates and otherwise original model rates.
 **Dependencies**: ["B22"]
-**Verification union**: absent/empty/1/3targets,>3reject,missingprovider/model/costreject,orderedmodelonlypayload,beta,leadingmarkerthenoutput,midoutputtypedfailure+partial,reportedallowedmodelcost,sameidcost,unlisted/crossproviderfallbackcostbase,tiers/cachewrite1h,unknownprice/usageNone; full-source conjunction and applicable final workspace gates.
+**Verification union**: absent/empty/1/3targets,>3reject,missingprovider/model/costreject,orderedmodelonlypayload,beta,leadingmarkerthenoutput,midoutputtypedfailure+partial,reportedallowedmodelcost,sameidcost,unlisted/crossproviderfallbackcostbase,tiers/cachewrite1h,unknownprice/usageNone; applicable checks for the implemented branch and changed targets.
+
+**Downstream final-source proof**: C009 requires all B22-B27 predicates after all six local branches pass. Final workspace gates and B91/B17/B95/B92 integration/package/native proof remain mandatory at those declared owners. No descendant gates this local branch.
 
 #### Fix B27.1: anthropic.server-fallback
 
@@ -728,7 +750,7 @@ Exact future cases and controls:
 ### Batch B30: preserve optional sampling map presence
 
 **Closure predicate**: Absent and explicit empty optional sampling maps remain distinguishable through public model/request values, owned store/reopen, and the base < effective-level < request shallow merge, without changing supported-wire application policy.
-**Dependencies**: []
+**Dependencies**: ["B15"]
 **Verification union**: cargo test -p opi-ai --test model_wire_metadata --test catalog_lifecycle --test openai_chat_fixtures --test request_enrichment --offline --locked; applicable final workspace gates and exact changed targets; documentation and whitespace checks.
 
 #### Fix B30.1: preserve optional sampling map presence
@@ -1309,7 +1331,7 @@ For new test-only cases, first execute on the committed baseline. A failure does
 ### Batch B46: verify p20-v-01 finite source cases
 
 **Closure predicate**: The finite selection_frozen_four_entries source cases produce exactly the registered results and side-effect counts below; typed invalid-input controls fail before the stated later boundary.
-**Dependencies**: ["B22", "B23", "B24", "B25", "B26", "B27", "B08"]
+**Dependencies**: ["B08", "B22", "B23", "B24", "B25", "B26", "B27"]
 **Verification union**: python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test model_wire_metadata --offline --locked -- --test-threads=1; python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test provider_collection --offline --locked -- --test-threads=1; run every created or modified target/filter and affected-target clippy; final workspace/doc/whitespace union applies.
 
 #### Fix B46.1: verify p20-v-01 finite source cases
@@ -1338,7 +1360,7 @@ This batch owns only the named additional test portion. Referenced C017/package/
 ### Batch B47: verify p20-v-26 finite source cases
 
 **Closure predicate**: The finite typed_nonchat_effects source cases produce exactly the registered results and side-effect counts below; typed invalid-input controls fail before the stated later boundary.
-**Dependencies**: ["B19", "B10", "B11"]
+**Dependencies**: ["B10", "B11", "B19"]
 **Verification union**: python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test classifier_contract --offline --locked -- --test-threads=1; python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test external_sdk --offline --locked -- --test-threads=1; run every created or modified target/filter and affected-target clippy; final workspace/doc/whitespace union applies.
 
 #### Fix B47.1: verify p20-v-26 finite source cases
@@ -2559,7 +2581,7 @@ Existing SDK annex159/163 already mandates this metadata meaning; concrete Rust 
 ### Batch B48: verify Radius empty refresh persistence
 
 **Closure predicate**: The finite radius_empty_reopen source cases produce exactly the registered results and side-effect counts below; typed invalid-input controls fail before the stated later boundary.
-**Dependencies**: ["B20", "B22", "B23", "B24", "B25", "B26", "B27", "B32"]
+**Dependencies**: ["B22", "B23", "B24", "B25", "B26", "B27", "B32", "B20"]
 **Verification union**: python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test catalog_artifact --offline --locked -- --test-threads=1; python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test catalog_lifecycle --offline --locked -- --test-threads=1; run every created or modified target/filter and affected-target clippy; final workspace/doc/whitespace union applies.
 
 #### Fix B48.1: verify Radius empty refresh persistence
@@ -2590,7 +2612,7 @@ Only the authoritative populated→empty→failed refresh→reopen no-resurrecti
 ### Batch B49: verify p20-sdk-core-027 finite source cases
 
 **Closure predicate**: The finite owned_model_full_roundtrip source cases produce exactly the registered results and side-effect counts below; typed invalid-input controls fail before the stated later boundary.
-**Dependencies**: ["B20", "B22", "B23", "B24", "B25", "B26", "B27", "B30"]
+**Dependencies**: ["B22", "B23", "B24", "B25", "B26", "B27", "B30", "B20"]
 **Verification union**: python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test catalog_operations --offline --locked -- --test-threads=1; python scripts/opi-cargo-cache.py run --target <persistent-target> -- test -p opi-ai --test model_wire_metadata --offline --locked -- --test-threads=1; run every created or modified target/filter and affected-target clippy; final workspace/doc/whitespace union applies.
 
 #### Fix B49.1: verify p20-sdk-core-027 finite source cases
@@ -2704,7 +2726,7 @@ The path-by-path inventory and baseline hashes are `affected-inputs.json`. Produ
 - Run every changed integration target: opi-ai `auth_contracts`, `builtin_auth_ownership`, `oauth_flows`, `oauth_store_integration`, `provider_collection`; opi-coding-agent `credential_store`, `doctor_cli`, `github_copilot_provider`, `list_models`, `oauth_auth`; owning lib tests. Also retain/run `interactive_auth` as a legacy-v1 reader seam.
 - Cross-crate/API/durable-format union: cargo fmt --check --all; cargo clippy --workspace --all-targets -- -D warnings; cargo test --workspace --all-targets; cargo test --workspace --doc; RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps; python scripts/opi-doc-check.py; git diff --check. The workspace all-targets run satisfies the listed modified targets when logs confirm execution; do not duplicate them without a new failure or edit.
 
-The behavioral analysis edited no product code. The separately authorized workflow/ledger maintenance is now committed as the prerequisite recorded above. All probes point to the immutable committed export; use a fresh apply source binding for green and preserve probe test/input identities.
+The original lifetime behavioral analysis edited no product code. Its separately authorized workflow/ledger prerequisite remains preserved; the current baseline additionally contains only the later authorized B01 correction. All probes point to the immutable committed export; use a fresh apply source binding for green and preserve probe test/input identities.
 
 ### Batch B56: verify p20-sdk-auth-027 finite source cases
 
@@ -2739,7 +2761,9 @@ This batch owns only the named additional test portion. Referenced C017/package/
 
 **Closure predicate**: The selected stored-OAuth owner receives the exact optional minimum, applies max300s before refresh and (only when explicitly present, including zero) after ACK, treats equality as insufficient, preserves rotated tokens and source identity, and retains default None short-TTL behavior without affecting other auth sources.
 **Dependencies**: ["B21"]
-**Verification union**: oauth_store_integration/auth_contracts plus product oauth_auth/credential_store; private exact floor/ACK/expiry unit table; every modified test binary; actual B17/B95 package consumers; applicable workspace fmt/clippy/all-targets/doc-test/rustdoc/doc/diff.
+**Verification union**: oauth_store_integration/auth_contracts plus product oauth_auth/credential_store; private exact floor/ACK/expiry unit table; every modified test binary; applicable workspace fmt/clippy/all-targets/doc-test/rustdoc/doc/diff.
+
+**Downstream final-source proof**: Actual B17/B95 package consumers and B92 native execution are mandatory later C018 conjuncts. They do not gate B98 because those package owners depend on this runtime/input correction.
 
 #### Fix B98.1: expose the registered optional OAuth minimum validity
 
@@ -2752,7 +2776,7 @@ This batch owns only the named additional test portion. Referenced C017/package/
 - **Change**: Add Option<Duration> to AuthResolutionOverrides and the existing AuthResolver method, synchronize its exact caller inventory, and apply the source-prescribed floor under the existing mutation/ACK owner.
 - **Closure predicate**: The selected stored-OAuth owner receives the exact optional minimum, applies max300s before refresh and (only when explicitly present, including zero) after ACK, treats equality as insufficient, preserves rotated tokens and source identity, and retains default None short-TTL behavior without affecting other auth sources.
 - **Red-before**: Explicit user-confirmed static missing-input baseline, not a runtime FAIL: current public option/trait/store paths cannot express the registered input. Exact source/absence receipt `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-plan-jqdki4yk\c018-d5-minimum-validity-static-receipt.json` SHA256 `e5cb4b1cf4ac2e43f3e0d2b18e436617a5868adab10ef1f5b2008fe406630bc5` and54path caller inventory are retained. User accepted only this input's static baseline with all future behavior checks mandatory. No compiler failure or default120s valid result is relabeled red. Other C018 behavioral roots retain their actual observed red.
-- **Green-after**: Exact None/Some0/Some120/Some600/MAX and -1/0/299/300/301/599/600/601 expiry table; selected get_auth/direct resolver/product bridge through shared-store mutation/refresh/ACK; all modified/public/package/native tests -> The selected stored-OAuth owner receives the exact optional minimum, applies max300s before refresh and (only when explicitly present, including zero) after ACK, treats equality as insufficient, preserves rotated tokens and source identity, and retains default None short-TTL behavior without affecting other auth sources. Observed:not-run.
+- **Green-after**: Exact None/Some0/Some120/Some600/MAX and -1/0/299/300/301/599/600/601 expiry table; selected get_auth/direct resolver/product bridge through shared-store mutation/refresh/ACK; all modified public owning tests and applicable workspace checks -> The selected stored-OAuth owner receives the exact optional minimum, applies max300s before refresh and (only when explicitly present, including zero) after ACK, treats equality as insufficient, preserves rotated tokens and source identity, and retains default None short-TTL behavior without affecting other auth sources. Observed:not-run.
 - **Test impact**: add named floor/state/ACK/source-scope assertions; update exact trait/caller fixture signatures; retain default120s/secret/cancel/account/mutation controls; delete none.
 
 The user explicitly instructed “接受仅此输入的静态基线方案” after reviewing the complete design, absence proof and unchanged runtime acceptance obligation. This instruction supplies the narrowly bounded plan-level baseline classification for an unrepresentable new input. It does not apply to another source or ordinary runtime defect and does not change the general validator or active audit records. At apply, new-input behavior tests precede production implementation; compile-time setup failures remain setup, not fabricated behavioral evidence. Source closure requires every assigned runtime predicate, including this one, to execute successfully.
@@ -3066,7 +3090,9 @@ Exact assembled-test ownership: changes to external_sdk.rs are additional assert
 
 **Closure predicate**: Every canonical-route public event/terminal/partial result retains the selected outer provider identity; inner wire endpoint/model/auth/callback semantics and frozen old/new registration remain unchanged.
 **Dependencies**: ["B98"]
-**Verification union**: cargo test -p opi-ai --test provider_collection --offline --locked; cargo test -p opi-ai --test chat_pi_messages --offline --locked; rerun exact sealed external radius_seams binary after authorized repair; required runtime/source-public-API verification union and package consumer; all changed targets and applicable workspace fmt/clippy/all-targets/doc-test/rustdoc; doc and diff checks.
+**Verification union**: cargo test -p opi-ai --test provider_collection --offline --locked; cargo test -p opi-ai --test chat_pi_messages --offline --locked; rerun exact sealed external radius_seams binary after authorized repair; required runtime/source-public-API verification union; all changed targets and applicable workspace fmt/clippy/all-targets/doc-test/rustdoc; doc and diff checks.
+
+**Downstream final-source proof**: B17/B95 execute the final-artifact public consumers; B92 executes their native matrix. They remain mandatory later C018 conjuncts, after local route-identity/public/workspace checks.
 
 #### Fix B96.1: propagate canonical route identity through neutral output
 
@@ -3078,7 +3104,7 @@ Exact assembled-test ownership: changes to external_sdk.rs are additional assert
 - **Change**: Apply only the selected source-preserving root below; retain explicit transport/identity authority and all existing valid-input controls.
 - **Closure predicate**: Every canonical-route public event/terminal/partial result retains the selected outer provider identity; inner wire endpoint/model/auth/callback semantics and frozen old/new registration remain unchanged.
 - **Red-before**: FAIL: python scripts/opi-cargo-cache.py run --target E:\opi\cargo-targets\opi-72fa37a0fa044958 -- test --manifest-path C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-plan-jqdki4yk\c018-d5-seams-probe\Cargo.toml --offline --locked --test radius_seams -- --nocapture;build succeeded,3tests2passed/1failed/0ignored,wrapper exit1. Existing canonical_route accepts custom id/empty records, register_route retains profile name, both old/new requests reach their exact frozen gateways and Stop/id/model checks pass, but returned provider is radius instead of radius-owned. Receipt `C:\Users\Luiz\AppData\Local\Temp\opi-phase20-remediate-plan-jqdki4yk\c018-d5-radius-seams-receipt.json` SHA256 `c1c455f9c7e4c9853fb4c35d5d03d7cb3b6299dfc9ec514c40c73d69c0929703`.
-- **Green-after**: cargo test -p opi-ai --test provider_collection --offline --locked; cargo test -p opi-ai --test chat_pi_messages --offline --locked; rerun exact sealed external radius_seams binary after authorized repair; required runtime/source-public-API verification union and package consumer -> Every canonical-route public event/terminal/partial result retains the selected outer provider identity; inner wire endpoint/model/auth/callback semantics and frozen old/new registration remain unchanged. Observed:not-run.
+- **Green-after**: cargo test -p opi-ai --test provider_collection --offline --locked; cargo test -p opi-ai --test chat_pi_messages --offline --locked; rerun exact sealed external radius_seams binary after authorized repair; required runtime/source-public-API verification union -> Every canonical-route public event/terminal/partial result retains the selected outer provider identity; inner wire endpoint/model/auth/callback semantics and frozen old/new registration remain unchanged. Observed:not-run.
 - **Test impact**: add the named discriminating cases; update exact mechanical API callers; retain valid-source/typed-failure/secret/cancel controls; delete only implementation made unused by this exact replacement.
 
 ```json
@@ -3178,7 +3204,9 @@ Exact assembled-test ownership: changes to external_sdk.rs are additional assert
 
 **Closure predicate**: The controlled HttpClient path hands every byte after a successful CONNECT head to the next protocol owner exactly once; proxy and target TLS remain correctly scoped, with the same frozen source configuration, pool ownership, typed failure, redirects/retry/cancellation and ordinary upstream HTTP acceptance profile.
 **Dependencies**: ["B02", "B98"]
-**Verification union**: original public CONNECT negative schedules plus HTTP/proxy/TLS/WS integration targets; all synchronized HTTP/OAuth/ADC/AWS/public SDK caller targets; B91 actual ordinary/union families; B17/B95 external public consumers; B92native1.97.1; all changed targets and applicable workspace fmt/clippy/all-targets/doc-test/rustdoc; doc and diff checks.
+**Verification union**: original public CONNECT negative schedules plus HTTP/proxy/TLS/WS integration targets; all synchronized HTTP/OAuth/ADC/AWS/public SDK caller targets; all changed targets and applicable workspace fmt/clippy/all-targets/doc-test/rustdoc; doc and diff checks.
+
+**Downstream final-source proof**: B91 ordinary/feature-union families, B17/B95 final public consumers and B92 native rustc1.97.1 execution remain mandatory C018 conjuncts. Actual receipts are required before source/result closure. They do not gate B99 because B91 and its descendants depend on this transport correction.
 
 #### Fix B99.1: preserve CONNECT overread in one owned HTTP transport
 
@@ -3190,7 +3218,7 @@ Exact assembled-test ownership: changes to external_sdk.rs are additional assert
 - **Change**: Apply only the selected source-preserving root below; retain explicit transport/identity authority and all existing valid-input controls.
 - **Closure predicate**: The controlled HttpClient path hands every byte after a successful CONNECT head to the next protocol owner exactly once; proxy and target TLS remain correctly scoped, with the same frozen source configuration, pool ownership, typed failure, redirects/retry/cancellation and ordinary upstream HTTP acceptance profile.
 - **Red-before**: FAIL: original actual HttpClient coalesced CONNECT200+TLS-alert red remains1executed/1failed/0ignored,exit101. It proves suffix handoff/error-owner discrimination, not normal TLS negotiation; control read only ClientHello first-byte synchronization. Exact qualification `C:\Users\Luiz\AppData\Local\Temp\opi-http005-protocol-qualification-0uw_lin0\qualification.json` SHA256 `f02f852dcb8f6436b6e3cc7579574186364510bb36b92a92a40cea75d09661bf`; original receipt retained. Public API composition compile-only check passes with258exact registry identities;0network/0behavioral tests, not claimed green.
-- **Green-after**: original public CONNECT negative schedules plus HTTP/proxy/TLS/WS integration targets; all synchronized HTTP/OAuth/ADC/AWS/public SDK caller targets; B91 actual ordinary/union families; B17/B95 external public consumers; B92native1.97.1 -> The controlled HttpClient path hands every byte after a successful CONNECT head to the next protocol owner exactly once; proxy and target TLS remain correctly scoped, with the same frozen source configuration, pool ownership, typed failure, redirects/retry/cancellation and ordinary upstream HTTP acceptance profile. Observed:not-run.
+- **Green-after**: original public CONNECT negative schedules plus HTTP/proxy/TLS/WS integration targets; all synchronized HTTP/OAuth/ADC/AWS/public SDK caller targets -> The controlled HttpClient path hands every byte after a successful CONNECT head to the next protocol owner exactly once; proxy and target TLS remain correctly scoped, with the same frozen source configuration, pool ownership, typed failure, redirects/retry/cancellation and ordinary upstream HTTP acceptance profile. Observed:not-run.
 - **Test impact**: add the named discriminating cases; update exact mechanical API callers; retain valid-source/typed-failure/secret/cancel controls; delete only implementation made unused by this exact replacement.
 
 Selected root and complete bounded API/caller/ownership/provenance design:
@@ -3444,7 +3472,7 @@ The target-qualified helper result sets no_proxy=None after applying the pinned 
 ### Batch B91: require complete named extracted package conformance
 
 **Closure predicate**: Actual Cargo-produced extracted opi-ai resources and fresh ordinary/feature-union consumers execute every declared named Schema/HTTP/crypto/WS/README case with correct semantic results; private and public test corpora are separately counted, exact-case complete and zero-ignored, with source/graph/native identities.
-**Dependencies**: ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B19", "B22", "B23", "B24", "B25", "B26", "B27", "B28", "B29", "B30", "B31", "B32", "B33", "B34", "B35", "B36", "B37", "B38", "B39", "B40", "B41", "B42", "B43", "B44", "B45", "B46", "B47", "B50", "B51", "B52", "B53", "B54", "B55", "B57", "B58", "B59", "B60", "B61", "B62", "B63", "B64", "B65", "B66", "B67", "B68", "B69", "B70", "B71", "B72", "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B82", "B83", "B84", "B85", "B86", "B87", "B88", "B89", "B18", "B20", "B48", "B49", "B21", "B56", "B90", "B94", "B96", "B97", "B99", "B98"]
+**Dependencies**: ["B13", "B02", "B14", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B15", "B16", "B19", "B22", "B23", "B24", "B25", "B26", "B27", "B29", "B30", "B32", "B33", "B34", "B35", "B36", "B37", "B38", "B39", "B40", "B41", "B42", "B43", "B44", "B45", "B46", "B47", "B50", "B51", "B52", "B53", "B54", "B55", "B57", "B58", "B59", "B60", "B61", "B63", "B64", "B65", "B66", "B67", "B68", "B69", "B70", "B71", "B72", "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B82", "B83", "B84", "B85", "B86", "B87", "B88", "B89", "B90", "B94", "B18", "B20", "B48", "B49", "B21", "B56", "B98", "B31", "B62", "B96", "B99", "B28", "B97"]
 **Verification union**: python -m unittest discover -s scripts/pi-sdk-conformance -p test_*.py -v; real negative CLI/subprocess wrong-package,missing/extra/duplicate/ignored/filtered/failedJSON exit0/source-drift cases; run_early_package_proof --scratch <fresh> --target-dir <selected> --cache-workspace <owner>; package_slice --family http|crypto|ws --offline --scratch <fresh-each> --target-dir <selected> --cache-workspace <owner>; run_readme_examples --offline --scratch <fresh> --target-dir <selected> --cache-workspace <owner>; actual expected schema73+finitecases/profile,http6/profile,crypto6/profile,ws10/profile,README3flows; owning changed targets/clippy/doc/diff
 
 #### Fix B91.1: require complete named extracted package conformance
@@ -3463,7 +3491,7 @@ The target-qualified helper result sets no_proxy=None after applying the pinned 
 ### Batch B17: execute assembled sdk matrix from extracted package
 
 **Closure predicate**: The actual locally packaged opi-ai artifact is the only Opi runtime dependency of a fresh outside-workspace ordinary default-feature consumer. Its exact copied assembled test source discovers all19 named cases and executes every one with 1passed,0failed,0ignored; every public-boundary predicate below holds. Metadata, resolved graph/checksums/features, packaged source/resource hashes, executable identity, raw logs and original exit codes bind evidence to the candidate source. Missing, filtered, ignored, extra, compile-only, substituted-package or product-dependent runs are rejected.
-**Dependencies**: ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B19", "B22", "B23", "B24", "B25", "B26", "B27", "B18", "B20", "B21", "B28", "B29", "B30", "B31", "B32", "B33", "B34", "B35", "B36", "B37", "B38", "B39", "B40", "B41", "B42", "B43", "B44", "B45", "B46", "B47", "B48", "B49", "B50", "B51", "B52", "B53", "B54", "B55", "B56", "B57", "B58", "B59", "B60", "B61", "B62", "B63", "B64", "B65", "B66", "B67", "B68", "B69", "B70", "B71", "B72", "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B82", "B83", "B84", "B85", "B86", "B87", "B88", "B89", "B90", "B91"]
+**Dependencies**: ["B13", "B02", "B14", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B15", "B16", "B19", "B22", "B23", "B24", "B25", "B26", "B27", "B29", "B30", "B32", "B33", "B34", "B35", "B36", "B37", "B38", "B39", "B40", "B41", "B42", "B43", "B44", "B45", "B46", "B47", "B50", "B51", "B52", "B53", "B54", "B55", "B57", "B58", "B59", "B60", "B61", "B63", "B64", "B65", "B66", "B67", "B68", "B69", "B70", "B71", "B72", "B73", "B74", "B75", "B76", "B77", "B78", "B79", "B80", "B81", "B82", "B83", "B84", "B85", "B86", "B87", "B88", "B89", "B90", "B18", "B20", "B48", "B49", "B21", "B56", "B31", "B62", "B28", "B91"]
 **Verification union**: python -m unittest discover -s scripts/pi-sdk-conformance -p test_external_sdk.py -v: accept exact case list and all19 individual successes; reject missing/duplicate/extra names, exit101, zero executed, ignored1, filtered-all, no execution log, multiple/wrong executable artifacts, wrong SDK manifest, extra opi-* runtime crate, path/git/patch/replace dependency, source test byte drift, private include, reused/in-repo scratch.; CLI negative: python scripts/pi-sdk-conformance/run_external_sdk.py --scratch <new-external-negative-path> --target-dir <selected-cache> (omit --offline); assert nonzero argparse exit and no Cargo/no scratch creation.; CLI positive: python scripts/pi-sdk-conformance/run_external_sdk.py --offline --scratch <fresh-external-source-bound-run> --target-dir <selected-cache>; require19/19 executed pass and external-sdk-proof.json identity check.; Representative wrong-package subprocess negative: call the same runner check_consumer_graph through a fresh interpreter with otherwise valid synthetic metadata but opi-ai manifest_path pointed to workspace/crates/opi-ai; require rejection. Do not mutate real source or run synthetic metadata as product proof.; cargo test -p opi-ai --test external_sdk --offline --locked; cargo clippy -p opi-ai --test external_sdk --offline --locked -- -D warnings; cargo fmt --check --all; python scripts/opi-doc-check.py; git diff --check.
 
 #### Fix B17.1: execute assembled sdk matrix from extracted package
@@ -3536,7 +3564,7 @@ B17 owns creation of run_external_sdk.py/test_external_sdk.py and wiring the opt
 ### Batch B95: execute the public SDK fixture corpus from the actual package
 
 **Closure predicate**: A fresh ordinary workspace-external consumer of the actual opi-ai .crate compiles and executes every declared public SDK fixture target with exact sealed source/helper/resource/test names and zero ignored/filtered/failed cases; opi-ai is its only Opi runtime dependency, and published profile/OAuth/nonchat/callback/failure/cancellation behavior is observed through public callers rather than enumeration alone.
-**Dependencies**: ["B17", "B91"]
+**Dependencies**: ["B91", "B17"]
 **Verification union**: python -m unittest discover -s scripts/pi-sdk-conformance -p test_public_sdk.py -v; actual run_public_sdk --offline --scratch <fresh> --target-dir <selected> --cache-workspace <owner>; exact-target/list/graph/source/failedJSON CLI negatives; all copied test binaries execute; affected-target clippy/doc/diff.
 
 #### Fix B95.1: execute the public SDK fixture corpus from the actual package
@@ -3639,7 +3667,7 @@ The explicit final public target set is71current targets plus3planned additions 
 ### Batch B92: execute exact MSRV package proof on three native hosts
 
 **Closure predicate**: Native Linux/macOS/Windows each execute the complete selected package/profile/behavior matrix at rustc1.97.1 using actual candidate source and artifact identities; reports contain all raw commands/exits/named counts/graph/native provenance and cannot pass from config,cross-check or mocked Cargo.
-**Dependencies**: ["B17", "B91", "B95"]
+**Dependencies**: ["B91", "B17", "B95"]
 **Verification union**: python -m unittest discover -s scripts/pi-sdk-conformance -p test_native_package_matrix.py -v with wronghost/wrongtoolchain/missingprofile/missingnative/failedJSON/sourceartifactmismatch negatives; actual run_native_package_matrix --offline --scratch <fresh> --target-dir <selected> --cache-workspace <owner> on each native host; exact1.97.1 workspace behavior gates and all B91/B17 package profiles; owning native CI run/artifact/log identities required before result closure
 
 #### Fix B92.1: execute exact MSRV package proof on three native hosts
@@ -3678,9 +3706,9 @@ The native orchestration executes B95 ordinary public fixture corpus as well as 
 
 ## Final Verification
 
-Actual outgoing change is authorized workflow validator/test maintenance plus canonical documentation/changelog and fixed plan metadata, with no Rust product repair: `python scripts/opi-doc-check.py`, `git diff --check`, active-set/dispositions/plan validators, and final separate staged/unstaged/untracked inventory. Committed prerequisite=`68e276822185346db0bf57e31175dcac599ef7c7` contains only the authorized workflow/ledger/changelog maintenance; the owned fixed plan pair is resealed against it for a subsequent plan-only commit. No branch, PR, push or product task was requested. English/Chinese product counterparts remain untouched; these fixed assurance filenames are the workflow’s single machine-bound plan pair, with no localized sibling defined.
+This replanning changes only the fixed plan pair after separately authorized B01 commit `2eee4afebc911482d969ead8452115a4a7f9592d`. Check current-set/dispositions/plan bindings, source/criterion identities and executable dependency/proof-owner graph, `python scripts/opi-doc-check.py`, `git diff --check`, and separate staged/unstaged/untracked inventory. B01 has exact tested-source/commit association; no other production repair, result or ledger write is made by replanning. The machine-bound assurance pair has no localized sibling; future product README changes remain paired.
 
-The future verification union (not claimed executed in this planning run) is selected from all admitted change surfaces: focused changed test binaries and actual public/wire regression cases above; owning script unit plus CLI/subprocess negatives and actual package consumer for B17; affected-target clippy; bilingual doc check. Because B04 crosses SDK/Agent/product consumers, the applicable final workspace gates are:
+The future verification union (all remaining planned repair green remains not-run; current baseline probes are separately observed) is selected from all admitted change surfaces: focused changed test binaries and actual public/wire regression cases above; owning script unit plus CLI/subprocess negatives and actual package consumer for B17; affected-target clippy; bilingual doc check. Retain C001 no-action checks through `builtin_auth_ownership`, `builtin_scoped_env`, `auth_contracts` and `oauth_store_integration` without promoting broader linked criteria. Because B04 crosses SDK/Agent/product consumers, the applicable final workspace gates are:
 
 ```text
 cargo fmt --check --all
@@ -3696,6 +3724,8 @@ Use native shell environment syntax for RUSTDOCFLAGS and the selected persistent
 
 ## Exclusions and Retained Verification
 
+C001 has current-head no-action status after independently verified authorized B01 repair; original Major impact, audit observations and linked requirement states remain unchanged. Retain its wire/suite checks and all broader source/package/native obligations.
+
 | Source run / Finding ID | Disposition | Current conclusion and retained observation | Remaining obligation / final administrative check |
 |---|---|---|---|
 
@@ -3704,7 +3734,7 @@ Use native shell environment syntax for RUSTDOCFLAGS and the selected persistent
 | P006 / P20-AUD-006 | no-action:reconciled-by-explicit-opi-implement-owner | Confirmed / Minor; Retain original Minor and Confirmed verification. Explicitly authorized opi-implement P0/P2/P4 then confirm-all/write-only installed the live source binding:16/16current hashes match. Historical Phase20 snapshot/source identity and68summary entries remain immutable, as required; their old source hash is not a live drift repair target. | Final administrative owner-receipt preservation check only; no remaining planning obligation. |
 
 
-No source key is dropped, duplicated or treated as historically closed. P006 is an explicit administrative exclusion with completed owner reconciliation and receipt preservation. C016 is an exact duplicate-observation administrative exclusion, with its final three checks still required. All planning decisions are resolved. Only a new explicit apply invocation of this READY plan and its emitted digest can admit production work; the whole source closure conjunction remains mandatory.
+No source key is dropped, duplicated or treated as historically closed. C001 refutes only present implementation-defect applicability after fresh verification, not its historical observation or linked requirements. P006 is an explicit administrative exclusion with completed owner reconciliation and receipt preservation. C016 is an exact duplicate-observation administrative exclusion, with its final three checks still required. All planning decisions are resolved. Only a new explicit apply invocation of this READY plan and its emitted digest can admit production work; the whole source closure conjunction remains mandatory.
 
 ## Exact Criterion Cross-reference Matrix
 
@@ -4003,7 +4033,7 @@ The final15-case compatibility fixture uses one extra test-only transitive fastr
 
 ### Authorized workflow maintenance and materialization boundary
 
-On2026-11-04 the user explicitly authorized the required ordered unique `closure_batches` design and synchronized validator/tests/docs, while declining `opi-implement plan`. The workflow files now implement the array contract; all fixed plan records use arrays. Audit member/index bytes and source requirement states remain unchanged. Current runtime proof still binds the immutable d053965 source export; no product remediation has been applied.
+On2026-11-04 the user explicitly authorized the required ordered unique `closure_batches` design and synchronized validator/tests/docs, while declining `opi-implement plan`. The workflow files now implement the array contract; all fixed plan records use arrays. Audit member/index bytes and source requirement states remain unchanged. At that original workflow-maintenance stage, runtime proof bound the immutable d053965 export and no product remediation had been applied. The present baseline additionally contains only authorized B01; current source/probe applicability is separately established above.
 
 The user subsequently authorized the commit. Workflow maintenance and the confirmed live ledger binding are committed in `68e276822185346db0bf57e31175dcac599ef7c7`. The fresh export/applicability receipt above fulfills the required remediation source rebinding. The original runtime export does not contain this maintenance, and workflow maintenance is not a source-drift/P.4 receipt. Failing original behavioral probes remain red evidence, not a claimed implementation result.
 
@@ -4011,11 +4041,11 @@ The user subsequently authorized the commit. Workflow maintenance and the confir
 
 The user explicitly authorized limited opi-implement plan, then confirmed P.4 draft fe8085f2a430e95169ffb78876851b821158c9f4b05dce56fd486ee3ebbf5311 and selected write-only. P.0/P.2 were READY; current contract bytes before the appended bilingual tally correction are unchanged.16registered live hashes now match;active tasks0,68historical summary rows and phase_exit/frozen snapshot preserved. Installed live ledger SHA256 `8ed820e0a10830b70f453eddc01e1700ffdb68458534febefa22e220bc53780b` is now committed in `68e276822185346db0bf57e31175dcac599ef7c7` after the later explicit user request. Owner receipt `C:\Users\Luiz\AppData\Local\Temp\opi-p20-ready-final-dp5e95fw\implement-source-reconciliation-receipt.json` SHA256 `8ba4e834fd798722f61eaccd3a0fb45dbfb58d9b9d90d9ddc175d9f883b5f365`. No current runtime/audit success is inferred from the old archive. Canonical ledger changes belong to opi-implement, never a remediation apply batch.
 
-Source baseline is now the fresh prerequisite-commit export described above. The explicit live owner receipt remains the historical write-only installation fact; the later user-authorized commit materializes those exact bytes without changing its graph or scope. Preserve the exact committed ledger bytes during apply. Any further non-plan commit requires another committed remediation export/binding.
+That earlier owner-reconciliation stage used its own prerequisite-commit export. The present remediation source baseline is2eee4af and its fresh archive described above. The explicit live owner receipt remains the historical write-only installation fact; the later user-authorized commit materializes those exact bytes without changing its graph or scope. Preserve the exact committed ledger bytes during apply. Any further non-plan commit requires another committed remediation export/binding.
 
 ### D5 continuation scope
 
-The complete156-row mapping and concrete candidate proof designs now appear below. Final repaired-byte green and later independent F1a remain future execution, with exact ownership preserved. Unresolved source/backend/input questions stay explicit; a test-only coverage candidate cannot grant conditional authority to change product semantics if it fails.
+The complete156-row mapping and concrete candidate proof designs now appear below. Final repaired-byte green and later independent F1a remain future execution, with exact ownership preserved. The selected source/backend/input choices below are sealed; a test-only coverage candidate grants no conditional authority to change product semantics if a new failure appears.
 
 ### Fixed Anthropic technical decision artifact
 
@@ -4374,7 +4404,7 @@ The following finite harness/collection roots are separate from every runtime co
 | `C:\Users\Luiz\AppData\Local\Temp\opi-ws023-instrumented-z20k2lui\probe-identities.json` | `fc24e122c55944b38402406d8c8e03179fd723cca1a6f20905464a9fe990cf67` | actual logical cancellation;1test1fail0ignored; cfgtestobserver only |
 | `C:\Users\Luiz\AppData\Local\Temp\opi-p20-ready-continuation-vx_jjsra\workflow-tests-final.log` | `5738bbc754287829c68f34d53fcf70c484e1ae7c54a2da09f93fad0f3a3124d3` | 173tests PASS,0failures,exit0,186.267s; current final workflow-script bytes |
 
-Test impact: maintenance add16regressions/update sharedfixtures/retain others/delete none; this continuation adds temporary probes and planned finite tests, with no repository Rust product edits. Canonical workflow docs have no Chinese sibling; product apply README/semantic changes require both languages. The active index and member bytes remain unchanged. Only the separately authorized live ledger source-binding installation and later user-authorized workflow/ledger prerequisite commit occurred; its source export is rebound above. No product task, apply result, branch, push, PR, release or CI-dispatch action occurred.
+Original continuation test impact: maintenance add16regressions/update sharedfixtures/retain others/delete none; that original continuation added temporary probes and planned finite tests without Rust product edits. The present baseline separately includes the authorized B01 correction. Canonical workflow docs have no Chinese sibling; product apply README/semantic changes require both languages. The active index and member bytes remain unchanged. At that original continuation stage only the separately authorized live ledger binding and workflow/ledger prerequisite commit had occurred. Later authorized B01 is accounted for in the current source baseline above. No complete apply result, branch, push, PR, release or CI-dispatch action is claimed.
 
 ### Final Codex WS timing source qualification
 
@@ -4386,7 +4416,7 @@ B29 now lists the private test-root module declaration; B31 source scope matches
 
 ### Current planning completion boundary
 
-D2 is resolved by exact source utility/assembly semantics and real ALL fallback red; Radius id/name is resolved by existing public seams and B96 neutral identity red; CONNECT has the selected ordinary public-API owner design and qualified negative red; D8 is completed under separately authorized opi-implement source review/graph/write-only authority. The user-confirmed B98 static input baseline resolves the last planning decision. All repaired-byte green remains not-run. No partial apply or fake compiler red is admitted.
+D2 is resolved by exact source utility/assembly semantics and real ALL fallback red; Radius id/name is resolved by existing public seams and B96 neutral identity red; CONNECT has the selected ordinary public-API owner design and qualified negative red; D8 is completed under separately authorized opi-implement source review/graph/write-only authority. The user-confirmed B98 static input baseline resolves the last planning decision. All remaining planned repair green remains not-run. No partial apply or fake compiler red is admitted.
 
 
 ## Accepted one-input baseline classification
@@ -4408,11 +4438,11 @@ The user explicitly accepted only P20-SDK-AUTH-006's static missing-input baseli
 
 ## Final sealing and materialization boundary
 
-The complete plan has99formal batches over the exact28finding strict union and156linked C018 criterion records. There are no pending decisions or remaining obligations. All original requirement states and findings/index identities are preserved. The only static input baseline is the explicit user acceptance for B98/SDK-AUTH-006; every other runtime repair retains actual red evidence and all new-input runtime green remains mandatory.
+The complete plan has98formal batches over the exact28finding strict union and156linked C018 criterion records. There are no pending decisions or remaining obligations. All original requirement states and findings/index identities are preserved. The only static input baseline is the explicit user acceptance for B98/SDK-AUTH-006; every other runtime repair retains actual red evidence and all new-input runtime green remains mandatory.
 
-The user has now authorized Git commits. The previously confirmed write-only canonical ledger installation and prior workflow maintenance are materialized in prerequisite commit `68e276822185346db0bf57e31175dcac599ef7c7`, whose exact fresh archive is the new remediation_head. Preserve those exact bytes. Source/library/build inputs used by baseline probes are unchanged, with exact applicability comparison above; original red evidence is not relabeled as newly executed. Any further commit outside the two fixed remediation-plan files requires a new source export and plan rebinding. A subsequent commit of only this exact fixed plan pair is admitted by the plan-only exception. No product task or remediation apply has run.
+The user explicitly authorized only verified B01 commit `2eee4afebc911482d969ead8452115a4a7f9592d`, now the current remediation source baseline. Preserve those exact bytes. Earlier workflow/ledger prerequisite68e2768 and original executions keep their own provenance, with current applicability separately qualified above. Any further non-plan commit requires fresh source export/rebinding; a subsequent commit of only this plan pair follows the plan-only exception. No remaining repair, push, PR, CI dispatch, Phase verdict or ledger update is authorized by this planning output.
 
-Current outgoing edits are only the fixed plan pair, following the committed workflow maintenance and separately owned live source ledger update. Test impact: workflow add16/update fixtures/retain others/delete none (173tests passed on unchanged workflow script bytes); owner metadata none; temporary probes add; repository Rust tests none in plan mode. Future apply tests and0.x/public caller changes are enumerated per batch. Final plan checks are audit-set,dispositions,plan,live ledger guard,source/criterion identity checks,doc checker and git diff --check.
+Current outgoing edits are only the fixed plan pair, following authorized B01 and the preserved earlier workflow/live-source ledger maintenance. Test impact: workflow add16/update fixtures/retain others/delete none (173tests passed on unchanged workflow script bytes); owner metadata none; temporary probes add; repository Rust tests none in plan mode. Future apply tests and0.x/public caller changes are enumerated per batch. Final plan checks are audit-set,dispositions,plan,live ledger guard,source/criterion identity checks,doc checker and git diff --check.
 
 Final no-network public API composition receipt: `C:\Users\Luiz\AppData\Local\Temp\opi-p20-ready-final-dp5e95fw\transport-typecheck-final-receipt.json` SHA256 `711f22da0ca642dae4713a5b83a008eea9606f074101b034168dbddacfe7d4b5`. It records zero behavior tests and is not a repaired green. The optional local CONNECT prototype sub-agent was stopped by automatic content checking; the selected route instead has qualified existing red, locked-source proof and no-network type evidence, with actual wire behavior still required at apply.
 
