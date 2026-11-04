@@ -490,6 +490,105 @@ async fn custom_image_survives_store_and_flow_rebinding_while_builtin_chat_updat
 async fn custom_classifier_survives_store_and_flow_rebinding_while_builtin_chat_updates() {
     exercise("classifier").await
 }
+
+struct AmbientGroqKey;
+impl AuthContext for AmbientGroqKey {
+    fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+        Ok((name == "GROQ_API_KEY").then(|| "synthetic-ambient".into()))
+    }
+    fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+        Ok(false)
+    }
+}
+
+async fn groq_scoped_candidate(
+    scoped: Option<&str>,
+    key: Option<&str>,
+) -> (bool, Vec<wiremock::Request>) {
+    use opi_ai::credential::ApiKeyCredential;
+    use secrecy::SecretString;
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(
+            "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+        ))
+        .mount(&server)
+        .await;
+    let mut models = Models::new();
+    if scoped.is_some() || key.is_some() {
+        let credentials = Arc::new(InMemoryCredentialStore::new());
+        let env = scoped
+            .map(|value| [("GROQ_API_KEY".into(), SecretString::from(value))].into())
+            .unwrap_or_default();
+        credentials
+            .write(
+                "groq",
+                &Credential::ApiKey(ApiKeyCredential::new(key.map(SecretString::from), env)),
+            )
+            .await
+            .unwrap();
+        models.set_credential_store(credentials);
+    }
+    let mut overrides = BuiltinOverrides::default();
+    overrides.base_urls.insert("groq".into(), server.uri());
+    register_builtin(
+        &mut models,
+        Arc::new(AmbientGroqKey),
+        Arc::new(HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+    let info = models.get_models(Some("groq")).into_iter().next().unwrap();
+    let result = models
+        .complete_simple(
+            ChatModelRecord::new("groq", info),
+            request(),
+            Default::default(),
+        )
+        .await;
+    (result.is_ok(), server.received_requests().await.unwrap())
+}
+
+#[tokio::test]
+async fn scoped_candidate_preserves_ambient_and_explicit_key_priority() {
+    for (scoped, key, expected) in [
+        (None, None, "Bearer synthetic-ambient"),
+        (
+            Some("synthetic-scoped"),
+            Some("synthetic-key"),
+            "Bearer synthetic-key",
+        ),
+    ] {
+        let (ok, requests) = groq_scoped_candidate(scoped, key).await;
+        assert!(ok);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].headers["authorization"], expected);
+    }
+}
+
+#[tokio::test]
+async fn scoped_candidate_key_wins_over_ambient_on_builtin_wire() {
+    let (ok, requests) = groq_scoped_candidate(Some("synthetic-scoped"), None).await;
+    assert!(ok);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].headers["authorization"],
+        "Bearer synthetic-scoped"
+    );
+}
+
+#[tokio::test]
+async fn scoped_candidate_empty_masks_ambient_without_dispatch() {
+    let (ok, requests) = groq_scoped_candidate(Some(""), None).await;
+    assert!(
+        !ok,
+        "empty scoped key must fail closed; sends={}",
+        requests.len()
+    );
+    assert!(requests.is_empty());
+}
+
 fn request() -> Request {
     Request {
         projection: Default::default(),

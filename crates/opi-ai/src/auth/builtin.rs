@@ -103,13 +103,6 @@ enum Selection {
 }
 
 impl BuiltinResolver {
-    fn env(&self, name: &str) -> Result<Option<String>, ProviderError> {
-        self.context
-            .env(name)
-            .map(|value| value.filter(|value| !value.is_empty()))
-            .map_err(|error| config(error.to_string()))
-    }
-
     fn key(
         &self,
         secret: SecretString,
@@ -213,8 +206,13 @@ impl BuiltinResolver {
                 .map(|name| vec![(name, self.profile.auth_scheme.clone())])
                 .unwrap_or_default(),
         };
+        let ctx = scoped_context(self.context.clone(), &scoped);
         for (name, scheme) in candidates {
-            if let Some(secret) = self.env(name)? {
+            if let Some(secret) = ctx
+                .env(name)
+                .map_err(|error| config(error.to_string()))?
+                .filter(|value| !value.is_empty())
+            {
                 return self
                     .key(
                         secret.into(),
@@ -226,7 +224,6 @@ impl BuiltinResolver {
             }
         }
         if self.profile.id == "anthropic" {
-            let ctx = scoped_context(self.context.clone(), &scoped);
             let mut env = scoped;
             for name in [
                 "ANTHROPIC_FEDERATION_RULE_ID",

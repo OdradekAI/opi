@@ -588,6 +588,9 @@
 
 ### Fixed
 
+- `opi-ai`: builtin API-key candidates resolve credential-scoped environment
+  fields before ambient values. An explicit empty scoped field masks its
+  ambient counterpart, while an explicitly stored key retains priority.
 - `opi-ai`: prepared builtin routes retain canonical source-profile authentication
   and session-header policy when selecting a replacement adapter. OpenCode session
   headers preserve explicit caller overrides and downstream transform removal.
