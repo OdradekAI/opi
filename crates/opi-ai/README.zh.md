@@ -818,7 +818,7 @@ Chat compat 还提供 `supports_finish_reason`、`supports_grammar_tools`、
 继承，`Some(empty)` 清空。catalog codec 通过完整 `x-opi.compat` 快照保留
 这些值。`supports_finish_reason: Some(false)` 允许合法流 EOF 关闭已积累的
 文本/工具调用，推断结束原因但不编造原始原因。grammar 能力选择 custom 工具
-声明、流式输入与回放。Anthropic 缓存标记及长期保留遵循选定能力；亲和 header
+声明、流式输入与回放。Anthropic 缓存标记及长期保留遵循选定能力；Chat 亲和 header
 独立于 prompt 缓存并使用完整 session ID。
 
 `OpenAiResponsesSourceCompat` 是普通 Responses、Azure Responses 与 Codex
@@ -933,11 +933,18 @@ Provider response ID 被捕获并回写到 `AssistantMessage::response_id`（Ant
 OpenAI Chat 会从任何携带 `id` 的 chunk 捕获 response ID，而不只是在 role chunk 中
 捕获；其它 family 保持为 `None`。
 
-会话亲和刻意受限。存在有效 session 时，直连 OpenAI Responses 会自动派生
-`prompt_cache_key` 和新的 `x-client-request-id`；`send_session_id_header` 只门控
-`session_id`。自定义/proxy affinity 默认关闭，必须显式 opt-in。
-`previous_response_id` 被推迟（见 OpenAI-Compatible Profile），兼容 profile 可携带静态
-`extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
+OpenAI Responses 在 session 非空且缓存保留不为 `Disabled` 时自动生成
+会话亲和 header。生效的 `session_affinity_format` 选择 `session_id` 加
+`x-client-request-id`（`OpenAi`）、仅 `x-client-request-id`（`OpenAiNoSession`）
+或 `x-session-id`（`OpenRouter`）；显式格式优先于 provider/base-URL 推断。
+直连策略下，`send_session_id_header: false` 仅省略字面 `session_id`。
+header 使用完整传入的 session ID，`prompt_cache_key` 则截断至 64 字符。
+自定义/proxy affinity 默认关闭；显式 opt-in 的路由还要求
+`send_session_id_header: true`。`Disabled` 保留模式抑制自动生成的亲和 header
+与缓存键。合法的配置、route、model、caller 及 header-transform 覆盖保留现有
+合并与校验规则。Chat 亲和继续采用独立于缓存保留模式的行为。
+`previous_response_id` 被推迟（见 OpenAI-Compatible Profile）；兼容 profile
+可携带静态 `extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
 
 ## WebSocket Upgrade（RDF-24）
 
@@ -1716,6 +1723,31 @@ neutral／simple 条目只映射工具选择；neutral thinking 保留其级别�
 （1024/2048/8192/16384），与 native 无预算默认 1024 保持区分。按 annex 行
 165 撤回 sub-1024 类型化预检：钳到 0 的预算流向 wire，由 `|| 1024` 兜底。
 
+完整 Anthropic 模型记录在源 catalog 导入及自有 `ModelsStore` 保存／重开时
+保留 `AnthropicMessagesCompat`，包括以下字段：
+
+| 兼容元数据 | 默认值 |
+|---|---|
+| `supports_long_cache_retention`、`supports_cache_control_on_tools` | `true` |
+| `allow_empty_signature`、`supports_mid_convo_effort` | `false` |
+| `send_session_affinity_headers: Option<bool>` | `None` |
+| `session_affinity_format: Option<AnthropicSessionAffinityFormat>` | `None` |
+| `allowed_fallback_models: Option<Vec<AnthropicAllowedFallbackModel>>` | `None` |
+
+`AnthropicSessionAffinityFormat` 仅接受 `OpenRouter`（序列化为
+`"openrouter"`）。每个 `AnthropicAllowedFallbackModel` 保留非空的
+`provider`、非空的 `model` 和经过校验的 `cost: ModelPricing`（含价格阶梯）；
+一份声明至多包含三个目标。错误字段类型与无效 fallback 条目在 store 发布前
+被拒绝。可选项缺失、显式 `Some(false)` 和 fallback 列表的 `Some(empty)`
+保留为不同的元数据值。显式 `x-opi.compat` 优先于源兼容配置；普通 Anthropic
+源记录的通用缓存及长期缓存能力默认 true，显式 `x-opi` 能力覆盖与 direct
+调用方的能力选择保留各自的值。
+
+`Default` 现将 eager tool-input streaming、temperature、tool-cache 和
+long-cache 兼容标志设为 true，其余布尔值为 false，可选项为 `None`。
+完整结构体字面量必须补充新字段；需要这些源默认值时使用
+`..Default::default()`，有意保留的保守 opt-out 应显式设为 false。
+
 inline-tools 时序（`inline-tools-2026-09-15`，compat
 `supports_mid_convo_system_messages`＋`supports_mid_convo_tool_changes`，默认
 均 false）：请求级工具表保持初始活动集（缓存断点在末项）加 deferred 占位符
@@ -1809,9 +1841,11 @@ system 消息原生保留——后端原生理解 pi 的 chronology。
 `"{status} {statusText}: {error.message ?? body} ({code})"`（优先 JSON
 error 体，原始体兜底）；429 保持可重试身份。回调按钉住顺序触发——
 payload、response（先于成功检查）、随后每个原始解析事件先于规范化。
-opi 策划的基线目录（一条）覆盖目录到来之前的窗口；pi 生成的
-`data/radius.json` 基线未随钉住源提供，配置网关的动态目录在注册时整
-体替换基线。
+仅当 `PiMessagesProvider::new` 接收 `None` 或与内置 `BASE_URL` 完全相同的
+地址时，才选择 opi 策划的基线目录（一条）；pi 生成的 `data/radius.json`
+基线未随钉住源提供。显式自定义网关的初始目录为空。调用方可通过
+`with_models` 提供完整模型记录；已确认写入的空目录在重新打开 store 后仍
+具权威性，显式 registry 模型覆盖仍保持优先级。
 
 ## 内置 Provider 工厂层：42 个 canonical profile（任务 20.34）
 
@@ -1839,8 +1873,8 @@ provider 显示名包括 Amazon Bedrock、Anthropic 与 Google Vertex AI；凭�
 `POST <base>/decisions`，携带 `{model, input, questions}`。state 以 JSON
 **字符串**上送；有图时 input 变为一条 user 消息：state 作 `input_text`，
 图作 `input_image` data URL 依次随后（至多 128 张，请求前类型化拒绝）。
-问题映射到 Decisions 类型：`choice` 保留选项（空描述不上线，与其他 opi
-criteria 映射一样按字母序）、`score` 保留层级、`bool` 变为 `predicate`
+问题映射到 Decisions 类型：`choice` 保留选项（空描述不上线，保持声明枚举
+顺序）、`score` 保留层级、`bool` 变为 `predicate`
 并把真/假语义并入 instructions——System One 的 `noul` 与 Decisions 的
 `predicate` 不可互换。答案以数组返回并按 name 匹配；拒答、缺答、形状
 错型与非 finite 必填数均为类型化错误，清空整个答案集合并保留已计费的 usage 与按目录分
@@ -1933,6 +1967,15 @@ operation-qualified 的 `ClassifierModelRecord`，其目录定价为 **含 tiers
 id 在**任何鉴权解析之前**类型化失败）；`Models::classify` /
 `classify_native` 是普通与类型化 native 两个入口；
 `ClassifierApiHandle::options` 生成的值在兼容的重新注册间保持有效。
+
+`ClassifierContext::questions` 和 `ClassifierQuestion::Choice::criteria`
+使用 `ClassifierDeclarations<T>`。`0` 到 `4294967294` 范围内的规范十进制数组
+索引键先按数值升序枚举，其他字符串键保持首次插入顺序。`01`、`-0` 和
+`4294967295` 都是普通字符串键。插入重复键会替换其值而不移动位置；删除后
+重新插入普通键会将其追加到其他普通键之后。数组转换和迭代器收集使用相同
+规则。四个适配器均在 wire 上保留此声明顺序；Llama 还据此依次执行问题、
+分配选项标签，并在概率相同时选择顺序最前的选项。输出答案和概率 map 的
+现有表示保持不变。
 
 唯一的真实适配器 `api::system_one::TypesafeSystemOneApi`（api id
 `typesafe-system-one`，provider id `typesafe`）复刻钉住的 pi 模块：向
@@ -2027,8 +2070,9 @@ map 带显式映射的模型发送 `reasoning_effort`（钳位后取最近支持
 thinking 时投影 `none` 级映射；缺省回退 `high`），无映射的 reasoning 模型
 发送 `prompt_mode: "reasoning"`，非 reasoning 模型两者皆省略。采样只投影
 `temperature` 与 `max_tokens`——stop、`top_p` 与 penalty 家族不进此 wire
-（pi 载荷构造器不设其他成员）。工具默认投影 `strict: true` 并携带转换后
-schema。
+（pi 载荷构造器不设其他成员）。未声明受约束采样意图的工具发送
+`strict: false` 和原始 schema，不插入 `additionalProperties` 或 `required`。
+显式 `Require` 意图发送 `strict: true` 和转换后的 schema。
 
 Prompt 缓存随会话：有 session id 且 retention 非 `Disabled` 时，body 携带
 `prompt_cache_key`、headers 携带 `x-affinity`（显式 `x-affinity` 头优先，
@@ -2205,13 +2249,20 @@ sections 取整一次，added／removed 工具列表的序列化 JSON 各自单�
 | usage 锚点 | total 或桶和 | 无锚 → 内容估算 | total 0 → 已上报则取桶和；未知 → 跳过 | total > 桶和 |
 | simple 上限 | `clamp(M)`：窗口 ≤ 0 时 `max(1,M)`，否则 `min(M, max(1, W−E−4096))` | `None` → 模型默认输出 | 显式 `M` 不再按模型 max 二次封顶 | request < 窗口算术 |
 | 数字 Claude thinking 预算 | 等级表 1024/2048/8192/16384（xhigh/max → high），再夹取留出回答空间 | 省略预算 → 等级默认 | native enabled 且省略预算用 1024；simple 的零预算按各 wire 处理 | 等级默认 < 显式预算 |
-| sampling 参数 | 按键合并的 JSON 映射 | 空映射 → 不合并 | 缺失键保持缺失 | 模型基座 < 生效等级 < request |
+| sampling 参数 | 可选、按键合并的 JSON 映射 | `None` → 缺失 | `Some({})` 保留显式空映射；缺失键保留下层值 | 模型基座 < 生效等级 < request |
 | temperature | 具名字段 | `None` → 按适配器门控省略 | NaN 省略 | sampling 映射覆盖具名字段（最后合并） |
 | 计价 tier | 以 input+cacheRead+cacheWrite 选择，严格大于，取最高，相等重复取首个 | 无 tier → 基础费率 | 保留有限负数／小数阈值；仅 `> -1` 的阈值可命中 | 命中费率适用于整个请求 |
 | 1h 缓存写入 | 子集按 2× 输入费率 | `None` → 全部短缓存 | 显式 0 有效，与缺失区分 | 子集，永不重复计费 |
 | service tier | Responses：flex 0.5×、priority/fast 2×（`gpt-5.5`：2.5×）；Codex fast 和 Azure 所有 tier：1× | request/response 回退依选定 wire | 对 tier 敏感的 wire，未知 tier → 未知费用 | 作用于每个成本分量 |
 
-仅 OpenAI 兼容适配器（Chat、Responses）合并解析后的 sampling 映射，且作为 body 的
+`ModelInfo::sampling_params` 与 `Request::sampling_params` 使用
+`Option<SamplingParams>`：`None` 表示缺失，`Some(Default::default())` 表示显式空映射。
+`with_sampling_params(map)` 保留 `Some(map)`，包括空映射，且自有 catalog 存储及重开后
+仍保留该状态。调用 `resolve_sampling_params` 时传入 `request.sampling_params.as_ref()`；
+仅当模型映射、生效等级条目与 request 映射全部缺失时才返回 `None`。显式空映射使结果
+保留为 `Some`，不会清除下层键；嵌套值整体替换，不做递归合并。
+
+仅 OpenAI 兼容适配器（Chat、Responses、Azure Responses）合并解析后的 sampling 映射，且作为 body 的
 最后一步，使模型与 request 的 sampling 覆盖具名请求字段；其他适配器忽略它。
 `Usage::service_tier` 保留响应观察到的类别；`effective_service_tier` 保留选定
 wire 的 request/response 计费规则。`calculate_cost_tiered(usage, pricing,

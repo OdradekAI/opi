@@ -907,6 +907,7 @@ async fn anthropic_models(base_url: String) -> Models {
         supports_strict_tools: true,
         supports_mid_convo_system_messages: false,
         supports_mid_convo_tool_changes: false,
+        ..Default::default()
     }))
     .expect("valid compat");
     let provider = AnthropicProvider::for_route(

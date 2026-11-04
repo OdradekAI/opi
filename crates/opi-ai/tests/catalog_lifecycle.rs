@@ -14,6 +14,154 @@ use opi_ai::test_support::MockProvider;
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use tokio_util::sync::CancellationToken;
 
+mod sampling_presence {
+    use opi_ai::catalog::{
+        Catalog, CatalogOperation, CatalogRecord, ModelsStore, ModelsStoreEntry,
+    };
+    use serde_json::{Value, json};
+
+    async fn saved(sampling: Option<Value>) -> Value {
+        saved_with_extension(sampling, None).await
+    }
+
+    fn source_record(
+        sampling: Option<Value>,
+        extension: Option<Value>,
+    ) -> opi_ai::catalog::CatalogModel {
+        let mut record = Catalog::builtin()
+            .unwrap()
+            .model("anthropic", CatalogOperation::Chat, "claude-fable-5")
+            .unwrap()
+            .clone();
+        record.raw.as_object_mut().unwrap().remove("samplingParams");
+        if let Some(extension) = record.raw.get_mut("x-opi").and_then(Value::as_object_mut) {
+            extension.remove("samplingParams");
+        }
+        if let Some(value) = sampling {
+            record.raw["samplingParams"] = value;
+        }
+        if let Some(value) = extension {
+            record.raw["x-opi"]["samplingParams"] = value;
+        }
+        record
+    }
+
+    async fn saved_with_extension(sampling: Option<Value>, extension: Option<Value>) -> Value {
+        let expected = extension
+            .as_ref()
+            .or(sampling.as_ref())
+            .map(|value| value.as_object().unwrap().clone());
+        let record = source_record(sampling, extension);
+        let info = record.to_chat_model_info().unwrap();
+        assert_eq!(info.sampling_params, expected);
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("models.json");
+        let store = ModelsStore::open(&path).unwrap();
+        store
+            .begin()
+            .commit(
+                [(
+                    record.provider,
+                    ModelsStoreEntry {
+                        models: vec![CatalogRecord::from(info)],
+                        ..Default::default()
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .unwrap();
+        let reopened = ModelsStore::open(&path).unwrap().snapshot();
+        let CatalogRecord::Chat(restored) = &reopened.catalogs["anthropic"].models[0] else {
+            panic!("stored chat record");
+        };
+        assert_eq!(restored.sampling_params, expected);
+        let document: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            document["providers"]["anthropic"]["models"][0]["x-opi"].get("samplingParams"),
+            expected
+                .as_ref()
+                .map(|params| Value::Object(params.clone()))
+                .as_ref()
+        );
+        document["providers"]["anthropic"]["models"][0].clone()
+    }
+
+    #[tokio::test]
+    async fn c018_missing_sampling_stays_absent_after_store_roundtrip() {
+        let model = saved(None).await;
+        assert!(
+            model.get("samplingParams").is_none() && model["x-opi"].get("samplingParams").is_none(),
+            "absent source sampling metadata must remain absent"
+        );
+    }
+
+    #[tokio::test]
+    async fn c018_explicit_empty_sampling_survives_store_roundtrip_control() {
+        let model = saved(Some(json!({}))).await;
+        assert_eq!(
+            model
+                .get("samplingParams")
+                .or_else(|| model["x-opi"].get("samplingParams")),
+            Some(&json!({}))
+        );
+    }
+
+    #[tokio::test]
+    async fn c018_nonempty_sampling_survives_store_roundtrip_control() {
+        let model = saved(Some(json!({"temperature":0.25,"nested":{"key":true}}))).await;
+        assert_eq!(
+            model
+                .get("samplingParams")
+                .or_else(|| model["x-opi"].get("samplingParams")),
+            Some(&json!({"temperature":0.25,"nested":{"key":true}}))
+        );
+    }
+
+    #[tokio::test]
+    async fn source_and_extension_sampling_presence_survive_owned_store_reopen() {
+        for source in [
+            None,
+            Some(json!({})),
+            Some(json!({"source":1,"nested":{"a":1}})),
+        ] {
+            for extension in [
+                None,
+                Some(json!({})),
+                Some(json!({"extension":2,"nested":{"b":2}})),
+            ] {
+                let expected = extension.as_ref().or(source.as_ref()).cloned();
+                let model = saved_with_extension(source.clone(), extension).await;
+                assert_eq!(model["x-opi"].get("samplingParams"), expected.as_ref());
+                assert!(model.get("samplingParams").is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn sampling_nonobject_values_remain_typed_errors() {
+        for invalid in [Value::Null, json!(true), json!(3), json!("map"), json!([])] {
+            for record in [
+                source_record(Some(invalid.clone()), None),
+                source_record(Some(json!({"source":1})), Some(invalid)),
+            ] {
+                assert!(matches!(
+                    record.to_chat_model_info(),
+                    Err(opi_ai::catalog::CatalogError::InvalidEntry { detail, .. })
+                    if detail == "x-opi.samplingParams must be an object"
+                ));
+            }
+        }
+        let record = source_record(Some(json!([])), Some(json!({})));
+        assert_eq!(
+            record.to_chat_model_info().unwrap().sampling_params,
+            Some(Default::default()),
+            "a present valid extension takes precedence over the source value"
+        );
+    }
+}
+
 struct SwitchSource(Arc<AtomicBool>);
 
 impl DynamicCatalogSource for SwitchSource {

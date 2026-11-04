@@ -2583,6 +2583,7 @@ async fn native_sampling_uses_native_effort_summary_default_and_request_override
         if let Some(value) = request_temperature {
             request
                 .sampling_params
+                .get_or_insert_default()
                 .insert("temperature".into(), serde_json::json!(value));
         }
         let mut options = OpenAiResponsesOptions::default();
@@ -3419,8 +3420,12 @@ mod source_compat_controls {
                     supports_mid_convo_system_messages: Some(true),
                     ..Default::default()
                 };
-                let provider =
-                    provider(server.uri(), "openai-responses", source_model(None, source));
+                let mut model = source_model(None, source);
+                let WireCompat::OpenAiResponses(compat) = &mut model.compat else {
+                    unreachable!()
+                };
+                compat.send_session_id_header = true;
+                let provider = provider(server.uri(), "openai-responses", model);
                 let request = request("openai-responses", retention);
                 let canonical = request.context.clone();
                 let message = opi_ai::stream::ChatStream::new(provider.stream_prepared(
@@ -3478,8 +3483,15 @@ mod source_compat_controls {
                     body.get("prompt_cache_key").is_some(),
                     retention != CacheRetention::Disabled
                 );
-                assert_eq!(sent[0].headers["session_id"], "raw-session-id");
-                assert_eq!(sent[0].headers["x-client-request-id"], "raw-session-id");
+                for name in ["session_id", "x-client-request-id"] {
+                    assert_eq!(
+                        sent[0]
+                            .headers
+                            .get(name)
+                            .map(|value| value.to_str().unwrap()),
+                        (retention != CacheRetention::Disabled).then_some("raw-session-id")
+                    );
+                }
                 server.verify().await;
             }
         }
@@ -3785,194 +3797,225 @@ mod source_compat_controls {
     }
 
     #[tokio::test]
-    async fn responses_affinity_formats_are_independent_of_disabled_cache() {
-        for format in [
-            SessionAffinityFormat::OpenAi,
-            SessionAffinityFormat::OpenAiNoSession,
-            SessionAffinityFormat::OpenRouter,
+    async fn responses_affinity_formats_follow_retention_and_preserve_full_ids() {
+        for retention in [
+            CacheRetention::Short,
+            CacheRetention::Long,
+            CacheRetention::Disabled,
         ] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .respond_with(
-                    ResponseTemplate::new(200)
-                        .insert_header("content-type", "text/event-stream")
-                        .set_body_string(responses_sse_ok()),
+            for format in [
+                SessionAffinityFormat::OpenAi,
+                SessionAffinityFormat::OpenAiNoSession,
+                SessionAffinityFormat::OpenRouter,
+            ] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(responses_sse_ok()),
+                    )
+                    .expect(1)
+                    .mount(&server)
+                    .await;
+                let source = OpenAiResponsesSourceCompat {
+                    session_affinity_format: Some(format),
+                    supports_mid_convo_system_messages: Some(true),
+                    ..Default::default()
+                };
+                let mut model = source_model(None, source);
+                let WireCompat::OpenAiResponses(compat) = &mut model.compat else {
+                    unreachable!()
+                };
+                compat.send_session_id_header = true;
+                let provider = provider(server.uri(), "openai-responses", model);
+                let mut request = request("openai-responses", retention);
+                let full_id = "full-sdk-session-id-".repeat(8);
+                request.session_id = Some(full_id.clone());
+                opi_ai::stream::ChatStream::new(
+                    provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
                 )
-                .expect(1)
-                .mount(&server)
-                .await;
-            let source = OpenAiResponsesSourceCompat {
-                session_affinity_format: Some(format),
-                supports_mid_convo_system_messages: Some(true),
-                ..Default::default()
-            };
-            let provider = provider(server.uri(), "openai-responses", source_model(None, source));
-            let mut request = request("openai-responses", CacheRetention::Disabled);
-            let full_id = "full-sdk-session-id-".repeat(8);
-            request.session_id = Some(full_id.clone());
-            opi_ai::stream::ChatStream::new(
-                provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
-            )
-            .result()
-            .await
-            .unwrap();
-            let sent = server.received_requests().await.unwrap();
-            let headers = &sent[0].headers;
-            assert_eq!(
-                headers.contains_key("session_id"),
-                format == SessionAffinityFormat::OpenAi
-            );
-            assert_eq!(
-                headers.contains_key("x-client-request-id"),
-                format != SessionAffinityFormat::OpenRouter
-            );
-            assert_eq!(
-                headers.contains_key("x-session-id"),
-                format == SessionAffinityFormat::OpenRouter
-            );
-            if let Some(value) = headers.get(if format == SessionAffinityFormat::OpenRouter {
-                "x-session-id"
-            } else {
-                "session_id"
-            }) {
-                assert_eq!(value.to_str().unwrap(), full_id);
+                .result()
+                .await
+                .unwrap();
+                let sent = server.received_requests().await.unwrap();
+                assert_eq!(sent.len(), 1);
+                let headers = &sent[0].headers;
+                let enabled = retention != CacheRetention::Disabled;
+                assert_eq!(
+                    headers.contains_key("session_id"),
+                    enabled && format == SessionAffinityFormat::OpenAi
+                );
+                assert_eq!(
+                    headers.contains_key("x-client-request-id"),
+                    enabled && format != SessionAffinityFormat::OpenRouter
+                );
+                assert_eq!(
+                    headers.contains_key("x-session-id"),
+                    enabled && format == SessionAffinityFormat::OpenRouter
+                );
+                if let Some(value) = headers.get(if format == SessionAffinityFormat::OpenRouter {
+                    "x-session-id"
+                } else {
+                    "session_id"
+                }) {
+                    assert_eq!(value.to_str().unwrap(), full_id);
+                }
+                if let Some(value) = headers.get("x-client-request-id") {
+                    assert_eq!(value.to_str().unwrap(), full_id);
+                }
+                let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+                assert_eq!(
+                    body.get("prompt_cache_key")
+                        .and_then(serde_json::Value::as_str),
+                    enabled.then_some(&full_id[..64])
+                );
+                server.verify().await;
             }
-            if let Some(value) = headers.get("x-client-request-id") {
-                assert_eq!(value.to_str().unwrap(), full_id);
-            }
-            let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
-            assert!(body.get("prompt_cache_key").is_none());
-            server.verify().await;
         }
     }
 
     #[tokio::test]
     async fn responses_affinity_overrides_are_merged_before_transform_and_http() {
-        for (mode, expected, before_transform) in [
-            ("default", Some("raw-session-id"), Some("raw-session-id")),
-            ("caller", Some("caller-value"), Some("caller-value")),
-            ("model", Some("model-value"), Some("model-value")),
-            ("remove", None, None),
-            (
-                "transform",
-                Some("transformed-value"),
-                Some("raw-session-id"),
-            ),
-            ("route", Some("route-value"), Some("route-value")),
-            (
-                "configured",
-                Some("configured-value"),
-                Some("configured-value"),
-            ),
-        ] {
-            let server = MockServer::start().await;
-            Mock::given(method("POST"))
-                .respond_with(
-                    ResponseTemplate::new(200)
-                        .insert_header("content-type", "text/event-stream")
-                        .set_body_string(responses_sse_ok()),
-                )
-                .expect(1)
-                .mount(&server)
-                .await;
-            let source = OpenAiResponsesSourceCompat {
-                session_affinity_format: Some(SessionAffinityFormat::OpenRouter),
-                supports_mid_convo_system_messages: Some(true),
-                ..Default::default()
-            };
-            let mut model = source_model(None, source.clone());
-            if mode == "model" {
-                model
-                    .headers
-                    .push(("X-Session-Id".into(), Some("model-value".into())));
-            }
-            if mode == "remove" {
-                model.headers.push(("x-session-id".into(), None));
-            }
-            let provider = if mode == "route" {
-                OpenAiResponsesProvider::with_auth_extra(
-                    Some(server.uri()),
-                    ResponsesConfig {
-                        source,
-                        ..Default::default()
-                    },
-                    "openai-responses".into(),
-                    vec![("X-Session-Id".into(), "route-value".into())],
-                    Arc::new(opi_ai::http::HttpClient::new()),
-                )
-                .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
-            } else {
-                let configured = if mode == "configured" {
-                    vec![("X-Session-Id".into(), "configured-value".into())]
-                } else {
-                    vec![]
+        for retention in [CacheRetention::Short, CacheRetention::Disabled] {
+            for (mode, expected, before_transform) in [
+                ("default", Some("raw-session-id"), Some("raw-session-id")),
+                ("caller", Some("caller-value"), Some("caller-value")),
+                ("model", Some("model-value"), Some("model-value")),
+                ("remove", None, None),
+                (
+                    "transform",
+                    Some("transformed-value"),
+                    Some("raw-session-id"),
+                ),
+                ("route", Some("route-value"), Some("route-value")),
+                (
+                    "configured",
+                    Some("configured-value"),
+                    Some("configured-value"),
+                ),
+            ] {
+                let server = MockServer::start().await;
+                Mock::given(method("POST"))
+                    .respond_with(
+                        ResponseTemplate::new(200)
+                            .insert_header("content-type", "text/event-stream")
+                            .set_body_string(responses_sse_ok()),
+                    )
+                    .expect(1)
+                    .mount(&server)
+                    .await;
+                let source = OpenAiResponsesSourceCompat {
+                    session_affinity_format: Some(SessionAffinityFormat::OpenRouter),
+                    supports_mid_convo_system_messages: Some(true),
+                    ..Default::default()
                 };
-                OpenAiResponsesProvider::for_route(
-                    Some(server.uri()),
-                    "openai-responses".into(),
-                    opi_ai::provider_headers::ProviderHeaders::try_new(configured).unwrap(),
-                    vec![model],
-                    Arc::new(opi_ai::http::HttpClient::new()),
-                )
-                .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
-            };
-            let seen = Arc::new(Mutex::new(Vec::new()));
-            let recorder = seen.clone();
-            let calls = Arc::new(AtomicUsize::new(0));
-            let counter = calls.clone();
-            let mut request = request("openai-responses", CacheRetention::Disabled);
-            if mode == "caller" {
-                request
-                    .extra_headers
-                    .push(("X-Session-Id".into(), "caller-value".into()));
-            }
-            request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
-                .with_async_header_transform(move |mut headers| {
-                    let recorder = recorder.clone();
-                    let counter = counter.clone();
-                    async move {
-                        counter.fetch_add(1, Ordering::SeqCst);
-                        *recorder.lock().unwrap() = headers.clone();
-                        if mode == "transform" {
-                            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-session-id"));
-                            headers.push(("x-session-id".into(), "transformed-value".into()));
+                let mut model = source_model(None, source.clone());
+                if mode == "model" {
+                    model
+                        .headers
+                        .push(("X-Session-Id".into(), Some("model-value".into())));
+                }
+                if mode == "remove" {
+                    model.headers.push(("x-session-id".into(), None));
+                }
+                let provider = if mode == "route" {
+                    OpenAiResponsesProvider::with_auth_extra(
+                        Some(server.uri()),
+                        ResponsesConfig {
+                            source,
+                            ..Default::default()
+                        },
+                        "openai-responses".into(),
+                        vec![("X-Session-Id".into(), "route-value".into())],
+                        Arc::new(opi_ai::http::HttpClient::new()),
+                    )
+                    .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+                } else {
+                    let configured = if mode == "configured" {
+                        vec![("X-Session-Id".into(), "configured-value".into())]
+                    } else {
+                        vec![]
+                    };
+                    OpenAiResponsesProvider::for_route(
+                        Some(server.uri()),
+                        "openai-responses".into(),
+                        opi_ai::provider_headers::ProviderHeaders::try_new(configured).unwrap(),
+                        vec![model],
+                        Arc::new(opi_ai::http::HttpClient::new()),
+                    )
+                    .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+                };
+                let seen = Arc::new(Mutex::new(Vec::new()));
+                let recorder = seen.clone();
+                let calls = Arc::new(AtomicUsize::new(0));
+                let counter = calls.clone();
+                let mut request = request("openai-responses", retention);
+                let generated = retention != CacheRetention::Disabled;
+                let expected = if mode == "default" && !generated {
+                    None
+                } else {
+                    expected
+                };
+                let before_transform = if matches!(mode, "default" | "transform") && !generated {
+                    None
+                } else {
+                    before_transform
+                };
+                if mode == "caller" {
+                    request
+                        .extra_headers
+                        .push(("X-Session-Id".into(), "caller-value".into()));
+                }
+                request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+                    .with_async_header_transform(move |mut headers| {
+                        let recorder = recorder.clone();
+                        let counter = counter.clone();
+                        async move {
+                            counter.fetch_add(1, Ordering::SeqCst);
+                            *recorder.lock().unwrap() = headers.clone();
+                            if mode == "transform" {
+                                headers
+                                    .retain(|(name, _)| !name.eq_ignore_ascii_case("x-session-id"));
+                                headers.push(("x-session-id".into(), "transformed-value".into()));
+                            }
+                            Ok(headers)
                         }
-                        Ok(headers)
-                    }
-                });
-            let message = opi_ai::stream::ChatStream::new(
-                provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
-            )
-            .result()
-            .await
-            .unwrap();
-            assert!(message.projection.is_some());
-            assert_eq!(calls.load(Ordering::SeqCst), 1);
-            let seen = seen.lock().unwrap().clone();
-            let observed: Vec<_> = seen
-                .iter()
-                .filter(|(name, _)| name.eq_ignore_ascii_case("x-session-id"))
-                .map(|(_, value)| value.as_str())
-                .collect();
-            assert_eq!(
-                observed,
-                before_transform.into_iter().collect::<Vec<_>>(),
-                "mode={mode}: transform sees the merged generated default"
-            );
-            let sent = server.received_requests().await.unwrap();
-            assert_eq!(sent.len(), 1);
-            let values: Vec<_> = sent[0]
-                .headers
-                .get_all("x-session-id")
-                .iter()
-                .map(|value| value.to_str().unwrap())
-                .collect();
-            assert_eq!(
-                values,
-                expected.into_iter().collect::<Vec<_>>(),
-                "mode={mode}: one effective ordinary header survives"
-            );
-            server.verify().await;
+                    });
+                let message = opi_ai::stream::ChatStream::new(
+                    provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+                )
+                .result()
+                .await
+                .unwrap();
+                assert!(message.projection.is_some());
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+                let seen = seen.lock().unwrap().clone();
+                let observed: Vec<_> = seen
+                    .iter()
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("x-session-id"))
+                    .map(|(_, value)| value.as_str())
+                    .collect();
+                assert_eq!(
+                    observed,
+                    before_transform.into_iter().collect::<Vec<_>>(),
+                    "mode={mode}: transform sees the merged generated default"
+                );
+                let sent = server.received_requests().await.unwrap();
+                assert_eq!(sent.len(), 1);
+                let values: Vec<_> = sent[0]
+                    .headers
+                    .get_all("x-session-id")
+                    .iter()
+                    .map(|value| value.to_str().unwrap())
+                    .collect();
+                assert_eq!(
+                    values,
+                    expected.into_iter().collect::<Vec<_>>(),
+                    "mode={mode}: one effective ordinary header survives"
+                );
+                server.verify().await;
+            }
         }
     }
 
@@ -4008,7 +4051,7 @@ mod source_compat_controls {
                 provider_id,
                 source_model(Some(format!("{}{path}", server.uri())), source),
             );
-            let request = request(provider_id, CacheRetention::Disabled);
+            let request = request(provider_id, CacheRetention::Short);
             opi_ai::stream::ChatStream::new(
                 provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
             )

@@ -418,6 +418,104 @@ fn unresolved_refs_are_invalid_not_errors() {
 }
 
 #[test]
+fn encoded_pointer_targets_preserve_selected_resource_identity() {
+    fn assert_outcomes(schema: Value, cases: &[(Value, bool)]) {
+        let trusted_before = serde_json::to_vec(&schema).unwrap();
+        let compiled = compile(schema.clone()).expect("finite reference targets are admitted");
+        for (instance, expected) in cases {
+            let instance_before = serde_json::to_vec(instance).unwrap();
+            assert_eq!(
+                compiled.check(instance),
+                Ok(*expected),
+                "instance {instance}"
+            );
+            assert_eq!(serde_json::to_vec(instance).unwrap(), instance_before);
+        }
+        assert_eq!(serde_json::to_vec(&schema).unwrap(), trusted_before);
+    }
+
+    for (reference, accepted, rejected) in [
+        ("#/$defs/a~1b", "slash", "tilde"),
+        ("#/$defs/a~0b", "tilde", "slash"),
+        ("#/$defs/%E9%9B%AA", "unicode", "plain"),
+        ("#/$defs/plain", "plain", "unicode"),
+    ] {
+        assert_outcomes(
+            json!({
+                "$id": "https://offline.invalid/literal/",
+                "$defs": {
+                    "a/b": {"const": "slash"},
+                    "a~b": {"const": "tilde"},
+                    "雪": {"const": "unicode"},
+                    "plain": {"const": "plain"}
+                },
+                "$ref": reference
+            }),
+            &[(json!(accepted), true), (json!(rejected), false)],
+        );
+    }
+
+    assert_outcomes(
+        json!({
+            "$id": "https://offline.invalid/root/",
+            "type": "object",
+            "required": ["left", "right"],
+            "properties": {
+                "left": {
+                    "$id": "https://offline.invalid/left/",
+                    "$defs": {"selected": {"$ref": "leaf"}},
+                    "$ref": "#/$defs/selected"
+                },
+                "right": {
+                    "$id": "https://offline.invalid/right/",
+                    "$defs": {"selected": {"$ref": "leaf"}},
+                    "$ref": "#/$defs/selected"
+                }
+            },
+            "metadata": {
+                "left": {"$id": "https://offline.invalid/left/leaf", "const": "left"},
+                "right": {"$id": "https://offline.invalid/right/leaf", "const": "right"},
+                "root": {"$id": "https://offline.invalid/root/leaf", "const": "root"}
+            }
+        }),
+        &[
+            (json!({"left": "left", "right": "right"}), true),
+            (json!({"left": "right", "right": "right"}), false),
+            (json!({"left": "left", "right": "left"}), false),
+            (json!({"left": "root", "right": "right"}), false),
+            (json!({"left": "left", "right": "root"}), false),
+        ],
+    );
+
+    assert_outcomes(
+        json!({
+            "$id": "https://offline.invalid/root/",
+            "$defs": {"unknown": {"const": "root"}},
+            "type": "object",
+            "required": ["selected"],
+            "properties": {
+                "selected": {
+                    "$id": "https://offline.invalid/left/",
+                    "$defs": {"present": {"const": "left"}},
+                    "$ref": "#/$defs/unknown"
+                }
+            },
+            "metadata": {
+                "other": {
+                    "$id": "https://offline.invalid/right/",
+                    "$defs": {"unknown": {"const": "right"}}
+                }
+            }
+        }),
+        &[
+            (json!({"selected": "left"}), false),
+            (json!({"selected": "root"}), false),
+            (json!({"selected": "right"}), false),
+        ],
+    );
+}
+
+#[test]
 fn anchor_refs_resolve_by_url_identity() {
     let schema = json!({"$defs": {"a": {"$anchor": "leaf", "type": "integer"}}, "$ref": "#leaf"});
     assert!(valid(schema.clone(), json!(1)));
@@ -945,6 +1043,80 @@ fn admission_preserves_uri_failures_at_check_time() {
     let compiled = compile(json!({"anyOf": [true, {"$ref": "http://["}]}))
         .expect("unvisited URI failure is not a regex admission error");
     assert_eq!(compiled.check(&json!({})), Ok(true));
+}
+
+#[test]
+fn visited_applicators_propagate_uri_errors_and_unvisited_branches_do_not() {
+    for (name, schema, value) in [
+        ("not", json!({"not": {"$ref": "http://["}}), json!({})),
+        (
+            "if condition",
+            json!({"if": {"$ref": "http://["}}),
+            json!({}),
+        ),
+        (
+            "matching patternProperties",
+            json!({"patternProperties": {"^hit$": {"$ref": "http://["}}}),
+            json!({"hit": 1}),
+        ),
+        (
+            "allOf after true",
+            json!({"allOf": [true, {"$ref": "http://["}]}),
+            json!({}),
+        ),
+        (
+            "first anyOf",
+            json!({"anyOf": [{"$ref": "http://["}, true]}),
+            json!({}),
+        ),
+        (
+            "selected then",
+            json!({"if": true, "then": {"$ref": "http://["}, "else": true}),
+            json!({}),
+        ),
+        (
+            "selected else",
+            json!({"if": false, "then": true, "else": {"$ref": "http://["}}),
+            json!({}),
+        ),
+    ] {
+        let compiled = compile(schema).unwrap_or_else(|error| {
+            panic!("{name}: URI failure must remain check-time: {error:?}")
+        });
+        let outcome = compiled.check(&value);
+        assert!(
+            matches!(&outcome, Err(SchemaError::Uri { .. })),
+            "{name}: visited leaf must propagate the typed URI error, got {outcome:?}"
+        );
+    }
+
+    for (name, schema, value) in [
+        (
+            "anyOf short circuit",
+            json!({"anyOf": [true, {"$ref": "http://["}]}),
+            json!({}),
+        ),
+        (
+            "false if skips then",
+            json!({"if": false, "then": {"$ref": "http://["}}),
+            json!({}),
+        ),
+        (
+            "true if skips else",
+            json!({"if": true, "else": {"$ref": "http://["}}),
+            json!({}),
+        ),
+        (
+            "nonmatching patternProperties",
+            json!({"patternProperties": {"^hit$": {"$ref": "http://["}}}),
+            json!({"miss": 1}),
+        ),
+    ] {
+        let compiled = compile(schema).unwrap_or_else(|error| {
+            panic!("{name}: URI failure must remain check-time: {error:?}")
+        });
+        assert_eq!(compiled.check(&value), Ok(true), "{name}");
+    }
 }
 
 #[test]

@@ -822,6 +822,7 @@ async fn attempt(
     .await;
     match outcome {
         Ok((delivered_error, published)) => {
+            acquired.driver.bind_logical_cancellation(None);
             let final_continuation = if published && !delivered_error {
                 mapper
                     .partial()
@@ -948,6 +949,7 @@ async fn run_stream(
     callbacks: &RequestCallbacks,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
 ) -> Result<(bool, bool), AttemptFlow> {
+    driver.bind_logical_cancellation(Some(cancel.clone()));
     let payload = serde_json::to_string(frame_body).unwrap_or_default();
     if let Err(fault) = driver.queue(1, payload.as_bytes(), compression, ws::fresh_mask()) {
         return Err(classify_transport_fault(&fault, false, mapper));
@@ -995,6 +997,11 @@ async fn run_stream(
         };
         let message = match message {
             Ok(message) => message,
+            Err(_) if cancel.is_cancelled() => {
+                return Err(AttemptFlow::Terminal(
+                    mapper.failure(ProviderError::Cancelled),
+                ));
+            }
             Err(fault) => {
                 return Err(classify_transport_fault(&fault, received_event, mapper));
             }

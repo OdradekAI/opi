@@ -2,6 +2,24 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `ModelInfo::sampling_params` and `Request::sampling_params`
+  use `Option<SamplingParams>` to preserve absent versus explicit empty maps.
+  Defaults are `None`; `with_sampling_params(map)` stores `Some(map)`, including
+  an empty map. `resolve_sampling_params` takes `Option<&SamplingParams>` and
+  returns `None` only when every layer is absent. Owned catalog stores preserve
+  this presence; the shallow model < effective-level < request merge and
+  supported-wire application policy are unchanged.
+- `opi-ai` (0.x): `AnthropicMessagesCompat` adds typed cache, signature,
+  effort, affinity and fallback metadata retained through source import and
+  owned model stores. Its source defaults enable eager tool-input streaming,
+  temperature, tool-cache and long-cache compatibility. Exhaustive struct
+  literals add the fields; callers retaining conservative opt-outs must set
+  them explicitly rather than inheriting the new `Default` values.
+- `opi-ai` (0.x): classifier question and choice declarations now use
+  `ClassifierDeclarations<T>` instead of `BTreeMap`, preserving source-defined
+  key enumeration, replacement and Llama tie order. Construct declarations with
+  arrays, iterator collection or `insert`; callers that explicitly name the
+  former field type must migrate.
 - workflows: remediation finding dispositions replace scalar `closure_batch`
   with the required ordered `closure_batches` array. Compound findings retain
   one source disposition and close only when every assigned batch predicate and
@@ -588,6 +606,20 @@
 
 ### Fixed
 
+- `opi-ai`: custom Radius gateways start with an empty model catalog; only an
+  omitted gateway or the exact built-in `BASE_URL` selects the bundled baseline.
+  Caller-supplied models remain usable, and acknowledged empty stored catalogs
+  remain authoritative after reopening without hiding explicit model overrides.
+- `opi-coding-agent`: configured response limits remain total ceilings with
+  numeric Claude thinking through prepared routes, retries and model changes.
+  Standalone SDK budgeting retains its source-defined answer-plus-thinking rule.
+- `opi-ai`: Mistral Conversations sends `strict: false` and the original
+  schema for tools without constrained sampling intent. Explicit `Require`
+  keeps strict schema conversion and `strict: true`.
+- `opi-ai`: Responses-generated session affinity now requires enabled cache
+  retention and a nonempty session, uses the full supplied session ID and
+  honors the existing literal `session_id` flag. Explicit affinity formats and
+  lawful header overrides retain precedence; Chat affinity behavior is unchanged.
 - `opi-ai`: JSON Schema null coercion accepts floating and signed zero while
   preserving raw inputs and the final original-schema validation.
 - `opi-ai`: image response-observer failures and cancellations retain received

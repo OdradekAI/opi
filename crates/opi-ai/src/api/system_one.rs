@@ -839,7 +839,7 @@ fn parse_answer(
                 .as_object()
                 .expect("checked object")
             {
-                let field = if criteria.contains_key(key) {
+                let field = if criteria.get(key).is_some() {
                     format!("probability for {id}.{key}")
                 } else {
                     format!("probability for {id}")

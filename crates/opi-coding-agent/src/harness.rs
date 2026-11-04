@@ -1771,6 +1771,19 @@ impl CodingHarness {
         // one dispatchable route for a bare model.
         let dispatchable_provider_ids: Vec<String> =
             routes.iter().map(|(p, _)| p.id().to_owned()).collect();
+        let routes = routes
+            .into_iter()
+            .map(|(provider, resolver)| {
+                let provider = match config.defaults.max_output_tokens {
+                    Some(limit) => Box::new(ConfiguredOutputProvider {
+                        inner: Arc::from(provider),
+                        limit,
+                    }) as Box<dyn Provider>,
+                    None => provider,
+                };
+                (provider, resolver)
+            })
+            .collect();
         let dispatch_collection = crate::provider_factory::build_harness_collection(
             routes,
             extension_providers,
@@ -4390,6 +4403,136 @@ fn validate_request_output_limit(
     Ok(())
 }
 
+/// Apply the configured total response ceiling after SDK simple-budget
+/// resolution, before the selected adapter builds its wire request. Catalog
+/// metadata and the SDK's standalone answer-plus-thinking semantics stay owned
+/// by their existing sources. The immutable ceiling is reused across attempts.
+struct ConfiguredOutputProvider {
+    inner: Arc<dyn Provider>,
+    limit: u64,
+}
+
+impl Provider for ConfiguredOutputProvider {
+    fn id(&self) -> &str {
+        self.inner.id()
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        self.inner.models()
+    }
+
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &opi_ai::models::SimpleOptions,
+    ) -> Result<(), opi_ai::provider::ProviderError> {
+        self.inner.validate_simple_options(model, options)
+    }
+
+    fn prepare_model_call(
+        &self,
+        model: &mut ModelInfo,
+        auth: &mut opi_ai::auth::ResolvedAuth,
+    ) -> Result<Option<Arc<dyn Provider>>, opi_ai::provider::ProviderError> {
+        self.inner.prepare_model_call(model, auth).map(|prepared| {
+            prepared.map(|inner| {
+                Arc::new(Self {
+                    inner,
+                    limit: self.limit,
+                }) as Arc<dyn Provider>
+            })
+        })
+    }
+
+    fn stream_prepared(
+        &self,
+        request: opi_ai::provider::Request,
+        auth: opi_ai::auth::ResolvedAuth,
+    ) -> opi_ai::provider::EventStream {
+        self.inner.stream_prepared(request, auth)
+    }
+
+    fn stream_attempt(
+        &self,
+        request: opi_ai::provider::Request,
+        auth: opi_ai::auth::ResolvedAuth,
+        attempt: opi_ai::provider::AttemptContext,
+    ) -> opi_ai::provider::EventStream {
+        self.inner.stream_attempt(request, auth, attempt)
+    }
+
+    fn stream_resource_attempt(
+        &self,
+        request: opi_ai::provider::Request,
+        auth: opi_ai::auth::ResolvedAuth,
+        attempt: opi_ai::provider::AttemptContext,
+        resources: Option<opi_ai::codex_resources::CallResourceLease>,
+    ) -> opi_ai::provider::EventStream {
+        self.inner
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: ModelInfo,
+        options: opi_ai::models::SimpleOptions,
+        mut request: opi_ai::provider::Request,
+        auth: opi_ai::auth::ResolvedAuth,
+        attempt: opi_ai::provider::AttemptContext,
+        resources: Option<opi_ai::codex_resources::CallResourceLease>,
+    ) -> opi_ai::provider::EventStream {
+        if request
+            .max_tokens
+            .is_some_and(|resolved| resolved > self.limit)
+        {
+            request.max_tokens = Some(self.limit);
+            if request.thinking.enabled {
+                request.thinking.budget_tokens = request
+                    .thinking
+                    .budget_tokens
+                    .map(|budget| budget.min(self.limit.saturating_sub(1024)));
+            }
+        }
+        self.inner
+            .stream_model_resource_attempt(model, options, request, auth, attempt, resources)
+    }
+
+    fn acquisition_policy_default(&self) -> opi_ai::retry::AcquisitionPolicy {
+        self.inner.acquisition_policy_default()
+    }
+
+    fn session_resources(&self) -> Option<&dyn opi_ai::codex_resources::SessionResourceOwner> {
+        self.inner.session_resources()
+    }
+
+    fn replace_model_catalog(
+        &mut self,
+        models: Vec<ModelInfo>,
+    ) -> Result<(), opi_ai::provider::ProviderError> {
+        // Initial routes enter from unique Boxes; catalog replacement is a
+        // construction-time operation, before sharing. Prepared adapters are
+        // frozen behind PreparedProviderCall and have no mutable catalog path.
+        let inner = Arc::get_mut(&mut self.inner).ok_or_else(|| {
+            opi_ai::provider::ProviderError::Config(
+                opi_ai::provider::ProviderErrorSummary::sanitized(
+                    "effective model catalog replacement requires unshared provider ownership",
+                ),
+            )
+        })?;
+        inner.replace_model_catalog(models)
+    }
+
+    fn refresh_models(
+        &self,
+        context: opi_ai::catalog::CatalogRefreshContext,
+    ) -> opi_ai::credential::BoxAuthFuture<
+        '_,
+        Result<Option<Vec<ModelInfo>>, opi_ai::provider::ProviderError>,
+    > {
+        self.inner.refresh_models(context)
+    }
+}
+
 /// Enforce product-owned limits before another turn and validate explicit
 /// output settings after extension preparation, before atomic state application.
 struct ConfiguredLimitHooks {
@@ -4651,7 +4794,7 @@ impl AgentHooks for InteractiveCodingHooks {
 mod remediation_auth_wrapper_probe {
     use super::{ProviderAuthFailure, provider_auth_failure};
     use opi_agent::AgentError;
-    use opi_ai::auth::{AuthProvenanceSource, AuthResolver};
+    use opi_ai::auth::AuthResolver;
     use opi_ai::provider::{
         CacheRetention, ProviderError, ProviderErrorSummary, Request, ThinkingConfig,
     };
@@ -4704,15 +4847,13 @@ mod remediation_auth_wrapper_probe {
             vec![opi_ai::test_support::text_response("unused")],
         );
         let calls = provider.call_log_handle();
-        let mut models = opi_ai::Models::new();
-        models
-            .register_route(
-                Box::new(provider),
-                Arc::new(FailAuth(error)),
-                AuthProvenanceSource::Static,
-                opi_ai::CompatMetadata::default(),
-            )
-            .unwrap();
+        let models = crate::provider_factory::build_harness_collection(
+            vec![(Box::new(provider), Arc::new(FailAuth(error)))],
+            Vec::new(),
+            Vec::new(),
+            "mock",
+            None,
+        );
         let failure = models
             .prepare_call("mock:mock-model", minimal_request())
             .await
@@ -5576,6 +5717,842 @@ mod request_compaction_tests {
         assert!(final_context.contains("RETAIN_RECENT"));
         assert!(final_context.contains("read-1"));
         assert!(!final_context.contains("ARCHIVED_OLD_CONTEXT"));
+    }
+}
+
+#[cfg(test)]
+mod configured_output_ceiling_tests {
+    use super::*;
+    use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
+    use opi_ai::provider::{ProviderError, Request};
+    use opi_ai::stream::{ChatStream, StopReason};
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::method};
+
+    struct FixedAuth {
+        bearer: bool,
+        calls: Arc<AtomicU32>,
+    }
+
+    impl AuthResolver for FixedAuth {
+        fn resolve(
+            &self,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let mut auth = opi_ai::test_support::resolved_auth();
+            if self.bearer {
+                auth.scheme = AuthScheme::Bearer;
+            }
+            Box::pin(async move { Ok(auth) })
+        }
+    }
+
+    struct PreparedAdapter {
+        inner: Arc<dyn Provider>,
+        prepares: Arc<AtomicU32>,
+    }
+
+    struct SeenDispatch {
+        method: &'static str,
+        model: Option<ModelInfo>,
+        options: Option<opi_ai::models::SimpleOptions>,
+        request: Request,
+        auth: ResolvedAuth,
+        attempt: Option<opi_ai::provider::AttemptContext>,
+        resources: Option<opi_ai::codex_resources::CallResourceLease>,
+        payload: serde_json::Value,
+    }
+
+    #[derive(Default)]
+    struct ForwardingTrace {
+        dispatches: std::sync::Mutex<Vec<SeenDispatch>>,
+        refreshes: std::sync::Mutex<Vec<opi_ai::catalog::CatalogRefreshContext>>,
+        preparations: AtomicU32,
+        validations: AtomicU32,
+    }
+
+    #[derive(Clone)]
+    struct ForwardingProvider {
+        models: Vec<ModelInfo>,
+        trace: Arc<ForwardingTrace>,
+        owner: Arc<dyn opi_ai::codex_resources::SessionResourceOwner>,
+    }
+
+    impl ForwardingProvider {
+        fn record(&self, mut seen: SeenDispatch) -> opi_ai::provider::EventStream {
+            let variant = seen
+                .attempt
+                .as_ref()
+                .map_or("direct", |attempt| attempt.payload_variant.label());
+            seen.payload = seen
+                .request
+                .callbacks
+                .apply_payload(
+                    variant,
+                    serde_json::json!({
+                        "model": "wide", "max_tokens": seen.request.max_tokens,
+                    }),
+                )
+                .unwrap();
+            self.trace.dispatches.lock().unwrap().push(seen);
+            Box::pin(futures_util::stream::iter(
+                opi_ai::test_support::text_response("done")
+                    .into_iter()
+                    .map(Ok),
+            ))
+        }
+    }
+
+    impl Provider for ForwardingProvider {
+        fn id(&self) -> &str {
+            "probe"
+        }
+        fn models(&self) -> &[ModelInfo] {
+            &self.models
+        }
+        fn validate_simple_options(
+            &self,
+            _: &ModelInfo,
+            options: &opi_ai::models::SimpleOptions,
+        ) -> Result<(), ProviderError> {
+            self.trace.validations.fetch_add(1, Ordering::SeqCst);
+            if options.temperature == Some(-1.0) {
+                Err(ProviderError::Cancelled)
+            } else {
+                Ok(())
+            }
+        }
+        fn prepare_model_call(
+            &self,
+            model: &mut ModelInfo,
+            auth: &mut ResolvedAuth,
+        ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
+            self.trace.preparations.fetch_add(1, Ordering::SeqCst);
+            model
+                .headers
+                .push(("x-prepared".into(), Some("retained".into())));
+            auth.base_url = Some("http://127.0.0.1/prepared".into());
+            Ok(Some(Arc::new(self.clone())))
+        }
+        fn stream_prepared(
+            &self,
+            request: Request,
+            auth: ResolvedAuth,
+        ) -> opi_ai::provider::EventStream {
+            self.record(SeenDispatch {
+                method: "prepared",
+                model: None,
+                options: None,
+                request,
+                auth,
+                attempt: None,
+                resources: None,
+                payload: Default::default(),
+            })
+        }
+        fn stream_attempt(
+            &self,
+            request: Request,
+            auth: ResolvedAuth,
+            attempt: opi_ai::provider::AttemptContext,
+        ) -> opi_ai::provider::EventStream {
+            self.record(SeenDispatch {
+                method: "attempt",
+                model: None,
+                options: None,
+                request,
+                auth,
+                attempt: Some(attempt),
+                resources: None,
+                payload: Default::default(),
+            })
+        }
+        fn stream_resource_attempt(
+            &self,
+            request: Request,
+            auth: ResolvedAuth,
+            attempt: opi_ai::provider::AttemptContext,
+            resources: Option<opi_ai::codex_resources::CallResourceLease>,
+        ) -> opi_ai::provider::EventStream {
+            self.record(SeenDispatch {
+                method: "resource",
+                model: None,
+                options: None,
+                request,
+                auth,
+                attempt: Some(attempt),
+                resources,
+                payload: Default::default(),
+            })
+        }
+        fn stream_model_resource_attempt(
+            &self,
+            model: ModelInfo,
+            options: opi_ai::models::SimpleOptions,
+            request: Request,
+            auth: ResolvedAuth,
+            attempt: opi_ai::provider::AttemptContext,
+            resources: Option<opi_ai::codex_resources::CallResourceLease>,
+        ) -> opi_ai::provider::EventStream {
+            self.record(SeenDispatch {
+                method: "model",
+                model: Some(model),
+                options: Some(options),
+                request,
+                auth,
+                attempt: Some(attempt),
+                resources,
+                payload: Default::default(),
+            })
+        }
+        fn acquisition_policy_default(&self) -> opi_ai::retry::AcquisitionPolicy {
+            let mut policy = opi_ai::retry::AcquisitionPolicy::with_max_retries(7);
+            policy.max_retry_delay_ms = 1234;
+            policy.jitter_seed = Some(42);
+            policy
+        }
+        fn session_resources(&self) -> Option<&dyn opi_ai::codex_resources::SessionResourceOwner> {
+            Some(self.owner.as_ref())
+        }
+        fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
+            if models.is_empty() {
+                return Err(ProviderError::Cancelled);
+            }
+            self.models = models;
+            Ok(())
+        }
+        fn refresh_models(
+            &self,
+            context: opi_ai::catalog::CatalogRefreshContext,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<Option<Vec<ModelInfo>>, ProviderError>>
+        {
+            let cancelled = context.cancel.is_cancelled();
+            self.trace.refreshes.lock().unwrap().push(context);
+            let models = self.models.clone();
+            Box::pin(async move {
+                if cancelled {
+                    Err(ProviderError::Cancelled)
+                } else {
+                    Ok(Some(models))
+                }
+            })
+        }
+    }
+
+    fn forwarding_provider() -> (
+        ConfiguredOutputProvider,
+        Arc<ForwardingTrace>,
+        Arc<dyn opi_ai::codex_resources::SessionResourceOwner>,
+    ) {
+        let codex = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+            Some("http://127.0.0.1:1".into()),
+            Vec::new(),
+            Arc::new(opi_ai::http::HttpClient::new()),
+        );
+        let owner = codex.session_resources().unwrap().new_namespace();
+        let trace = Arc::new(ForwardingTrace::default());
+        let inner = ForwardingProvider {
+            models: vec![ModelInfo::new(
+                "wide",
+                "Wide",
+                opi_ai::WireApi::AnthropicMessages,
+                opi_ai::ModelCapabilities::new(200_000, 32_768).with_thinking(true),
+            )],
+            trace: trace.clone(),
+            owner: owner.clone(),
+        };
+        (
+            ConfiguredOutputProvider {
+                inner: Arc::new(inner),
+                limit: 4096,
+            },
+            trace,
+            owner,
+        )
+    }
+
+    fn attempt(
+        index: u32,
+        variant: opi_ai::provider::PayloadVariant,
+    ) -> opi_ai::provider::AttemptContext {
+        opi_ai::provider::AttemptContext {
+            invocation_id: "frozen-invocation".into(),
+            attempt: index,
+            max_attempts: 3,
+            payload_variant: variant,
+        }
+    }
+
+    #[tokio::test]
+    async fn catalog_native_options_refresh_and_resources_keep_their_owners() {
+        let (mut provider, trace, owner) = forwarding_provider();
+        assert_eq!(provider.id(), "probe");
+        assert!(std::ptr::eq(
+            provider.session_resources().unwrap(),
+            owner.as_ref()
+        ));
+        let mut changed = provider.models()[0].clone();
+        changed.display_name = "Changed".into();
+        provider
+            .replace_model_catalog(vec![changed.clone()])
+            .unwrap();
+        assert_eq!(provider.models(), [changed.clone()]);
+        assert_eq!(
+            provider.replace_model_catalog(Vec::new()),
+            Err(ProviderError::Cancelled)
+        );
+        assert_eq!(
+            provider.models(),
+            [changed.clone()],
+            "failed replacement retains the catalog"
+        );
+        provider
+            .validate_simple_options(&changed, &Default::default())
+            .unwrap();
+        assert_eq!(
+            provider.validate_simple_options(
+                &changed,
+                &opi_ai::models::SimpleOptions {
+                    temperature: Some(-1.0),
+                    ..Default::default()
+                }
+            ),
+            Err(ProviderError::Cancelled)
+        );
+        assert_eq!(trace.validations.load(Ordering::SeqCst), 2);
+        for force in [None, Some(false), Some(true)] {
+            let cancel = tokio_util::sync::CancellationToken::new();
+            let refreshed = provider
+                .refresh_models(opi_ai::catalog::CatalogRefreshContext {
+                    allow_network: false,
+                    force,
+                    providers: ["probe".into()].into(),
+                    cancel: cancel.clone(),
+                })
+                .await
+                .unwrap();
+            assert_eq!(refreshed, Some(vec![changed.clone()]));
+            cancel.cancel();
+            let refreshes = trace.refreshes.lock().unwrap();
+            let seen = refreshes.last().unwrap();
+            assert_eq!((seen.allow_network, seen.force), (false, force));
+            assert_eq!(seen.providers, ["probe".into()].into());
+            assert!(seen.cancel.is_cancelled());
+        }
+        let cancel = tokio_util::sync::CancellationToken::new();
+        cancel.cancel();
+        assert_eq!(
+            provider
+                .refresh_models(opi_ai::catalog::CatalogRefreshContext {
+                    allow_network: true,
+                    force: Some(true),
+                    providers: ["probe".into()].into(),
+                    cancel
+                })
+                .await,
+            Err(ProviderError::Cancelled)
+        );
+        let policy = provider.acquisition_policy_default();
+        assert_eq!(
+            (
+                policy.max_retries,
+                policy.max_retry_delay_ms,
+                policy.jitter_seed
+            ),
+            (7, 1234, Some(42))
+        );
+        let mut model = changed;
+        let mut auth = opi_ai::test_support::resolved_auth();
+        let prepared = provider
+            .prepare_model_call(&mut model, &mut auth)
+            .unwrap()
+            .unwrap();
+        assert_eq!(trace.preparations.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            model.headers.last(),
+            Some(&("x-prepared".into(), Some("retained".into())))
+        );
+        assert_eq!(auth.base_url.as_deref(), Some("http://127.0.0.1/prepared"));
+        let mut resolved_request = request("probe:wide".into(), 2048);
+        resolved_request.max_tokens = Some(6144);
+        ChatStream::new(prepared.stream_model_resource_attempt(
+            model.clone(),
+            Default::default(),
+            resolved_request,
+            auth.clone(),
+            attempt(1, opi_ai::provider::PayloadVariant::Ordinary),
+            None,
+        ))
+        .result()
+        .await
+        .unwrap();
+        let dispatches = trace.dispatches.lock().unwrap();
+        assert_eq!(dispatches[0].request.max_tokens, Some(4096));
+        assert_eq!(dispatches[0].model, Some(model));
+        assert_eq!(dispatches[0].auth.base_url, auth.base_url);
+    }
+
+    #[tokio::test]
+    async fn dispatch_variants_preserve_frozen_inputs_callbacks_and_one_resource_generation() {
+        use opi_ai::provider::PayloadVariant;
+        use secrecy::ExposeSecret;
+        let (provider, trace, owner) = forwarding_provider();
+        let callback_calls = Arc::new(AtomicU32::new(0));
+        let observed = callback_calls.clone();
+        let mut resolved_request = request("probe:wide".into(), 2048);
+        resolved_request.max_tokens = Some(6144);
+        resolved_request.metadata = Some(serde_json::json!({"public": "retained"}));
+        resolved_request.extra_headers = vec![("x-fixture".into(), "retained".into())];
+        resolved_request.stop_sequences = vec!["stop".into()];
+        resolved_request.timeout = Some(std::time::Duration::from_secs(9));
+        resolved_request.temperature = Some(0.25);
+        resolved_request.session_id = Some("retained-session".into());
+        resolved_request.cache_retention = opi_ai::provider::CacheRetention::Long;
+        resolved_request
+            .sampling_params
+            .get_or_insert_default()
+            .insert("seed".into(), serde_json::json!(42));
+        let lease = owner.register_call(&resolved_request).unwrap();
+        let auth = opi_ai::test_support::resolved_auth();
+        for stream in [
+            provider.stream_prepared(resolved_request.clone(), auth.clone()),
+            provider.stream_attempt(
+                resolved_request.clone(),
+                auth.clone(),
+                attempt(1, PayloadVariant::Ordinary),
+            ),
+            provider.stream_resource_attempt(
+                resolved_request.clone(),
+                auth.clone(),
+                attempt(1, PayloadVariant::Ordinary),
+                Some(lease.clone()),
+            ),
+        ] {
+            ChatStream::new(stream).result().await.unwrap();
+        }
+        resolved_request.callbacks =
+            opi_ai::callbacks::RequestCallbacks::new().with_on_payload(Arc::new(move |_| {
+                observed.fetch_add(1, Ordering::SeqCst);
+                Ok(None)
+            }));
+        let options = opi_ai::models::SimpleOptions {
+            tool_choice: Some(opi_ai::models::SimpleToolChoice::None),
+            temperature: Some(0.5),
+            ..Default::default()
+        };
+        let model = provider.models()[0].clone();
+        for (index, variant) in [
+            (1, PayloadVariant::Ordinary),
+            (2, PayloadVariant::Ordinary),
+            (3, PayloadVariant::AnthropicStrictDowngrade),
+        ] {
+            ChatStream::new(provider.stream_model_resource_attempt(
+                model.clone(),
+                options.clone(),
+                resolved_request.clone(),
+                auth.clone(),
+                attempt(index, variant),
+                Some(lease.clone()),
+            ))
+            .result()
+            .await
+            .unwrap();
+        }
+        {
+            let dispatches = trace.dispatches.lock().unwrap();
+            assert_eq!(
+                dispatches
+                    .iter()
+                    .map(|seen| seen.method)
+                    .collect::<Vec<_>>(),
+                ["prepared", "attempt", "resource", "model", "model", "model"]
+            );
+            for (index, seen) in dispatches.iter().enumerate() {
+                assert_eq!(
+                    seen.request.max_tokens,
+                    Some(if index < 3 { 6144 } else { 4096 })
+                );
+                assert_eq!(seen.request.thinking.budget_tokens, Some(2048));
+                assert_eq!(seen.request.metadata, resolved_request.metadata);
+                assert_eq!(seen.request.extra_headers, resolved_request.extra_headers);
+                assert_eq!(seen.request.stop_sequences, resolved_request.stop_sequences);
+                assert_eq!(seen.request.timeout, resolved_request.timeout);
+                assert_eq!(seen.request.temperature, resolved_request.temperature);
+                assert_eq!(
+                    seen.request.sampling_params,
+                    resolved_request.sampling_params
+                );
+                assert_eq!(
+                    seen.request.cache_retention,
+                    resolved_request.cache_retention
+                );
+                assert_eq!(seen.request.session_id, resolved_request.session_id);
+                assert_eq!(seen.request.projection, resolved_request.projection);
+                assert_eq!(seen.request.transport, resolved_request.transport);
+                assert_eq!(
+                    serde_json::to_value(&seen.request.context).unwrap(),
+                    serde_json::to_value(&resolved_request.context).unwrap()
+                );
+                assert_eq!(
+                    seen.auth.secret.expose_secret(),
+                    auth.secret.expose_secret()
+                );
+                assert_eq!(seen.auth.scheme, auth.scheme);
+                assert_eq!(seen.resources.is_some(), index >= 2);
+                if index >= 3 {
+                    assert_eq!(seen.model, Some(model.clone()));
+                    assert_eq!(seen.options, Some(options.clone()));
+                    assert_eq!(
+                        seen.attempt.as_ref().unwrap(),
+                        &attempt(
+                            (index - 2) as u32,
+                            if index == 5 {
+                                PayloadVariant::AnthropicStrictDowngrade
+                            } else {
+                                PayloadVariant::Ordinary
+                            }
+                        )
+                    );
+                }
+            }
+            assert_eq!(
+                dispatches[3].payload, dispatches[4].payload,
+                "ordinary retries reuse the frozen payload"
+            );
+            assert_eq!(dispatches[3].payload["max_tokens"], 4096);
+            assert_eq!(
+                callback_calls.load(Ordering::SeqCst),
+                2,
+                "one callback per model payload variant"
+            );
+        }
+        let report = provider
+            .session_resources()
+            .unwrap()
+            .cleanup_session_resources(Some("retained-session"))
+            .resolve()
+            .await
+            .unwrap();
+        assert_eq!(
+            report.cancelled_generations, 1,
+            "all forwarded leases refer to one generation"
+        );
+        assert!(
+            !resolved_request.cancel.is_cancelled(),
+            "cleanup does not cancel its caller's parent token"
+        );
+        resolved_request.cancel.cancel();
+        assert!(
+            trace
+                .dispatches
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|seen| seen.request.cancel.is_cancelled())
+        );
+    }
+
+    impl Provider for PreparedAdapter {
+        fn id(&self) -> &str {
+            self.inner.id()
+        }
+        fn models(&self) -> &[ModelInfo] {
+            self.inner.models()
+        }
+        fn prepare_model_call(
+            &self,
+            _: &mut ModelInfo,
+            _: &mut ResolvedAuth,
+        ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
+            self.prepares.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(self.inner.clone()))
+        }
+        fn stream_prepared(&self, _: Request, _: ResolvedAuth) -> opi_ai::provider::EventStream {
+            panic!("the frozen replacement adapter must receive dispatch")
+        }
+    }
+
+    fn response(bedrock: bool) -> ResponseTemplate {
+        if bedrock {
+            let mut bytes = Vec::new();
+            for (event, payload) in [
+                ("messageStart", r#"{"role":"assistant"}"#),
+                (
+                    "contentBlockStart",
+                    r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+                ),
+                (
+                    "contentBlockDelta",
+                    r#"{"delta":{"text":"ok"},"contentBlockIndex":0}"#,
+                ),
+                ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+                ("messageStop", r#"{"stopReason":"end_turn"}"#),
+                (
+                    "metadata",
+                    r#"{"usage":{"inputTokens":3,"outputTokens":2}}"#,
+                ),
+            ] {
+                bytes.extend(opi_ai::bedrock::event_stream::build_test_frame(
+                    event,
+                    "application/json",
+                    payload.as_bytes(),
+                ));
+            }
+            ResponseTemplate::new(200).set_body_raw(bytes, "application/vnd.amazon.eventstream")
+        } else {
+            ResponseTemplate::new(200).set_body_raw(concat!(
+                "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_limit\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-3-7-sonnet-latest\",\"stop_reason\":null,\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\n\n",
+                "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n",
+                "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+                "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":2}}\n\n",
+                "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+            ), "text/event-stream")
+        }
+    }
+
+    fn wire_provider(bedrock: bool, base: String, context: u64) -> Box<dyn Provider> {
+        let id = if bedrock {
+            "anthropic.claude-3-7-sonnet-20250219-v1:0"
+        } else {
+            "claude-3-7-sonnet-latest"
+        };
+        let wire = if bedrock {
+            opi_ai::WireApi::BedrockConverseStream
+        } else {
+            opi_ai::WireApi::AnthropicMessages
+        };
+        let model = ModelInfo::new(
+            id,
+            "Claude 3.7",
+            wire,
+            opi_ai::ModelCapabilities::new(context, 32_768).with_thinking(true),
+        );
+        let client = Arc::new(opi_ai::http::HttpClient::new());
+        if bedrock {
+            Box::new(
+                opi_ai::bedrock::BedrockProvider::new(Some(base), client).with_models(vec![model]),
+            )
+        } else {
+            Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+                "anthropic".into(),
+                vec![model],
+                Some(base),
+                Default::default(),
+                client,
+                false,
+            ))
+        }
+    }
+
+    fn request(spec: String, budget: u64) -> Request {
+        Request {
+            projection: Default::default(),
+            transport: Default::default(),
+            model: spec,
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![Message::User(opi_ai::message::UserMessage {
+                    content: vec![opi_ai::message::InputContent::Text {
+                        text: "hello".into(),
+                    }],
+                    timestamp_ms: 0,
+                })],
+                tools: Vec::new(),
+            })
+            .unwrap(),
+            max_tokens: Some(4096),
+            temperature: None,
+            sampling_params: Default::default(),
+            thinking: ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(budget),
+                level: opi_ai::ThinkingLevel::Medium,
+            },
+            stop_sequences: Vec::new(),
+            metadata: None,
+            cancel: Default::default(),
+            timeout: None,
+            extra_headers: Vec::new(),
+            cache_retention: Default::default(),
+            session_id: None,
+            telemetry_context: None,
+            callbacks: Default::default(),
+        }
+    }
+
+    async fn wire_call(
+        bedrock: bool,
+        product: bool,
+        limit: Option<u64>,
+        budget: u32,
+        enabled: bool,
+        context: u64,
+        replacement: bool,
+    ) -> (u64, Option<u64>) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(response(bedrock))
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut provider = wire_provider(bedrock, server.uri(), context);
+        let original_model = provider.models()[0].clone();
+        let spec = format!("{}:{}", provider.id(), original_model.id);
+        let prepares = Arc::new(AtomicU32::new(0));
+        if replacement {
+            provider = Box::new(PreparedAdapter {
+                inner: Arc::from(provider),
+                prepares: prepares.clone(),
+            });
+        }
+        let auth_calls = Arc::new(AtomicU32::new(0));
+        let auth = Arc::new(FixedAuth {
+            bearer: bedrock,
+            calls: auth_calls.clone(),
+        });
+        if product {
+            let workspace = tempfile::tempdir().unwrap();
+            let global = tempfile::tempdir().unwrap();
+            let sessions = tempfile::tempdir().unwrap();
+            let mut config = OpiConfig::default();
+            config.defaults.max_output_tokens = limit;
+            config.thinking.budget_tokens = budget;
+            config.thinking.enabled = enabled;
+            config.compaction.enabled = false;
+            let mut harness = CodingHarness::builder(
+                provider,
+                spec,
+                config,
+                workspace.path().to_path_buf(),
+                TrustDecision::Trusted,
+            )
+            .global_config_dir(global.path().to_path_buf())
+            .session_dir_for_test(sessions.path().to_path_buf())
+            .auth_resolver(auth)
+            .build();
+            assert_eq!(
+                harness.active_model_info().unwrap(),
+                original_model,
+                "the product ceiling must not falsify catalog metadata"
+            );
+            harness.prompt("hello").await.unwrap();
+            assert_eq!(
+                harness.agent.state_snapshot().inference.max_tokens,
+                limit,
+                "the configured state remains the total ceiling"
+            );
+        } else {
+            let provider_id = provider.id().to_owned();
+            let models = crate::provider_factory::build_harness_collection(
+                vec![(provider, auth)],
+                Vec::new(),
+                Vec::new(),
+                &provider_id,
+                None,
+            );
+            let prepared = models
+                .prepare_call(&spec, request(spec.clone(), budget.into()))
+                .await
+                .unwrap();
+            let message = ChatStream::new(prepared.start_attempt().unwrap())
+                .result()
+                .await
+                .unwrap();
+            assert_eq!(message.stop_reason, StopReason::Stop);
+            assert_eq!(
+                (message.usage.input_tokens, message.usage.output_tokens),
+                (3, 2)
+            );
+        }
+        assert_eq!(auth_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(prepares.load(Ordering::SeqCst), u32::from(replacement));
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        if bedrock {
+            assert_eq!(
+                sent[0].headers.get("authorization").unwrap(),
+                "Bearer test-key"
+            );
+            assert!(sent[0].headers.get("amz-sdk-invocation-id").is_some());
+            (
+                body["inferenceConfig"]["maxTokens"].as_u64().unwrap(),
+                body["additionalModelRequestFields"]["thinking"]["budget_tokens"].as_u64(),
+            )
+        } else {
+            assert_eq!(sent[0].headers.get("x-api-key").unwrap(), "test-key");
+            (
+                body["max_tokens"].as_u64().unwrap(),
+                body["thinking"]["budget_tokens"].as_u64(),
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn anthropic_product_total_and_standalone_sdk_answer_budget_reach_wire() {
+        assert_eq!(
+            wire_call(false, false, None, 2048, true, 200_000, false).await,
+            (6144, Some(2048))
+        );
+        assert_eq!(
+            wire_call(false, true, Some(4096), 2048, true, 200_000, false).await,
+            (4096, Some(2048))
+        );
+    }
+
+    #[tokio::test]
+    async fn bedrock_product_total_and_standalone_sdk_answer_budget_reach_wire() {
+        assert_eq!(
+            wire_call(true, false, None, 2048, true, 200_000, false).await,
+            (6144, Some(2048))
+        );
+        assert_eq!(
+            wire_call(true, true, Some(4096), 2048, true, 200_000, false).await,
+            (4096, Some(2048))
+        );
+    }
+
+    #[tokio::test]
+    async fn prepared_replacement_adapter_keeps_the_product_ceiling() {
+        assert_eq!(
+            wire_call(false, true, Some(4096), 2048, true, 200_000, true).await,
+            (4096, Some(2048))
+        );
+    }
+
+    #[tokio::test]
+    async fn near_ceiling_thinking_is_fitted_on_the_actual_wire() {
+        for bedrock in [false, true] {
+            assert_eq!(
+                wire_call(bedrock, true, Some(16_384), 16_000, true, 200_000, false).await,
+                (16_384, Some(15_360))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_thinking_and_omitted_config_keep_existing_wire_defaults() {
+        for bedrock in [false, true] {
+            assert_eq!(
+                wire_call(bedrock, true, Some(4096), 2048, false, 200_000, false).await,
+                (4096, None)
+            );
+            assert_eq!(
+                wire_call(bedrock, true, None, 2048, true, 200_000, false).await,
+                (32_768, Some(2048))
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn context_reduction_is_never_raised_back_to_configured_ceiling() {
+        for bedrock in [false, true] {
+            let (limit, budget) =
+                wire_call(bedrock, true, Some(4096), 2048, true, 8_000, false).await;
+            assert!(limit < 4096, "remaining context must bind: {limit}");
+            assert!(budget.unwrap() <= limit.saturating_sub(1024));
+        }
     }
 }
 

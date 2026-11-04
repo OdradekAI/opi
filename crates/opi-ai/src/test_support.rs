@@ -384,7 +384,10 @@ pub fn tool_call_response(
         },
         AssistantStreamEvent::Done {
             reason: StopReason::ToolUse,
-            message: partial,
+            message: AssistantMessage {
+                stop_reason: StopReason::ToolUse,
+                ..partial
+            },
         },
     ]
 }
@@ -432,12 +435,13 @@ pub fn blocks_response(blocks: Vec<crate::message::AssistantContent>) -> Vec<Ass
             other => panic!("blocks_response scripts only Text and ToolCall blocks, got {other:?}"),
         }
     }
+    partial.stop_reason = if uses_tools {
+        StopReason::ToolUse
+    } else {
+        StopReason::Stop
+    };
     events.push(AssistantStreamEvent::Done {
-        reason: if uses_tools {
-            StopReason::ToolUse
-        } else {
-            StopReason::Stop
-        },
+        reason: partial.stop_reason,
         message: partial,
     });
     events

@@ -10,6 +10,7 @@ use std::{
     },
     task::{Context, Poll},
 };
+use tokio_util::sync::CancellationToken;
 #[derive(Debug)]
 pub(crate) enum Fault {
     // The backend errno is diagnostic only; it surfaces through the Debug
@@ -69,6 +70,7 @@ pub(super) struct Decoder {
     no_context: bool,
     job: Option<Job>,
     cancellation: Arc<AtomicBool>,
+    logical_cancellation: Option<CancellationToken>,
     pub(super) tail_injections: usize,
     pub(super) resets: usize,
     pub(super) poll_steps: usize,
@@ -125,6 +127,7 @@ impl Decoder {
             no_context,
             job: None,
             cancellation: Arc::new(AtomicBool::new(false)),
+            logical_cancellation: None,
             tail_injections: 0,
             resets: 0,
             poll_steps: 0,
@@ -147,7 +150,27 @@ impl Decoder {
         owner.initialized = true;
         Ok(owner)
     }
+    /// Replace the active logical request token; idle pooled decoders retain none.
+    /// Binding never revives a failed decoder or replaces the transport's idle wakeup.
+    pub(super) fn bind_logical_cancellation(&mut self, cancel: Option<CancellationToken>) {
+        self.logical_cancellation = cancel;
+    }
+    fn is_cancelled(&self) -> bool {
+        self.cancellation.load(Ordering::Acquire)
+            || self
+                .logical_cancellation
+                .as_ref()
+                .is_some_and(CancellationToken::is_cancelled)
+    }
+    fn check_cancellation(&self) -> Result<(), Fault> {
+        if self.is_cancelled() {
+            Err(Fault::Cancelled)
+        } else {
+            Ok(())
+        }
+    }
     fn reset(&mut self, keep: bool) -> Result<(), Fault> {
+        self.check_cancellation()?;
         // SAFETY: stream is initialized and exclusively owned; reset preserves its allocation.
         let code = unsafe {
             if keep {
@@ -163,11 +186,18 @@ impl Decoder {
             Ok(())
         }
     }
-    fn point(&mut self) -> bool {
+    fn point(&mut self) -> Result<bool, Fault> {
+        self.check_cancellation()?;
         // SAFETY: a live initialized stream under unique access; this only queries state.
-        unsafe { z::inflateSyncPoint(&mut *self.stream) == 1 }
+        Ok(unsafe { z::inflateSyncPoint(&mut *self.stream) == 1 })
     }
-    fn step(&mut self, input: &[u8], output: &mut [u8], flush: i32) -> (i32, usize, usize, i32) {
+    fn step(
+        &mut self,
+        input: &[u8],
+        output: &mut [u8],
+        flush: i32,
+    ) -> Result<(i32, usize, usize, i32), Fault> {
+        self.check_cancellation()?;
         let take = input.len().min(u32::MAX as usize);
         let room = output.len().min(u32::MAX as usize);
         self.stream.next_in = input.as_ptr();
@@ -177,6 +207,8 @@ impl Decoder {
         // SAFETY: input and nonempty output are live, disjoint slices for exactly avail lengths;
         // the unique initialized stream cannot escape. The synchronous call ends before slices expire.
         let code = unsafe { z::inflate(&mut *self.stream, flush) };
+        #[cfg(test)]
+        crate::ws::tests::logical_cancel_probe::after_inflate();
         let result = (
             code,
             take - self.stream.avail_in as usize,
@@ -189,7 +221,7 @@ impl Decoder {
         self.stream.avail_in = 0;
         self.stream.next_out = ptr::null_mut();
         self.stream.avail_out = 0;
-        result
+        Ok(result)
     }
     #[cfg(test)]
     pub(super) fn decode(&mut self, payload: &[u8]) -> Result<Vec<u8>, Fault> {
@@ -232,7 +264,7 @@ impl Decoder {
         if self.failed {
             return Err(Fault::Terminal);
         }
-        if self.cancellation.load(Ordering::Acquire) {
+        if self.is_cancelled() {
             self.cancel();
             return Err(Fault::Cancelled);
         }
@@ -261,7 +293,7 @@ impl Decoder {
         if self.failed {
             return Poll::Ready(Err(Fault::Terminal));
         }
-        if self.cancellation.load(Ordering::Acquire) {
+        if self.is_cancelled() {
             self.cancel();
             return Poll::Ready(Err(Fault::Cancelled));
         }
@@ -269,7 +301,7 @@ impl Decoder {
             return Poll::Ready(Err(Fault::Idle));
         };
         for steps in 1..=STEPS_PER_POLL {
-            if self.cancellation.load(Ordering::Acquire) {
+            if self.is_cancelled() {
                 self.cancel();
                 return Poll::Ready(Err(Fault::Cancelled));
             }
@@ -278,7 +310,7 @@ impl Decoder {
             match self.advance(&mut job) {
                 Ok(Progress::Complete) => {
                     // Publication linearizes at this final cancellation observation.
-                    if self.cancellation.load(Ordering::Acquire) {
+                    if self.is_cancelled() {
                         self.cancel();
                         return Poll::Ready(Err(Fault::Cancelled));
                     }
@@ -313,7 +345,7 @@ impl Decoder {
                     &job.payload[job.offset..end],
                     &mut chunk[..room],
                     z::Z_BLOCK,
-                );
+                )?;
                 if job
                     .limit
                     .is_some_and(|n| made > n.saturating_sub(job.output.len()))
@@ -340,7 +372,7 @@ impl Decoder {
                     job.last_boundary = None;
                     return Ok(Progress::Continue);
                 }
-                if job.offset == job.payload.len() && self.point() {
+                if job.offset == job.payload.len() && self.point()? {
                     job.stage = Stage::Tail;
                     return Ok(Progress::Continue);
                 }
@@ -366,7 +398,7 @@ impl Decoder {
             Stage::Tail => {
                 // SyncPoint was proven before synthetic bytes: only omitted LEN/NLEN remain.
                 let (code, used, made, state) =
-                    self.step(&[0, 0, 255, 255], &mut chunk, z::Z_BLOCK);
+                    self.step(&[0, 0, 255, 255], &mut chunk, z::Z_BLOCK)?;
                 self.tail_injections += 1;
                 if code != z::Z_OK || used != 4 || made != 0 || state & 128 == 0 || state & 63 != 0
                 {
@@ -380,7 +412,7 @@ impl Decoder {
             }
             Stage::Finalize => {
                 // A legal final empty stored block is normalized with dictionary preserved.
-                let (code, used, made, _) = self.step(&[], &mut chunk, z::Z_BLOCK);
+                let (code, used, made, _) = self.step(&[], &mut chunk, z::Z_BLOCK)?;
                 if code != z::Z_STREAM_END || used != 0 || made != 0 {
                     return Err(Fault::Boundary);
                 }

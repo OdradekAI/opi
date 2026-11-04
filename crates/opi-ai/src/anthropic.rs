@@ -66,25 +66,68 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
 pub fn parse_sse_events_with_raw(
     input: &str,
 ) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
+    parse_frames(input).filter_map(parse_sse_frame)
+}
+
+fn parse_sse_frame(frame: SseFrame) -> Option<(ParsedEvent, Option<serde_json::Value>)> {
+    if !ANTHROPIC_EVENTS.contains(&frame.event.as_str()) {
+        return None;
+    }
+    let raw = serde_json::from_str::<serde_json::Value>(&frame.data).ok();
+    match serde_json::from_str::<AnthropicRawEvent>(&frame.data) {
+        Ok(raw_event) => Some(match AnthropicEvent::from_raw(raw_event) {
+            Ok(event) => (ParsedEvent::Valid(event), raw),
+            Err(error) => (ParsedEvent::UsageError(error), raw),
+        }),
+        Err(e) => Some((
+            ParsedEvent::Malformed {
+                event_type: frame.event,
+                data: frame.data,
+                error: e.to_string(),
+            },
+            raw,
+        )),
+    }
+}
+
+enum TransportParsedEvent {
+    Public(ParsedEvent),
+    Fallback { index: usize },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+enum RawFallbackStart {
+    #[serde(rename = "content_block_start")]
+    Start {
+        index: usize,
+        content_block: RawFallbackBlock,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "type")]
+enum RawFallbackBlock {
+    #[serde(rename = "fallback")]
+    Fallback,
+}
+
+fn parse_transport_events_with_raw(
+    input: &str,
+) -> impl Iterator<Item = (TransportParsedEvent, Option<serde_json::Value>)> + '_ {
     parse_frames(input).filter_map(|frame| {
-        if !ANTHROPIC_EVENTS.contains(&frame.event.as_str()) {
-            return None;
+        if frame.event == "content_block_start"
+            && let Ok(RawFallbackStart::Start {
+                index,
+                content_block: RawFallbackBlock::Fallback,
+            }) = serde_json::from_str(&frame.data)
+        {
+            return Some((
+                TransportParsedEvent::Fallback { index },
+                serde_json::from_str(&frame.data).ok(),
+            ));
         }
-        let raw = serde_json::from_str::<serde_json::Value>(&frame.data).ok();
-        match serde_json::from_str::<AnthropicRawEvent>(&frame.data) {
-            Ok(raw_event) => Some(match AnthropicEvent::from_raw(raw_event) {
-                Ok(event) => (ParsedEvent::Valid(event), raw),
-                Err(error) => (ParsedEvent::UsageError(error), raw),
-            }),
-            Err(e) => Some((
-                ParsedEvent::Malformed {
-                    event_type: frame.event.clone(),
-                    data: frame.data.clone(),
-                    error: e.to_string(),
-                },
-                raw,
-            )),
-        }
+        parse_sse_frame(frame).map(|(parsed, raw)| (TransportParsedEvent::Public(parsed), raw))
     })
 }
 
@@ -479,6 +522,7 @@ fn project_oauth_tool_names(body: &mut serde_json::Value) {
 
 struct CompiledAnthropicRequest {
     body: serde_json::Value,
+    provider_thinking_level: Option<String>,
     preferred_strict_names: Vec<String>,
     strict_tools: Vec<crate::message::ToolDef>,
 }
@@ -509,6 +553,9 @@ pub struct AnthropicMapper {
     strict_tools: std::collections::HashMap<String, crate::message::ToolDef>,
     oauth_tool_names: Vec<String>,
     blocks: Vec<BlockState>,
+    /// Raw indices stay active until their matching stop; canonical slots
+    /// remain after closure so duplicate active indices advance in order.
+    transport_indices: Vec<Option<usize>>,
     saw_done: bool,
 }
 
@@ -534,6 +581,66 @@ impl Default for AnthropicMapper {
 }
 
 impl AnthropicMapper {
+    fn process_transport(
+        &mut self,
+        event: TransportParsedEvent,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if self.saw_done {
+            return Vec::new();
+        }
+        match event {
+            TransportParsedEvent::Fallback { index } => {
+                // A fallback marker creates no canonical content or block
+                // association, even when a later block reuses its index.
+                let _ = index;
+                if self.partial.content.is_empty() {
+                    Vec::new()
+                } else {
+                    self.saw_done = true;
+                    let cause = ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                        "Anthropic performed an unsupported mid-output model fallback",
+                    ));
+                    vec![Err(self.failure(cause))]
+                }
+            }
+            TransportParsedEvent::Public(ParsedEvent::Valid(mut event)) => {
+                let stopping = matches!(&event, AnthropicEvent::ContentBlockStop { .. });
+                match &mut event {
+                    AnthropicEvent::ContentBlockStart { index, .. } => {
+                        let canonical = self.blocks.len();
+                        self.transport_indices.push(Some(*index));
+                        *index = canonical;
+                    }
+                    AnthropicEvent::ContentBlockDelta { index, .. }
+                    | AnthropicEvent::ContentBlockStop { index } => {
+                        let Some(canonical) = self
+                            .transport_indices
+                            .iter()
+                            .position(|raw| *raw == Some(*index))
+                        else {
+                            return Vec::new();
+                        };
+                        if stopping {
+                            self.transport_indices[canonical] = None;
+                        }
+                        *index = canonical;
+                    }
+                    _ => {}
+                }
+                self.process(event)
+            }
+            TransportParsedEvent::Public(ParsedEvent::UsageError(error)) => {
+                vec![Err(self.failure(error))]
+            }
+            TransportParsedEvent::Public(ParsedEvent::Malformed { event_type, .. }) => {
+                let cause = ProviderError::StreamError(ProviderErrorSummary::sanitized(format!(
+                    "malformed Anthropic SSE event '{event_type}'"
+                )));
+                vec![Err(self.failure(cause))]
+            }
+        }
+    }
+
     pub(crate) fn set_snapshot(&mut self, snapshot: crate::stream::ProducerSnapshot) {
         self.snapshot = snapshot;
         self.snapshot.record(&self.partial);
@@ -564,6 +671,7 @@ impl AnthropicMapper {
             strict_tools: std::collections::HashMap::new(),
             oauth_tool_names: Vec::new(),
             blocks: Vec::new(),
+            transport_indices: Vec::new(),
             saw_done: false,
         }
     }
@@ -961,6 +1069,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
                 supports_strict_tools: false,
                 supports_mid_convo_system_messages: false,
                 supports_mid_convo_tool_changes: false,
+                ..Default::default()
             }))
             .expect("built-in Anthropic compatibility uses the matching wire")
     })
@@ -1239,10 +1348,14 @@ impl AnthropicProvider {
     /// `supports_cache_control`, the request does not disable caching
     /// (`CacheRetention::Disabled`). `None` preserves the provider default,
     /// which is the ordinary ephemeral marker used by `Short`. Markers
-    /// land on: the system prompt block, the last user-message text block,
-    /// the last assistant-message text block, and the last tool definition.
+    /// land on the system prompt block, the last user-message text block
+    /// and the last assistant-message text block. The last real request-level
+    /// tool definition carries a marker only when the resolved compatibility
+    /// also permits cache control on tools; inline additions and the deferred
+    /// placeholder do not inherit that breakpoint.
     /// TTL `"1h"` is used only when the model also advertises
-    /// `supports_long_cache_retention` and the request retention is `Long`.
+    /// `supports_long_cache_retention`, resolved compatibility permits long
+    /// retention, and the request retention is `Long`.
     pub fn build_request_body(
         &self,
         request: &Request,
@@ -1283,6 +1396,7 @@ impl AnthropicProvider {
                 supports_strict_tools: false,
                 supports_mid_convo_system_messages: false,
                 supports_mid_convo_tool_changes: false,
+                ..Default::default()
             });
         let supports_cache = model_caps
             .map(|m| m.capabilities.supports_cache_control)
@@ -1290,9 +1404,67 @@ impl AnthropicProvider {
         let emit_cache = cache_enabled && supports_cache;
         let use_long_ttl = emit_cache
             && request.cache_retention == CacheRetention::Long
+            && compat.supports_long_cache_retention
             && model_caps
                 .map(|m| m.capabilities.supports_long_cache_retention)
                 .unwrap_or(false);
+
+        let native = self.native_options.as_ref();
+        let native_enabled = native
+            .and_then(|options| options.thinking_enabled)
+            .or_else(|| {
+                (compat.supports_mid_convo_effort
+                    && native.is_some_and(AnthropicMessagesOptions::is_simple))
+                .then_some(request.thinking.enabled)
+            });
+        let neutral_enabled = request.thinking.enabled || native_enabled == Some(true);
+        let thinking_disabled = native_enabled == Some(false)
+            && model_caps.is_some_and(|model| {
+                model.capabilities.supports_thinking
+                    && model
+                        .thinking_level_map
+                        .resolve(crate::ThinkingLevel::None)
+                        .is_ok()
+            });
+        let managed_effort = compat.supports_mid_convo_effort && !thinking_disabled;
+        let provider_thinking_level = if managed_effort {
+            let effort = if let Some(level) = native.and_then(|options| options.effort) {
+                model_caps
+                    .map(|model| model.thinking_level_map.resolve(level))
+                    .transpose()
+                    .map_err(|_| ProviderError::Config(ProviderErrorSummary::sanitized(format!(
+                        "anthropic-messages native options reject unsupported thinking level {level:?}"
+                    ))))?
+                    .flatten()
+            } else if native.is_none_or(AnthropicMessagesOptions::is_simple)
+                && request.thinking.enabled
+                && compat.force_adaptive_thinking
+            {
+                // The neutral adaptive entry maps its selected level to native
+                // effort; explicit source mappings precede the source defaults.
+                let mapped = model_caps.and_then(|model| {
+                    match model.thinking_level_map.mapping(request.thinking.level) {
+                        crate::model_info::ThinkingLevelMapping::Mapped(value) => {
+                            Some(value.clone())
+                        }
+                        _ => None,
+                    }
+                });
+                Some(mapped.unwrap_or_else(|| {
+                    match request.thinking.level {
+                        crate::ThinkingLevel::Minimal | crate::ThinkingLevel::Low => "low",
+                        crate::ThinkingLevel::Medium => "medium",
+                        _ => "high",
+                    }
+                    .into()
+                }))
+            } else {
+                None
+            };
+            Some(effort.unwrap_or_else(|| "high".into()))
+        } else {
+            None
+        };
 
         let cache_marker = if use_long_ttl {
             serde_json::json!({"type": "ephemeral", "ttl": "1h"})
@@ -1351,6 +1523,10 @@ impl AnthropicProvider {
             emit_cache,
             &cache_marker,
             crate::replay::supports_images_in_catalog(&self.models, model_id),
+            compat.allow_empty_signature,
+            provider_thinking_level
+                .as_deref()
+                .map(|effort| (self.provider_id.as_str(), effort)),
             native_tool_changes.then_some(&mut tool_projector),
         )?;
         let mut body = serde_json::json!({
@@ -1395,9 +1571,8 @@ impl AnthropicProvider {
                 ))
             })?;
         body["max_tokens"] = serde_json::Value::Number(max_tokens.into());
-        let native = self.native_options.as_ref();
-        let native_enabled = native.and_then(|options| options.thinking_enabled);
         if compat.supports_temperature
+            && !compat.supports_mid_convo_effort
             && !native_enabled.unwrap_or(request.thinking.enabled)
             && let Some(temp) = request.temperature
         {
@@ -1406,7 +1581,10 @@ impl AnthropicProvider {
                 .unwrap_or(serde_json::Value::Null);
         }
         if !request_level_tools.is_empty() {
-            if emit_cache && let Some(last) = tools.last_mut() {
+            if emit_cache
+                && compat.supports_cache_control_on_tools
+                && let Some(last) = tools.last_mut()
+            {
                 last["cache_control"] = cache_marker.clone();
             }
             if native_tool_changes {
@@ -1435,22 +1613,19 @@ impl AnthropicProvider {
         // neutral request intent. Enabled budgets follow the source
         // `|| 1024` semantics; the enabled display defaults to summarized
         // on both adaptive and numeric thinking.
-        let neutral_enabled = request.thinking.enabled || native_enabled == Some(true);
-        let model_thinking = model_caps
-            .map(|model| model.capabilities.supports_thinking)
-            .unwrap_or(false);
-        let thinking_disabled = native_enabled == Some(false)
-            && model_thinking
-            && model_caps.is_some_and(|model| {
-                model
-                    .thinking_level_map
-                    .resolve(crate::ThinkingLevel::None)
-                    .is_ok()
-            });
         if thinking_disabled {
             // Anthropic rejects `block_binding` and effort markers under
             // disabled thinking; the typed block replaces omission.
             body["thinking"] = serde_json::json!({"type": "disabled"});
+        } else if managed_effort {
+            let display = native
+                .and_then(|options| options.thinking_display)
+                .unwrap_or(AnthropicThinkingDisplay::Summarized);
+            body["thinking"] = serde_json::json!({
+                "type": "adaptive", "display": display.wire_str(),
+                "block_binding": {"prefix_mismatch_behavior": "drop_block"},
+            });
+            body["output_config"] = serde_json::json!({"effort": "high"});
         } else if neutral_enabled {
             let display = native
                 .and_then(|options| options.thinking_display)
@@ -1499,12 +1674,31 @@ impl AnthropicProvider {
         if oauth {
             betas.extend(["claude-code-20250219", "oauth-2025-04-20"]);
         }
-        if neutral_enabled
+        let interleaved_enabled = if compat.supports_mid_convo_effort {
+            native_enabled == Some(true)
+                && model_caps.is_some_and(|model| model.capabilities.supports_thinking)
+        } else {
+            neutral_enabled
+        };
+        if interleaved_enabled
             && !compat.force_adaptive_thinking
             && native.and_then(|options| options.interleaved_thinking) != Some(false)
             && !thinking_disabled
         {
             betas.push("interleaved-thinking-2025-05-14");
+        }
+        if compat
+            .allowed_fallback_models
+            .as_ref()
+            .is_some_and(|fallbacks| !fallbacks.is_empty())
+        {
+            betas.push("server-side-fallback-2026-07-01");
+        }
+        if compat.supports_mid_convo_effort {
+            betas.extend([
+                "mid-conversation-output-config-2026-07-01",
+                "thinking-binding-controls-2026-08-01",
+            ]);
         }
         if native_tool_changes {
             betas.push("inline-tools-2026-09-15");
@@ -1531,6 +1725,18 @@ impl AnthropicProvider {
         if oauth {
             project_oauth_tool_names(&mut body);
         }
+        if let Some(fallbacks) = compat
+            .allowed_fallback_models
+            .as_ref()
+            .filter(|fallbacks| !fallbacks.is_empty())
+        {
+            body["fallbacks"] = serde_json::Value::Array(
+                fallbacks
+                    .iter()
+                    .map(|fallback| serde_json::json!({"model": fallback.model}))
+                    .collect(),
+            );
+        }
         let preferred_strict_names = tool_projector
             .preferred_strict_names
             .into_iter()
@@ -1544,6 +1750,7 @@ impl AnthropicProvider {
             .collect();
         Ok(CompiledAnthropicRequest {
             body,
+            provider_thinking_level,
             preferred_strict_names,
             strict_tools: tool_projector.strict_tools,
         })
@@ -1553,22 +1760,14 @@ impl AnthropicProvider {
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
         let mut mapper = AnthropicMapper::new();
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
-        for (parsed, _raw) in parse_sse_events_with_raw(sse_body) {
-            match parsed {
-                ParsedEvent::Valid(event) => {
-                    stream_events.extend(mapper.process(event));
-                }
-                ParsedEvent::UsageError(error) => {
-                    stream_events.push(Err(mapper.failure(error)));
-                    break;
-                }
-                ParsedEvent::Malformed { event_type, .. } => {
-                    stream_events.push(Err(mapper.failure(ProviderError::StreamError(
-                        ProviderErrorSummary::sanitized(format!(
-                            "malformed Anthropic SSE event '{event_type}'"
-                        )),
-                    ))));
-                }
+        for (parsed, _raw) in parse_transport_events_with_raw(sse_body) {
+            let usage_error = matches!(
+                &parsed,
+                TransportParsedEvent::Public(ParsedEvent::UsageError(_))
+            );
+            stream_events.extend(mapper.process_transport(parsed));
+            if usage_error {
+                break;
             }
         }
 
@@ -1663,6 +1862,7 @@ impl AnthropicProvider {
                 variant == crate::provider::PayloadVariant::AnthropicStrictDowngrade;
             let CompiledAnthropicRequest {
                 body,
+                provider_thinking_level,
                 preferred_strict_names,
                 strict_tools,
             } = match self.build_request_body_variant(
@@ -1702,6 +1902,40 @@ impl AnthropicProvider {
                         ("x-app".into(), "cli".into()),
                     ]);
                 }
+                if !direct_oauth_beta && !self.copilot_headers {
+                    let selected = self.models.iter().find(|model| model.id == model_id);
+                    let compat = selected.and_then(|model| match &model.compat {
+                        WireCompat::AnthropicMessages(compat) => Some(compat),
+                        _ => None,
+                    });
+                    let openrouter = provider_id == "openrouter"
+                        || selected
+                            .and_then(|model| model.base_url.as_deref())
+                            .unwrap_or(&default_base_url)
+                            .contains("openrouter.ai");
+                    let enabled = compat
+                        .and_then(|compat| compat.send_session_affinity_headers)
+                        .unwrap_or(openrouter);
+                    if enabled
+                        && let Some(session) =
+                            request.session_id.as_deref().filter(|id| !id.is_empty())
+                    {
+                        use crate::model_info::AnthropicSessionAffinityFormat;
+                        let format = compat
+                            .and_then(|compat| compat.session_affinity_format)
+                            .or_else(|| {
+                                openrouter.then_some(AnthropicSessionAffinityFormat::OpenRouter)
+                            });
+                        let name = match format {
+                            Some(AnthropicSessionAffinityFormat::OpenRouter) => "x-session-id",
+                            None => "x-session-affinity",
+                        };
+                        // Affinity is independent of cache retention on this
+                        // wire. Generate before the ordinary header merge so
+                        // lawful model/caller overrides and removals win.
+                        route_headers.push((name.into(), session.to_owned()));
+                    }
+                }
                 self.headers.merge_model_request(
                     self.models
                         .iter()
@@ -1730,6 +1964,12 @@ impl AnthropicProvider {
                 };
 
             let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            if let Some(effort) = &provider_thinking_level {
+                let mut partial = empty_assistant_message(&provider_id);
+                partial.model = model_id.to_owned();
+                partial.provider_thinking_level = Some(effort.clone());
+                snapshot.record(&partial);
+            }
             let producer_snapshot = snapshot.clone();
             let (tx, rx) = tokio::sync::mpsc::channel(64);
             let tx_closed = tx.clone();
@@ -1842,6 +2082,7 @@ impl AnthropicProvider {
                         strict_tools,
                         oauth_tool_names,
                         diagnostics_seed,
+                        provider_thinking_level,
                         &body,
                         cancel,
                         timeout,
@@ -1891,6 +2132,7 @@ impl AnthropicProvider {
         strict_tools: Vec<crate::message::ToolDef>,
         oauth_tool_names: Vec<String>,
         diagnostics_seed: Vec<crate::stream::AssistantDiagnostic>,
+        provider_thinking_level: Option<String>,
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -2009,6 +2251,7 @@ impl AnthropicProvider {
         mapper.set_strict_tools(strict_tools);
         mapper.oauth_tool_names = oauth_tool_names;
         mapper.seed_diagnostics(diagnostics_seed);
+        mapper.partial.provider_thinking_level = provider_thinking_level;
         // Keep the requested route for continuation even when the service
         // reports a resolved model name for an alias.
         mapper.partial.model = body["model"].as_str().unwrap_or_default().to_owned();
@@ -2068,20 +2311,14 @@ impl AnthropicProvider {
                         return Err(mapper.failure(error));
                     }
                     match parsed {
-                        ParsedEvent::Valid(event) => {
-                            for item in mapper.process(event) {
+                        TransportParsedEvent::Public(ParsedEvent::UsageError(error)) => {
+                            return Err(mapper.failure(error));
+                        }
+                        parsed => {
+                            for item in mapper.process_transport(parsed) {
                                 if !send_or_cancel(&cancel, tx, item).await? {
                                     return Ok(()); // receiver dropped
                                 }
-                            }
-                        }
-                        ParsedEvent::UsageError(error) => return Err(mapper.failure(error)),
-                        ParsedEvent::Malformed { event_type, .. } => {
-                            let err = ProviderError::StreamError(ProviderErrorSummary::sanitized(
-                                format!("malformed Anthropic SSE event '{event_type}'"),
-                            ));
-                            if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
-                                return Ok(());
                             }
                         }
                     }
@@ -2112,13 +2349,14 @@ impl AnthropicProvider {
 
 /// Wrapper to adapt `tokio::sync::mpsc::Receiver` to `futures_core::Stream`.
 /// Drain complete SSE events from a growing buffer.
-/// Returns parsed [`ParsedEvent`]s and leaves incomplete data in the buffer.
+/// Leaves incomplete data in the buffer and keeps private transport markers
+/// separate from public content events.
 /// Decode only complete frames so UTF-8 and CRLF split across HTTP chunks
 /// remain unchanged, including the text covered by a thinking signature.
 fn drain_sse_events(
     buffer: &mut Vec<u8>,
     eof: bool,
-) -> Result<Vec<(ParsedEvent, Option<serde_json::Value>)>, ProviderError> {
+) -> Result<Vec<(TransportParsedEvent, Option<serde_json::Value>)>, ProviderError> {
     let mut events = Vec::new();
     loop {
         let mut line_start = 0;
@@ -2165,7 +2403,7 @@ fn drain_sse_events(
         let mut chunk = frame_decoder.push(&frame_bytes);
         chunk.push_str(&frame_decoder.finish());
         let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
-        events.extend(parse_sse_events_with_raw(&normalized));
+        events.extend(parse_transport_events_with_raw(&normalized));
     }
     Ok(events)
 }
@@ -2196,6 +2434,8 @@ fn serialize_messages(
     emit_cache: bool,
     cache_marker: &serde_json::Value,
     supports_images: bool,
+    allow_empty_signature: bool,
+    managed_effort: Option<(&str, &str)>,
     mut tool_changes: Option<&mut NativeToolChanges<'_>>,
 ) -> Result<serde_json::Value, crate::provider::ProviderError> {
     use crate::message::{AssistantContent, ImageSource, OutputContent};
@@ -2289,13 +2529,14 @@ fn serialize_messages(
                 flush_pending_system(&mut array, &mut pending_system);
                 // The replay projection already applied the continuation
                 // identity rules (AIR-010/RP-02): every thinking block in
-                // this list is same-identity, blank unsigned thinking is
-                // gone, and malformed proposals on this object wire were
-                // replaced by explicit failure contexts.
+                // this list is same-identity, and malformed proposals on
+                // this object wire were replaced by explicit failure
+                // contexts. Unsigned thinking follows the selected model's
+                // wire policy without changing canonical replay or its facts.
                 let content: Vec<serde_json::Value> = a
                     .content
                     .iter()
-                    .map(|c| match c {
+                    .filter_map(|c| Some(match c {
                         AssistantContent::Text { text, .. } => {
                             serde_json::json!({"type": "text", "text": text})
                         }
@@ -2313,19 +2554,41 @@ fn serialize_messages(
                             thinking,
                             signature,
                         } => {
-                            let mut block =
-                                serde_json::json!({"type": "thinking", "thinking": thinking});
+                            let signature = signature.as_deref().filter(|value| {
+                                !crate::schema::ecma_number::js_trim(value).is_empty()
+                            });
                             if let Some(signature) = signature {
-                                block["signature"] = serde_json::json!(signature);
+                                serde_json::json!({
+                                    "type": "thinking", "thinking": thinking, "signature": signature
+                                })
+                            } else if crate::schema::ecma_number::js_trim(thinking).is_empty() {
+                                return None;
+                            } else if allow_empty_signature {
+                                serde_json::json!({
+                                    "type": "thinking", "thinking": thinking, "signature": ""
+                                })
+                            } else {
+                                serde_json::json!({"type": "text", "text": thinking})
                             }
-                            block
                         }
                         AssistantContent::RedactedThinking { data } => {
                             serde_json::json!({"type": "redacted_thinking", "data": data})
                         }
-                    })
+                    }))
                     .collect();
-                array.push(serde_json::json!({"role": "assistant", "content": content}));
+                if !content.is_empty() {
+                    if let Some((provider, _)) = managed_effort
+                        && a.provider == provider
+                        && a.wire == Some(crate::WireApi::AnthropicMessages)
+                        && let Some(effort @ ("low" | "medium" | "high" | "xhigh" | "max")) =
+                            a.provider_thinking_level.as_deref()
+                    {
+                        array.push(serde_json::json!({
+                            "role": "system", "content": [], "output_config": {"effort": effort},
+                        }));
+                    }
+                    array.push(serde_json::json!({"role": "assistant", "content": content}));
+                }
             }
             crate::message::Message::System(system) => {
                 // Task 20.39: native tool changes keep later system messages
@@ -2455,6 +2718,12 @@ fn serialize_messages(
                 .as_array()
                 .is_none_or(|content| !content.is_empty())
     });
+
+    if let Some((_, effort)) = managed_effort {
+        array.push(serde_json::json!({
+            "role": "system", "content": [], "output_config": {"effort": effort},
+        }));
+    }
 
     Ok(serde_json::Value::Array(array))
 }
@@ -2822,8 +3091,16 @@ mod tests {
             },
         }]);
 
-        let serialized =
-            serialize_messages(&[msg], false, &serde_json::Value::Null, true, None).unwrap();
+        let serialized = serialize_messages(
+            &[msg],
+            false,
+            &serde_json::Value::Null,
+            true,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
         let input = &serialized[0]["content"][0]["input"];
         assert!(input.is_object(), "input must be JSON object, got: {input}");
         assert_eq!(input["path"], "/tmp/foo.txt");
@@ -2859,6 +3136,8 @@ mod tests {
             false,
             &serde_json::Value::Null,
             true,
+            false,
+            None,
             None,
         )
         .unwrap();
@@ -2922,6 +3201,8 @@ mod tests {
                     false,
                     &serde_json::Value::Null,
                     true,
+                    false,
+                    None,
                     None,
                 )
                 .unwrap();
@@ -3185,7 +3466,7 @@ mod tests {
             }]),
             test_assistant_msg(vec![AssistantContent::Thinking {
                 thinking: "textless for cache marker purposes".into(),
-                signature: None,
+                signature: Some("opaque-signature".into()),
             }]),
         ];
         request.context = crate::transcript::normalize_context(crate::transcript::Context {
@@ -3247,7 +3528,13 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
         );
         let events = drain_sse_events(&mut frame, false).expect("frames parse with replacement");
         assert_eq!(events.len(), 1);
-        assert!(matches!(events[0], (super::ParsedEvent::Valid(_), Some(_))));
+        assert!(matches!(
+            events[0],
+            (
+                super::TransportParsedEvent::Public(super::ParsedEvent::Valid(_)),
+                Some(_)
+            )
+        ));
         assert!(frame.is_empty(), "complete frame drained");
     }
 }

@@ -516,15 +516,10 @@ async fn session_affinity_wire_mappings() {
         request_body_json(&response_requests[0])["prompt_cache_key"],
         "session-standard"
     );
-    let standard_request_id = header_value(&response_requests[0], "x-client-request-id")
-        .expect("direct Responses request id");
     assert_eq!(
-        uuid::Uuid::parse_str(standard_request_id)
-            .unwrap()
-            .get_version_num(),
-        7
+        header_value(&response_requests[0], "x-client-request-id"),
+        Some("session-standard")
     );
-    assert_ne!(standard_request_id, "session-standard");
     assert_eq!(
         header_value(&response_requests[0], "session_id"),
         Some("session-standard")
@@ -534,15 +529,10 @@ async fn session_affinity_wire_mappings() {
         request_body_json(&response_requests[1])["prompt_cache_key"],
         "session-direct-header"
     );
-    let direct_request_id = header_value(&response_requests[1], "x-client-request-id")
-        .expect("direct Responses request id");
     assert_eq!(
-        uuid::Uuid::parse_str(direct_request_id)
-            .unwrap()
-            .get_version_num(),
-        7
+        header_value(&response_requests[1], "x-client-request-id"),
+        Some("session-direct-header")
     );
-    assert_ne!(direct_request_id, standard_request_id);
     assert_eq!(header_value(&response_requests[1], "session_id"), None);
 
     for request in &response_requests[2..4] {
@@ -559,15 +549,10 @@ async fn session_affinity_wire_mappings() {
         header_value(&response_requests[4], "session_id"),
         Some("session-custom-opt-in")
     );
-    let custom_request_id = header_value(&response_requests[4], "x-client-request-id")
-        .expect("custom opt-in request id");
     assert_eq!(
-        uuid::Uuid::parse_str(custom_request_id)
-            .unwrap()
-            .get_version_num(),
-        7
+        header_value(&response_requests[4], "x-client-request-id"),
+        Some("session-custom-opt-in")
     );
-    assert_ne!(custom_request_id, "session-custom-opt-in");
 
     let anthropic_server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -686,7 +671,7 @@ fn request_body_json(request: &wiremock::Request) -> serde_json::Value {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn request_sampling_params_default_empty_and_carried() {
+fn request_sampling_params_default_absent_and_explicit_maps_are_carried() {
     let req = Request {
         projection: Default::default(),
         transport: Default::default(),
@@ -711,15 +696,20 @@ fn request_sampling_params_default_empty_and_carried() {
         callbacks: Default::default(),
         sampling_params: Default::default(),
     };
-    assert!(req.sampling_params.is_empty());
+    assert!(req.sampling_params.is_none());
 
     let params: opi_ai::model_info::SamplingParams = serde_json::json!({"top_p": 0.9})
         .as_object()
         .cloned()
         .unwrap();
     let mut req = req;
-    req.sampling_params = params;
-    assert_eq!(req.sampling_params["top_p"], serde_json::json!(0.9));
+    req.sampling_params = Some(Default::default());
+    assert_eq!(req.sampling_params, Some(Default::default()));
+    req.sampling_params = Some(params);
+    assert_eq!(
+        req.sampling_params.as_ref().unwrap()["top_p"],
+        serde_json::json!(0.9)
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1481,4 +1471,366 @@ fn accepted_failure_cause<'a>(
     assert!(facts.temporal.affected_ranges.is_empty());
     assert!(facts.replay.losses.is_empty());
     failure.cause()
+}
+
+#[cfg(test)]
+mod responses_generated_affinity {
+    use super::*;
+    use opi_ai::model_info::{OpenAiResponsesSourceCompat, SessionAffinityFormat};
+    use opi_ai::openai_responses::{
+        OpenAiResponsesProvider, ResponsesAffinityPolicy, ResponsesConfig,
+    };
+
+    const RESPONSE: &str = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_probe\",\"status\":\"in_progress\",\"model\":\"model\",\"output\":[]}}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_probe\",\"status\":\"completed\",\"model\":\"model\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"output_text\",\"text\":\"ok\"}]}],\"usage\":{\"input_tokens\":3,\"output_tokens\":5}}}\n\n",
+    );
+
+    async fn capture(
+        policy: ResponsesAffinityPolicy,
+        flag: bool,
+        format: Option<SessionAffinityFormat>,
+        provider_id: &str,
+        retention: CacheRetention,
+        session: Option<&str>,
+        extra: Vec<(String, String)>,
+    ) -> wiremock::Request {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(RESPONSE),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::with_auth_extra(
+            Some(server.uri()),
+            ResponsesConfig {
+                send_session_id_header: flag,
+                source: OpenAiResponsesSourceCompat {
+                    session_affinity_format: format,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            provider_id.into(),
+            vec![],
+            Arc::new(HttpClient::new()),
+        )
+        .with_affinity_policy(policy);
+        let mut request = make_openai_responses_request(&format!("{provider_id}:model"), "");
+        request.session_id = session.map(str::to_owned);
+        request.cache_retention = retention;
+        request.extra_headers = extra;
+        let result = opi_ai::ChatStream::new(
+            provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+        )
+        .result()
+        .await
+        .expect("real Responses terminal");
+        assert_eq!(result.stop_reason, opi_ai::stream::StopReason::Stop);
+        assert_eq!(result.usage.input_tokens, 3);
+        assert_eq!(result.usage.output_tokens, 5);
+        let mut sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        server.verify().await;
+        sent.remove(0)
+    }
+
+    fn assert_affinity(
+        request: &wiremock::Request,
+        key: Option<&str>,
+        session: Option<&str>,
+        client: Option<&str>,
+        router: Option<&str>,
+    ) {
+        assert_eq!(
+            request_body_json(request)
+                .get("prompt_cache_key")
+                .and_then(serde_json::Value::as_str),
+            key
+        );
+        assert_eq!(
+            header_value(request, "session_id"),
+            session,
+            "literal session_id"
+        );
+        assert_eq!(
+            header_value(request, "x-client-request-id"),
+            client,
+            "source client request id"
+        );
+        assert_eq!(
+            header_value(request, "x-session-id"),
+            router,
+            "router session id"
+        );
+        assert_eq!(
+            header_value(request, "x-session-affinity"),
+            None,
+            "Responses does not inherit Chat's third header"
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_long_session_keeps_raw_header_ids_and_clamps_only_cache_key() {
+        let session = "source-session-".repeat(8);
+        let sent = capture(
+            ResponsesAffinityPolicy::Direct,
+            true,
+            None,
+            "openai-responses",
+            CacheRetention::Short,
+            Some(&session),
+            vec![],
+        )
+        .await;
+        assert_affinity(
+            &sent,
+            Some(&session[..64]),
+            Some(&session),
+            Some(&session),
+            None,
+        );
+    }
+
+    #[tokio::test]
+    async fn direct_false_omits_only_session_id_even_with_explicit_openai_format() {
+        let sent = capture(
+            ResponsesAffinityPolicy::Direct,
+            false,
+            Some(SessionAffinityFormat::OpenAi),
+            "openai-responses",
+            CacheRetention::Short,
+            Some("source-session"),
+            vec![],
+        )
+        .await;
+        assert_affinity(
+            &sent,
+            Some("source-session"),
+            None,
+            Some("source-session"),
+            None,
+        );
+    }
+
+    async fn disabled(format: SessionAffinityFormat, policy: ResponsesAffinityPolicy) {
+        let sent = capture(
+            policy,
+            true,
+            Some(format),
+            "openai-responses",
+            CacheRetention::Disabled,
+            Some("source-session"),
+            vec![],
+        )
+        .await;
+        assert_affinity(&sent, None, None, None, None);
+    }
+
+    #[tokio::test]
+    async fn disabled_retention_omits_generated_openai_affinity() {
+        disabled(
+            SessionAffinityFormat::OpenAi,
+            ResponsesAffinityPolicy::Direct,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn disabled_retention_omits_generated_openai_nosession_affinity() {
+        disabled(
+            SessionAffinityFormat::OpenAiNoSession,
+            ResponsesAffinityPolicy::Direct,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn disabled_retention_omits_generated_openrouter_affinity() {
+        disabled(
+            SessionAffinityFormat::OpenRouter,
+            ResponsesAffinityPolicy::Direct,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn custom_optin_enabled_keeps_full_source_mapping() {
+        let sent = capture(
+            ResponsesAffinityPolicy::CustomOptIn,
+            true,
+            Some(SessionAffinityFormat::OpenAi),
+            "custom",
+            CacheRetention::Long,
+            Some("source-session"),
+            vec![],
+        )
+        .await;
+        assert_affinity(
+            &sent,
+            Some("source-session"),
+            Some("source-session"),
+            Some("source-session"),
+            None,
+        );
+    }
+
+    #[tokio::test]
+    async fn custom_disabled_and_false_optin_keep_zero_generated_affinity() {
+        for (policy, flag) in [
+            (ResponsesAffinityPolicy::CustomDisabled, true),
+            (ResponsesAffinityPolicy::CustomOptIn, false),
+        ] {
+            let sent = capture(
+                policy,
+                flag,
+                Some(SessionAffinityFormat::OpenAi),
+                "custom",
+                CacheRetention::Short,
+                Some("source-session"),
+                vec![],
+            )
+            .await;
+            assert_affinity(&sent, None, None, None, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn custom_optin_does_not_bypass_disabled_retention() {
+        disabled(
+            SessionAffinityFormat::OpenRouter,
+            ResponsesAffinityPolicy::CustomOptIn,
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn explicit_format_wins_over_openrouter_provider_inference() {
+        for format in [
+            SessionAffinityFormat::OpenAi,
+            SessionAffinityFormat::OpenAiNoSession,
+        ] {
+            let sent = capture(
+                ResponsesAffinityPolicy::Direct,
+                true,
+                Some(format),
+                "openrouter",
+                CacheRetention::Short,
+                Some("source-session"),
+                vec![],
+            )
+            .await;
+            assert_affinity(
+                &sent,
+                Some("source-session"),
+                (format == SessionAffinityFormat::OpenAi).then_some("source-session"),
+                Some("source-session"),
+                None,
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_caller_affinity_header_overrides_default_and_survives_disabled_cache() {
+        for retention in [CacheRetention::Short, CacheRetention::Disabled] {
+            let sent = capture(
+                ResponsesAffinityPolicy::Direct,
+                true,
+                Some(SessionAffinityFormat::OpenRouter),
+                "openai-responses",
+                retention,
+                Some("source-session"),
+                vec![("x-session-id".into(), "caller-value".into())],
+            )
+            .await;
+            assert_affinity(
+                &sent,
+                (retention != CacheRetention::Disabled).then_some("source-session"),
+                None,
+                None,
+                Some("caller-value"),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn direct_false_does_not_disable_openrouter_header_family() {
+        let sent = capture(
+            ResponsesAffinityPolicy::Direct,
+            false,
+            Some(SessionAffinityFormat::OpenRouter),
+            "openai-responses",
+            CacheRetention::Short,
+            Some("source-session"),
+            vec![],
+        )
+        .await;
+        assert_affinity(
+            &sent,
+            Some("source-session"),
+            None,
+            None,
+            Some("source-session"),
+        );
+    }
+
+    #[tokio::test]
+    async fn absent_and_empty_session_emit_no_generated_affinity() {
+        for session in [None, Some("")] {
+            let sent = capture(
+                ResponsesAffinityPolicy::Direct,
+                true,
+                None,
+                "openai-responses",
+                CacheRetention::Short,
+                session,
+                vec![],
+            )
+            .await;
+            assert_affinity(&sent, None, None, None, None);
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_disabled_cache_preserves_explicitly_enabled_affinity() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).insert_header("content-type", "text/event-stream").set_body_string("data: {\"id\":\"chat_probe\",\"object\":\"chat.completion.chunk\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
+            .expect(1).mount(&server).await;
+        let provider = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+            server.uri(),
+            "compatible".into(),
+            opi_ai::openai_chat::CompatConfig {
+                send_session_affinity_headers: Some(true),
+                ..Default::default()
+            },
+            vec![],
+            vec![],
+        );
+        let mut request =
+            make_openai_chat_request(CancellationToken::new(), Some("source-session".into()));
+        request.cache_retention = CacheRetention::Disabled;
+        let result = opi_ai::ChatStream::new(
+            provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth()),
+        )
+        .result()
+        .await
+        .expect("real Chat terminal");
+        assert_eq!(result.stop_reason, opi_ai::stream::StopReason::Stop);
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        for name in ["session_id", "x-client-request-id", "x-session-affinity"] {
+            assert_eq!(header_value(&sent[0], name), Some("source-session"));
+        }
+        assert!(
+            request_body_json(&sent[0])
+                .get("prompt_cache_key")
+                .is_none()
+        );
+        server.verify().await;
+    }
 }

@@ -433,15 +433,18 @@ fn sampling_json(value: serde_json::Value) -> opi_ai::model_info::SamplingParams
 }
 
 #[test]
-fn sampling_metadata_defaults_empty_and_builders_attach() {
+fn sampling_metadata_defaults_absent_and_builders_preserve_presence() {
     let model = ModelInfo::new(
         "sampling-model",
         "Sampling Model",
         WireApi::OpenAiCompletions,
         ModelCapabilities::new(100_000, 10_000).with_streaming(true),
     );
-    assert!(model.sampling_params.is_empty());
+    assert!(model.sampling_params.is_none());
     assert!(model.sampling_params_by_thinking_level.is_empty());
+
+    let explicit_empty = model.clone().with_sampling_params(Default::default());
+    assert_eq!(explicit_empty.sampling_params, Some(Default::default()));
 
     let model = model
         .with_sampling_params(sampling_json(json!({"top_k": 40})))
@@ -449,7 +452,7 @@ fn sampling_metadata_defaults_empty_and_builders_attach() {
             ThinkingLevel::High,
             sampling_json(json!({"temperature": 0.5})),
         );
-    assert_eq!(model.sampling_params["top_k"], json!(40));
+    assert_eq!(model.sampling_params.as_ref().unwrap()["top_k"], json!(40));
     assert_eq!(
         model.sampling_params_by_thinking_level[&ThinkingLevel::High]["temperature"],
         json!(0.5)
@@ -468,9 +471,12 @@ fn resolve_sampling_params_applies_model_level_request_precedence() {
     .with_sampling_params(sampling_json(json!({"a": 1, "b": 1})))
     .with_sampling_level_params(ThinkingLevel::High, sampling_json(json!({"b": 2})));
 
-    let resolved =
-        resolve_sampling_params(&model, ThinkingLevel::High, &sampling_json(json!({"c": 3})))
-            .expect("non-empty sources resolve");
+    let resolved = resolve_sampling_params(
+        &model,
+        ThinkingLevel::High,
+        Some(&sampling_json(json!({"c": 3}))),
+    )
+    .expect("non-empty sources resolve");
     assert_eq!(resolved["a"], json!(1));
     assert_eq!(resolved["b"], json!(2));
     assert_eq!(resolved["c"], json!(3));
@@ -478,7 +484,7 @@ fn resolve_sampling_params_applies_model_level_request_precedence() {
     let request_wins = resolve_sampling_params(
         &model,
         ThinkingLevel::High,
-        &sampling_json(json!({"a": 9, "b": 9})),
+        Some(&sampling_json(json!({"a": 9, "b": 9}))),
     )
     .expect("non-empty sources resolve");
     assert_eq!(request_wins["a"], json!(9));
@@ -490,7 +496,64 @@ fn resolve_sampling_params_applies_model_level_request_precedence() {
         WireApi::OpenAiCompletions,
         ModelCapabilities::new(100_000, 10_000).with_streaming(true),
     );
-    assert!(resolve_sampling_params(&empty, ThinkingLevel::High, &Default::default()).is_none());
+    assert!(resolve_sampling_params(&empty, ThinkingLevel::High, None).is_none());
+}
+
+#[test]
+fn sampling_presence_shallow_merge_matrix() {
+    let empty = sampling_json(json!({}));
+    for model_present in [false, true] {
+        for level_present in [false, true] {
+            for request_present in [false, true] {
+                let mut model = ModelInfo::new(
+                    "presence",
+                    "Presence",
+                    WireApi::OpenAiCompletions,
+                    ModelCapabilities::new(8192, 1024),
+                );
+                if model_present {
+                    model = model.with_sampling_params(empty.clone());
+                }
+                if level_present {
+                    model = model.with_sampling_level_params(ThinkingLevel::High, empty.clone());
+                }
+                let result = resolve_sampling_params(
+                    &model,
+                    ThinkingLevel::High,
+                    request_present.then_some(&empty),
+                );
+                assert_eq!(
+                    result,
+                    (model_present || level_present || request_present).then(|| empty.clone()),
+                    "model={model_present}, level={level_present}, request={request_present}"
+                );
+                assert_eq!(
+                    resolve_sampling_params(&model, ThinkingLevel::Low, None).is_some(),
+                    model_present
+                );
+            }
+        }
+    }
+    let model = ModelInfo::new(
+        "precedence",
+        "Precedence",
+        WireApi::OpenAiCompletions,
+        ModelCapabilities::new(8192, 1024),
+    )
+    .with_sampling_params(sampling_json(json!({"a":1,"b":1,"nested":{"base":1}})))
+    .with_sampling_level_params(
+        ThinkingLevel::High,
+        sampling_json(json!({"b":2,"nested":{"x":2}})),
+    );
+    let request = sampling_json(json!({"c":3,"nested":{"y":3}}));
+    assert_eq!(
+        resolve_sampling_params(&model, ThinkingLevel::High, Some(&request)),
+        Some(sampling_json(json!({"a":1,"b":2,"c":3,"nested":{"y":3}})))
+    );
+    assert_eq!(
+        resolve_sampling_params(&model, ThinkingLevel::High, Some(&empty)),
+        Some(sampling_json(json!({"a":1,"b":2,"nested":{"x":2}})))
+    );
 }
 
 fn sampling_model(wire: WireApi) -> ModelInfo {
@@ -513,7 +576,7 @@ fn sampling_request(provider_id: &str) -> Request {
     let mut request = unsupported_thinking_request(provider_id, "model");
     request.thinking.level = ThinkingLevel::High;
     request.temperature = Some(0.7);
-    request.sampling_params = sampling_json(json!({"top_p": 0.9}));
+    request.sampling_params = Some(sampling_json(json!({"top_p": 0.9})));
     request
 }
 
@@ -592,6 +655,229 @@ async fn responses_merges_sampling_after_named_fields() {
     assert_eq!(body["top_p"], json!(0.9), "request key merged last");
 }
 
+#[tokio::test]
+async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_metadata_only() {
+    use opi_ai::auth::{AuthResolver, AuthScheme, StaticAuthResolver};
+    use opi_ai::message::{InputContent, Message, UserMessage};
+    use std::sync::Mutex;
+
+    for wire in [
+        WireApi::OpenAiCompletions,
+        WireApi::OpenAiResponses,
+        WireApi::AzureOpenAiResponses,
+        WireApi::AnthropicMessages,
+    ] {
+        for request_params in [
+            None,
+            Some(sampling_json(json!({}))),
+            Some(sampling_json(
+                json!({"temperature":0.3,"top_p":0.9,"nested":{"y":3}}),
+            )),
+        ] {
+            let server = MockServer::start().await;
+            let (provider_id, endpoint, response) = match wire {
+                WireApi::OpenAiCompletions => (
+                    "openai",
+                    "/chat/completions",
+                    "data: {\"id\":\"chat-1\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n",
+                ),
+                WireApi::OpenAiResponses | WireApi::AzureOpenAiResponses => (
+                    if wire == WireApi::AzureOpenAiResponses {
+                        "azure"
+                    } else {
+                        "openai"
+                    },
+                    "/responses",
+                    "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"response-1\",\"status\":\"completed\",\"model\":\"sampling-model\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n",
+                ),
+                WireApi::AnthropicMessages => (
+                    "anthropic",
+                    "/v1/messages",
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"message-1\",\"model\":\"sampling-model\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+                ),
+                _ => unreachable!(),
+            };
+            Mock::given(method("POST"))
+                .and(path(endpoint))
+                .respond_with(
+                    wiremock::ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(response),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let base = sampling_json(json!({"temperature":0.1,"top_k":40,"nested":{"base":1}}));
+            let model = ModelInfo::new(
+                "sampling-model",
+                "Sampling model",
+                wire,
+                ModelCapabilities::new(8192, 1024).with_streaming(true),
+            )
+            .with_base_url(server.uri())
+            .with_sampling_params(base.clone())
+            .with_sampling_level_params(
+                ThinkingLevel::None,
+                sampling_json(json!({"temperature":0.2,"nested":{"x":2}})),
+            );
+            assert_eq!(model.sampling_params.as_ref(), Some(&base));
+            let auth: Arc<dyn AuthResolver> = Arc::new(StaticAuthResolver::new(
+                if matches!(
+                    wire,
+                    WireApi::AnthropicMessages | WireApi::AzureOpenAiResponses
+                ) {
+                    AuthScheme::ApiKey
+                } else {
+                    AuthScheme::Bearer
+                },
+                "offline-sampling-key".into(),
+            ));
+            let mut models = opi_ai::Models::new();
+            match wire {
+                WireApi::OpenAiCompletions => {
+                    let provider = Arc::new(openai_chat::OpenAiChatProvider::for_route(
+                        Some(server.uri()),
+                        provider_id.into(),
+                        ProviderHeaders::default(),
+                        vec![model.clone()],
+                        Arc::new(HttpClient::new()),
+                    ));
+                    models
+                        .register_chat_api(
+                            Arc::new(
+                                openai_chat::OpenAiCompletionsChatApi::new(provider, model.clone())
+                                    .unwrap(),
+                            ),
+                            auth,
+                            opi_ai::AuthProvenanceSource::Static,
+                        )
+                        .unwrap();
+                }
+                WireApi::OpenAiResponses => {
+                    let provider = Arc::new(openai_responses::OpenAiResponsesProvider::for_route(
+                        Some(server.uri()),
+                        provider_id.into(),
+                        ProviderHeaders::default(),
+                        vec![model.clone()],
+                        Arc::new(HttpClient::new()),
+                    ));
+                    models
+                        .register_chat_api(
+                            Arc::new(
+                                openai_responses::OpenAiResponsesChatApi::new(
+                                    provider,
+                                    model.clone(),
+                                )
+                                .unwrap(),
+                            ),
+                            auth,
+                            opi_ai::AuthProvenanceSource::Static,
+                        )
+                        .unwrap();
+                }
+                WireApi::AzureOpenAiResponses => {
+                    let provider = Arc::new(
+                        AzureOpenAIProvider::for_records(
+                            Some(server.uri()),
+                            vec![model.clone()],
+                            None,
+                        )
+                        .unwrap(),
+                    );
+                    models
+                        .register_chat_api(
+                            Arc::new(
+                                opi_ai::azure_openai::AzureOpenAIResponsesChatApi::new(
+                                    provider,
+                                    model.clone(),
+                                )
+                                .unwrap(),
+                            ),
+                            auth,
+                            opi_ai::AuthProvenanceSource::Static,
+                        )
+                        .unwrap();
+                }
+                WireApi::AnthropicMessages => {
+                    let provider = Arc::new(anthropic::AnthropicProvider::for_route(
+                        provider_id.into(),
+                        vec![model.clone()],
+                        Some(server.uri()),
+                        Default::default(),
+                        Arc::new(HttpClient::new()),
+                        false,
+                    ));
+                    models
+                        .register_chat_api(
+                            Arc::new(
+                                anthropic::AnthropicMessagesChatApi::new(provider, model.clone())
+                                    .unwrap(),
+                            ),
+                            auth,
+                            opi_ai::AuthProvenanceSource::Static,
+                        )
+                        .unwrap();
+                }
+                _ => unreachable!(),
+            }
+            let observed = Arc::new(Mutex::new(Vec::new()));
+            let sink = observed.clone();
+            let mut request = unsupported_thinking_request(provider_id, &model.id);
+            request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![Message::User(UserMessage {
+                    content: vec![InputContent::Text { text: "Hi".into() }],
+                    timestamp_ms: 0,
+                })],
+                tools: vec![],
+            })
+            .unwrap();
+            request.thinking = Default::default();
+            request.temperature = Some(0.7);
+            request.sampling_params = request_params.clone();
+            request.callbacks =
+                opi_ai::RequestCallbacks::new().with_on_payload(Arc::new(move |body| {
+                    sink.lock().unwrap().push(body.clone());
+                    Ok(None)
+                }));
+            assert_eq!(request.sampling_params, request_params);
+            models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(provider_id, model),
+                    request,
+                    Default::default(),
+                )
+                .await
+                .unwrap();
+            let requests = server.received_requests().await.unwrap();
+            assert_eq!(requests.len(), 1);
+            server.verify().await;
+            let body: serde_json::Value = requests[0].body_json().unwrap();
+            let observed = observed.lock().unwrap();
+            assert_eq!(
+                observed.as_slice(),
+                std::slice::from_ref(&body),
+                "one final-body callback for {wire}"
+            );
+            if wire == WireApi::AnthropicMessages {
+                assert_eq!(body["temperature"], json!(0.7));
+                for key in ["top_k", "top_p", "nested"] {
+                    assert!(body.get(key).is_none(), "unsupported sampling key {key}");
+                }
+            } else {
+                let mut expected =
+                    sampling_json(json!({"temperature":0.2,"top_k":40,"nested":{"x":2}}));
+                if let Some(params) = request_params {
+                    expected.extend(params);
+                }
+                for (key, value) in expected {
+                    assert_eq!(body[&key], value, "{wire} sampling key {key}");
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn service_tier_usage_field_round_trips() {
     let mut usage = opi_ai::stream::Usage::reported(10, 5, 0, 0, None, None);
@@ -600,4 +886,241 @@ fn service_tier_usage_field_round_trips() {
     assert!(json.contains("flex"));
     let round_trip: opi_ai::stream::Usage = serde_json::from_str(&json).unwrap();
     assert_eq!(round_trip.service_tier, Some(ServiceTier::Flex));
+}
+
+mod anthropic_complete_metadata {
+    #[test]
+    fn absent_source_true_defaults_remain_true() {
+        let catalog = opi_ai::catalog::Catalog::builtin().unwrap();
+        let source = catalog
+            .model(
+                "anthropic",
+                opi_ai::catalog::CatalogOperation::Chat,
+                "claude-fable-5",
+            )
+            .unwrap();
+        let model = source.to_chat_model_info().unwrap();
+        let opi_ai::WireCompat::AnthropicMessages(compat) = model.compat else {
+            panic!("Anthropic source uses its matching wire")
+        };
+        assert!(compat.supports_eager_tool_input_streaming);
+        assert!(compat.supports_temperature);
+    }
+}
+
+mod anthropic_response_cost {
+    use super::*;
+    use opi_ai::message::AssistantMessage;
+    use opi_ai::model_info::AnthropicAllowedFallbackModel;
+    use opi_ai::stream::Usage;
+
+    fn rates(scale: f64) -> Pricing {
+        Pricing {
+            input_cost_per_mtok: scale,
+            output_cost_per_mtok: scale * 2.0,
+            cache_read_cost_per_mtok: scale * 3.0,
+            cache_write_cost_per_mtok: scale * 4.0,
+        }
+    }
+
+    fn prices(scale: f64) -> ModelPricing {
+        ModelPricing {
+            base: rates(scale),
+            tiers: vec![],
+        }
+    }
+
+    fn model() -> ModelInfo {
+        let mut model = ModelInfo::new(
+            "requested",
+            "Requested",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(200_000, 8192),
+        );
+        model.pricing = Some(prices(1.0));
+        let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+            unreachable!()
+        };
+        compat.allowed_fallback_models = Some(vec![
+            AnthropicAllowedFallbackModel {
+                provider: "anthropic".into(),
+                model: "fallback".into(),
+                cost: prices(10.0),
+            },
+            AnthropicAllowedFallbackModel {
+                provider: "anthropic".into(),
+                model: "requested".into(),
+                cost: prices(999.0),
+            },
+            AnthropicAllowedFallbackModel {
+                provider: "different".into(),
+                model: "other-target".into(),
+                cost: prices(20.0),
+            },
+        ]);
+        model
+    }
+
+    fn fallback(model: &mut ModelInfo) -> &mut AnthropicAllowedFallbackModel {
+        let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+            unreachable!()
+        };
+        &mut compat.allowed_fallback_models.as_mut().unwrap()[0]
+    }
+
+    fn response(reported: Option<&str>, provider: &str) -> AssistantMessage {
+        let mut response = opi_ai::test_support::base_assistant();
+        response.provider = provider.into();
+        response.model = "requested".into();
+        response.response_model = reported.map(str::to_owned);
+        response.wire = Some(WireApi::AnthropicMessages);
+        response.usage = Usage::reported(
+            1_000_000,
+            1_000_000,
+            1_000_000,
+            1_000_000,
+            Some(500_000),
+            None,
+        );
+        response
+    }
+
+    #[test]
+    fn cost_selects_only_a_different_reported_model_with_matching_declared_provider() {
+        let model = model();
+        for (reported, provider, expected) in [
+            (Some("fallback"), "anthropic", 90.0),
+            (Some("fallback"), "different", 9.0),
+            (Some("requested"), "anthropic", 9.0),
+            (Some("unlisted"), "anthropic", 9.0),
+            (Some("other-target"), "anthropic", 9.0),
+            (Some(""), "anthropic", 9.0),
+            (None, "anthropic", 9.0),
+        ] {
+            let response = response(reported, provider);
+            let before = serde_json::to_vec(&response).unwrap();
+            let cost = model.calculate_response_cost(&response).unwrap();
+            assert_eq!(cost.total_cost(), expected);
+            assert_eq!(serde_json::to_vec(&response).unwrap(), before);
+        }
+        let mut other_wire = ModelInfo::new(
+            "requested",
+            "Requested",
+            WireApi::OpenAiResponses,
+            ModelCapabilities::new(200_000, 8192),
+        );
+        other_wire.pricing = model.pricing.clone();
+        assert_eq!(
+            other_wire
+                .calculate_response_cost(&response(Some("fallback"), "anthropic"))
+                .unwrap()
+                .total_cost(),
+            9.0
+        );
+    }
+
+    #[test]
+    fn fallback_pricing_uses_prompt_tiers_and_prices_the_one_hour_subset_once() {
+        let mut model = model();
+        fallback(&mut model).cost.tiers.push(PricingTier {
+            input_tokens_above: 3_000_000.into(),
+            pricing: rates(20.0),
+        });
+        let mut reply = response(Some("fallback"), "anthropic");
+        let cost = model.calculate_response_cost(&reply).unwrap();
+        assert_eq!(
+            (
+                cost.input_cost,
+                cost.output_cost,
+                cost.cache_read_cost,
+                cost.cache_write_cost
+            ),
+            (10.0, 20.0, 30.0, 30.0)
+        );
+        assert_eq!(cost.total_cost(), 90.0);
+        reply.usage.input_tokens += 1;
+        let cost = model.calculate_response_cost(&reply).unwrap();
+        assert!((cost.input_cost - 20.00002).abs() < 1e-10);
+        assert_eq!(
+            (
+                cost.output_cost,
+                cost.cache_read_cost,
+                cost.cache_write_cost
+            ),
+            (40.0, 60.0, 60.0)
+        );
+        assert!((cost.total_cost() - 180.00002).abs() < 1e-10);
+        fallback(&mut model).cost.base.input_cost_per_mtok = -1.0;
+        assert!(
+            (model.calculate_response_cost(&reply).unwrap().total_cost() - 180.00002).abs() < 1e-10
+        );
+        reply.usage.input_tokens -= 1;
+        assert!(model.calculate_response_cost(&reply).is_none());
+    }
+
+    #[test]
+    fn unknown_usage_or_selected_prices_remain_unknown_and_known_free_remains_zero() {
+        let mut model = model();
+        let mut reply = response(Some("fallback"), "anthropic");
+        model.pricing = None;
+        assert_eq!(
+            model.calculate_response_cost(&reply).unwrap().total_cost(),
+            90.0
+        );
+        assert!(
+            model
+                .calculate_response_cost(&response(None, "anthropic"))
+                .is_none()
+        );
+        reply.usage = Usage::unknown();
+        assert!(model.calculate_response_cost(&reply).is_none());
+        reply.usage = Usage::reported(0, 0, 0, 0, None, None);
+        assert_eq!(
+            model.calculate_response_cost(&reply).unwrap().total_cost(),
+            0.0
+        );
+        for unknown in [-1.0, f64::NAN, f64::INFINITY] {
+            fallback(&mut model).cost.base.input_cost_per_mtok = unknown;
+            assert!(model.calculate_response_cost(&reply).is_none());
+        }
+        fallback(&mut model).cost = prices(0.0);
+        reply.usage = response(Some("fallback"), "anthropic").usage;
+        assert_eq!(
+            model.calculate_response_cost(&reply).unwrap().total_cost(),
+            0.0
+        );
+    }
+
+    #[test]
+    fn fallback_declarations_reject_missing_identity_cost_and_excess_targets() {
+        use opi_ai::catalog::{Catalog, CatalogOperation};
+        let record = Catalog::builtin()
+            .unwrap()
+            .model("anthropic", CatalogOperation::Chat, "claude-fable-5")
+            .unwrap()
+            .clone();
+        for missing in ["provider", "model", "cost"] {
+            let mut record = record.clone();
+            let mut target = record.raw["compat"]["allowedFallbackModels"][0].clone();
+            target.as_object_mut().unwrap().remove(missing);
+            record.raw["compat"]["allowedFallbackModels"] = serde_json::json!([target]);
+            assert!(record.to_chat_model_info().is_err(), "missing {missing}");
+        }
+        let mut invalid = model();
+        let WireCompat::AnthropicMessages(compat) = &mut invalid.compat else {
+            unreachable!()
+        };
+        let target = compat.allowed_fallback_models.as_ref().unwrap()[0].clone();
+        compat.allowed_fallback_models = Some(vec![target; 4]);
+        assert!(invalid.validate().is_err());
+        for missing in ["provider", "model"] {
+            let mut invalid = model();
+            if missing == "provider" {
+                fallback(&mut invalid).provider.clear();
+            } else {
+                fallback(&mut invalid).model.clear();
+            }
+            assert!(invalid.validate().is_err());
+        }
+    }
 }

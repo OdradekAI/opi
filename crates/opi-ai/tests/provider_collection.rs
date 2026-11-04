@@ -5068,6 +5068,7 @@ async fn builtin_mapped_calls_use_owned_custom_records_and_header_precedence() {
             ("x-absent".into(), None),
         ];
         info.sampling_params
+            .get_or_insert_default()
             .insert("top_p".into(), serde_json::json!(0.34));
         let mut request = minimal_request("ignored-request-model");
         request.extra_headers = vec![("x-override".into(), "request".into())];

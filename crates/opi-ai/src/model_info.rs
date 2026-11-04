@@ -346,11 +346,32 @@ pub struct BedrockConverseStreamCompat {
     pub supports_strict_tools: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+/// The affinity-header dialect supported by Anthropic-compatible routes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AnthropicSessionAffinityFormat {
+    #[serde(rename = "openrouter")]
+    OpenRouter,
+}
+
+/// A server-accepted fallback target and its local response-pricing metadata.
+#[derive(Clone, Debug, PartialEq)]
+pub struct AnthropicAllowedFallbackModel {
+    pub provider: String,
+    pub model: String,
+    pub cost: ModelPricing,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct AnthropicMessagesCompat {
     pub supports_eager_tool_input_streaming: bool,
+    /// Whether long retention may add the one-hour TTL to cache markers.
+    pub supports_long_cache_retention: bool,
+    /// Whether real tool definitions may carry cache-control markers.
+    pub supports_cache_control_on_tools: bool,
     pub force_adaptive_thinking: bool,
     pub supports_temperature: bool,
+    /// Preserve nonblank unsigned thinking with an empty wire signature.
+    pub allow_empty_signature: bool,
     /// Whether the wire accepts strict tool schemas (task 20.11, V-34):
     /// `json_schema` require fails typed before dispatch when false.
     pub supports_strict_tools: bool,
@@ -361,6 +382,35 @@ pub struct AnthropicMessagesCompat {
     /// (task 20.39, pi `supportsMidConvoToolChanges`, default false);
     /// requires `supports_mid_convo_system_messages`.
     pub supports_mid_convo_tool_changes: bool,
+    /// Whether managed effort messages and thinking binding controls are supported.
+    pub supports_mid_convo_effort: bool,
+    /// `None` retains provider/URL inference; `Some(false)` disables affinity.
+    pub send_session_affinity_headers: Option<bool>,
+    /// `None` retains provider/URL format inference.
+    pub session_affinity_format: Option<AnthropicSessionAffinityFormat>,
+    /// Ordered server-side targets, at most three. Absent and empty both omit
+    /// wire fallback options; local pricing remains part of each declaration.
+    pub allowed_fallback_models: Option<Vec<AnthropicAllowedFallbackModel>>,
+}
+
+impl Default for AnthropicMessagesCompat {
+    fn default() -> Self {
+        Self {
+            supports_eager_tool_input_streaming: true,
+            supports_long_cache_retention: true,
+            supports_cache_control_on_tools: true,
+            force_adaptive_thinking: false,
+            supports_temperature: true,
+            allow_empty_signature: false,
+            supports_strict_tools: false,
+            supports_mid_convo_system_messages: false,
+            supports_mid_convo_tool_changes: false,
+            supports_mid_convo_effort: false,
+            send_session_affinity_headers: None,
+            session_affinity_format: None,
+            allowed_fallback_models: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1070,29 +1120,29 @@ fn compare_unsigned_to_float(integer: u64, float: f64) -> Option<Ordering> {
 /// Resolve sampling parameters for one request (AIR-062).
 ///
 /// Per-key merge with model base < effective thinking level < request
-/// precedence. Returns `None` only when every source is empty.
+/// precedence. Returns `None` only when every source is absent. A present
+/// empty map retains presence without clearing keys from lower layers.
 pub fn resolve_sampling_params(
     model: &ModelInfo,
     effective_level: ThinkingLevel,
-    request: &SamplingParams,
+    request: Option<&SamplingParams>,
 ) -> Option<SamplingParams> {
     let level_params = model
         .sampling_params_by_thinking_level
         .get(&effective_level);
-    if model.sampling_params.is_empty()
-        && level_params.is_none_or(|params| params.is_empty())
-        && request.is_empty()
-    {
+    if model.sampling_params.is_none() && level_params.is_none() && request.is_none() {
         return None;
     }
-    let mut merged = model.sampling_params.clone();
+    let mut merged = model.sampling_params.clone().unwrap_or_default();
     if let Some(level_params) = level_params {
         for (key, value) in level_params {
             merged.insert(key.clone(), value.clone());
         }
     }
-    for (key, value) in request {
-        merged.insert(key.clone(), value.clone());
+    if let Some(request) = request {
+        for (key, value) in request {
+            merged.insert(key.clone(), value.clone());
+        }
     }
     Some(merged)
 }
@@ -1183,8 +1233,9 @@ pub struct ModelInfo {
     pub compat: WireCompat,
     pub pricing: Option<ModelPricing>,
     /// Model-base sampling parameters merged under the effective level and
-    /// per-request values.
-    pub sampling_params: SamplingParams,
+    /// per-request values. `None` is absent; `Some` preserves an explicit
+    /// empty map through resolution and owned catalog storage.
+    pub sampling_params: Option<SamplingParams>,
     /// Sampling parameter overrides selected by the effective thinking level.
     pub sampling_params_by_thinking_level: BTreeMap<ThinkingLevel, SamplingParams>,
     /// Model header defaults; a null value removes an inherited default.
@@ -1215,7 +1266,7 @@ impl ModelInfo {
             thinking_level_map,
             compat: WireCompat::default_for(wire_api),
             pricing: None,
-            sampling_params: SamplingParams::new(),
+            sampling_params: None,
             sampling_params_by_thinking_level: BTreeMap::new(),
             headers: Vec::new(),
             input_limits: None,
@@ -1251,9 +1302,45 @@ impl ModelInfo {
         Ok(self)
     }
 
-    /// Attach model-base sampling parameters.
+    /// Calculate response cost from reported usage and this model's rates.
+    ///
+    /// Anthropic responses reporting a different model use the first declared
+    /// fallback whose provider and model match the response. All other
+    /// responses use this model's pricing. Unknown usage or selected rates
+    /// remain unknown, including finite negative source placeholders.
+    pub fn calculate_response_cost(
+        &self,
+        response: &crate::message::AssistantMessage,
+    ) -> Option<CostBreakdown> {
+        let fallback = if self.wire_api == WireApi::AnthropicMessages
+            && let WireCompat::AnthropicMessages(compat) = &self.compat
+            && let Some(reported) = response
+                .response_model
+                .as_deref()
+                .filter(|id| *id != self.id)
+        {
+            compat
+                .allowed_fallback_models
+                .as_ref()
+                .and_then(|fallbacks| {
+                    fallbacks.iter().find(|fallback| {
+                        fallback.provider == response.provider && fallback.model == reported
+                    })
+                })
+        } else {
+            None
+        };
+        let (pricing, model_id) = if let Some(fallback) = fallback {
+            (&fallback.cost, fallback.model.as_str())
+        } else {
+            (self.pricing.as_ref()?, self.id.as_str())
+        };
+        calculate_cost_tiered(&response.usage, pricing, model_id, self.wire_api)
+    }
+
+    /// Attach model-base sampling parameters, preserving an explicit empty map.
     pub fn with_sampling_params(mut self, params: SamplingParams) -> Self {
-        self.sampling_params = params;
+        self.sampling_params = Some(params);
         self
     }
 
@@ -1298,6 +1385,25 @@ impl ModelInfo {
         }
         crate::provider_headers::validate_model_headers(&self.headers)
             .map_err(|error| ModelInfoError::InvalidHeaders(error.to_string()))?;
+        if let WireCompat::AnthropicMessages(compat) = &self.compat
+            && let Some(fallbacks) = &compat.allowed_fallback_models
+        {
+            if fallbacks.len() > 3 {
+                return Err(ModelInfoError::IncoherentCapabilities {
+                    model_id: self.id.clone(),
+                    detail: "Anthropic permits at most three fallback models",
+                });
+            }
+            for fallback in fallbacks {
+                if fallback.provider.is_empty() || fallback.model.is_empty() {
+                    return Err(ModelInfoError::IncoherentCapabilities {
+                        model_id: self.id.clone(),
+                        detail: "Anthropic fallback provider and model must be nonempty",
+                    });
+                }
+                fallback.cost.validate_source_metadata()?;
+            }
+        }
         if let Some(pricing) = &self.pricing {
             pricing.validate_source_metadata()?;
         }

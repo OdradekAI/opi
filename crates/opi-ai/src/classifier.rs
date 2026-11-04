@@ -40,6 +40,147 @@ pub struct ClassifierImage {
     pub data: String,
 }
 
+/// Named classifier declarations in source-defined enumeration order.
+///
+/// Canonical decimal array-index keys from `0` through `4294967294` appear
+/// first in numeric order. Other string keys retain first-insertion order;
+/// for example, `01`, `-0` and `4294967295` are ordinary string keys.
+/// Replacing a key changes its value without moving it. Removing and then
+/// reinserting an ordinary string key places it after the other ordinary
+/// keys. Collection from an iterator applies these same replacement rules.
+///
+/// This order determines question wire order, Llama question execution,
+/// choice labels and the first choice selected when Llama probabilities tie.
+/// Serialization emits a JSON object in the same enumeration order.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassifierDeclarations<T> {
+    entries: Vec<(String, T)>,
+}
+
+impl<T> Default for ClassifierDeclarations<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T> ClassifierDeclarations<T> {
+    /// Construct an empty declaration collection.
+    pub fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Insert a declaration, returning its previous value when replaced.
+    /// Replacement retains the key's existing position.
+    pub fn insert(&mut self, key: String, value: T) -> Option<T> {
+        if let Some((_, current)) = self.entries.iter_mut().find(|(name, _)| name == &key) {
+            return Some(std::mem::replace(current, value));
+        }
+        let position = declaration_index(&key)
+            .and_then(|index| {
+                self.entries
+                    .iter()
+                    .position(|(name, _)| declaration_index(name).is_none_or(|other| other > index))
+            })
+            .unwrap_or(self.entries.len());
+        self.entries.insert(position, (key, value));
+        None
+    }
+
+    /// Remove a declaration, preserving the other keys' relative order.
+    pub fn remove(&mut self, key: &str) -> Option<T> {
+        let position = self.entries.iter().position(|(name, _)| name == key)?;
+        Some(self.entries.remove(position).1)
+    }
+
+    /// Look up a declaration by its exact key.
+    pub fn get(&self, key: &str) -> Option<&T> {
+        self.entries
+            .iter()
+            .find(|(name, _)| name == key)
+            .map(|(_, value)| value)
+    }
+
+    /// The number of named declarations.
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Whether the collection contains no declarations.
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// Borrow keys and values in declaration enumeration order.
+    pub fn iter(&self) -> impl Iterator<Item = (&String, &T)> {
+        self.entries.iter().map(|(key, value)| (key, value))
+    }
+
+    /// Borrow keys in declaration enumeration order.
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.entries.iter().map(|(key, _)| key)
+    }
+
+    /// Borrow values in declaration enumeration order.
+    pub fn values(&self) -> impl Iterator<Item = &T> {
+        self.entries.iter().map(|(_, value)| value)
+    }
+}
+
+fn declaration_index(key: &str) -> Option<u32> {
+    let index = key.parse::<u32>().ok()?;
+    (index != u32::MAX && index.to_string() == key).then_some(index)
+}
+
+impl<T> FromIterator<(String, T)> for ClassifierDeclarations<T> {
+    fn from_iter<I: IntoIterator<Item = (String, T)>>(iter: I) -> Self {
+        let mut declarations = Self::new();
+        for (key, value) in iter {
+            declarations.insert(key, value);
+        }
+        declarations
+    }
+}
+
+impl<T, const N: usize> From<[(String, T); N]> for ClassifierDeclarations<T> {
+    fn from(entries: [(String, T); N]) -> Self {
+        entries.into_iter().collect()
+    }
+}
+
+impl<T> IntoIterator for ClassifierDeclarations<T> {
+    type Item = (String, T);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.into_iter()
+    }
+}
+
+impl<'a, T> IntoIterator for &'a ClassifierDeclarations<T> {
+    type Item = (&'a String, &'a T);
+    type IntoIter = std::iter::Map<
+        std::slice::Iter<'a, (String, T)>,
+        fn(&'a (String, T)) -> (&'a String, &'a T),
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.entries.iter().map(|(key, value)| (key, value))
+    }
+}
+
+impl<T: serde::Serialize> serde::Serialize for ClassifierDeclarations<T> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(Some(self.len()))?;
+        for (key, value) in self {
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
+    }
+}
+
 /// One typed question about the state.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClassifierQuestion {
@@ -47,8 +188,8 @@ pub enum ClassifierQuestion {
     Choice {
         /// What the model is asked to classify.
         instructions: String,
-        /// Option key to human-readable description, in wire order.
-        criteria: std::collections::BTreeMap<String, String>,
+        /// Option keys and descriptions in declaration enumeration order.
+        criteria: ClassifierDeclarations<String>,
     },
     /// Score the state against ordered levels.
     Score {
@@ -84,8 +225,8 @@ impl ClassifierQuestion {
 pub struct ClassifierContext {
     /// The state object being judged (any JSON object).
     pub state: serde_json::Value,
-    /// Typed questions keyed by caller id, in wire order.
-    pub questions: std::collections::BTreeMap<String, ClassifierQuestion>,
+    /// Typed questions keyed by caller id, in declaration enumeration order.
+    pub questions: ClassifierDeclarations<ClassifierQuestion>,
     /// Images judged together with `state`. Adapters that cannot accept
     /// images reject them typed before any request.
     pub images: Option<Vec<ClassifierImage>>,

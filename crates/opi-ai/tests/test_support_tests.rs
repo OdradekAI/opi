@@ -408,6 +408,73 @@ fn scripted_request(cancel: CancellationToken) -> Request {
     }
 }
 
+async fn collect_fixture(
+    events: Vec<AssistantStreamEvent>,
+    expected_content: Vec<AssistantContent>,
+    expected_stop: StopReason,
+) {
+    let provider = MockProvider::new("mock", vec![events]);
+    let message = opi_ai::ChatStream::new(provider.stream_prepared(
+        scripted_request(CancellationToken::new()),
+        test_support::resolved_auth(),
+    ))
+    .result()
+    .await
+    .expect("the fixture must provide a consistent successful terminal");
+    assert_eq!(message.stop_reason, expected_stop);
+    assert_eq!(message.content, expected_content);
+    assert_eq!(provider.stream_call_count(), 1);
+}
+
+#[tokio::test]
+async fn tool_fixture_collects_successful_tool_use() {
+    let events = test_support::tool_call_response("tc-1", "read", r#"{"path":"/tmp/f"}"#);
+    let content = vec![AssistantContent::ToolCall {
+        tool_call: ToolCall {
+            id: "tc-1".into(),
+            name: "read".into(),
+            arguments: r#"{"path":"/tmp/f"}"#.into(),
+            arguments_error: None,
+            signature: None,
+        },
+    }];
+    collect_fixture(events, content, StopReason::ToolUse).await;
+}
+
+#[tokio::test]
+async fn mixed_blocks_fixture_collects_successful_tool_use() {
+    let content = vec![
+        AssistantContent::Text {
+            text: "before".into(),
+            signature: None,
+        },
+        AssistantContent::ToolCall {
+            tool_call: ToolCall {
+                id: "tc-1".into(),
+                name: "read".into(),
+                arguments: "{}".into(),
+                arguments_error: None,
+                signature: None,
+            },
+        },
+    ];
+    collect_fixture(
+        blocks_response(content.clone()),
+        content,
+        StopReason::ToolUse,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn text_blocks_fixture_collects_successful_stop() {
+    let content = vec![AssistantContent::Text {
+        text: "text".into(),
+        signature: None,
+    }];
+    collect_fixture(blocks_response(content.clone()), content, StopReason::Stop).await;
+}
+
 #[tokio::test]
 async fn delayed_poll_yields_rate_limited_then_events() {
     let provider = MockProvider::new_with_errors(

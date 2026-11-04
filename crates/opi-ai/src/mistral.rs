@@ -443,9 +443,9 @@ fn simple_reasoning_members(
     (Some(mapped), None)
 }
 
-/// Project one tool (pi `toFunctionTools`): the strict projection defaults
-/// on, so an unannotated tool rides `strict: true` with the converted
-/// schema.
+/// Project one tool (pi `toFunctionTools`): an unannotated tool sends
+/// `strict: false` and preserves its original schema. Strict sampling
+/// intent selects the converted schema.
 fn function_tool_value(tool: &crate::message::ToolDef) -> Result<serde_json::Value, ProviderError> {
     use crate::constrained_sampling::{
         NoRejectedKeywords, make_strict_json_schema, resolve_json_schema_strict_sampling,
@@ -456,7 +456,7 @@ fn function_tool_value(tool: &crate::message::ToolDef) -> Result<serde_json::Val
                 error.detail(),
             ))
         })?
-        .unwrap_or(true);
+        .unwrap_or(false);
     let parameters = if strict {
         make_strict_json_schema(&tool.input_schema, &NoRejectedKeywords)
             .expect("resolve succeeded so the conversion succeeds")

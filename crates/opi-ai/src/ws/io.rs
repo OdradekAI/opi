@@ -347,6 +347,16 @@ pub(crate) struct Driver<S> {
     terminal: Option<bool>,
 }
 impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
+    /// Bind only the active call; the caller clears it before idle pool publication.
+    /// The transport owner remains responsible for waking an idle cancelled read.
+    pub(crate) fn bind_logical_cancellation(
+        &mut self,
+        cancel: Option<tokio_util::sync::CancellationToken>,
+    ) {
+        if let Some(decoder) = self.core.as_mut().and_then(|core| core.pmd.as_mut()) {
+            decoder.bind_logical_cancellation(cancel);
+        }
+    }
     /// Take an upgraded stream and direction-specific PMD facts (`None` disables PMD).
     pub(crate) fn new(stream: S, pmd: Option<PmdParameters>) -> Result<Self, Fault> {
         Ok(Self {

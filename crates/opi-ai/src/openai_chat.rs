@@ -1907,7 +1907,7 @@ impl OpenAiChatProvider {
             && let Some(sampling) = crate::model_info::resolve_sampling_params(
                 model,
                 effective_level,
-                &request.sampling_params,
+                request.sampling_params.as_ref(),
             )
         {
             for (key, value) in sampling {

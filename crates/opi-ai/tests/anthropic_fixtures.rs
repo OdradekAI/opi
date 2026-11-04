@@ -1715,6 +1715,7 @@ mod request_compatibility {
             supports_strict_tools: false,
             supports_mid_convo_system_messages: false,
             supports_mid_convo_tool_changes: false,
+            ..Default::default()
         }))
         .unwrap();
         let provider = AnthropicProvider::for_route(
@@ -2452,6 +2453,7 @@ mod anthropic_strict_wire_tests {
             supports_strict_tools: strict_tools,
             supports_mid_convo_system_messages: false,
             supports_mid_convo_tool_changes: false,
+            ..Default::default()
         }))
         .unwrap();
         AnthropicProvider::for_route(
@@ -2853,6 +2855,7 @@ mod anthropic_strict_variant_tests {
             supports_strict_tools: true,
             supports_mid_convo_system_messages: inline,
             supports_mid_convo_tool_changes: inline,
+            ..Default::default()
         }))
         .unwrap();
         let client = Arc::new(HttpClientBuilder::new().build().expect("client build"));
@@ -3517,6 +3520,7 @@ fn compat_39(
         supports_strict_tools: false,
         supports_mid_convo_system_messages: mid_convo_system,
         supports_mid_convo_tool_changes: mid_convo_tools,
+        ..Default::default()
     }
 }
 
@@ -5019,6 +5023,55 @@ mod federation_fixtures {
     }
 
     #[tokio::test]
+    async fn federation_session_affinity_reaches_generation_only_with_disabled_cache() {
+        let server = MockServer::start().await;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("identity.jwt");
+        std::fs::write(&file, "fixture-identity").unwrap();
+        let (models, record) = setup(&server, prepared(&file));
+        let mut model = record.info().clone();
+        let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+            unreachable!()
+        };
+        compat.send_session_affinity_headers = Some(true);
+        let record = opi_ai::ChatModelRecord::new("anthropic", model);
+        let mut request = request_39(Default::default());
+        request.session_id = Some("federated-session".into());
+        request.cache_retention = CacheRetention::Disabled;
+        Mock::given(method("POST"))
+            .and(path("/v1/oauth/token"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token":"federated-access", "expires_in":3600
+            })))
+            .expect(1)
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("authorization", "Bearer federated-access"))
+            .and(header("x-session-affinity", "federated-session"))
+            .respond_with(success())
+            .expect(1)
+            .mount(&server)
+            .await;
+        let outcome = models
+            .complete_simple(record, request, Default::default())
+            .await
+            .unwrap();
+        assert_eq!(outcome.stop_reason, StopReason::Stop);
+        assert_eq!(outcome.usage.input_tokens, 1);
+        assert_eq!(outcome.usage.output_tokens, 1);
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(requests.len(), 2);
+        let token = requests
+            .iter()
+            .find(|request| request.url.path() == "/v1/oauth/token")
+            .unwrap();
+        assert!(!token.headers.contains_key("x-session-affinity"));
+        server.verify().await;
+    }
+
+    #[tokio::test]
     async fn federation_real_models_exchanges_caches_and_keeps_non_subscription_wire() {
         let server = MockServer::start().await;
         let dir = tempfile::tempdir().unwrap();
@@ -5572,5 +5625,1883 @@ mod federation_fixtures {
             .await
             .expect("source TextDecoder response projection");
         server.verify().await;
+    }
+}
+
+mod anthropic_cache_source_compat {
+    use super::*;
+    use opi_ai::catalog::{Catalog, CatalogModel, CatalogOperation};
+    use opi_ai::message::{AssistantMessage, ToolDef};
+    use serde_json::{Value, json};
+    use std::sync::Arc;
+
+    fn fireworks() -> CatalogModel {
+        Catalog::builtin()
+            .unwrap()
+            .model(
+                "fireworks",
+                CatalogOperation::Chat,
+                "accounts/fireworks/models/deepseek-v4p1-flash",
+            )
+            .unwrap()
+            .clone()
+    }
+
+    fn user() -> Message {
+        Message::User(UserMessage {
+            content: vec![InputContent::Text { text: "Hi".into() }],
+            timestamp_ms: 0,
+        })
+    }
+
+    fn request(tools: bool) -> Request {
+        let mut request = request_39(Default::default());
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("system".into()),
+            messages: vec![user()],
+            tools: if tools {
+                vec![ToolDef {
+                    name: "read".into(),
+                    description: "Read".into(),
+                    input_schema: json!({"type":"object", "properties":{}}),
+                    constrained_sampling: None,
+                }]
+            } else {
+                vec![]
+            },
+        })
+        .unwrap();
+        request.max_tokens = Some(4096);
+        request.cache_retention = CacheRetention::Long;
+        request.session_id = Some("session-complete-id".into());
+        request
+    }
+
+    async fn capture(
+        record: CatalogModel,
+        mut request: Request,
+        generic: Option<(bool, bool)>,
+    ) -> (wiremock::Request, AssistantMessage) {
+        let server = MockServer::start().await;
+        let start = json!({"type":"message_start", "message": {
+            "id":"received-id", "model": record.id,
+            "usage":{"input_tokens":100, "output_tokens":0}
+        }});
+        let response = format!(
+            "event: message_start\ndata: {start}\n\nevent: message_delta\ndata: {{\"type\":\"message_delta\",\"delta\":{{\"stop_reason\":\"end_turn\"}},\"usage\":{{\"output_tokens\":10}}}}\n\nevent: message_stop\ndata: {{\"type\":\"message_stop\"}}\n\n"
+        );
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(response),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut model = record.to_chat_model_info().unwrap();
+        model.base_url = Some(server.uri());
+        if let Some((cache, long)) = generic {
+            model.capabilities.supports_cache_control = cache;
+            model.capabilities.supports_long_cache_retention = long;
+        }
+        request.model = model.id.clone();
+        let provider = Arc::new(AnthropicProvider::for_route(
+            record.provider.clone(),
+            vec![model.clone()],
+            None,
+            Default::default(),
+            Arc::new(opi_ai::http::HttpClient::new()),
+            false,
+        ));
+        let api = AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
+        let mut models = Models::new();
+        models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    "synthetic-key".into(),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let outcome = models
+            .complete_simple(
+                opi_ai::ChatModelRecord::new(record.provider, model),
+                request,
+                Default::default(),
+            )
+            .await
+            .expect("local valid SSE fixture completes");
+        assert_eq!(outcome.stop_reason, StopReason::Stop);
+        assert_eq!(outcome.usage.input_tokens, 100);
+        assert_eq!(outcome.usage.output_tokens, 10);
+        let mut sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        server.verify().await;
+        (sent.remove(0), outcome)
+    }
+
+    #[tokio::test]
+    async fn tool_cache_false_suppresses_only_tool_marker() {
+        let (sent, _) = capture(fireworks(), request(true), Some((true, true))).await;
+        let body: Value = sent.body_json().unwrap();
+        assert!(body["system"][0].get("cache_control").is_some());
+        assert!(body["tools"][0].get("cache_control").is_none());
+    }
+
+    #[tokio::test]
+    async fn long_cache_false_omits_ttl() {
+        let (sent, _) = capture(fireworks(), request(false), Some((true, true))).await;
+        let body: Value = sent.body_json().unwrap();
+        assert_eq!(body["system"][0]["cache_control"]["type"], "ephemeral");
+        assert!(body["system"][0]["cache_control"].get("ttl").is_none());
+    }
+
+    fn source(tool_cache: Option<bool>, long_cache: Option<bool>) -> CatalogModel {
+        let mut record = fireworks();
+        record.raw["compat"] = json!({});
+        if let Some(enabled) = tool_cache {
+            record.raw["compat"]["supportsCacheControlOnTools"] = json!(enabled);
+        }
+        if let Some(enabled) = long_cache {
+            record.raw["compat"]["supportsLongCacheRetention"] = json!(enabled);
+        }
+        record
+    }
+
+    fn has_marker(value: &Value) -> bool {
+        match value {
+            Value::Object(object) => {
+                object.contains_key("cache_control") || object.values().any(has_marker)
+            }
+            Value::Array(values) => values.iter().any(has_marker),
+            _ => false,
+        }
+    }
+
+    #[tokio::test]
+    async fn tool_cache_and_long_ttl_follow_independent_flags_and_retention() {
+        for tool_cache in [false, true] {
+            for long_cache in [false, true] {
+                for retention in [
+                    CacheRetention::None,
+                    CacheRetention::Short,
+                    CacheRetention::Long,
+                    CacheRetention::Disabled,
+                ] {
+                    let mut request = request(true);
+                    request.cache_retention = retention;
+                    let (sent, _) = capture(
+                        source(Some(tool_cache), Some(long_cache)),
+                        request,
+                        Some((true, true)),
+                    )
+                    .await;
+                    let body: Value = sent.body_json().unwrap();
+                    let enabled = retention != CacheRetention::Disabled;
+                    let ttl = enabled && long_cache && retention == CacheRetention::Long;
+                    for content in [&body["system"][0], &body["messages"][0]["content"][0]] {
+                        assert_eq!(content.get("cache_control").is_some(), enabled);
+                        if enabled {
+                            assert_eq!(content["cache_control"]["type"], "ephemeral");
+                            assert_eq!(content["cache_control"].get("ttl").is_some(), ttl);
+                            if ttl {
+                                assert_eq!(content["cache_control"]["ttl"], "1h");
+                            }
+                        }
+                    }
+                    let tool = &body["tools"][0];
+                    assert_eq!(tool.get("cache_control").is_some(), enabled && tool_cache);
+                    assert_eq!(
+                        tool["cache_control"].get("ttl").is_some(),
+                        ttl && tool_cache
+                    );
+                    if !enabled {
+                        assert!(!has_marker(&body));
+                    }
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn plain_source_defaults_emit_long_markers_but_owned_generic_opt_out_suppresses_all() {
+        let mut plain = source(None, None);
+        plain.raw.as_object_mut().unwrap().remove("compat");
+        let (sent, _) = capture(plain.clone(), request(true), None).await;
+        let body: Value = sent.body_json().unwrap();
+        for content in [
+            &body["system"][0],
+            &body["messages"][0]["content"][0],
+            &body["tools"][0],
+        ] {
+            assert_eq!(
+                content["cache_control"],
+                json!({"type":"ephemeral", "ttl":"1h"})
+            );
+        }
+        plain.raw["x-opi"] = json!({"cacheControl":false, "longCacheRetention":false});
+        let (sent, _) = capture(plain, request(true), None).await;
+        let body: Value = sent.body_json().unwrap();
+        assert!(!has_marker(&body));
+    }
+
+    #[tokio::test]
+    async fn generic_long_opt_out_and_source_long_false_preserve_ephemeral_history_markers() {
+        for (long_cache, generic_long) in [(true, false), (false, true)] {
+            let record = source(Some(false), Some(long_cache));
+            let mut assistant = opi_ai::test_support::base_assistant();
+            assistant.provider = record.provider.clone();
+            assistant.model = record.id.clone();
+            assistant.wire = Some(opi_ai::WireApi::AnthropicMessages);
+            assistant.content = vec![AssistantContent::Text {
+                text: "prior response".into(),
+                signature: None,
+            }];
+            let mut request = request(false);
+            request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: Some("system".into()),
+                messages: vec![user(), Message::Assistant(assistant), user()],
+                tools: vec![],
+            })
+            .unwrap();
+            let (sent, _) = capture(record, request, Some((true, generic_long))).await;
+            let body: Value = sent.body_json().unwrap();
+            assert_eq!(body["messages"][1]["role"], "assistant");
+            assert_eq!(body["messages"][1]["content"][0]["text"], "prior response");
+            for content in [
+                &body["system"][0],
+                &body["messages"][1]["content"][0],
+                &body["messages"][2]["content"][0],
+            ] {
+                assert_eq!(content["cache_control"], json!({"type":"ephemeral"}));
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn inline_tools_mark_only_last_initial_definition_before_the_placeholder() {
+        for tool_cache in [false, true] {
+            let mut record = source(Some(tool_cache), Some(true));
+            record.raw["compat"]["supportsMidConvoSystemMessages"] = json!(true);
+            record.raw["compat"]["supportsMidConvoToolChanges"] = json!(true);
+            let mut context = inline_tools_context_39();
+            let Message::System(initial) = &mut context.messages[0] else {
+                unreachable!()
+            };
+            initial.tools_added.push(tool_def_39("second_initial"));
+            let mut request = request(false);
+            request.context = opi_ai::transcript::normalize_context(context).unwrap();
+            let (sent, _) = capture(record, request, Some((true, true))).await;
+            let body: Value = sent.body_json().unwrap();
+            let tools = body["tools"].as_array().unwrap();
+            assert_eq!(tools.len(), 3);
+            assert_eq!(tools[0]["name"], "initial_tool");
+            assert!(tools[0].get("cache_control").is_none());
+            assert_eq!(tools[1]["name"], "second_initial");
+            assert_eq!(tools[1].get("cache_control").is_some(), tool_cache);
+            if tool_cache {
+                assert_eq!(
+                    tools[1]["cache_control"],
+                    json!({"type":"ephemeral", "ttl":"1h"})
+                );
+            }
+            assert_eq!(tools[2]["name"], "__pi_deferred_placeholder__");
+            assert!(tools[2].get("cache_control").is_none());
+            let additions: Vec<_> = body["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|message| message["content"].as_array().into_iter().flatten())
+                .filter(|block| block["type"] == "tool_addition")
+                .collect();
+            assert_eq!(additions.len(), 2);
+            for addition in additions {
+                assert!(
+                    addition["tool"]["definition"]
+                        .get("cache_control")
+                        .is_none()
+                );
+            }
+        }
+    }
+}
+
+mod server_fallback_source_compat {
+    use super::*;
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_ai::message::AssistantMessage;
+    use serde_json::{Value, json};
+    use std::sync::{Arc, Mutex};
+
+    fn source() -> ModelInfo {
+        Catalog::builtin()
+            .unwrap()
+            .model("anthropic", CatalogOperation::Chat, "claude-fable-5")
+            .unwrap()
+            .to_chat_model_info()
+            .unwrap()
+    }
+
+    fn compat(model: &mut ModelInfo) -> &mut AnthropicMessagesCompat {
+        let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+            unreachable!()
+        };
+        compat
+    }
+
+    struct Capture {
+        body: Value,
+        events: Vec<AssistantStreamEvent>,
+        raw: Vec<Value>,
+        outcome: Result<AssistantMessage, opi_ai::CallFailure>,
+    }
+
+    async fn invoke(mut model: ModelInfo, reported: Option<&str>, blocks: Vec<Value>) -> Capture {
+        let server = MockServer::start().await;
+        let mut message =
+            json!({"id":"received-id", "usage":{"input_tokens":100,"output_tokens":0}});
+        if let Some(reported) = reported {
+            message["model"] = json!(reported);
+        }
+        let mut events = vec![json!({"type":"message_start","message":message})];
+        events.extend(blocks);
+        events.extend([
+            json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":10}}),
+            json!({"type":"message_stop"}),
+        ]);
+        let response = events
+            .into_iter()
+            .map(|event| {
+                format!(
+                    "event: {}\ndata: {event}\n\n",
+                    event["type"].as_str().unwrap()
+                )
+            })
+            .collect::<String>();
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(response),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        model.base_url = Some(server.uri());
+        model.capabilities.supports_cache_control = true;
+        model.capabilities.supports_long_cache_retention = true;
+        let mut input = request_39_for(&model.id, ThinkingConfig::default());
+        input.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("system".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .unwrap();
+        input.cache_retention = CacheRetention::Long;
+        input.session_id = Some("session-complete-id".into());
+        let raw = Arc::new(Mutex::new(Vec::new()));
+        let observed = raw.clone();
+        input.callbacks = opi_ai::RequestCallbacks::new().with_on_raw(Arc::new(move |event| {
+            observed.lock().unwrap().push(event.clone());
+            Ok(())
+        }));
+        let canonical = serde_json::to_vec(&input.context).unwrap();
+        let provider = Arc::new(AnthropicProvider::for_route(
+            "anthropic".into(),
+            vec![model.clone()],
+            None,
+            Default::default(),
+            Arc::new(HttpClient::new()),
+            false,
+        ));
+        let api = AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
+        let mut models = Models::new();
+        models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    "synthetic-key".into(),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let mut call = models.stream_simple(
+            opi_ai::ChatModelRecord::new("anthropic", model),
+            input.clone(),
+            Default::default(),
+        );
+        let mut events = Vec::new();
+        while let Some(item) = call.next().await {
+            if let Ok(event) = item {
+                events.push(event);
+            }
+        }
+        let outcome = call.result().await;
+        if let Ok(message) = &outcome {
+            assert_eq!(message.stop_reason, StopReason::Stop);
+            assert_eq!(message.usage.input_tokens, 100);
+            assert_eq!(message.usage.output_tokens, 10);
+        }
+        assert_eq!(serde_json::to_vec(&input.context).unwrap(), canonical);
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        server.verify().await;
+        let raw = raw.lock().unwrap().clone();
+        Capture {
+            body: sent[0].body_json().unwrap(),
+            events,
+            raw,
+            outcome,
+        }
+    }
+
+    fn fallback(index: usize) -> Value {
+        json!({"type":"content_block_start","index":index,"content_block":{"type":"fallback"}})
+    }
+
+    #[tokio::test]
+    async fn c009_allowed_fallbacks_reach_request() {
+        let model = source();
+        let WireCompat::AnthropicMessages(compat) = &model.compat else {
+            unreachable!()
+        };
+        assert_eq!(compat.allowed_fallback_models.as_ref().unwrap().len(), 2);
+        let captured = invoke(model, None, vec![]).await;
+        captured.outcome.unwrap();
+        assert_eq!(
+            captured.body["fallbacks"],
+            json!([{"model":"claude-opus-4-8"},{"model":"claude-opus-5"}])
+        );
+    }
+
+    #[tokio::test]
+    async fn c009_leading_fallback_block_is_not_a_parse_failure() {
+        let captured = invoke(source(), Some("claude-opus-4-8"), vec![fallback(0)]).await;
+        let reply = captured
+            .outcome
+            .expect("source accepts fallback marker before output");
+        assert_eq!(reply.response_model.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(reply.response_id.as_deref(), Some("received-id"));
+        assert!(reply.content.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fallback_targets_are_ordered_model_only_and_gate_only_their_beta() {
+        for count in [None, Some(0), Some(1), Some(3)] {
+            let mut model = source();
+            let template = compat(&mut model).allowed_fallback_models.as_ref().unwrap()[0].clone();
+            let entries = count.map(|count| {
+                (0..count)
+                    .map(|index| {
+                        let mut entry = template.clone();
+                        entry.provider = format!("local-provider-{index}");
+                        entry.model = format!("target-{index}");
+                        entry
+                    })
+                    .collect::<Vec<_>>()
+            });
+            compat(&mut model).allowed_fallback_models = entries;
+            compat(&mut model).supports_mid_convo_effort = false;
+            let captured = invoke(model, None, vec![]).await;
+            captured.outcome.unwrap();
+            if count.is_some_and(|count| count > 0) {
+                let expected: Vec<_> = (0..count.unwrap())
+                    .map(|index| json!({"model":format!("target-{index}")}))
+                    .collect();
+                assert_eq!(captured.body["fallbacks"], json!(expected));
+                assert_eq!(
+                    captured.body["betas"],
+                    json!(["server-side-fallback-2026-07-01"])
+                );
+            } else {
+                assert!(captured.body.get("fallbacks").is_none());
+                assert!(captured.body.get("betas").is_none());
+            }
+        }
+    }
+
+    fn text(index: usize, value: &str) -> Vec<Value> {
+        vec![
+            json!({"type":"content_block_start","index":index,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":index,"delta":{"type":"text_delta","text":value}}),
+            json!({"type":"content_block_stop","index":index}),
+        ]
+    }
+
+    #[tokio::test]
+    async fn leading_markers_preserve_dense_text_tool_and_thinking_indices_and_raw_observation() {
+        let mut blocks = vec![
+            fallback(0),
+            json!({"type":"content_block_stop","index":0}),
+            fallback(1),
+        ];
+        blocks.extend(text(4, "answer"));
+        blocks.extend([
+            json!({"type":"content_block_start","index":9,"content_block":{"type":"tool_use","id":"tool-1","name":"read","input":{}}}),
+            json!({"type":"content_block_delta","index":9,"delta":{"type":"input_json_delta","partial_json":"{\"x\":"}}),
+            json!({"type":"content_block_delta","index":9,"delta":{"type":"input_json_delta","partial_json":"\"fixture\"}"}}),
+            json!({"type":"content_block_stop","index":9}),
+            json!({"type":"content_block_start","index":11,"content_block":{"type":"thinking","thinking":"reasoning","signature":""}}),
+            json!({"type":"content_block_delta","index":11,"delta":{"type":"thinking_delta","thinking":" continued"}}),
+            json!({"type":"content_block_delta","index":11,"delta":{"type":"signature_delta","signature":"opaque-signature"}}),
+            json!({"type":"content_block_stop","index":11}),
+            json!({"type":"content_block_start","index":13,"content_block":{"type":"redacted_thinking","data":"opaque-data"}}),
+            json!({"type":"content_block_stop","index":13}),
+        ]);
+        let captured = invoke(source(), Some("claude-opus-4-8"), blocks).await;
+        assert_eq!(captured.raw[1], fallback(0));
+        assert_eq!(captured.raw[3], fallback(1));
+        let indices: Vec<_> = captured
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::TextStart { content_index, .. }
+                | AssistantStreamEvent::ToolCallStart { content_index, .. }
+                | AssistantStreamEvent::ThinkingStart { content_index, .. } => Some(*content_index),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(indices, [0, 1, 2]);
+        assert!(captured.events.iter().any(|event| matches!(event,
+            AssistantStreamEvent::ToolCallEnd { content_index: 1, tool_call, .. }
+            if tool_call.arguments == "{\"x\":\"fixture\"}" && tool_call.arguments_error.is_none())));
+        let reply = captured.outcome.unwrap();
+        assert_eq!(reply.model, "claude-fable-5");
+        assert_eq!(reply.response_model.as_deref(), Some("claude-opus-4-8"));
+        assert_eq!(reply.wire, Some(WireApi::AnthropicMessages));
+        assert_eq!(reply.content.len(), 4);
+        assert!(
+            matches!(&reply.content[0], AssistantContent::Text { text, .. } if text == "answer")
+        );
+        assert!(
+            matches!(&reply.content[2], AssistantContent::Thinking { thinking, signature }
+            if thinking == "reasoning continued" && signature.as_deref() == Some("opaque-signature"))
+        );
+        assert!(
+            matches!(&reply.content[3], AssistantContent::RedactedThinking { data } if data == "opaque-data")
+        );
+        assert!(source().calculate_response_cost(&reply).is_some());
+    }
+
+    #[tokio::test]
+    async fn duplicate_raw_indices_keep_the_first_output_association() {
+        let mut blocks = vec![fallback(0)];
+        blocks.extend([
+            json!({"type":"content_block_start","index":7,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_start","index":7,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"first"}}),
+            json!({"type":"content_block_stop","index":7}),
+        ]);
+        let captured = invoke(source(), None, blocks).await;
+        let reply = captured.outcome.unwrap();
+        assert_eq!(reply.content.len(), 2);
+        assert!(
+            matches!(&reply.content[0], AssistantContent::Text { text, .. } if text == "first")
+        );
+        assert!(
+            matches!(&reply.content[1], AssistantContent::Text { text, .. } if text.is_empty())
+        );
+        assert!(captured.events.iter().any(|event| matches!(event,
+            AssistantStreamEvent::TextDelta { content_index: 0, delta, .. } if delta == "first")));
+    }
+
+    #[tokio::test]
+    async fn transport_index_reuse_after_stop_targets_the_new_output_block() {
+        let mut blocks = vec![fallback(0)];
+        blocks.extend(text(7, "A"));
+        blocks.extend(text(7, "B"));
+        blocks.extend([
+            json!({"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"after-stop"}}),
+            json!({"type":"content_block_stop","index":7}),
+        ]);
+        let captured = invoke(source(), None, blocks).await;
+        let reply = captured.outcome.unwrap();
+        assert_eq!(
+            serde_json::to_value(reply.content).unwrap(),
+            json!([
+                {"type":"text","text":"A"}, {"type":"text","text":"B"}
+            ])
+        );
+        let deltas: Vec<_> = captured
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::TextDelta {
+                    content_index,
+                    delta,
+                    ..
+                } => Some((*content_index, delta.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, [(0, "A"), (1, "B")]);
+        let ends: Vec<_> = captured
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::TextEnd {
+                    content_index,
+                    content,
+                    ..
+                } => Some((*content_index, content.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ends, [(0, "A"), (1, "B")]);
+    }
+
+    #[tokio::test]
+    async fn transport_index_duplicate_active_blocks_advance_after_the_first_stop() {
+        let blocks = vec![
+            fallback(0),
+            json!({"type":"content_block_start","index":7,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_start","index":7,"content_block":{"type":"text","text":""}}),
+            json!({"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"A"}}),
+            json!({"type":"content_block_stop","index":7}),
+            json!({"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"B"}}),
+            json!({"type":"content_block_stop","index":7}),
+            json!({"type":"content_block_delta","index":7,"delta":{"type":"text_delta","text":"after-stop"}}),
+            json!({"type":"content_block_stop","index":7}),
+        ];
+        let captured = invoke(source(), None, blocks).await;
+        let reply = captured.outcome.unwrap();
+        assert_eq!(
+            serde_json::to_value(reply.content).unwrap(),
+            json!([
+                {"type":"text","text":"A"}, {"type":"text","text":"B"}
+            ])
+        );
+        let deltas: Vec<_> = captured
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::TextDelta {
+                    content_index,
+                    delta,
+                    ..
+                } => Some((*content_index, delta.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas, [(0, "A"), (1, "B")]);
+        let ends: Vec<_> = captured
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                AssistantStreamEvent::TextEnd {
+                    content_index,
+                    content,
+                    ..
+                } => Some((*content_index, content.as_str())),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ends, [(0, "A"), (1, "B")]);
+    }
+
+    fn assert_mid_output_failure(captured: Capture) -> AssistantMessage {
+        assert_eq!(
+            captured.raw.last().unwrap()["content_block"]["type"],
+            "fallback"
+        );
+        assert!(
+            !captured
+                .events
+                .iter()
+                .any(AssistantStreamEvent::is_terminal)
+        );
+        let failure = captured.outcome.unwrap_err();
+        let ProviderError::StreamError(summary) = failure.cause() else {
+            panic!("mid-output fallback must retain its typed semantic cause");
+        };
+        assert_eq!(
+            summary.as_str(),
+            "Anthropic performed an unsupported mid-output model fallback"
+        );
+        assert_eq!(failure.message().model, "claude-fable-5");
+        assert_eq!(
+            failure.message().response_model.as_deref(),
+            Some("claude-opus-4-8")
+        );
+        assert_eq!(failure.message().stop_reason, StopReason::Error);
+        assert_eq!(failure.message().usage.input_tokens, 100);
+        assert_eq!(failure.message().usage.output_tokens, 0);
+        failure.message().clone()
+    }
+
+    #[tokio::test]
+    async fn c009_mid_output_fallback_preserves_partial_failure_control() {
+        let mut blocks = text(0, "partial-prefix");
+        blocks.push(fallback(1));
+        let partial =
+            assert_mid_output_failure(invoke(source(), Some("claude-opus-4-8"), blocks).await);
+        assert!(partial.content.iter().any(|content| matches!(content,
+            AssistantContent::Text { text, .. } if text == "partial-prefix")));
+    }
+
+    #[tokio::test]
+    async fn fallback_after_any_started_output_block_is_a_semantic_failure() {
+        for content in [
+            json!({"type":"text","text":""}),
+            json!({"type":"tool_use","id":"tool-1","name":"read","input":{}}),
+            json!({"type":"thinking","thinking":"","signature":""}),
+            json!({"type":"redacted_thinking","data":"opaque-data"}),
+        ] {
+            let blocks = vec![
+                json!({"type":"content_block_start","index":0,"content_block":content}),
+                fallback(1),
+            ];
+            let partial =
+                assert_mid_output_failure(invoke(source(), Some("claude-opus-4-8"), blocks).await);
+            assert_eq!(partial.content.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_fallback_carriers_still_fail_as_malformed_frames() {
+        for invalid in [
+            json!({"type":"content_block_start","content_block":{"type":"fallback"}}),
+            json!({"type":"content_block_start","index":-1,"content_block":{"type":"fallback"}}),
+            json!({"type":"content_block_start","index":"0","content_block":{"type":"fallback"}}),
+            json!({"type":"content_block_start","index":0.5,"content_block":{"type":"fallback"}}),
+        ] {
+            let captured = invoke(source(), None, vec![invalid.clone()]).await;
+            assert!(captured.raw.contains(&invalid));
+            let failure = captured.outcome.unwrap_err();
+            let ProviderError::StreamError(summary) = failure.cause() else {
+                panic!("typed malformed error")
+            };
+            assert_eq!(
+                summary.as_str(),
+                "malformed Anthropic SSE event 'content_block_start'"
+            );
+            assert!(failure.message().content.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn public_low_level_parser_boundary_is_retained_while_stream_helper_handles_transport_marker()
+     {
+        let frame = format!("event: content_block_start\ndata: {}\n\n", fallback(0));
+        assert!(matches!(
+            parse_sse_events(&frame).next(),
+            Some(ParsedEvent::Malformed { .. })
+        ));
+        let (parsed, raw) = opi_ai::anthropic::parse_sse_events_with_raw(&frame)
+            .next()
+            .unwrap();
+        assert!(matches!(parsed, ParsedEvent::Malformed { .. }));
+        assert_eq!(raw, Some(fallback(0)));
+        let mut response = frame;
+        for event in text(3, "answer")
+            .into_iter()
+            .chain([json!({"type":"message_stop"})])
+        {
+            response.push_str(&format!(
+                "event: {}\ndata: {event}\n\n",
+                event["type"].as_str().unwrap()
+            ));
+        }
+        let events: Vec<_> = AnthropicProvider::new(None)
+            .stream_from_sse(&response, Default::default())
+            .collect()
+            .await;
+        let done = events.last().unwrap().as_ref().unwrap();
+        assert!(matches!(done, AssistantStreamEvent::Done { message, .. }
+            if message.content.len() == 1 && matches!(&message.content[0], AssistantContent::Text { text, .. } if text == "answer")));
+    }
+}
+
+mod managed_effort_source_compat {
+    use super::*;
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_ai::message::AssistantMessage;
+    use serde_json::{Value, json};
+    use std::sync::Arc;
+
+    fn source() -> ModelInfo {
+        let record = Catalog::builtin()
+            .unwrap()
+            .model("anthropic", CatalogOperation::Chat, "claude-fable-5-1")
+            .unwrap()
+            .clone();
+        assert_eq!(record.raw["compat"]["supportsMidConvoEffort"], true);
+        record.to_chat_model_info().unwrap()
+    }
+
+    fn request() -> Request {
+        let mut request = request_39_for(
+            "anthropic:claude-fable-5-1",
+            ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2048),
+                level: opi_ai::ThinkingLevel::Low,
+            },
+        );
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: Some("system".into()),
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "Hi".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![],
+        })
+        .unwrap();
+        request.cache_retention = CacheRetention::Long;
+        request.session_id = Some("session-complete-id".into());
+        request
+    }
+
+    struct Capture {
+        body: Value,
+        events: Vec<AssistantStreamEvent>,
+        outcome: Result<AssistantMessage, opi_ai::CallFailure>,
+    }
+
+    async fn capture(
+        model: ModelInfo,
+        request: Request,
+        native: Option<AnthropicMessagesOptions>,
+        response: Option<String>,
+    ) -> Capture {
+        capture_with_sends(model, request, native, response, 1).await
+    }
+
+    async fn capture_with_sends(
+        mut model: ModelInfo,
+        mut request: Request,
+        native: Option<AnthropicMessagesOptions>,
+        response: Option<String>,
+        expected_sends: u64,
+    ) -> Capture {
+        let server = MockServer::start().await;
+        let response = response.unwrap_or_else(|| {
+            [
+                json!({"type":"message_start","message":{"id":"received-id","model":model.id,
+                "usage":{"input_tokens":100,"output_tokens":0}}}),
+                json!({"type":"message_delta","delta":{"stop_reason":"end_turn"},
+                "usage":{"output_tokens":10}}),
+                json!({"type":"message_stop"}),
+            ]
+            .into_iter()
+            .map(|event| {
+                format!(
+                    "event: {}\ndata: {event}\n\n",
+                    event["type"].as_str().unwrap()
+                )
+            })
+            .collect()
+        });
+        Mock::given(method("POST"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(response),
+            )
+            .expect(expected_sends)
+            .mount(&server)
+            .await;
+        model.base_url = Some(server.uri());
+        model.capabilities.supports_cache_control = true;
+        model.capabilities.supports_long_cache_retention = true;
+        request.model = model.id.clone();
+        let canonical = serde_json::to_vec(&request.context).unwrap();
+        let provider = Arc::new(AnthropicProvider::for_route(
+            "anthropic".into(),
+            vec![model.clone()],
+            None,
+            Default::default(),
+            Arc::new(HttpClient::new()),
+            false,
+        ));
+        let api = AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
+        let mut models = Models::new();
+        let handle = models
+            .register_chat_api(
+                Arc::new(api),
+                Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    "synthetic-key".into(),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let record = opi_ai::ChatModelRecord::new("anthropic", model);
+        let mut call = if let Some(native) = native {
+            models.stream(record, request.clone(), handle.options(native))
+        } else {
+            models.stream_simple(record, request.clone(), Default::default())
+        };
+        let mut events = Vec::new();
+        while let Some(item) = call.next().await {
+            if let Ok(event) = item {
+                events.push(event);
+            }
+        }
+        let outcome = call.result().await;
+        if let Ok(message) = &outcome {
+            assert_eq!(message.stop_reason, StopReason::Stop);
+            assert_eq!(message.usage.input_tokens, 100);
+            assert_eq!(message.usage.output_tokens, 10);
+        }
+        assert_eq!(serde_json::to_vec(&request.context).unwrap(), canonical);
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len() as u64, expected_sends);
+        server.verify().await;
+        Capture {
+            body: sent
+                .first()
+                .map(|sent| sent.body_json().unwrap())
+                .unwrap_or(Value::Null),
+            events,
+            outcome,
+        }
+    }
+
+    #[tokio::test]
+    async fn c009_mid_effort_emits_binding_and_stamps_response() {
+        let captured = capture(source(), request(), None, None).await;
+        assert_eq!(
+            captured.body["thinking"]["block_binding"]["prefix_mismatch_behavior"],
+            "drop_block"
+        );
+        assert_eq!(
+            captured.outcome.unwrap().provider_thinking_level.as_deref(),
+            Some("low")
+        );
+    }
+
+    fn compat(model: &mut ModelInfo) -> &mut AnthropicMessagesCompat {
+        let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+            unreachable!()
+        };
+        compat
+    }
+
+    fn assert_managed(captured: &Capture, effort: &str) {
+        assert_eq!(
+            captured.body["thinking"],
+            json!({"type":"adaptive", "display":"summarized",
+            "block_binding":{"prefix_mismatch_behavior":"drop_block"}})
+        );
+        assert_eq!(captured.body["output_config"], json!({"effort":"high"}));
+        let messages = captured.body["messages"].as_array().unwrap();
+        assert_eq!(
+            messages.last().unwrap(),
+            &json!({"role":"system", "content":[],
+            "output_config":{"effort":effort}})
+        );
+        let betas = captured.body["betas"].as_array().unwrap();
+        for beta in [
+            "mid-conversation-output-config-2026-07-01",
+            "thinking-binding-controls-2026-08-01",
+        ] {
+            assert_eq!(betas.iter().filter(|value| *value == beta).count(), 1);
+        }
+        let mut starts = 0;
+        let mut terminals = 0;
+        for event in &captured.events {
+            match event {
+                AssistantStreamEvent::Start { partial } => {
+                    starts += 1;
+                    assert_eq!(partial.provider_thinking_level.as_deref(), Some(effort));
+                }
+                AssistantStreamEvent::Done { message, .. } => {
+                    terminals += 1;
+                    assert_eq!(message.provider_thinking_level.as_deref(), Some(effort));
+                }
+                _ => {}
+            }
+        }
+        assert_eq!((starts, terminals), (1, 1));
+        assert_eq!(
+            captured
+                .outcome
+                .as_ref()
+                .unwrap()
+                .provider_thinking_level
+                .as_deref(),
+            Some(effort)
+        );
+    }
+
+    #[tokio::test]
+    async fn native_current_effort_and_omitted_high_are_compiled_independently_of_wire_high() {
+        use opi_ai::{ThinkingLevel, ThinkingLevelMapping};
+        for (effort, expected) in [
+            (Some(ThinkingLevel::Low), "low"),
+            (Some(ThinkingLevel::Medium), "medium"),
+            (Some(ThinkingLevel::High), "high"),
+            (Some(ThinkingLevel::XHigh), "xhigh"),
+            (Some(ThinkingLevel::Max), "max"),
+            (None, "high"),
+        ] {
+            let mut model = source();
+            for level in [ThinkingLevel::XHigh, ThinkingLevel::Max] {
+                model.thinking_level_map = model
+                    .thinking_level_map
+                    .with_mapping(level, ThinkingLevelMapping::Identity);
+            }
+            let mut options = AnthropicMessagesOptions::default();
+            options.effort = effort;
+            let mut input = request();
+            input.temperature = Some(0.25);
+            let captured = capture(model, input, Some(options), None).await;
+            assert_managed(&captured, expected);
+            assert!(captured.body.get("temperature").is_none());
+        }
+        for native in [false, true] {
+            let mut model = source();
+            model.thinking_level_map = model.thinking_level_map.with_mapping(
+                ThinkingLevel::Low,
+                ThinkingLevelMapping::Mapped("source-defined-effort".into()),
+            );
+            let mut options = AnthropicMessagesOptions::default();
+            options.effort = Some(ThinkingLevel::Low);
+            let options = native.then_some(options);
+            let captured = capture(model, request(), options, None).await;
+            assert_managed(&captured, "source-defined-effort");
+        }
+    }
+
+    #[tokio::test]
+    async fn simple_adaptive_translation_and_numeric_high_follow_the_source_entry() {
+        use opi_ai::{ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping};
+        for (level, expected) in [
+            (ThinkingLevel::None, "high"),
+            (ThinkingLevel::Minimal, "low"),
+            (ThinkingLevel::Low, "low"),
+            (ThinkingLevel::Medium, "medium"),
+            (ThinkingLevel::High, "high"),
+            (ThinkingLevel::XHigh, "high"),
+            (ThinkingLevel::Max, "high"),
+        ] {
+            let mut model = source();
+            model.thinking_level_map = ThinkingLevelMap::reasoning_default()
+                .with_mapping(ThinkingLevel::XHigh, ThinkingLevelMapping::Identity)
+                .with_mapping(ThinkingLevel::Max, ThinkingLevelMapping::Identity);
+            let mut input = request();
+            input.thinking.level = level;
+            let captured = capture(model, input, None, None).await;
+            assert_managed(&captured, expected);
+        }
+        let mut model = source();
+        compat(&mut model).force_adaptive_thinking = false;
+        let captured = capture(model, request(), None, None).await;
+        assert_managed(&captured, "high");
+    }
+
+    #[tokio::test]
+    async fn native_disabled_and_simple_off_respect_reasoning_and_nullable_off_mapping() {
+        use opi_ai::{ThinkingLevel, ThinkingLevelMapping};
+        for flagged in [false, true] {
+            for off_allowed in [false, true] {
+                for enabled in [None, Some(false), Some(true)] {
+                    let mut model = source();
+                    compat(&mut model).supports_mid_convo_effort = flagged;
+                    model.thinking_level_map = model.thinking_level_map.with_mapping(
+                        ThinkingLevel::None,
+                        if off_allowed {
+                            ThinkingLevelMapping::Identity
+                        } else {
+                            ThinkingLevelMapping::Unsupported
+                        },
+                    );
+                    let mut input = request();
+                    input.temperature = Some(0.25);
+                    let mut options = AnthropicMessagesOptions::default();
+                    options.thinking_enabled = enabled;
+                    let captured = capture(model, input, Some(options), None).await;
+                    let disabled = enabled == Some(false) && off_allowed;
+                    let managed = flagged && !disabled;
+                    let body = &captured.body;
+                    if disabled {
+                        assert_eq!(body["thinking"], json!({"type":"disabled"}));
+                    } else if managed {
+                        assert_managed(&captured, "high");
+                    } else if enabled == Some(true) {
+                        assert_eq!(
+                            body["thinking"],
+                            json!({"type":"adaptive", "display":"summarized"})
+                        );
+                    } else {
+                        assert!(body.get("thinking").is_none());
+                    }
+                    assert_eq!(
+                        body.get("temperature").is_some(),
+                        !flagged && enabled != Some(true)
+                    );
+                    assert_eq!(body.get("betas").is_some(), flagged);
+                    let markers = body["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter(|message| message.get("output_config").is_some())
+                        .count();
+                    assert_eq!(markers, usize::from(managed));
+                    if !managed {
+                        assert!(body.get("output_config").is_none());
+                        assert!(captured.outcome.unwrap().provider_thinking_level.is_none());
+                    }
+                }
+            }
+        }
+        for off_allowed in [false, true] {
+            let mut model = source();
+            model.thinking_level_map = model.thinking_level_map.with_mapping(
+                ThinkingLevel::None,
+                if off_allowed {
+                    ThinkingLevelMapping::Identity
+                } else {
+                    ThinkingLevelMapping::Unsupported
+                },
+            );
+            let mut input = request();
+            input.thinking = ThinkingConfig::default();
+            let captured = capture(model, input, None, None).await;
+            if off_allowed {
+                assert_eq!(captured.body["thinking"], json!({"type":"disabled"}));
+                assert!(captured.outcome.unwrap().provider_thinking_level.is_none());
+                assert!(
+                    captured.body["messages"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .all(|message| message.get("output_config").is_none())
+                );
+            } else {
+                assert_managed(&captured, "high");
+            }
+        }
+        let mut model = source();
+        model.capabilities.supports_thinking = false;
+        let mut options = AnthropicMessagesOptions::default();
+        options.thinking_enabled = Some(false);
+        let captured = capture(model, request(), Some(options), None).await;
+        assert_managed(&captured, "high");
+    }
+
+    fn history(level: Option<&str>, identity: &str) -> Message {
+        let mut message = opi_ai::test_support::base_assistant();
+        message.provider = "anthropic".into();
+        message.model = "different-historical-model".into();
+        message.wire = Some(WireApi::AnthropicMessages);
+        message.content = vec![AssistantContent::Text {
+            text: "prior answer".into(),
+            signature: None,
+        }];
+        message.provider_thinking_level = level.map(str::to_owned);
+        match identity {
+            "same" => {}
+            "coarse-api" => message.api = opi_ai::ApiKind::OpenAi,
+            "provider" => message.provider = "other".into(),
+            "wire" => message.wire = Some(WireApi::OpenAiCompletions),
+            "legacy" => message.wire = None,
+            _ => unreachable!(),
+        }
+        Message::Assistant(message)
+    }
+
+    #[test]
+    fn flagged_off_null_native_false_does_not_inherit_interleaved_beta_from_neutral_true() {
+        let mut model = source();
+        compat(&mut model).force_adaptive_thinking = false;
+        model.thinking_level_map = model.thinking_level_map.with_mapping(
+            opi_ai::ThinkingLevel::None,
+            opi_ai::ThinkingLevelMapping::Unsupported,
+        );
+        let mut options = AnthropicMessagesOptions::default();
+        options.thinking_enabled = Some(false);
+        let mut input = request();
+        input.temperature = Some(0.25);
+        assert!(input.thinking.enabled);
+        let body = provider_39(&model, options)
+            .build_request_body(&input)
+            .unwrap();
+        assert_eq!(
+            body["thinking"],
+            json!({"type":"adaptive","display":"summarized",
+            "block_binding":{"prefix_mismatch_behavior":"drop_block"}})
+        );
+        assert_eq!(body["output_config"], json!({"effort":"high"}));
+        assert_eq!(
+            body["messages"].as_array().unwrap().last().unwrap(),
+            &json!({"role":"system","content":[],"output_config":{"effort":"high"}})
+        );
+        assert!(body.get("temperature").is_none());
+        assert_eq!(
+            body["betas"],
+            json!([
+                "mid-conversation-output-config-2026-07-01",
+                "thinking-binding-controls-2026-08-01"
+            ])
+        );
+        compat(&mut model).supports_mid_convo_effort = false;
+        let mut options = AnthropicMessagesOptions::default();
+        options.thinking_enabled = Some(false);
+        let body = provider_39(&model, options)
+            .build_request_body(&input)
+            .unwrap();
+        assert_eq!(body["betas"], json!(["interleaved-thinking-2025-05-14"]));
+    }
+
+    #[tokio::test]
+    async fn historical_effort_uses_exact_wire_and_provider_without_model_or_coarse_api_match() {
+        for level in [
+            Some("low"),
+            Some("medium"),
+            Some("high"),
+            Some("xhigh"),
+            Some("max"),
+            None,
+            Some(""),
+            Some("minimal"),
+            Some("off"),
+            Some("HIGH"),
+            Some(" high "),
+        ] {
+            for identity in ["same", "coarse-api", "provider", "wire", "legacy"] {
+                let mut input = request();
+                let mut messages = input.context.messages().to_vec();
+                messages.push(history(level, identity));
+                input.context =
+                    opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                        messages,
+                        ..Default::default()
+                    })
+                    .unwrap();
+                let captured = capture(source(), input, None, None).await;
+                assert_managed(&captured, "low");
+                let messages = captured.body["messages"].as_array().unwrap();
+                let historical = matches!(level, Some("low" | "medium" | "high" | "xhigh" | "max"))
+                    && matches!(identity, "same" | "coarse-api");
+                assert_eq!(messages.len(), if historical { 4 } else { 3 });
+                if historical {
+                    assert_eq!(
+                        messages[1],
+                        json!({"role":"system","content":[],"output_config":{"effort":level.unwrap()}})
+                    );
+                    assert_eq!(messages[2]["role"], "assistant");
+                } else {
+                    assert_eq!(messages[1]["role"], "assistant");
+                }
+                assert!(
+                    captured
+                        .outcome
+                        .unwrap()
+                        .projection
+                        .unwrap()
+                        .replay
+                        .losses
+                        .is_empty()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn managed_display_and_omitted_wire_assistant_do_not_create_orphan_history_markers() {
+        let mut model = source();
+        compat(&mut model).allow_empty_signature = true;
+        let mut blank = history(Some("max"), "same");
+        let Message::Assistant(message) = &mut blank else {
+            unreachable!()
+        };
+        message.model = model.id.clone();
+        message.content = vec![AssistantContent::Thinking {
+            thinking: " \t".into(),
+            signature: Some("".into()),
+        }];
+        let mut input = request();
+        let mut messages = input.context.messages().to_vec();
+        messages.push(blank);
+        input.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            messages,
+            ..Default::default()
+        })
+        .unwrap();
+        let mut options = AnthropicMessagesOptions::default();
+        options.effort = Some(opi_ai::ThinkingLevel::Low);
+        options.thinking_display = Some(AnthropicThinkingDisplay::Detailed);
+        let captured = capture(model, input, Some(options), None).await;
+        assert_eq!(
+            captured.body["thinking"],
+            json!({"type":"adaptive", "display":"detailed",
+            "block_binding":{"prefix_mismatch_behavior":"drop_block"}})
+        );
+        assert_eq!(captured.body["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(captured.body["messages"][0]["role"], "user");
+        assert_eq!(
+            captured.body["messages"][1],
+            json!({"role":"system","content":[],"output_config":{"effort":"low"}})
+        );
+        let outcome = captured.outcome.unwrap();
+        assert_eq!(outcome.provider_thinking_level.as_deref(), Some("low"));
+        assert!(outcome.projection.unwrap().replay.losses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn managed_markers_preserve_tool_result_adjacency_and_delayed_system_order() {
+        let mut model = source();
+        compat(&mut model).supports_mid_convo_system_messages = true;
+        compat(&mut model).supports_mid_convo_tool_changes = true;
+        let mut context = inline_tools_context_39();
+        let mut call = opi_ai::test_support::base_assistant();
+        call.provider = "anthropic".into();
+        call.model = model.id.clone();
+        call.wire = Some(WireApi::AnthropicMessages);
+        call.content = vec![AssistantContent::ToolCall {
+            tool_call: opi_ai::message::ToolCall {
+                id: "tool-turn".into(),
+                name: "initial_tool".into(),
+                arguments: "{\"x\":\"fixture\"}".into(),
+                arguments_error: None,
+                signature: None,
+            },
+        }];
+        context.messages.insert(2, Message::Assistant(call));
+        context
+            .messages
+            .push(Message::ToolResult(opi_ai::message::ToolResultMessage {
+                tool_call_id: "tool-turn".into(),
+                tool_name: "initial_tool".into(),
+                content: vec![opi_ai::message::OutputContent::Text {
+                    text: "result".into(),
+                }],
+                details: None,
+                is_error: false,
+                truncated: false,
+                timestamp_ms: 3,
+                not_executed: None,
+            }));
+        context.messages.push(history(Some("medium"), "same"));
+        let mut input = request();
+        input.context = opi_ai::transcript::normalize_context(context).unwrap();
+        let captured = capture(model, input, None, None).await;
+        assert_managed(&captured, "low");
+        let messages = captured.body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 7);
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[1]["content"][0]["type"], "tool_use");
+        assert_eq!(messages[2]["role"], "user");
+        assert_eq!(messages[2]["content"][0]["type"], "tool_result");
+        assert_eq!(messages[3]["role"], "system");
+        assert_eq!(messages[3]["content"][0]["text"], "Update.");
+        assert_eq!(
+            messages[4],
+            json!({"role":"system","content":[],"output_config":{"effort":"medium"}})
+        );
+        assert_eq!(messages[5]["role"], "assistant");
+        assert_eq!(messages[6]["output_config"]["effort"], "low");
+    }
+
+    #[tokio::test]
+    async fn compiled_effort_survives_payload_rewrite_and_stream_failure() {
+        for failure in [false, true] {
+            let mut input = request();
+            input.callbacks =
+                opi_ai::RequestCallbacks::new().with_on_payload(Arc::new(|body| {
+                    let mut body = body.clone();
+                    body["messages"].as_array_mut().unwrap().last_mut().unwrap()["output_config"]
+                        ["effort"] = json!("max");
+                    Ok(Some(body))
+                }));
+            let response = failure.then(|| concat!(
+                "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"received-id\",\"model\":\"reported-model\",\"usage\":{\"input_tokens\":100,\"output_tokens\":0}}}\n\n",
+                "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+                "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n"
+            ).to_owned());
+            let captured = capture(source(), input, None, response).await;
+            assert_eq!(
+                captured.body["messages"]
+                    .as_array()
+                    .unwrap()
+                    .last()
+                    .unwrap()["output_config"]["effort"],
+                "max"
+            );
+            assert!(
+                matches!(&captured.events[0], AssistantStreamEvent::Start { partial }
+                if partial.provider_thinking_level.as_deref() == Some("low"))
+            );
+            if failure {
+                let failure = captured.outcome.unwrap_err();
+                assert!(matches!(failure.cause(), ProviderError::StreamError(_)));
+                assert_eq!(
+                    failure.message().provider_thinking_level.as_deref(),
+                    Some("low")
+                );
+                assert_eq!(failure.message().model, "claude-fable-5-1");
+                assert_eq!(
+                    failure.message().response_model.as_deref(),
+                    Some("reported-model")
+                );
+                assert!(
+                    matches!(&failure.message().content[0], AssistantContent::Text { text, .. } if text == "partial")
+                );
+            } else {
+                assert_eq!(
+                    captured.outcome.unwrap().provider_thinking_level.as_deref(),
+                    Some("low")
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn compiled_stamp_precedes_payload_and_response_callback_failures() {
+        for response_phase in [false, true] {
+            let mut input = request();
+            input.callbacks = if response_phase {
+                opi_ai::RequestCallbacks::new().with_on_response(Arc::new(|_, _| {
+                    Err(opi_ai::callbacks::CallbackError::new(
+                        "synthetic response rejection",
+                    ))
+                }))
+            } else {
+                opi_ai::RequestCallbacks::new().with_on_payload(Arc::new(|_| {
+                    Err(opi_ai::callbacks::CallbackError::new(
+                        "synthetic payload rejection",
+                    ))
+                }))
+            };
+            let captured =
+                capture_with_sends(source(), input, None, None, u64::from(response_phase)).await;
+            assert!(captured.events.is_empty());
+            let failure = captured.outcome.unwrap_err();
+            assert!(matches!(failure.cause(), ProviderError::CallbackPhase(_)));
+            assert_eq!(
+                failure.message().provider_thinking_level.as_deref(),
+                Some("low")
+            );
+            assert_eq!(failure.message().model, "claude-fable-5-1");
+            assert!(failure.message().content.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn historical_marker_follows_pending_native_system_and_precedes_its_assistant() {
+        let mut model = source();
+        compat(&mut model).supports_mid_convo_system_messages = true;
+        compat(&mut model).supports_mid_convo_tool_changes = true;
+        let mut context = inline_tools_context_39();
+        context.messages.push(history(Some("medium"), "same"));
+        let mut input = request();
+        input.context = opi_ai::transcript::normalize_context(context).unwrap();
+        let captured = capture(model, input, None, None).await;
+        assert_managed(&captured, "low");
+        let messages = captured.body["messages"].as_array().unwrap();
+        assert_eq!(messages.len(), 5);
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[1]["role"], "system");
+        assert_eq!(messages[1]["content"][0]["text"], "Update.");
+        assert_eq!(
+            messages[2],
+            json!({"role":"system","content":[],"output_config":{"effort":"medium"}})
+        );
+        assert_eq!(messages[3]["role"], "assistant");
+        assert_eq!(messages[4]["output_config"]["effort"], "low");
+        assert_eq!(
+            captured.body["betas"],
+            json!([
+                "mid-conversation-output-config-2026-07-01",
+                "thinking-binding-controls-2026-08-01",
+                "inline-tools-2026-09-15"
+            ])
+        );
+    }
+}
+
+mod anthropic_affinity_source_compat {
+    use super::*;
+    use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
+    use opi_ai::catalog::{Catalog, CatalogModel, CatalogOperation};
+    use serde_json::json;
+    use std::sync::Arc;
+
+    #[derive(Clone)]
+    struct FixtureAuth(ResolvedAuth);
+    impl AuthResolver for FixtureAuth {
+        fn resolve(&self) -> opi_ai::BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+            Box::pin(async { Ok(self.0.clone()) })
+        }
+    }
+
+    struct Fixture {
+        record: CatalogModel,
+        request: Request,
+        auth: ResolvedAuth,
+        configured: Vec<(String, String)>,
+        base_suffix: &'static str,
+        copilot: bool,
+        direct_oauth: bool,
+    }
+
+    impl Fixture {
+        fn new() -> Self {
+            let record = Catalog::builtin()
+                .unwrap()
+                .model(
+                    "fireworks",
+                    CatalogOperation::Chat,
+                    "accounts/fireworks/models/deepseek-v4p1-flash",
+                )
+                .unwrap()
+                .clone();
+            let mut request = request_39(Default::default());
+            request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: Some("system".into()),
+                messages: vec![Message::User(UserMessage {
+                    content: vec![InputContent::Text { text: "Hi".into() }],
+                    timestamp_ms: 0,
+                })],
+                tools: vec![],
+            })
+            .unwrap();
+            request.max_tokens = Some(4096);
+            request.cache_retention = CacheRetention::Long;
+            request.session_id = Some("session-complete-id".into());
+            Self {
+                record,
+                request,
+                auth: ResolvedAuth {
+                    scheme: AuthScheme::ApiKey,
+                    secret: "synthetic-key".into(),
+                    base_url: None,
+                    account_id: None,
+                    env: Default::default(),
+                    provenance: Default::default(),
+                },
+                configured: vec![],
+                base_suffix: "",
+                copilot: false,
+                direct_oauth: false,
+            }
+        }
+
+        fn source(&mut self, provider: &str, enabled: Option<bool>, router_format: bool) {
+            self.record.provider = provider.into();
+            self.record.raw["provider"] = json!(provider);
+            let compat = self.record.raw["compat"].as_object_mut().unwrap();
+            compat.remove("sendSessionAffinityHeaders");
+            compat.remove("sessionAffinityFormat");
+            if let Some(enabled) = enabled {
+                compat.insert("sendSessionAffinityHeaders".into(), json!(enabled));
+            }
+            if router_format {
+                compat.insert("sessionAffinityFormat".into(), json!("openrouter"));
+            }
+        }
+
+        async fn capture(mut self) -> wiremock::Request {
+            let server = MockServer::start().await;
+            let events = [
+                json!({"type":"message_start", "message": {"id":"received-id",
+                    "model":self.record.id, "usage":{"input_tokens":100, "output_tokens":0}}}),
+                json!({"type":"message_delta", "delta":{"stop_reason":"end_turn"},
+                    "usage":{"output_tokens":10}}),
+                json!({"type":"message_stop"}),
+            ];
+            let response = events
+                .into_iter()
+                .map(|event| {
+                    format!(
+                        "event: {}\ndata: {event}\n\n",
+                        event["type"].as_str().unwrap()
+                    )
+                })
+                .collect::<String>();
+            Mock::given(method("POST"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(response),
+                )
+                .expect(1)
+                .mount(&server)
+                .await;
+            let mut model = self.record.to_chat_model_info().unwrap();
+            model.base_url = Some(format!("{}{}", server.uri(), self.base_suffix));
+            model.capabilities.supports_cache_control = true;
+            model.capabilities.supports_long_cache_retention = true;
+            self.request.model = model.id.clone();
+            let mut provider = AnthropicProvider::for_route(
+                self.record.provider.clone(),
+                vec![model.clone()],
+                None,
+                opi_ai::ProviderHeaders::try_new(self.configured).unwrap(),
+                Arc::new(opi_ai::http::HttpClient::new()),
+                self.direct_oauth,
+            );
+            if self.copilot {
+                provider = provider.with_copilot_headers();
+            }
+            let api = AnthropicMessagesChatApi::new(Arc::new(provider), model.clone()).unwrap();
+            let mut models = Models::new();
+            models
+                .register_chat_api(
+                    Arc::new(api),
+                    Arc::new(FixtureAuth(self.auth)),
+                    opi_ai::AuthProvenanceSource::Static,
+                )
+                .unwrap();
+            let outcome = models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(self.record.provider, model),
+                    self.request,
+                    Default::default(),
+                )
+                .await
+                .expect("actual successful terminal");
+            assert_eq!(outcome.stop_reason, StopReason::Stop);
+            assert_eq!(outcome.usage.input_tokens, 100);
+            assert_eq!(outcome.usage.output_tokens, 10);
+            let mut sent = server.received_requests().await.unwrap();
+            assert_eq!(sent.len(), 1);
+            server.verify().await;
+            sent.remove(0)
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_affinity_sends_full_session_id() {
+        let sent = Fixture::new().capture().await;
+        assert_eq!(
+            sent.headers
+                .get("x-session-affinity")
+                .and_then(|v| v.to_str().ok()),
+            Some("session-complete-id")
+        );
+    }
+
+    fn assert_affinity(sent: &wiremock::Request, affinity: Option<&str>, router: Option<&str>) {
+        for (name, expected) in [("x-session-affinity", affinity), ("x-session-id", router)] {
+            assert_eq!(
+                sent.headers.get(name).and_then(|value| value.to_str().ok()),
+                expected,
+                "{name}"
+            );
+            assert_eq!(
+                sent.headers.get_all(name).iter().count(),
+                usize::from(expected.is_some()),
+                "{name}"
+            );
+        }
+        for name in ["session_id", "x-client-request-id"] {
+            assert!(
+                !sent.headers.contains_key(name),
+                "no Responses affinity: {name}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn provider_and_source_url_inference_respect_explicit_enable_and_format() {
+        for (provider, suffix, enabled, format, family) in [
+            ("fireworks", "", None, false, None),
+            ("openrouter", "", None, false, Some("router")),
+            ("alias", "/openrouter.ai", None, false, Some("router")),
+            ("openrouter-proxy", "", None, false, None),
+            ("alias", "/OPENROUTER.AI", None, false, None),
+            ("openrouter", "", Some(false), false, None),
+            ("alias", "/openrouter.ai", Some(false), false, None),
+            ("fireworks", "", Some(true), true, Some("router")),
+            ("fireworks", "", None, true, None),
+            ("fireworks", "", Some(true), false, Some("affinity")),
+        ] {
+            let mut fixture = Fixture::new();
+            fixture.source(provider, enabled, format);
+            fixture.base_suffix = suffix;
+            let sent = fixture.capture().await;
+            assert_affinity(
+                &sent,
+                (family == Some("affinity")).then_some("session-complete-id"),
+                (family == Some("router")).then_some("session-complete-id"),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn full_nonempty_session_affinity_is_independent_of_retention() {
+        let session = "source-session-full-".repeat(8);
+        for router in [false, true] {
+            for retention in [
+                CacheRetention::None,
+                CacheRetention::Short,
+                CacheRetention::Long,
+                CacheRetention::Disabled,
+            ] {
+                let mut fixture = Fixture::new();
+                fixture.source("fireworks", Some(true), router);
+                fixture.request.session_id = Some(session.clone());
+                fixture.request.cache_retention = retention;
+                let sent = fixture.capture().await;
+                assert_affinity(
+                    &sent,
+                    (!router).then_some(session.as_str()),
+                    router.then_some(session.as_str()),
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_false_and_absent_or_empty_sessions_emit_no_generated_affinity() {
+        for router in [false, true] {
+            let mut fixture = Fixture::new();
+            fixture.source("fireworks", Some(false), router);
+            assert_affinity(&fixture.capture().await, None, None);
+            for session in [None, Some("")] {
+                let mut fixture = Fixture::new();
+                fixture.source("openrouter", Some(true), router);
+                fixture.request.session_id = session.map(str::to_owned);
+                assert_affinity(&fixture.capture().await, None, None);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn lawful_openrouter_header_overrides_and_tombstones_win_before_transform() {
+        for mode in [
+            "generated",
+            "model",
+            "caller",
+            "remove",
+            "remove-then-caller",
+            "transform",
+        ] {
+            let mut fixture = Fixture::new();
+            fixture.source("fireworks", Some(true), true);
+            fixture.request.cache_retention = CacheRetention::Disabled;
+            fixture.configured = vec![("X-Session-Id".into(), "configured-value".into())];
+            let model = matches!(mode, "model" | "caller" | "transform");
+            if model {
+                fixture.record.raw["headers"] = json!({"X-Session-Id":"model-value"});
+            }
+            if matches!(mode, "remove" | "remove-then-caller") {
+                fixture.record.raw["headers"] = json!({"x-session-id":null});
+            }
+            if matches!(mode, "caller" | "remove-then-caller") {
+                fixture
+                    .request
+                    .extra_headers
+                    .push(("x-session-id".into(), "caller-value".into()));
+            }
+            let before = match mode {
+                "model" | "transform" => Some("model-value"),
+                "caller" | "remove-then-caller" => Some("caller-value"),
+                "remove" => None,
+                _ => Some("session-complete-id"),
+            };
+            let seen = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let counter = seen.clone();
+            fixture.request.callbacks = opi_ai::RequestCallbacks::new()
+                .with_async_header_transform(move |mut headers| {
+                    let counter = counter.clone();
+                    async move {
+                        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        let actual: Vec<_> = headers
+                            .iter()
+                            .filter(|(name, _)| name.eq_ignore_ascii_case("x-session-id"))
+                            .map(|(_, value)| value.as_str())
+                            .collect();
+                        assert_eq!(actual, before.into_iter().collect::<Vec<_>>());
+                        if mode == "transform" {
+                            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("x-session-id"));
+                            headers.push(("x-session-id".into(), "transformed-value".into()));
+                        }
+                        Ok(headers)
+                    }
+                });
+            let sent = fixture.capture().await;
+            assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 1);
+            assert_affinity(
+                &sent,
+                None,
+                if mode == "transform" {
+                    Some("transformed-value")
+                } else {
+                    before
+                },
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn oauth_and_copilot_omit_generated_affinity_but_header_owned_auth_retains_it() {
+        for mode in ["oauth", "header-owned", "copilot"] {
+            let mut fixture = Fixture::new();
+            fixture.auth.scheme = AuthScheme::Bearer;
+            fixture.auth.secret = "sk-ant-oat-fixture-only".into();
+            fixture.direct_oauth = true;
+            if mode == "header-owned" {
+                fixture.auth.provenance.source = opi_ai::AuthProvenanceSource::Environment {
+                    name: "ANTHROPIC_AUTH_TOKEN".into(),
+                };
+            }
+            if mode == "copilot" {
+                fixture.source("github-copilot", Some(true), false);
+                fixture.copilot = true;
+            }
+            let sent = fixture.capture().await;
+            assert_affinity(
+                &sent,
+                (mode == "header-owned").then_some("session-complete-id"),
+                None,
+            );
+            assert_eq!(sent.headers.contains_key("anthropic-beta"), mode == "oauth");
+            assert_eq!(
+                sent.headers["authorization"],
+                "Bearer sk-ant-oat-fixture-only"
+            );
+            if mode == "copilot" {
+                assert_eq!(sent.headers["x-initiator"], "user");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn protected_default_affinity_override_and_invalid_generated_value_still_fail_closed() {
+        for mode in ["protected-override", "invalid-value"] {
+            let server = MockServer::start().await;
+            let mut fixture = Fixture::new();
+            if mode == "protected-override" {
+                fixture
+                    .request
+                    .extra_headers
+                    .push(("x-session-affinity".into(), "caller-value".into()));
+            } else {
+                fixture.request.session_id = Some("invalid\nvalue".into());
+            }
+            let mut model = fixture.record.to_chat_model_info().unwrap();
+            model.base_url = Some(server.uri());
+            fixture.request.model = model.id.clone();
+            let provider = AnthropicProvider::for_route(
+                fixture.record.provider,
+                vec![model],
+                None,
+                Default::default(),
+                Arc::new(opi_ai::http::HttpClient::new()),
+                false,
+            );
+            let failure =
+                opi_ai::ChatStream::new(provider.stream_prepared(fixture.request, fixture.auth))
+                    .result()
+                    .await
+                    .expect_err("invalid headers fail before dispatch");
+            assert!(
+                matches!(failure.cause(), ProviderError::RequestFailed(_)),
+                "{mode}: {:?}",
+                failure.cause()
+            );
+            assert!(server.received_requests().await.unwrap().is_empty());
+        }
     }
 }

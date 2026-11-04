@@ -488,6 +488,84 @@ fn arguments_error_rejects_before_coercion() {
 }
 
 #[test]
+fn public_argument_finalizer_rejects_non_json_utf16_without_replacement() {
+    use opi_ai::message::finalize_tool_arguments;
+    use serde_json::json;
+
+    let schema = json!({
+        "type": "object",
+        "properties": {"x": {"type": "string"}},
+        "required": ["x"],
+        "additionalProperties": false
+    });
+    let original_schema = schema.clone();
+    let compiled = compile(schema.clone()).unwrap();
+    let coercible = json!({"x": 12});
+    let original_coercible = coercible.clone();
+    assert_eq!(
+        validate_tool_arguments(&compiled, &coercible, None).unwrap(),
+        ToolArgumentOutcome::Valid {
+            normalized: json!({"x": "12"})
+        }
+    );
+
+    for raw in [
+        r#"{"x":"\ud800"}"#,
+        r#"{"x":"\udfff"}"#,
+        r#"{"x":"\ud800x"}"#,
+        r#"{"x":NaN}"#,
+        r#"{"x":Infinity}"#,
+        r#"{"x":undefined}"#,
+        r#"{"x":Symbol("x")}"#,
+    ] {
+        let (arguments, arguments_error) = finalize_tool_arguments(raw.to_owned());
+        assert_eq!(arguments, raw, "malformed arguments retain exact raw text");
+        assert!(arguments_error.is_some(), "raw input: {raw}");
+        assert!(!arguments.contains('\u{fffd}'), "raw input: {raw}");
+        let raw_value = Value::String(arguments);
+        let original_raw_value = raw_value.clone();
+        assert_eq!(
+            validate_tool_arguments(&compiled, &raw_value, arguments_error.as_deref()).unwrap(),
+            ToolArgumentOutcome::ArgumentsError,
+            "raw input: {raw}"
+        );
+        assert_eq!(raw_value, original_raw_value);
+        assert_eq!(
+            validate_tool_arguments(&compiled, &coercible, arguments_error.as_deref()).unwrap(),
+            ToolArgumentOutcome::ArgumentsError,
+            "the actual finalizer marker rejects before otherwise-valid coercion: {raw}"
+        );
+    }
+    assert_eq!(coercible, original_coercible);
+
+    let paired = r#"{"x":"\ud83d\ude00"}"#;
+    let (arguments, arguments_error) = finalize_tool_arguments(paired.to_owned());
+    assert_eq!(arguments, paired);
+    assert_eq!(arguments_error, None);
+    let parsed: Value = serde_json::from_str(&arguments).unwrap();
+    assert_eq!(parsed, json!({"x": "\u{1f600}"}));
+    let original_parsed = parsed.clone();
+    assert_eq!(
+        validate_tool_arguments(&compiled, &parsed, arguments_error.as_deref()).unwrap(),
+        ToolArgumentOutcome::Valid {
+            normalized: original_parsed.clone()
+        }
+    );
+    assert_eq!(parsed, original_parsed);
+
+    let ordinary = json!({"x": "ordinary"});
+    let original_ordinary = ordinary.clone();
+    assert_eq!(
+        validate_tool_arguments(&compiled, &ordinary, None).unwrap(),
+        ToolArgumentOutcome::Valid {
+            normalized: original_ordinary.clone()
+        }
+    );
+    assert_eq!(ordinary, original_ordinary);
+    assert_eq!(schema, original_schema);
+}
+
+#[test]
 fn raw_input_is_never_mutated() {
     let compiled = compile(serde_json::json!({
         "type": "object",

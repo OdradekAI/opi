@@ -23,9 +23,9 @@ use std::collections::{BTreeMap, HashMap};
 use serde_json::{Map, Value, json};
 
 use crate::model_info::{
-    AnthropicMessagesCompat, ModelCapabilities, ModelInfo, OpenAiCodexResponsesCompat,
-    OpenAiResponsesCompat, ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping, WireApi,
-    WireCompat,
+    AnthropicAllowedFallbackModel, AnthropicMessagesCompat, ModelCapabilities, ModelInfo,
+    OpenAiCodexResponsesCompat, OpenAiResponsesCompat, ThinkingLevel, ThinkingLevelMap,
+    ThinkingLevelMapping, WireApi, WireCompat,
 };
 use crate::stream::Pricing;
 
@@ -79,6 +79,25 @@ fn pricing_from_json(value: &Value) -> Result<Pricing, String> {
         cache_read_cost_per_mtok: field("cacheRead")?,
         cache_write_cost_per_mtok: field("cacheWrite")?,
     })
+}
+
+fn anthropic_fallback_rates_to_json(pricing: &Pricing) -> Value {
+    let mut value = pricing_to_json(pricing);
+    for key in ["input", "output", "cacheRead", "cacheWrite"] {
+        let Some(number) = value[key].as_number() else {
+            continue;
+        };
+        // Local rates use f64, while source catalogs commonly spell whole
+        // rates as integers. Removing only an exact `.0` preserves the value
+        // without casts, saturation or a change to the general pricing codec.
+        let rendered = number.to_string();
+        if let Some(integer) = rendered.strip_suffix(".0")
+            && let Ok(number) = integer.parse::<serde_json::Number>()
+        {
+            value[key] = Value::Number(number);
+        }
+    }
+    value
 }
 
 fn known_pricing_from_json(value: &Value) -> Result<Option<Pricing>, String> {
@@ -156,15 +175,59 @@ fn thinking_map_from_extension(value: &Value) -> Result<ThinkingLevelMap, String
 
 fn compat_to_extension(compat: &WireCompat) -> Value {
     match compat {
-        WireCompat::AnthropicMessages(inner) => json!({
-            "api": WireApi::AnthropicMessages.as_str(),
-            "supportsEagerToolInputStreaming": inner.supports_eager_tool_input_streaming,
-            "supportsMidConvoSystemMessages": inner.supports_mid_convo_system_messages,
-            "supportsMidConvoToolChanges": inner.supports_mid_convo_tool_changes,
-            "forceAdaptiveThinking": inner.force_adaptive_thinking,
-            "supportsTemperature": inner.supports_temperature,
-            "supportsStrictTools": inner.supports_strict_tools,
-        }),
+        WireCompat::AnthropicMessages(inner) => {
+            let mut value = json!({
+                "api": WireApi::AnthropicMessages.as_str(),
+                "supportsEagerToolInputStreaming": inner.supports_eager_tool_input_streaming,
+                "supportsLongCacheRetention": inner.supports_long_cache_retention,
+                "supportsCacheControlOnTools": inner.supports_cache_control_on_tools,
+                "supportsMidConvoSystemMessages": inner.supports_mid_convo_system_messages,
+                "supportsMidConvoToolChanges": inner.supports_mid_convo_tool_changes,
+                "forceAdaptiveThinking": inner.force_adaptive_thinking,
+                "supportsTemperature": inner.supports_temperature,
+                "allowEmptySignature": inner.allow_empty_signature,
+                "supportsStrictTools": inner.supports_strict_tools,
+                "supportsMidConvoEffort": inner.supports_mid_convo_effort,
+            });
+            if let Some(enabled) = inner.send_session_affinity_headers {
+                value["sendSessionAffinityHeaders"] = json!(enabled);
+            }
+            if let Some(format) = inner.session_affinity_format {
+                value["sessionAffinityFormat"] = json!(format);
+            }
+            if let Some(fallbacks) = &inner.allowed_fallback_models {
+                value["allowedFallbackModels"] = json!(
+                    fallbacks
+                        .iter()
+                        .map(|fallback| {
+                            let mut cost = anthropic_fallback_rates_to_json(&fallback.cost.base);
+                            if !fallback.cost.tiers.is_empty() {
+                                cost["tiers"] = json!(
+                                    fallback
+                                        .cost
+                                        .tiers
+                                        .iter()
+                                        .map(|tier| {
+                                            let mut value =
+                                                anthropic_fallback_rates_to_json(&tier.pricing);
+                                            value["inputTokensAbove"] =
+                                                json!(tier.input_tokens_above);
+                                            value
+                                        })
+                                        .collect::<Vec<_>>()
+                                );
+                            }
+                            json!({
+                                "provider": fallback.provider,
+                                "model": fallback.model,
+                                "cost": cost,
+                            })
+                        })
+                        .collect::<Vec<_>>()
+                );
+            }
+            value
+        }
         WireCompat::OpenAiCompletions(inner) => json!({
             "api": WireApi::OpenAiCompletions.as_str(),
             "storeField": match &inner.store {
@@ -312,6 +375,59 @@ fn opt_typed<T: serde::de::DeserializeOwned>(
             .map(Some)
             .map_err(|error| format!("invalid field '{key}': {error}")),
     }
+}
+
+fn anthropic_flag(value: &Value, key: &str, default: bool) -> Result<bool, String> {
+    match value.get(key) {
+        None => Ok(default),
+        Some(Value::Bool(flag)) => Ok(*flag),
+        Some(_) => Err(format!("Anthropic compat field '{key}' must be a boolean")),
+    }
+}
+
+fn anthropic_fallback_models(
+    compat: &Value,
+) -> Result<Option<Vec<AnthropicAllowedFallbackModel>>, String> {
+    let Some(value) = compat
+        .get("allowedFallbackModels")
+        .filter(|value| !value.is_null())
+    else {
+        return Ok(None);
+    };
+    let values = value
+        .as_array()
+        .ok_or("allowedFallbackModels must be an array")?;
+    if values.len() > 3 {
+        return Err("Anthropic permits at most three fallback models".into());
+    }
+    values
+        .iter()
+        .map(|value| {
+            let identity = |key: &str| {
+                value
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_owned)
+                    .ok_or_else(|| format!("Anthropic fallback {key} must be a nonempty string"))
+            };
+            let cost = value
+                .get("cost")
+                .ok_or("Anthropic fallback cost is required")?;
+            let cost = crate::model_info::ModelPricing {
+                base: pricing_from_json(cost)?,
+                tiers: decode_pricing_tiers(cost.get("tiers"))?,
+            };
+            cost.validate_source_metadata()
+                .map_err(|error| error.to_string())?;
+            Ok(AnthropicAllowedFallbackModel {
+                provider: identity("provider")?,
+                model: identity("model")?,
+                cost,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(Some)
 }
 
 fn thinking_budget_field(
@@ -504,8 +620,19 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
         WireApi::AnthropicMessages => Ok(Some(WireCompat::AnthropicMessages(
             AnthropicMessagesCompat {
                 supports_eager_tool_input_streaming: flag("supportsEagerToolInputStreaming")?,
+                supports_long_cache_retention: anthropic_flag(
+                    value,
+                    "supportsLongCacheRetention",
+                    true,
+                )?,
+                supports_cache_control_on_tools: anthropic_flag(
+                    value,
+                    "supportsCacheControlOnTools",
+                    true,
+                )?,
                 force_adaptive_thinking: flag("forceAdaptiveThinking")?,
                 supports_temperature: flag("supportsTemperature")?,
+                allow_empty_signature: anthropic_flag(value, "allowEmptySignature", false)?,
                 supports_strict_tools: match value.get("supportsStrictTools") {
                     None => false,
                     Some(value) => value
@@ -526,6 +653,10 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                         "x-opi.compat field 'supportsMidConvoToolChanges' must be a boolean",
                     )?,
                 },
+                supports_mid_convo_effort: anthropic_flag(value, "supportsMidConvoEffort", false)?,
+                send_session_affinity_headers: opt_flag(value, "sendSessionAffinityHeaders")?,
+                session_affinity_format: opt_typed(value, "sessionAffinityFormat")?,
+                allowed_fallback_models: anthropic_fallback_models(value)?,
             },
         ))),
         WireApi::OpenAiCompletions => {
@@ -708,10 +839,9 @@ pub(crate) fn encode_model_entry(model: &ModelInfo) -> Value {
     if !model.headers.is_empty() {
         extension.insert("headers".to_owned(), json!(model.headers));
     }
-    extension.insert(
-        "samplingParams".to_owned(),
-        Value::Object(model.sampling_params.clone()),
-    );
+    if let Some(params) = &model.sampling_params {
+        extension.insert("samplingParams".to_owned(), Value::Object(params.clone()));
+    }
     extension.insert(
         "samplingParamsByThinkingLevel".to_owned(),
         Value::Object(
@@ -842,17 +972,50 @@ fn apply_source_metadata(model: &mut ModelInfo, entry: &Value) -> Result<(), Str
             c.source = parse_source_responses_compat(compat)?;
         }
         WireCompat::AnthropicMessages(c) => {
-            c.supports_eager_tool_input_streaming = flag("supportsEagerToolInputStreaming")?
-                .unwrap_or(c.supports_eager_tool_input_streaming);
-            c.supports_mid_convo_system_messages = flag("supportsMidConvoSystemMessages")?
-                .unwrap_or(c.supports_mid_convo_system_messages);
-            c.supports_mid_convo_tool_changes =
-                flag("supportsMidConvoToolChanges")?.unwrap_or(c.supports_mid_convo_tool_changes);
+            compat
+                .as_object()
+                .ok_or("Anthropic compat must be an object")?;
+            c.supports_eager_tool_input_streaming = anthropic_flag(
+                compat,
+                "supportsEagerToolInputStreaming",
+                c.supports_eager_tool_input_streaming,
+            )?;
+            c.supports_long_cache_retention = anthropic_flag(
+                compat,
+                "supportsLongCacheRetention",
+                c.supports_long_cache_retention,
+            )?;
+            c.supports_cache_control_on_tools = anthropic_flag(
+                compat,
+                "supportsCacheControlOnTools",
+                c.supports_cache_control_on_tools,
+            )?;
+            c.supports_mid_convo_system_messages = anthropic_flag(
+                compat,
+                "supportsMidConvoSystemMessages",
+                c.supports_mid_convo_system_messages,
+            )?;
+            c.supports_mid_convo_tool_changes = anthropic_flag(
+                compat,
+                "supportsMidConvoToolChanges",
+                c.supports_mid_convo_tool_changes,
+            )?;
             c.force_adaptive_thinking =
-                flag("forceAdaptiveThinking")?.unwrap_or(c.force_adaptive_thinking);
-            c.supports_temperature = flag("supportsTemperature")?.unwrap_or(c.supports_temperature);
+                anthropic_flag(compat, "forceAdaptiveThinking", c.force_adaptive_thinking)?;
+            c.supports_temperature =
+                anthropic_flag(compat, "supportsTemperature", c.supports_temperature)?;
+            c.allow_empty_signature =
+                anthropic_flag(compat, "allowEmptySignature", c.allow_empty_signature)?;
             c.supports_strict_tools =
-                flag("supportsStrictTools")?.unwrap_or(c.supports_strict_tools);
+                anthropic_flag(compat, "supportsStrictTools", c.supports_strict_tools)?;
+            c.supports_mid_convo_effort = anthropic_flag(
+                compat,
+                "supportsMidConvoEffort",
+                c.supports_mid_convo_effort,
+            )?;
+            c.send_session_affinity_headers = opt_flag(compat, "sendSessionAffinityHeaders")?;
+            c.session_affinity_format = opt_typed(compat, "sessionAffinityFormat")?;
+            c.allowed_fallback_models = anthropic_fallback_models(compat)?;
         }
         WireCompat::BedrockConverseStream(c) => {
             c.supports_strict_tools = flag("supportsStrictMode")?.unwrap_or(c.supports_strict_tools)
@@ -914,8 +1077,10 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
             .and_then(Value::as_bool)
     };
     let supports_streaming = ext_flag("streaming").unwrap_or(false);
-    let supports_cache_control = ext_flag("cacheControl").unwrap_or(false);
-    let supports_long_cache_retention = ext_flag("longCacheRetention").unwrap_or(false);
+    let anthropic_cache_defaults = wire_api == WireApi::AnthropicMessages;
+    let supports_cache_control = ext_flag("cacheControl").unwrap_or(anthropic_cache_defaults);
+    let supports_long_cache_retention = ext_flag("longCacheRetention")
+        .unwrap_or(anthropic_cache_defaults && supports_cache_control);
 
     let mut model = ModelInfo::new(
         id,
@@ -948,10 +1113,12 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
         .and_then(|ext| ext.get("samplingParams"))
         .or_else(|| entry.get("samplingParams"))
     {
-        model.sampling_params = params
-            .as_object()
-            .ok_or("x-opi.samplingParams must be an object")?
-            .clone();
+        model.sampling_params = Some(
+            params
+                .as_object()
+                .ok_or("x-opi.samplingParams must be an object")?
+                .clone(),
+        );
     }
     if let Some(levels) = extension
         .and_then(|ext| ext.get("samplingParamsByThinkingLevel"))

@@ -31,8 +31,8 @@ use opi_ai::api::system_one::{
 };
 use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::classifier::{
-    ClassifierAnswer, ClassifierCall, ClassifierContext, ClassifierImage, ClassifierModelRecord,
-    ClassifierQuestion, ClassifierResult, ClassifierStopReason,
+    ClassifierAnswer, ClassifierCall, ClassifierContext, ClassifierDeclarations, ClassifierImage,
+    ClassifierModelRecord, ClassifierQuestion, ClassifierResult, ClassifierStopReason,
 };
 use opi_ai::http::HttpClient;
 use opi_ai::model_info::{ModelPricing, PricingTier};
@@ -457,6 +457,24 @@ async fn classify_maps_bool_to_noul_and_parses_all_answer_types() {
     );
     // bool questions ride the wire as `noul`; choice/score keep their type
     // and criteria shape.
+    assert_eq!(
+        body["questions"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["category", "satisfaction", "approved"]
+    );
+    assert_eq!(
+        body["questions"]["category"]["criteria"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["success", "failure"]
+    );
     assert_eq!(body["questions"]["category"]["type"], "choice");
     assert_eq!(
         body["questions"]["category"]["criteria"],
@@ -1435,6 +1453,24 @@ async fn cloudflare_posts_run_envelope_with_account_url_and_noul() {
     assert_eq!(body["input"]["questions"]["category"]["type"], "choice");
     assert_eq!(body["input"]["questions"]["satisfaction"]["type"], "score");
     assert_eq!(body["input"]["questions"]["approved"]["type"], "noul");
+    assert_eq!(
+        body["input"]["questions"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["category", "satisfaction", "approved"]
+    );
+    assert_eq!(
+        body["input"]["questions"]["category"]["criteria"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["success", "failure"]
+    );
     assert!(body.get("state").is_none());
     assert!(body.get("questions").is_none());
     assert!(body.get("temperature").is_none());
@@ -1744,7 +1780,7 @@ async fn cloudflare_reports_unexpected_envelope_shapes() {
             .error_message
             .as_deref()
             .unwrap_or_default()
-            .contains("did not return an answer for approved"),
+            .contains("did not return an answer for category"),
         "message was {:?}",
         result.error_message
     );
@@ -2186,7 +2222,7 @@ fn llama_models(
 }
 
 fn llama_context() -> ClassifierContext {
-    let mut questions = std::collections::BTreeMap::new();
+    let mut questions = ClassifierDeclarations::new();
     questions.insert(
         "team".to_owned(),
         ClassifierQuestion::Choice {
@@ -2224,7 +2260,7 @@ fn llama_context() -> ClassifierContext {
 }
 
 fn llama_pick_context() -> ClassifierContext {
-    let mut questions = std::collections::BTreeMap::new();
+    let mut questions = ClassifierDeclarations::new();
     questions.insert(
         "pick".to_owned(),
         ClassifierQuestion::Choice {
@@ -2256,6 +2292,298 @@ async fn llama_requests(server: &MockServer) -> Vec<(String, serde_json::Value)>
         .collect()
 }
 
+mod declaration_order {
+    use super::*;
+
+    fn bool_question(instructions: &str) -> ClassifierQuestion {
+        ClassifierQuestion::Bool {
+            instructions: instructions.into(),
+            true_criteria: "yes".into(),
+            false_criteria: "no".into(),
+        }
+    }
+
+    fn choice_context(first: &str, second: &str) -> ClassifierContext {
+        ClassifierContext {
+            state: serde_json::json!({}),
+            images: None,
+            questions: [(
+                "pick".into(),
+                ClassifierQuestion::Choice {
+                    instructions: "Pick one".into(),
+                    criteria: [
+                        (first.into(), "first".into()),
+                        (second.into(), "second".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    async fn run_choice(first: &str, second: &str) -> String {
+        let server = MockServer::start().await;
+        let mut llama = LlamaServer::new();
+        llama.next = Box::new(|_, _| vec![(b'A' as u64, -1.0), (b'B' as u64, -1.0)]);
+        mount_llama(&server, llama).await;
+        let record = llama_record(&server.uri());
+        let (models, _) = llama_models(&record);
+        let result = models
+            .classify(
+                record,
+                choice_context(first, second),
+                ClassifierCall::default(),
+            )
+            .await;
+        assert_eq!(result.stop_reason, ClassifierStopReason::Stop, "{result:?}");
+        let requests = server.received_requests().await.unwrap();
+        for endpoint in ["/completion", "/apply-template"] {
+            assert_eq!(
+                requests.iter().filter(|r| r.url.path() == endpoint).count(),
+                1
+            );
+        }
+        for request in &requests {
+            assert_eq!(
+                request.headers.get("authorization").unwrap(),
+                "Bearer local"
+            );
+        }
+        match &result.answers["pick"] {
+            ClassifierAnswer::Choice {
+                choice,
+                probabilities,
+                ..
+            } => {
+                assert!((probabilities[first] - 0.5).abs() < 1e-9);
+                assert!((probabilities[second] - 0.5).abs() < 1e-9);
+                choice.clone()
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn llama_tied_choice_preserves_declared_first() {
+        assert_eq!(run_choice("zeta", "alpha").await, "zeta");
+    }
+
+    #[tokio::test]
+    async fn llama_alphabetic_choice_tie_control() {
+        assert_eq!(run_choice("alpha", "zeta").await, "alpha");
+    }
+
+    #[tokio::test]
+    async fn llama_question_wire_sequence() {
+        let server = MockServer::start().await;
+        mount_llama(&server, LlamaServer::new()).await;
+        let record = llama_record(&server.uri());
+        let (models, _) = llama_models(&record);
+        let context = ClassifierContext {
+            state: serde_json::json!({}),
+            images: None,
+            questions: [
+                ("z-last-lexically".into(), bool_question("z-first")),
+                ("a-first-lexically".into(), bool_question("a-second")),
+            ]
+            .into_iter()
+            .collect(),
+        };
+        let result = models
+            .classify(record, context, ClassifierCall::default())
+            .await;
+        assert_eq!(result.stop_reason, ClassifierStopReason::Stop, "{result:?}");
+        assert_eq!(result.answers.len(), 2);
+        let requests = server.received_requests().await.unwrap();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|r| r.url.path() == "/completion")
+                .count(),
+            2
+        );
+        let order: Vec<String> = requests
+            .iter()
+            .filter(|r| r.url.path() == "/apply-template")
+            .map(|request| {
+                let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+                body["messages"][1]["content"]
+                    .as_str()
+                    .unwrap()
+                    .rsplit("Question: ")
+                    .next()
+                    .unwrap()
+                    .lines()
+                    .next()
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        assert_eq!(order, ["z-first", "a-second"]);
+    }
+
+    #[test]
+    fn existing_key_replacement_updates_value() {
+        let context = ClassifierContext {
+            state: serde_json::json!({}),
+            images: None,
+            questions: [(
+                "pick".into(),
+                ClassifierQuestion::Choice {
+                    instructions: "pick".into(),
+                    criteria: [
+                        ("alpha".into(), "old".into()),
+                        ("zeta".into(), "other".into()),
+                        ("alpha".into(), "updated".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+        let rendered = render_question(&context, "pick").unwrap();
+        assert_eq!(rendered.keys, ["alpha", "zeta"]);
+        assert!(rendered.content.contains("alpha: updated"));
+        assert!(!rendered.content.contains("alpha: old"));
+    }
+
+    #[test]
+    fn integer_property_prefix_is_numeric_before_insertion_tail() {
+        let context = ClassifierContext {
+            state: serde_json::json!({}),
+            images: None,
+            questions: [(
+                "pick".into(),
+                ClassifierQuestion::Choice {
+                    instructions: "pick".into(),
+                    criteria: ["10", "2", "01", "zeta", "alpha"]
+                        .map(|key| (key.into(), String::new()))
+                        .into_iter()
+                        .collect(),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        };
+        assert_eq!(
+            render_question(&context, "pick").unwrap().keys,
+            ["2", "10", "01", "zeta", "alpha"]
+        );
+    }
+
+    #[test]
+    fn canonical_index_boundaries_and_question_reinsertion() {
+        let mut context = ClassifierContext::default();
+        for key in [
+            "4294967295",
+            "01",
+            "-0",
+            "",
+            "4294967294",
+            "0",
+            "2",
+            "zeta",
+            "alpha",
+        ] {
+            assert!(
+                context
+                    .questions
+                    .insert(key.into(), bool_question(key))
+                    .is_none()
+            );
+        }
+        let keys = |context: &ClassifierContext| {
+            context
+                .questions
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join("|")
+        };
+        assert_eq!(
+            keys(&context),
+            "0|2|4294967294|4294967295|01|-0||zeta|alpha"
+        );
+        assert_eq!(context.questions.len(), 9);
+        let old = context
+            .questions
+            .insert("zeta".into(), bool_question("updated"))
+            .unwrap();
+        assert_eq!(old.instructions(), "zeta");
+        assert_eq!(
+            context.questions.get("zeta").unwrap().instructions(),
+            "updated"
+        );
+        assert_eq!(
+            keys(&context),
+            "0|2|4294967294|4294967295|01|-0||zeta|alpha"
+        );
+        let removed = context.questions.remove("zeta").unwrap();
+        context.questions.insert("zeta".into(), removed);
+        assert_eq!(
+            keys(&context),
+            "0|2|4294967294|4294967295|01|-0||alpha|zeta"
+        );
+        assert!(context.questions.remove("absent").is_none());
+        assert!(!context.questions.is_empty());
+    }
+
+    #[test]
+    fn choice_replacement_and_serialization_retain_enumeration() {
+        let question = ClassifierQuestion::Choice {
+            instructions: "pick".into(),
+            criteria: [
+                ("zeta".into(), "old".into()),
+                ("alpha".into(), "other".into()),
+                ("10".into(), "ten".into()),
+                ("2".into(), "two".into()),
+                ("zeta".into(), "updated".into()),
+            ]
+            .into(),
+        };
+        let ClassifierQuestion::Choice { mut criteria, .. } = question else {
+            unreachable!()
+        };
+        assert_eq!(criteria.len(), 4);
+        assert_eq!(
+            criteria.keys().map(String::as_str).collect::<Vec<_>>(),
+            ["2", "10", "zeta", "alpha"]
+        );
+        assert_eq!(criteria.get("zeta").map(String::as_str), Some("updated"));
+        let removed = criteria.remove("zeta").unwrap();
+        assert_eq!(criteria.insert("zeta".into(), removed), None);
+        let serialized = serde_json::to_value(&criteria).unwrap();
+        assert_eq!(
+            serialized
+                .as_object()
+                .unwrap()
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["2", "10", "alpha", "zeta"]
+        );
+        assert_eq!(serialized["zeta"], "updated");
+        assert_eq!(
+            criteria.values().map(String::as_str).collect::<Vec<_>>(),
+            ["two", "ten", "other", "updated"]
+        );
+        assert_eq!(
+            criteria.clone().into_iter().collect::<Vec<_>>(),
+            [
+                ("2".into(), "two".into()),
+                ("10".into(), "ten".into()),
+                ("alpha".into(), "other".into()),
+                ("zeta".into(), "updated".into()),
+            ]
+        );
+    }
+}
+
 #[tokio::test]
 async fn llama_answers_choice_bool_and_score_from_label_logprobs() {
     let server = MockServer::start().await;
@@ -2269,7 +2597,7 @@ async fn llama_answers_choice_bool_and_score_from_label_logprobs() {
     assert_eq!(result.stop_reason, ClassifierStopReason::Stop);
     assert!(result.error_message.is_none());
 
-    // Choice: labels A/B/C over the alphabetical keys billing/sales/technical;
+    // Choice: labels A/B/C over the declared keys billing/technical/sales;
     // next-token logprobs A=-1.5, B=-0.3, C=-3.
     let expected = label_probabilities(&[-1.5, -0.3, -3.0], 1.0);
     let team = result.answers.get("team").expect("team answered");
@@ -2279,13 +2607,13 @@ async fn llama_answers_choice_bool_and_score_from_label_logprobs() {
             probabilities,
             confidence,
         } => {
-            assert_eq!(chosen, "sales");
+            assert_eq!(chosen, "technical");
             assert!((probabilities["billing"] - expected[0]).abs() < 1e-9);
-            assert!((probabilities["sales"] - expected[1]).abs() < 1e-9);
-            assert!((probabilities["technical"] - expected[2]).abs() < 1e-9);
+            assert!((probabilities["technical"] - expected[1]).abs() < 1e-9);
+            assert!((probabilities["sales"] - expected[2]).abs() < 1e-9);
             assert!((confidence - peak_confidence(&expected)).abs() < 1e-9);
             // Hand-derived softmax, not the helper's own arithmetic.
-            assert!((probabilities["sales"] - 0.73075).abs() < 1e-4);
+            assert!((probabilities["technical"] - 0.73075).abs() < 1e-4);
             assert!((confidence - 0.59613).abs() < 1e-4);
         }
         other => panic!("team is not a choice answer: {other:?}"),
@@ -2373,13 +2701,25 @@ fn llama_renders_questions_with_state_repetition_and_labels() {
     let rendered = render_question(&context, "team").expect("team renders");
     let state = "State:\n{\n \"message\": \"Help! My payouts have been failing for 3 days.\"\n}";
     assert_eq!(rendered.labels, ["A", "B", "C"]);
-    assert_eq!(rendered.keys, ["billing", "sales", "technical"]);
+    assert_eq!(rendered.keys, ["billing", "technical", "sales"]);
     assert_eq!(
         rendered.content,
         [
             state,
             "",
             "Task: answer each of the following questions about the state.",
+            "",
+            "Question: Which team should handle this?",
+            "",
+            "Options:",
+            "- billing: Payments and refunds",
+            "- technical: Bugs and outages",
+            "- sales",
+            "",
+            "Question: Does this convey urgency?",
+            "",
+            "Yes means: The user needs help soon",
+            "No means: No time pressure",
             "",
             "Question: How severe is this?",
             "",
@@ -2388,26 +2728,14 @@ fn llama_renders_questions_with_state_repetition_and_labels() {
             "1. medium",
             "2. high",
             "",
-            "Question: Which team should handle this?",
-            "",
-            "Options:",
-            "- billing: Payments and refunds",
-            "- sales",
-            "- technical: Bugs and outages",
-            "",
-            "Question: Does this convey urgency?",
-            "",
-            "Yes means: The user needs help soon",
-            "No means: No time pressure",
-            "",
             state,
             "",
             "Question: Which team should handle this?",
             "",
             "Options:",
             "A. billing: Payments and refunds",
-            "B. sales",
-            "C. technical: Bugs and outages",
+            "B. technical: Bugs and outages",
+            "C. sales",
             "",
             "Answer with one letter.",
         ]
@@ -3042,33 +3370,30 @@ async fn decisions_maps_questions_and_answers_back_by_name() {
         serde_json::json!(r#"{"text":"The deployment succeeded, thank you."}"#)
     );
     assert!(body.get("temperature").is_none());
-    // Questions ride as an array in the map's alphabetical order; the pi
-    // source order is insertion-based and opi's questions are a BTreeMap.
+    // Questions and choices retain the caller's declaration order.
     let questions = body["questions"].as_array().expect("questions array");
     assert_eq!(questions.len(), 3);
-    assert_eq!(questions[0]["type"], "predicate");
-    assert_eq!(questions[0]["name"], "approved");
+    assert_eq!(questions[2]["type"], "predicate");
+    assert_eq!(questions[2]["name"], "approved");
     assert_eq!(
-        questions[0]["instructions"],
+        questions[2]["instructions"],
         "Does the user approve?\n\nTrue means: Approval\nFalse means: No approval"
     );
-    assert!(questions[0].get("choices").is_none());
-    assert!(questions[0].get("levels").is_none());
-    assert_eq!(questions[1]["type"], "choice");
-    assert_eq!(questions[1]["name"], "category");
-    // Choice options ride in the criteria map's alphabetical order (pi
-    // preserves insertion order; opi's criteria are a BTreeMap).
+    assert!(questions[2].get("choices").is_none());
+    assert!(questions[2].get("levels").is_none());
+    assert_eq!(questions[0]["type"], "choice");
+    assert_eq!(questions[0]["name"], "category");
     assert_eq!(
-        questions[1]["choices"],
+        questions[0]["choices"],
         serde_json::json!([
-            { "value": "failure" },
             { "value": "success", "description": "Successful" },
+            { "value": "failure" },
         ])
     );
-    assert_eq!(questions[2]["type"], "score");
-    assert_eq!(questions[2]["name"], "satisfaction");
+    assert_eq!(questions[1]["type"], "score");
+    assert_eq!(questions[1]["name"], "satisfaction");
     assert_eq!(
-        questions[2]["levels"],
+        questions[1]["levels"],
         serde_json::json!([
             { "label": "low" },
             { "label": "neutral" },
@@ -3644,7 +3969,7 @@ async fn four_classifier_protocols_share_one_models_dispatch() {
         )
         .expect("register decisions");
 
-    let mut question = std::collections::BTreeMap::new();
+    let mut question = ClassifierDeclarations::new();
     question.insert(
         "q".to_owned(),
         ClassifierQuestion::Bool {

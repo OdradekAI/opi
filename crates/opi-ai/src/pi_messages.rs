@@ -152,10 +152,15 @@ impl PiMessagesProvider {
     }
 
     pub fn new(base_url: Option<String>) -> Self {
+        let models = if base_url.as_deref().is_none_or(|base| base == BASE_URL) {
+            model_catalog().to_vec()
+        } else {
+            Vec::new()
+        };
         Self {
             base_url: base_url.unwrap_or_else(|| BASE_URL.into()),
             client: Arc::new(crate::http::HttpClient::new()),
-            models: model_catalog().to_vec(),
+            models,
             native_options: None,
         }
     }

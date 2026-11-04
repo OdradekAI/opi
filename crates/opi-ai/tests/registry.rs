@@ -542,6 +542,7 @@ async fn store_codec_round_trips_full_model_fidelity() {
     let mut priced = full;
     priced
         .sampling_params
+        .get_or_insert_default()
         .insert("temperature".into(), serde_json::json!(0.37));
     priced.sampling_params_by_thinking_level.insert(
         ThinkingLevel::High,

@@ -579,7 +579,7 @@ impl OpenAiResponsesProvider {
             && let Some(sampling) = crate::model_info::resolve_sampling_params(
                 model,
                 effective_level,
-                &request.sampling_params,
+                request.sampling_params.as_ref(),
             )
         {
             for (key, value) in sampling {
@@ -984,7 +984,8 @@ impl Provider for OpenAiResponsesProvider {
                 Ok(Vec::new())
             };
             let session_id = request.session_id.as_deref().filter(|id| !id.is_empty());
-            let affinity_enabled = session_id.is_some()
+            let affinity_enabled = request.cache_retention != CacheRetention::Disabled
+                && session_id.is_some()
                 && match affinity_policy {
                     ResponsesAffinityPolicy::Direct => true,
                     ResponsesAffinityPolicy::CustomDisabled => false,
@@ -998,7 +999,9 @@ impl Provider for OpenAiResponsesProvider {
                     use crate::model_info::SessionAffinityFormat;
                     match affinity_format {
                         SessionAffinityFormat::OpenAi => {
-                            route_headers.push(("session_id".into(), session_id.to_owned()));
+                            if config.send_session_id_header {
+                                route_headers.push(("session_id".into(), session_id.to_owned()));
+                            }
                             route_headers
                                 .push(("x-client-request-id".into(), session_id.to_owned()));
                         }

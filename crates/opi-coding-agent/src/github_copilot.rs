@@ -431,6 +431,7 @@ fn catalog_model(record: &CatalogRecord) -> ModelInfo {
             supports_strict_tools: false,
             supports_mid_convo_system_messages: false,
             supports_mid_convo_tool_changes: false,
+            ..Default::default()
         }),
         Compat::Chat => WireCompat::OpenAiCompletions(OpenAiCompletionsCompat {
             chat_completions_path: "/chat/completions".into(),

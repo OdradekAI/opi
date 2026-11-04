@@ -2494,7 +2494,10 @@ async fn multi_assistant_turn_accumulates_all_assistant_usages() {
         },
         AssistantStreamEvent::Done {
             reason: StopReason::ToolUse,
-            message: tool_partial,
+            message: opi_ai::message::AssistantMessage {
+                stop_reason: StopReason::ToolUse,
+                ..tool_partial
+            },
         },
     ];
 

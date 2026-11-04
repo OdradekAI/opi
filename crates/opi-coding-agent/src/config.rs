@@ -1933,6 +1933,7 @@ fn custom_compat(
                 supports_strict_tools: false,
                 supports_mid_convo_system_messages: false,
                 supports_mid_convo_tool_changes: false,
+                ..Default::default()
             })
         }
         opi_ai::WireApi::OpenAiCompletions => {

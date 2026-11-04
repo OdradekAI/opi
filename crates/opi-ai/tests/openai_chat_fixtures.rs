@@ -3022,10 +3022,12 @@ fn chat_callbacks_request() -> Request {
         .expect("valid context declarations"),
         max_tokens: None,
         temperature: None,
-        sampling_params: serde_json::json!({"top_p": 0.9})
-            .as_object()
-            .cloned()
-            .unwrap(),
+        sampling_params: Some(
+            serde_json::json!({"top_p": 0.9})
+                .as_object()
+                .cloned()
+                .unwrap(),
+        ),
         thinking: ThinkingConfig::default(),
         stop_sequences: vec![],
         metadata: None,
@@ -3402,6 +3404,7 @@ async fn native_sampling_uses_native_effort_and_request_overrides() {
         if let Some(value) = request_temperature {
             request
                 .sampling_params
+                .get_or_insert_default()
                 .insert("temperature".into(), serde_json::json!(value));
         }
         let mut options = OpenAiCompletionsOptions::default();

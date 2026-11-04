@@ -899,7 +899,7 @@ snapshot. With `supports_finish_reason: Some(false)`, lawful stream EOF closes
 accumulated text/tool calls with an inferred reason and no invented raw reason.
 Grammar capability selects custom tool declarations, streamed inputs and replay.
 Anthropic cache markers and long retention follow the selected capabilities;
-affinity headers use the full session ID independently of prompt caching.
+Chat affinity headers use the full session ID independently of prompt caching.
 
 `OpenAiResponsesSourceCompat` is the single presence-aware source owner for
 ordinary Responses, Azure Responses and Codex Responses. Missing optional
@@ -1023,12 +1023,20 @@ Provider response IDs are captured and round-tripped into
 `chatcmpl-*`, OpenAI Responses `resp_*`); OpenAI Chat captures the ID from any
 chunk carrying `id`, not only role chunks, and other families leave it `None`.
 
-Session affinity is intentionally limited. For an effective session, direct
-OpenAI Responses automatically derives `prompt_cache_key` and a fresh
-`x-client-request-id`; `send_session_id_header` gates only `session_id`.
-Custom/proxy affinity remains disabled by default and requires explicit
-opt-in. `previous_response_id` is deferred (see OpenAI-Compatible Profiles),
-and compatible profiles may carry static `extra_headers` for routing/session
+OpenAI Responses generates session affinity for a nonempty session unless
+cache retention is `Disabled`. The effective `session_affinity_format`
+selects `session_id` plus `x-client-request-id` (`OpenAi`), only
+`x-client-request-id` (`OpenAiNoSession`), or `x-session-id` (`OpenRouter`);
+an explicit format takes precedence over provider/base-URL inference. In direct
+policy, `send_session_id_header: false` omits only literal `session_id`.
+Headers use the full supplied session ID, while `prompt_cache_key` is clamped
+to 64 characters. Custom/proxy affinity is disabled by default; opted-in routes
+also require `send_session_id_header: true`. `Disabled` retention suppresses
+automatically generated affinity and the cache key. Lawful configured, route,
+model, caller and header-transform overrides retain their existing merge and
+validation rules. Chat affinity retains its separate retention-independent
+behavior. `previous_response_id` is deferred (see OpenAI-Compatible Profiles);
+compatible profiles may carry static `extra_headers` for routing/session
 pinning. There is no server-side session chain.
 
 ## WebSocket Upgrade (RDF-24)
@@ -2104,13 +2112,22 @@ twice.
 | usage anchor | total or bucket sum | none → content estimate | total 0 → sum if reported; unknown → skip | total > sum |
 | simple max tokens | `clamp(M)`: `max(1,M)` if window ≤ 0, else `min(M, max(1, W−E−4096))` | `None` → model default output | explicit `M` is not re-capped at the model max | request < window arithmetic |
 | numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | native enabled-without-budget uses 1024; simple budgets keep their wire-specific zero behavior | level default < explicit budget |
-| sampling params | per-key JSON map | empty map → no merge | keys absent stay absent | model base < effective level < request |
+| sampling params | optional per-key JSON map | `None` → absent | `Some({})` retains empty presence; absent keys retain lower-layer values | model base < effective level < request |
 | temperature | named field | `None` → omitted per adapter gating | NaN omitted | sampling map overrides the named field (merged last) |
 | pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | finite negative/fractional thresholds retained; only thresholds `> -1` can match | tier rates apply to the whole request |
 | 1h cache write | subset at 2× input rate | `None` → all short-cache | explicit 0 valid, distinct from absent | subset, never double counted |
 | service tier | Responses: flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×); Codex fast and all Azure tiers: 1× | effective request/response fallback follows the selected wire | unknown tier → unknown cost on tier-sensitive wires | applies to every cost component |
 
-Only OpenAI-compatible adapters (Chat, Responses) merge the resolved
+`ModelInfo::sampling_params` and `Request::sampling_params` use
+`Option<SamplingParams>`: `None` is absent and `Some(Default::default())` is
+explicitly empty. `with_sampling_params(map)` preserves `Some(map)`, including
+an empty map, through owned catalog store/reopen. Pass
+`request.sampling_params.as_ref()` to `resolve_sampling_params`; it returns
+`None` only when the model map, effective-level entry and request map are all
+absent. A present empty map resolves to `Some` and does not clear lower keys;
+nested values replace the whole value rather than merging recursively.
+
+Only OpenAI-compatible adapters (Chat, Responses, Azure Responses) merge the resolved
 sampling map, as the last body step so model and request sampling override
 named request fields; other adapters ignore it. `Usage::service_tier` retains
 the observed response category; `effective_service_tier` retains the selected
@@ -2207,6 +2224,34 @@ its level-budget policy (1024/2048/8192/16384 by level), which stays
 distinct from the native no-budget default. Per annex row 165 the sub-1024
 typed preflight is withdrawn: clamped zero budgets flow to the wire where
 `|| 1024` applies.
+
+Complete Anthropic model records retain `AnthropicMessagesCompat` through
+source-catalog import and owned `ModelsStore` save/reopen, including these fields:
+
+| Compatibility metadata | Default |
+|---|---|
+| `supports_long_cache_retention`, `supports_cache_control_on_tools` | `true` |
+| `allow_empty_signature`, `supports_mid_convo_effort` | `false` |
+| `send_session_affinity_headers: Option<bool>` | `None` |
+| `session_affinity_format: Option<AnthropicSessionAffinityFormat>` | `None` |
+| `allowed_fallback_models: Option<Vec<AnthropicAllowedFallbackModel>>` | `None` |
+
+`AnthropicSessionAffinityFormat` admits only `OpenRouter` (serialized as
+`"openrouter"`). Each `AnthropicAllowedFallbackModel` retains a nonempty
+`provider`, nonempty `model` and validated `cost: ModelPricing`, including
+pricing tiers; a declaration contains at most three targets. Invalid field
+types and invalid fallback entries are rejected before store publication.
+Absent optionals, explicit `Some(false)` and `Some(empty)` fallback lists
+remain distinct metadata values. Explicit `x-opi.compat` values override source
+compatibility; plain Anthropic source records default the generic cache and
+long-cache capabilities to true, while explicit `x-opi` capability overrides
+and direct callers' capability choices retain their values.
+
+`Default` now sets eager tool-input streaming, temperature, tool-cache and
+long-cache compatibility to true; the remaining booleans are false and the
+optionals are `None`. Exhaustive struct literals must add the new fields.
+Use `..Default::default()` when these source defaults are intended, and set
+intentional conservative opt-outs explicitly to false.
 
 Inline-tools chronology (`inline-tools-2026-09-15`, compat
 `supports_mid_convo_system_messages` + `supports_mid_convo_tool_changes`,
@@ -2323,10 +2368,13 @@ errors format `"{status} {statusText}: {error.message ?? body} ({code})"`
 with the JSON error body preferred and the raw body as fallback; 429 keeps
 its retryable identity. Callbacks fire in the pinned order — payload,
 response (before the success check), then each raw parsed event before
-normalization. The opi-curated baseline catalog (one entry) covers the
-pre-catalog window; pi's generated `data/radius.json` baseline is absent
-from the pinned source and a configured gateway's dynamic catalog replaces
-the baseline at registration time.
+normalization. The opi-curated baseline catalog (one entry) is selected only
+when `PiMessagesProvider::new` receives `None` or the exact built-in `BASE_URL`;
+pi's generated `data/radius.json` baseline is absent from the pinned source.
+An explicit custom gateway starts with an empty catalog. Callers can supply
+complete model records through `with_models`; an acknowledged empty stored
+catalog remains authoritative after reopening, while explicit registry model
+overrides retain precedence.
 
 ## Builtin Provider Factory Layer: 42 Canonical Profiles (task 20.34)
 
@@ -2360,8 +2408,8 @@ state rides as a JSON *string*; with images the input becomes one user
 message with the state as `input_text` followed by the images as
 `input_image` data URLs (at most 128, rejected typed before any request).
 Questions map to Decisions types: `choice` keeps its options (empty
-descriptions stay off the wire, alphabetical like every opi criteria
-map), `score` keeps its levels and `bool` becomes a `predicate` whose
+descriptions stay off the wire, in declaration enumeration order), `score`
+keeps its levels and `bool` becomes a `predicate` whose
 criteria meanings join the instructions — a System One `noul` and a
 Decisions `predicate` are not interchangeable. Answers come back as an
 array matched by name; refusals, missing answers, mistyped shapes and
@@ -2483,6 +2531,18 @@ resolution), and `Models::classify`/`classify_native` are the ordinary and
 typed-native drivers; a `ClassifierApiHandle::options` value stays valid
 across compatible re-registrations.
 
+`ClassifierContext::questions` and `ClassifierQuestion::Choice::criteria`
+use `ClassifierDeclarations<T>`. Canonical decimal array-index keys from
+`0` through `4294967294` enumerate first in numeric order; all other string
+keys retain their first insertion order. `01`, `-0` and `4294967295` are
+ordinary string keys. Inserting a duplicate key replaces its value without
+moving it; removing and reinserting an ordinary key appends it to the
+ordinary keys. Array conversion and iterator collection use the same rules.
+All four adapters preserve this declaration order on the wire. Llama also
+uses it to execute questions sequentially, assign choice labels and select
+the first choice when probabilities tie. Output answer and probability maps
+retain their existing representation.
+
 The one real adapter, `api::system_one::TypesafeSystemOneApi` (api id
 `typesafe-system-one`, provider id `typesafe`), reproduces the pinned pi
 module: one POST `{model, state, questions}` to `<base>/systemone`
@@ -2595,8 +2655,10 @@ sends `reasoning_effort` (the nearest supported level after clamping; the
 back to `high`), a mapless reasoning model sends `prompt_mode: "reasoning"`,
 and non-reasoning models send neither. Sampling projects `temperature` and
 `max_tokens` only — stop sequences, `top_p` and the penalty family stay off
-this wire (pi's payload builder sets nothing else). Tools project
-`strict: true` by default with the converted schema.
+this wire (pi's payload builder sets nothing else). Tools without constrained
+sampling intent send `strict: false` with their original schema, without
+inserting `additionalProperties` or `required`. Explicit `Require` intent sends
+`strict: true` with the converted schema.
 
 Prompt caching rides the session: with a session id and a non-`Disabled`
 retention, the body carries `prompt_cache_key` and the headers carry

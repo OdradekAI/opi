@@ -1165,7 +1165,7 @@ mod mistral_43 {
     }
 
     #[tokio::test]
-    async fn tools_project_strict_default_true() {
+    async fn tools_unannotated_default_is_false() {
         let server = MockServer::start().await;
         mount_43(&server, sse_ok_43()).await;
         let provider = provider_43(
@@ -1197,10 +1197,101 @@ mod mistral_43 {
         let body = body_43(&server).await;
         let function = &body["tools"][0]["function"];
         assert_eq!(function["name"], serde_json::json!("read_file"));
-        assert_eq!(function["strict"], serde_json::json!(true));
+        assert_eq!(function["strict"], serde_json::json!(false));
         assert_eq!(
             function["parameters"]["properties"]["path"]["type"],
             serde_json::json!("string")
+        );
+    }
+
+    #[tokio::test]
+    async fn tools_unannotated_schema_is_unconverted() {
+        let server = MockServer::start().await;
+        mount_43(&server, sse_ok_43()).await;
+        let provider = provider_43(
+            Some(&server.uri()),
+            model_43(SMALL_43, false, false),
+            MistralOptions::default(),
+        );
+        let mut request = req_43("go");
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "go".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "read_file".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}}
+                }),
+                constrained_sampling: None,
+            }],
+        })
+        .expect("valid context declarations");
+        run_43(&provider, request).await;
+        let body = body_43(&server).await;
+        let function = &body["tools"][0]["function"];
+        assert_eq!(function["name"], serde_json::json!("read_file"));
+        assert!(
+            function["parameters"].get("additionalProperties").is_none(),
+            "unconstrained parameters must stay unconverted"
+        );
+        assert_eq!(
+            function["parameters"],
+            serde_json::json!({
+                "type": "object",
+                "properties": {"path": {"type": "string"}}
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn tools_explicit_require_remains_strict() {
+        let server = MockServer::start().await;
+        mount_43(&server, sse_ok_43()).await;
+        let provider = provider_43(
+            Some(&server.uri()),
+            model_43(SMALL_43, false, false),
+            MistralOptions::default(),
+        );
+        let mut request = req_43("go");
+        request.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+            system_prompt: None,
+            messages: vec![Message::User(UserMessage {
+                content: vec![InputContent::Text { text: "go".into() }],
+                timestamp_ms: 0,
+            })],
+            tools: vec![ToolDef {
+                name: "read_file".into(),
+                description: "Read a file".into(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {"path": {"type": "string"}}
+                }),
+                constrained_sampling: Some(
+                    opi_ai::constrained_sampling::ConstrainedSampling::JsonSchema {
+                        strict: opi_ai::constrained_sampling::StrictPreference::Require,
+                    },
+                ),
+            }],
+        })
+        .expect("valid context declarations");
+        run_43(&provider, request).await;
+        let body = body_43(&server).await;
+        let function = &body["tools"][0]["function"];
+        assert_eq!(function["name"], serde_json::json!("read_file"));
+        assert_eq!(function["strict"], serde_json::json!(true));
+        assert_eq!(function["parameters"]["additionalProperties"], false);
+        assert_eq!(
+            function["parameters"]["required"],
+            serde_json::json!(["path"])
+        );
+        assert_eq!(
+            function["parameters"]["properties"]["path"],
+            serde_json::json!({"anyOf": [{"type": "string"}, {"type": "null"}]})
         );
     }
 

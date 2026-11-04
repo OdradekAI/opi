@@ -1630,3 +1630,509 @@ async fn integer_threshold_above_f64_precision_survives_decode_store_and_reopen(
         pricing.tiers
     );
 }
+
+mod anthropic_complete_metadata {
+    use super::*;
+    use opi_ai::catalog::{CatalogRecord, ModelsStoreEntry};
+    use opi_ai::model_info::{AnthropicMessagesCompat, AnthropicSessionAffinityFormat, WireCompat};
+
+    fn entry(compat: Option<Value>) -> Value {
+        let mut entry = json!({
+            "id": "source-model", "name": "Source model", "api": "anthropic-messages",
+            "contextWindow": 8192, "maxTokens": 1024,
+            "x-opi": {"streaming": true}
+        });
+        if let Some(compat) = compat {
+            entry["compat"] = compat;
+        }
+        entry
+    }
+
+    fn decode(entry: Value) -> Result<ModelInfo, String> {
+        let mut entries = HttpCatalogSource::decode_document(&json!({
+            "providers": {"anthropic": {"models": [entry]}}
+        }))
+        .map_err(|error| error.to_string())?;
+        let record = entries.remove("anthropic").unwrap().models.remove(0);
+        let CatalogRecord::Chat(model) = record else {
+            panic!("Anthropic metadata is a Chat record")
+        };
+        Ok(*model)
+    }
+
+    fn compat(model: &ModelInfo) -> &AnthropicMessagesCompat {
+        let WireCompat::AnthropicMessages(compat) = &model.compat else {
+            panic!("matching Anthropic compatibility")
+        };
+        compat
+    }
+
+    fn old_owned_compat() -> Value {
+        json!({
+            "api": "anthropic-messages",
+            "supportsEagerToolInputStreaming": false,
+            "forceAdaptiveThinking": false,
+            "supportsTemperature": false
+        })
+    }
+
+    fn fallback() -> Value {
+        json!({
+            "provider": "anthropic", "model": "fallback-model",
+            "cost": {"input": 5, "output": 25, "cacheRead": 0.5, "cacheWrite": 6.25}
+        })
+    }
+
+    async fn persist(model: ModelInfo) -> (Value, ModelInfo) {
+        let temp = tempfile::tempdir().unwrap();
+        let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+        store
+            .begin()
+            .commit(
+                [(
+                    "anthropic".into(),
+                    ModelsStoreEntry {
+                        models: vec![CatalogRecord::from(model.clone())],
+                        ..Default::default()
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .unwrap();
+        let document = serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+        let reopened = ModelsStore::open(store.path()).unwrap().snapshot();
+        let CatalogRecord::Chat(restored) = &reopened.catalogs["anthropic"].models[0] else {
+            panic!("restored Chat metadata")
+        };
+        assert_eq!(restored.as_ref(), &model);
+        (document, restored.as_ref().clone())
+    }
+
+    #[tokio::test]
+    async fn fallback_local_prices_survive_public_store_roundtrip() {
+        let catalog = opi_ai::catalog::Catalog::builtin().unwrap();
+        let source = catalog
+            .model(
+                "anthropic",
+                opi_ai::catalog::CatalogOperation::Chat,
+                "claude-fable-5",
+            )
+            .unwrap();
+        let expected = source.raw["compat"]["allowedFallbackModels"].clone();
+        assert_eq!(expected.as_array().unwrap().len(), 2);
+        let model = source.to_chat_model_info().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+        store
+            .begin()
+            .commit(
+                [(
+                    "anthropic".into(),
+                    opi_ai::catalog::ModelsStoreEntry {
+                        models: vec![opi_ai::catalog::CatalogRecord::from(model)],
+                        ..Default::default()
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            )
+            .await
+            .unwrap();
+        let document: Value =
+            serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
+        let entry = &document["providers"]["anthropic"]["models"][0];
+        let actual = entry["compat"]
+            .get("allowedFallbackModels")
+            .or_else(|| entry["x-opi"]["compat"].get("allowedFallbackModels"));
+        assert_eq!(actual, Some(&expected));
+        let reopened = ModelsStore::open(store.path()).unwrap().snapshot();
+        let CatalogRecord::Chat(restored) = &reopened.catalogs["anthropic"].models[0] else {
+            panic!("restored fallback metadata")
+        };
+        assert_eq!(restored.as_ref(), &source.to_chat_model_info().unwrap());
+    }
+
+    #[tokio::test]
+    async fn source_defaults_optional_presence_and_generic_cache_opt_out_roundtrip() {
+        for source in [None, Some(json!({}))] {
+            let model = decode(entry(source)).unwrap();
+            assert_eq!(compat(&model), &AnthropicMessagesCompat::default());
+            assert!(model.capabilities.supports_cache_control);
+            assert!(model.capabilities.supports_long_cache_retention);
+            let (document, _) = persist(model).await;
+            let encoded = &document["providers"]["anthropic"]["models"][0]["x-opi"]["compat"];
+            for absent in [
+                "sendSessionAffinityHeaders",
+                "sessionAffinityFormat",
+                "allowedFallbackModels",
+            ] {
+                assert!(encoded.get(absent).is_none(), "{absent}");
+            }
+        }
+        let mut value = entry(None);
+        value["x-opi"]["cacheControl"] = json!(false);
+        let model = decode(value).unwrap();
+        assert!(!model.capabilities.supports_cache_control);
+        assert!(!model.capabilities.supports_long_cache_retention);
+        persist(model).await;
+
+        let model = decode(entry(Some(json!({
+            "sendSessionAffinityHeaders": false,
+            "sessionAffinityFormat": "openrouter", "allowedFallbackModels": []
+        }))))
+        .unwrap();
+        assert_eq!(compat(&model).send_session_affinity_headers, Some(false));
+        assert_eq!(
+            compat(&model).session_affinity_format,
+            Some(AnthropicSessionAffinityFormat::OpenRouter)
+        );
+        assert_eq!(compat(&model).allowed_fallback_models, Some(vec![]));
+        let (document, _) = persist(model).await;
+        let encoded = &document["providers"]["anthropic"]["models"][0]["x-opi"]["compat"];
+        assert_eq!(encoded["sendSessionAffinityHeaders"], false);
+        assert_eq!(encoded["sessionAffinityFormat"], "openrouter");
+        assert_eq!(encoded["allowedFallbackModels"], json!([]));
+
+        let model = decode(entry(Some(json!({
+            "sendSessionAffinityHeaders": null,
+            "sessionAffinityFormat": null, "allowedFallbackModels": null
+        }))))
+        .unwrap();
+        assert_eq!(compat(&model), &AnthropicMessagesCompat::default());
+        persist(model).await;
+    }
+
+    #[tokio::test]
+    async fn all_boolean_branches_and_owned_precedence_survive_restore() {
+        for enabled in [false, true] {
+            let source = json!({
+                "supportsEagerToolInputStreaming": enabled,
+                "supportsLongCacheRetention": enabled,
+                "supportsCacheControlOnTools": enabled,
+                "forceAdaptiveThinking": enabled,
+                "supportsTemperature": enabled,
+                "allowEmptySignature": enabled,
+                "supportsStrictTools": enabled,
+                "supportsMidConvoEffort": enabled,
+                "supportsMidConvoSystemMessages": enabled,
+                "supportsMidConvoToolChanges": enabled,
+                "sendSessionAffinityHeaders": enabled,
+                "sessionAffinityFormat": "openrouter",
+                "allowedFallbackModels": [fallback()]
+            });
+            let model = decode(entry(Some(source.clone()))).unwrap();
+            let c = compat(&model);
+            assert_eq!(
+                [
+                    c.supports_eager_tool_input_streaming,
+                    c.supports_long_cache_retention,
+                    c.supports_cache_control_on_tools,
+                    c.force_adaptive_thinking,
+                    c.supports_temperature,
+                    c.allow_empty_signature,
+                    c.supports_strict_tools,
+                    c.supports_mid_convo_effort,
+                    c.supports_mid_convo_system_messages,
+                    c.supports_mid_convo_tool_changes
+                ],
+                [enabled; 10]
+            );
+            assert_eq!(c.send_session_affinity_headers, Some(enabled));
+            assert_eq!(c.allowed_fallback_models.as_ref().unwrap().len(), 1);
+            persist(model).await;
+
+            let mut value = entry(Some(source));
+            value["x-opi"]["compat"] = old_owned_compat();
+            value["x-opi"]["cacheControl"] = json!(false);
+            value["x-opi"]["longCacheRetention"] = json!(false);
+            let model = decode(value).unwrap();
+            assert_eq!(
+                compat(&model),
+                &AnthropicMessagesCompat {
+                    supports_eager_tool_input_streaming: false,
+                    force_adaptive_thinking: false,
+                    supports_temperature: false,
+                    ..Default::default()
+                }
+            );
+            assert!(!model.capabilities.supports_cache_control);
+            assert!(!model.capabilities.supports_long_cache_retention);
+            persist(model).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn each_boolean_key_changes_only_its_own_typed_field_and_survives_restore() {
+        fn fields(c: &AnthropicMessagesCompat) -> [bool; 10] {
+            [
+                c.supports_eager_tool_input_streaming,
+                c.supports_long_cache_retention,
+                c.supports_cache_control_on_tools,
+                c.force_adaptive_thinking,
+                c.supports_temperature,
+                c.allow_empty_signature,
+                c.supports_strict_tools,
+                c.supports_mid_convo_effort,
+                c.supports_mid_convo_system_messages,
+                c.supports_mid_convo_tool_changes,
+            ]
+        }
+        let keys = [
+            "supportsEagerToolInputStreaming",
+            "supportsLongCacheRetention",
+            "supportsCacheControlOnTools",
+            "forceAdaptiveThinking",
+            "supportsTemperature",
+            "allowEmptySignature",
+            "supportsStrictTools",
+            "supportsMidConvoEffort",
+            "supportsMidConvoSystemMessages",
+            "supportsMidConvoToolChanges",
+        ];
+        for owned in [false, true] {
+            let baseline = if owned {
+                [
+                    false, true, true, false, false, false, false, false, false, false,
+                ]
+            } else {
+                [
+                    true, true, true, false, true, false, false, false, false, false,
+                ]
+            };
+            for (index, key) in keys.into_iter().enumerate() {
+                let mut expected = baseline;
+                expected[index] = !expected[index];
+                let mut value = entry(Some(json!({})));
+                if owned {
+                    value["x-opi"]["compat"] = old_owned_compat();
+                    value["x-opi"]["compat"][key] = json!(expected[index]);
+                } else {
+                    value["compat"][key] = json!(expected[index]);
+                }
+                let model = decode(value).unwrap();
+                let c = compat(&model);
+                assert_eq!(fields(c), expected, "owned={owned}, key={key}");
+                assert!(c.send_session_affinity_headers.is_none());
+                assert!(c.session_affinity_format.is_none());
+                assert!(c.allowed_fallback_models.is_none());
+                let (_, restored) = persist(model).await;
+                assert_eq!(
+                    fields(compat(&restored)),
+                    expected,
+                    "owned={owned}, key={key}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_and_owned_wrong_types_and_old_required_fields_are_rejected() {
+        for owned in [false, true] {
+            for key in [
+                "supportsEagerToolInputStreaming",
+                "supportsLongCacheRetention",
+                "supportsCacheControlOnTools",
+                "forceAdaptiveThinking",
+                "supportsTemperature",
+                "allowEmptySignature",
+                "supportsStrictTools",
+                "supportsMidConvoEffort",
+                "supportsMidConvoSystemMessages",
+                "supportsMidConvoToolChanges",
+            ] {
+                for invalid in [Value::Null, json!(0), json!("false"), json!([]), json!({})] {
+                    let mut value = entry(Some(json!({})));
+                    if owned {
+                        value["x-opi"]["compat"] = old_owned_compat();
+                        value["x-opi"]["compat"][key] = invalid;
+                    } else {
+                        value["compat"][key] = invalid;
+                    }
+                    assert!(decode(value).is_err(), "owned={owned}, key={key}");
+                }
+            }
+            for (key, invalid) in [
+                ("sendSessionAffinityHeaders", json!(0)),
+                ("sendSessionAffinityHeaders", json!("false")),
+                ("sessionAffinityFormat", json!("openai")),
+                ("sessionAffinityFormat", json!(true)),
+                ("allowedFallbackModels", json!({})),
+            ] {
+                let mut value = entry(Some(json!({})));
+                if owned {
+                    value["x-opi"]["compat"] = old_owned_compat();
+                    value["x-opi"]["compat"][key] = invalid;
+                } else {
+                    value["compat"][key] = invalid;
+                }
+                assert!(decode(value).is_err(), "owned={owned}, key={key}");
+            }
+        }
+        for missing in [
+            "supportsEagerToolInputStreaming",
+            "forceAdaptiveThinking",
+            "supportsTemperature",
+        ] {
+            let mut owned = old_owned_compat();
+            owned.as_object_mut().unwrap().remove(missing);
+            let mut value = entry(None);
+            value["x-opi"]["compat"] = owned;
+            assert!(decode(value).is_err(), "required old field={missing}");
+        }
+        assert!(decode(entry(Some(json!(false)))).is_err());
+    }
+
+    #[tokio::test]
+    async fn fallback_cardinality_identity_and_finite_source_prices_roundtrip() {
+        for count in [0, 1, 3] {
+            let mut target = fallback();
+            target["cost"]["input"] = json!(-1);
+            target["cost"]["tiers"] = json!([
+                {"inputTokensAbove": 9007199254740993_u64, "input": 5.0,
+                    "output": 1.25, "cacheRead": -1.5, "cacheWrite": 0},
+                {"inputTokensAbove": 0.5, "input": 1e20,
+                    "output": -1, "cacheRead": 0.5, "cacheWrite": 6.25}
+            ]);
+            let model = decode(entry(Some(
+                json!({"allowedFallbackModels": vec![target; count]}),
+            )))
+            .unwrap();
+            let original = compat(&model).allowed_fallback_models.clone();
+            let (_, restored) = persist(model).await;
+            assert_eq!(compat(&restored).allowed_fallback_models, original);
+        }
+        let mut bad = vec![json!(false), json!({})];
+        for key in ["provider", "model", "cost"] {
+            let mut target = fallback();
+            target.as_object_mut().unwrap().remove(key);
+            bad.push(target);
+        }
+        for key in ["provider", "model"] {
+            for invalid in [json!(""), json!(0), Value::Null] {
+                let mut target = fallback();
+                target[key] = invalid;
+                bad.push(target);
+            }
+        }
+        for key in ["input", "output", "cacheRead", "cacheWrite"] {
+            let mut target = fallback();
+            target["cost"].as_object_mut().unwrap().remove(key);
+            bad.push(target);
+        }
+        let mut invalid_tiers = fallback();
+        invalid_tiers["cost"]["tiers"] = json!({});
+        bad.push(invalid_tiers);
+        for target in bad {
+            for owned in [false, true] {
+                let mut value = entry(Some(json!({"allowedFallbackModels": [target.clone()]})));
+                if owned {
+                    value["x-opi"]["compat"] = old_owned_compat();
+                    value["x-opi"]["compat"]["allowedFallbackModels"] = json!([target.clone()]);
+                    value.as_object_mut().unwrap().remove("compat");
+                }
+                assert!(decode(value).is_err(), "owned={owned}, target={target}");
+            }
+        }
+        for owned in [false, true] {
+            let mut value = entry(Some(json!({"allowedFallbackModels": vec![fallback(); 4]})));
+            if owned {
+                value["x-opi"]["compat"] = old_owned_compat();
+                value["x-opi"]["compat"]["allowedFallbackModels"] = json!(vec![fallback(); 4]);
+                value.as_object_mut().unwrap().remove("compat");
+            }
+            assert!(decode(value).is_err(), "owned={owned}, four targets");
+        }
+    }
+
+    #[tokio::test]
+    async fn fallback_rate_boundaries_preserve_numeric_values_without_saturation() {
+        let mut target = fallback();
+        target["provider"] = json!(" ");
+        target["model"] = json!(" ");
+        target["cost"] = json!({
+            "input": 9.223372036854776e18,
+            "output": 1.8446744073709552e19,
+            "cacheRead": -9.223372036854776e18,
+            "cacheWrite": -1.25
+        });
+        let model = decode(entry(Some(json!({"allowedFallbackModels": [target]})))).unwrap();
+        let (document, restored) = persist(model).await;
+        let rates = &document["providers"]["anthropic"]["models"][0]["x-opi"]["compat"]["allowedFallbackModels"]
+            [0]["cost"];
+        assert_eq!(rates["input"].as_f64(), Some(9.223372036854776e18));
+        assert_eq!(rates["output"].as_f64(), Some(1.8446744073709552e19));
+        assert_eq!(rates["cacheRead"].as_f64(), Some(-9.223372036854776e18));
+        assert_eq!(rates["cacheWrite"].as_f64(), Some(-1.25));
+        let target = &compat(&restored).allowed_fallback_models.as_ref().unwrap()[0];
+        assert_eq!(target.provider, " ");
+        assert_eq!(target.model, " ");
+    }
+
+    #[tokio::test]
+    async fn invalid_typed_fallback_publication_preserves_the_previous_store() {
+        let good = decode(entry(Some(json!({"allowedFallbackModels": [fallback()]})))).unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
+        let entries = |model: ModelInfo| {
+            [(
+                "anthropic".into(),
+                ModelsStoreEntry {
+                    models: vec![CatalogRecord::from(model)],
+                    ..Default::default()
+                },
+            )]
+            .into_iter()
+            .collect()
+        };
+        store.begin().commit(entries(good.clone())).await.unwrap();
+        let before = store.snapshot().catalogs;
+        let bytes = std::fs::read(store.path()).unwrap();
+        for invalid in [
+            "too-many",
+            "empty-provider",
+            "empty-model",
+            "nonfinite-base",
+            "nonfinite-tier",
+        ] {
+            let mut model = good.clone();
+            let WireCompat::AnthropicMessages(compat) = &mut model.compat else {
+                unreachable!()
+            };
+            let target = compat.allowed_fallback_models.as_ref().unwrap()[0].clone();
+            match invalid {
+                "too-many" => compat.allowed_fallback_models = Some(vec![target; 4]),
+                "empty-provider" => compat.allowed_fallback_models.as_mut().unwrap()[0]
+                    .provider
+                    .clear(),
+                "empty-model" => compat.allowed_fallback_models.as_mut().unwrap()[0]
+                    .model
+                    .clear(),
+                "nonfinite-base" => {
+                    compat.allowed_fallback_models.as_mut().unwrap()[0]
+                        .cost
+                        .base
+                        .input_cost_per_mtok = f64::INFINITY
+                }
+                "nonfinite-tier" => compat.allowed_fallback_models.as_mut().unwrap()[0]
+                    .cost
+                    .tiers
+                    .push(opi_ai::PricingTier {
+                        input_tokens_above: 0.into(),
+                        pricing: opi_ai::Pricing {
+                            input_cost_per_mtok: f64::NAN,
+                            ..Default::default()
+                        },
+                    }),
+                _ => unreachable!(),
+            }
+            assert!(
+                store.begin().commit(entries(model)).await.is_err(),
+                "{invalid}"
+            );
+            assert_eq!(store.snapshot().catalogs, before, "{invalid}");
+            assert_eq!(std::fs::read(store.path()).unwrap(), bytes, "{invalid}");
+        }
+    }
+}

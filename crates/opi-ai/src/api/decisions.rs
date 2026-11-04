@@ -228,8 +228,7 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
                     );
                 }
             };
-            // Questions ride as an array in the map's alphabetical order;
-            // the pi source order is insertion-based.
+            // The array preserves the caller's declaration enumeration order.
             let questions: Vec<serde_json::Value> = context
                 .questions
                 .iter()

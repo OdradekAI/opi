@@ -1762,6 +1762,11 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
     use opi_agent::session::SessionReader;
     use opi_agent::session_context::reconstruct_context;
     use opi_ai::message::{InputContent, Message};
+    use opi_ai::replay::ReplayFacts;
+    use opi_ai::transcript::{
+        ProjectionFacts, ProjectionMode, SourcePrefix, TemporalProjectionFacts,
+    };
+    use sha2::{Digest as _, Sha256};
 
     let _env_guard = common::empty_user_config_dir();
     for with_content in [false, true] {
@@ -1822,6 +1827,28 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
                         );
                     }
                 }
+            }
+            let mut complete = complete;
+            {
+                let calls = calls.lock().unwrap();
+                let canonical = calls.first().unwrap().context.messages();
+                assert_eq!(canonical.len(), 2);
+                assert!(matches!(canonical[0], Message::System(_)));
+                assert!(matches!(canonical[1], Message::User(_)));
+                complete.projection = Some(ProjectionFacts {
+                    source_prefix: SourcePrefix {
+                        message_count: 2,
+                        sha256: format!(
+                            "{:x}",
+                            Sha256::digest(serde_json::to_vec(canonical).unwrap())
+                        ),
+                    },
+                    temporal: TemporalProjectionFacts {
+                        mode: ProjectionMode::Lossless,
+                        affected_ranges: Vec::new(),
+                    },
+                    replay: ReplayFacts::default(),
+                });
             }
             let public_end = AgentEvent::MessageEnd {
                 message: AgentMessage::Llm(Message::Assistant(complete.clone())),
