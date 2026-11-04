@@ -1421,10 +1421,29 @@ async fn two_instances_share_a_store_but_keep_routes_isolated_and_clean_up() {
 // AIR-046: empty Models and zero-I/O construction
 // ---------------------------------------------------------------------------
 
+#[test]
+fn constructors_own_default_memory_without_a_runtime() {
+    assert!(tokio::runtime::Handle::try_current().is_err());
+    for models in [
+        Models::new(),
+        Models::from_registry(opi_ai::ProviderRegistry::new()),
+    ] {
+        assert!(models.provider_ids().is_empty());
+        let barrier = models.mutation_barrier().expect("constructor owns a store");
+        assert_eq!(barrier.cutoff(), 0);
+        let report = barrier.report();
+        assert!(report.is_complete());
+        assert!(report.captured.is_empty());
+        assert!(report.late.is_empty());
+    }
+    assert!(tokio::runtime::Handle::try_current().is_err());
+}
+
 #[tokio::test]
 async fn empty_models_registers_no_provider_and_static_reads_do_no_io() {
     let context = OwnedRecordingContext::new(&[]);
-    let models = Models::new();
+    let mut models = Models::new();
+    models.set_auth_context(context.clone());
 
     // An empty Models is not advertised as populated.
     assert!(
@@ -1435,12 +1454,15 @@ async fn empty_models_registers_no_provider_and_static_reads_do_no_io() {
     assert!(models.get_available(None).await.unwrap().is_empty());
 
     // Registration with an injected route and static queries perform zero
-    // env/store/network I/O: the recording context sees no reads and no
-    // provider attempt starts (no availability entry, no model lookup).
+    // env/store/network I/O: the recording context sees no reads and the
+    // provider call log stays empty.
     let mut models = Models::new();
+    models.set_auth_context(context.clone());
+    let provider = MockProvider::new("never", vec![text_response("unused")]);
+    let calls = provider.call_log_handle();
     models
         .register_route(
-            Box::new(MockProvider::new("never", vec![text_response("unused")])),
+            Box::new(provider),
             Arc::new(opi_ai::auth::StaticAuthResolver::new(
                 AuthScheme::Bearer,
                 SecretString::from("sk-empty"),
@@ -1467,6 +1489,7 @@ async fn empty_models_registers_no_provider_and_static_reads_do_no_io() {
         0,
         "static queries performed zero env I/O"
     );
+    assert!(calls.lock().unwrap().is_empty());
 }
 
 // ---------------------------------------------------------------------------

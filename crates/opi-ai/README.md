@@ -580,6 +580,13 @@ added through registry overrides or configured OpenAI-compatible profiles.
 
 ## Credentials, Request Enrichment, and Refresh
 
+`Models::new()` and `Models::from_registry(...)` each create an independent
+`InMemoryCredentialStore`. Construction needs no runtime and performs no
+external source discovery or environment/file/network access. Logins stay local
+to that instance unless the caller attaches a shared store with
+`set_credential_store`; that explicit store replaces the default. A local memory
+ACK does not imply persistence across restarts.
+
 `CredentialStore` keeps backend errors distinct from missing entries, while
 `CredentialSource` reports present, absent, or backend-unavailable state
 without exposing a secret. `AuthDescriptor::StoreCredential` carries only a
@@ -617,7 +624,12 @@ On top of that context, `Models::{check_auth, get_available, get_auth,
 logout}` are the management results. `check_auth` reports configuration
 without refreshing — an expired stored OAuth credential is still configured —
 and surfaces unreachable store backends as typed `ModelsError::CredentialStore`
-errors (probe snapshots included), never as silent `Ok(None)`. `get_available`
+errors (probe snapshots included), never as silent `Ok(None)`.
+For descriptor configuration checks, actual credentials in the default store
+win. Only `Ok(None)` from that implicit memory store may consult an injected
+`set_probe` snapshot containing redacted labels. An explicitly attached store
+remains authoritative, including absence and errors. Probe metadata never
+supplies authentication or authorizes dispatch. `get_available`
 filters the registry by the same check. A registered OAuth route also honors
 stored `available_model_ids`: `Some([])` is an authoritative empty account
 catalog, while `None` keeps the registered catalog; checking never refreshes
@@ -1606,7 +1618,9 @@ expose cached records; explicit re-registration permits compatible restore.
 `refresh_with(options, &token)` observes cancellation and the same store ACK
 and stale-revision guard. Superseded or cancelled work cannot publish late;
 source invalidation cannot resurrect unselected stale memory. The SDK registers
-no source, attaches no store, and has no pi.dev/default startup fetch policy.
+no dynamic catalog source, attaches no persistent `ModelsStore`, and has no
+pi.dev/default startup fetch policy. Its local memory credential store is
+independent of catalog persistence.
 
 ## Telemetry Carrier: Frozen Parent Span plus Dispatch (task 20.54, DEL-12)
 
@@ -2876,7 +2890,8 @@ OAuth error class never surfaces and upstream bodies cannot echo back.
 Expiry is stored as the real service expiry; the single five-minute
 near-expiry correction stays `OAuthCredential::needs_refresh`.
 `Models::register_oauth_flow` + `Models::login(provider, presenter)` run a
-flow against an injected presenter and the attached credential store:
+flow against an injected presenter and the selected credential store
+(constructor-owned memory by default):
 success is reported only after the awaited store ACK, failed writes surface
 typed, and unknown mutation outcomes stay honestly pending. No automatic
 browser launch, keychain read, environment fallback, or remote revocation
@@ -3077,8 +3092,10 @@ isolation across sources.
 
 ### Connecting SDK OAuth to a request
 
-Attach a `CredentialStore`, then call `Models::register_oauth_route(provider,
-flow, compat)`. Registration performs no source I/O. It binds the provider
+Use the constructor-owned memory credential store, or explicitly attach a shared
+or persistent `CredentialStore`, then call
+`Models::register_oauth_route(provider, flow, compat)`. Registration performs no
+source I/O. It binds the provider
 and login flow to `auth::store_oauth::StoreOAuthResolver`;
 `register_oauth_flow` remains available for login-only registration.
 `Models::login` and the product `/login` helper share SDK `login_to_store`: all
@@ -3105,7 +3122,8 @@ Product constructors now accept the store that owns this shared queue:
 `NonInteractiveRunner::new_with_resume_runtime_packages_and_auth` and
 `RpcRunner::new_with_runtime_packages_and_auth` take an optional keychain store
 after `auth_resolver`. Production passes the same store used by its resolver,
-AWS source cache and ADC owner; `None` supports store-free test assemblies.
+AWS source cache and ADC owner; `None` retains the SDK's instance-local memory
+store without attaching a product/keychain store.
 
 The SDK's default `SpawnedCredentialProcess` selects no timeout or stdout
 limit. `with_policy(CredentialProcessPolicy::default())` explicitly selects

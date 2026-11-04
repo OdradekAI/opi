@@ -342,3 +342,87 @@ fn system_tools_removed(message: &Message) -> &Vec<ToolReference> {
         _ => unreachable!(),
     }
 }
+
+mod numeric_claude_context {
+    use std::sync::Arc;
+
+    use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
+    use opi_ai::models::{CompatMetadata, Models, drain_to_completion};
+    use opi_ai::provider::{Request, ThinkingConfig};
+    use opi_ai::test_support::{MockProvider, text_response};
+    use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, WireApi};
+
+    async fn prepared_numeric_request(context_window: u64) -> Request {
+        let model = ModelInfo::new(
+            "claude",
+            "Claude",
+            WireApi::AnthropicMessages,
+            ModelCapabilities::new(context_window, 64_000).with_thinking(true),
+        );
+        let provider =
+            MockProvider::new_with_models("budget", vec![model], vec![text_response("done")]);
+        let calls = provider.call_log_handle();
+        let mut models = Models::new();
+        models
+            .register_route(
+                Box::new(provider),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::ApiKey,
+                    secrecy::SecretString::from("synthetic-context-budget-key"),
+                )),
+                AuthProvenanceSource::Static,
+                CompatMetadata::default(),
+            )
+            .unwrap();
+        let request = Request {
+            projection: Default::default(),
+            transport: Default::default(),
+            model: "budget:claude".into(),
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![],
+                tools: vec![],
+            })
+            .unwrap(),
+            max_tokens: Some(4_096),
+            temperature: None,
+            sampling_params: Default::default(),
+            thinking: ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2_048),
+                level: ThinkingLevel::Low,
+            },
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: Default::default(),
+            session_id: None,
+            telemetry_context: None,
+            callbacks: Default::default(),
+        };
+        let prepared = models.prepare_call("budget:claude", request).await.unwrap();
+        assert!(calls.lock().unwrap().is_empty());
+        drain_to_completion(prepared.start_attempt().unwrap())
+            .await
+            .unwrap();
+        let mut calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        calls.pop().unwrap()
+    }
+
+    #[tokio::test]
+    async fn public_prepare_numeric_claude_keeps_answer_room_after_context_saturation() {
+        let prepared = prepared_numeric_request(6_000).await;
+        assert_eq!(prepared.max_tokens, Some(1_904));
+        assert_eq!(prepared.thinking.budget_tokens, Some(880));
+    }
+
+    #[tokio::test]
+    async fn public_prepare_numeric_claude_expands_before_context_boundary() {
+        let prepared = prepared_numeric_request(9_000).await;
+        assert_eq!(prepared.max_tokens, Some(4_904));
+        assert_eq!(prepared.thinking.budget_tokens, Some(2_048));
+    }
+}

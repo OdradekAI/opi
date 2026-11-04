@@ -473,23 +473,29 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
 #[test]
 fn mistral_profile_inherits_shared_compat_flags() {
-    // Mistral is a config-driven OpenAI-compatible profile built on the shared
-    // OpenAI Chat adapter. With a developer-role + strict-tools compat + the
-    // max_completion_tokens field, its request body reflects all flags through
-    // the shared serializer (DoD), not a parallel Mistral-specific serializer.
-    let provider = OpenAiChatProvider::new_for_profile(
-        "https://mistral.example.com".into(),
-        "mistral".into(),
-        CompatConfig {
-            instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
-            max_tokens_field: Some("max_completion_tokens".into()),
-            strict_tool_schema: true,
-            ..Default::default()
-        },
-        vec![],
-        vec![],
-    );
-    let request = Request {
+    use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+
+    // The profile's strict capability enables explicit per-tool intent;
+    // unconstrained tools retain the shared Chat default.
+    let input_schema = serde_json::json!({
+        "type": "object",
+        "properties": {"path": {"type": "string"}}
+    });
+    let build_provider = |strict_tool_schema| {
+        OpenAiChatProvider::new_for_profile(
+            "https://mistral.example.com".into(),
+            "mistral".into(),
+            CompatConfig {
+                instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
+                max_tokens_field: Some("max_completion_tokens".into()),
+                strict_tool_schema,
+                ..Default::default()
+            },
+            vec![],
+            vec![],
+        )
+    };
+    let build_request = |preference: Option<StrictPreference>| Request {
         projection: Default::default(),
         transport: Default::default(),
         model: "mistral:mistral-large-latest".into(),
@@ -504,8 +510,9 @@ fn mistral_profile_inherits_shared_compat_flags() {
             tools: vec![ToolDef {
                 name: "list_dir".into(),
                 description: "list a directory".into(),
-                input_schema: serde_json::json!({"type":"object","properties":{}}),
-                constrained_sampling: None,
+                input_schema: input_schema.clone(),
+                constrained_sampling: preference
+                    .map(|strict| ConstrainedSampling::JsonSchema { strict }),
             }],
         })
         .expect("valid context declarations"),
@@ -523,21 +530,48 @@ fn mistral_profile_inherits_shared_compat_flags() {
         telemetry_context: None,
         callbacks: Default::default(),
     };
-    let body = provider.build_request_body(&request).unwrap();
-    let messages = body["messages"].as_array().unwrap();
-    assert_eq!(
-        messages[0]["role"], "developer",
-        "Mistral inherits developer-role override from the shared compat path"
-    );
-    assert!(
-        body.get("max_completion_tokens").is_some(),
-        "Mistral inherits max_completion_tokens field from the shared compat path"
-    );
-    let tools = body["tools"].as_array().expect("tools present");
-    assert!(
-        tools[0]["function"]["strict"] == true,
-        "Mistral inherits strict-tool-schema from the shared compat path"
-    );
+    for strict_tool_schema in [false, true] {
+        for preference in [
+            None,
+            Some(StrictPreference::Prefer),
+            Some(StrictPreference::Require),
+        ] {
+            let provider = build_provider(strict_tool_schema);
+            let request = build_request(preference);
+            let original_context = request.context.clone();
+            let body = provider.build_request_body(&request);
+            assert_eq!(request.context, original_context);
+            if !strict_tool_schema && preference == Some(StrictPreference::Require) {
+                assert!(matches!(body, Err(ProviderError::Config(_))));
+                continue;
+            }
+            let body = body.unwrap();
+            let messages = body["messages"].as_array().unwrap();
+            assert_eq!(
+                messages[0]["role"], "developer",
+                "Mistral inherits developer-role override from the shared compat path"
+            );
+            assert_eq!(
+                body["max_completion_tokens"], 1024,
+                "Mistral inherits max_completion_tokens field from the shared compat path"
+            );
+            let function = &body["tools"][0]["function"];
+            let expected_strict =
+                strict_tool_schema.then(|| serde_json::json!(preference.is_some()));
+            assert_eq!(function.get("strict"), expected_strict.as_ref());
+            if strict_tool_schema && preference.is_some() {
+                let parameters = &function["parameters"];
+                assert_eq!(parameters["additionalProperties"], false);
+                assert_eq!(parameters["required"], serde_json::json!(["path"]));
+                assert_eq!(
+                    parameters["properties"]["path"]["anyOf"],
+                    serde_json::json!([{"type": "string"}, {"type": "null"}])
+                );
+            } else {
+                assert_eq!(function["parameters"], input_schema);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

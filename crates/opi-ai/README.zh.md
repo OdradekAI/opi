@@ -565,6 +565,11 @@ OpenAI-compatible profile 加入。
 
 ## 凭据、Request 扩充与 Refresh
 
+`Models::new()` 与 `Models::from_registry(...)` 各自创建独立的
+`InMemoryCredentialStore`。构造不需要 runtime，也不主动发现外部来源或访问
+环境、文件、网络。登录凭据仅属于该实例；调用方可用 `set_credential_store`
+显式接入共享 store 并替换默认存储。本地内存 ACK 不表示凭据可跨重启持久化。
+
 `CredentialStore` 将 backend 错误与条目缺失区分开，`CredentialSource` 则在不暴露
 秘密的前提下报告 present、absent 或 backend-unavailable 状态。
 `AuthDescriptor::StoreCredential` 只携带 key 与 display source。
@@ -607,6 +612,10 @@ credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭�
 结果。`check_auth` 报告配置状态而不刷新——已过期的存储 OAuth 凭据仍是
 已配置——并将不可达的 store backend（含探测快照）以类型化的
 `ModelsError::CredentialStore` 错误呈现，绝不静默折叠为 `Ok(None)`。
+descriptor 配置检查优先使用默认存储中的实际凭据；只有隐式内存存储返回
+`Ok(None)` 时才可查询经 `set_probe` 注入、仅含脱敏标签的快照。显式接入的
+store 始终具有权威性，包括缺失和错误。probe 元数据不提供认证，也不授权
+派发请求。
 `get_available` 用同一检查过滤注册表。注册的 OAuth route 还遵守持久化的
 `available_model_ids`：`Some([])` 是账号的权威空目录，`None` 保留注册目录；
 检查不刷新该元数据。`get_auth` 按需解析被选中的来源；
@@ -1388,7 +1397,8 @@ native `Ok(None)` 恢复内置回退，除非该 provider 注册的显式 source
 删除 owner 后不能暴露缓存；显式重新注册允许恢复兼容记录。
 `refresh_with(options, &token)` 保持取消检查、store ACK 和旧 revision guard。
 被取代或取消的工作不能迟到发布；source 失效不能从未选中的旧内存复活数据。
-SDK 不注册任何 source、不附加任何 store、没有 pi.dev／默认启动抓取策略。
+SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.dev／默认启动
+抓取策略。本地内存凭据存储与目录持久化相互独立。
 
 ## Telemetry 载体：冻结 parent Span 与 Dispatch（任务 20.54，DEL-12）
 
@@ -2421,8 +2431,8 @@ URI 写 `localhost`），失败退到空闲 loopback 端口，最后退到纯手
 遮蔽的产品摘要——闭合 OAuth 错误类也不外显，上游 body 无法回显。过期时
 间按真实服务过期存储；唯一的 5 分钟近过期校正保留在
 `OAuthCredential::needs_refresh`。`Models::register_oauth_flow` +
-`Models::login(provider, presenter)` 以注入的 presenter 与附着的凭据
-store 运行流程：只有等到 store ACK 之后才报告成功，写失败按类型浮出，
+`Models::login(provider, presenter)` 以注入的 presenter 与选定的凭据 store
+（默认由构造器创建的内存存储）运行流程：只有等到 store ACK 之后才报告成功，写失败按类型浮出，
 未知 mutation 结果保持诚实的 pending。不发生自动浏览器启动、keychain
 读取、环境回退或远程撤销。`opi-coding-agent` 只保留宿主策略（TUI
 presenter、终端挂起、keychain store）并注册 SDK 流。
@@ -2581,8 +2591,9 @@ verification URI 直通（无 scheme 校验，异于 xAI），denial 仅 RFC 单
 
 ### 将 SDK OAuth 接到实际请求
 
-先附着 `CredentialStore`，再调用 `Models::register_oauth_route(provider,
-flow, compat)`；注册不访问来源。该入口将 provider 与登录流绑定到
+使用构造器创建的内存凭据存储，或显式接入共享／持久化 `CredentialStore`，再调用
+`Models::register_oauth_route(provider, flow, compat)`；注册不访问来源。
+该入口将 provider 与登录流绑定到
 `auth::store_oauth::StoreOAuthResolver`；`register_oauth_flow` 仍供纯登录注册。
 `Models::login` 与产品 `/login` helper 共用 SDK `login_to_store`，完整转发
 presenter 操作，凭据与元数据写入 ACK 后才报告成功。`get_auth` 与普通调用
@@ -2604,7 +2615,7 @@ token 选择的 HTTPS 端点。Radius 覆盖到 gateway 绑定的登录/刷新�
 `NonInteractiveRunner::new_with_resume_runtime_packages_and_auth` 与
 `RpcRunner::new_with_runtime_packages_and_auth` 在 `auth_resolver` 后接收
 可选 keychain store。生产与 resolver、AWS 来源缓存、ADC owner 使用同一个
-store；`None` 用于无 store 的测试组装。
+store；`None` 保留 SDK 的实例本地内存存储，不附加产品／keychain store。
 
 SDK 的默认 `SpawnedCredentialProcess` 不选择超时或 stdout 大小限制。
 `with_policy(CredentialProcessPolicy::default())` 显式选择现有的 10 秒/64-KiB

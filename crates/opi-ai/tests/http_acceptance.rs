@@ -76,6 +76,7 @@ struct RecordedRequest {
     /// Request-target exactly as received (origin- or absolute-form).
     target: String,
     authorization: Option<String>,
+    referer: Option<String>,
     content_length: usize,
     body: Vec<u8>,
 }
@@ -184,6 +185,7 @@ async fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Recorded
     let method = parts.next().unwrap_or_default().to_owned();
     let target = parts.next().unwrap_or_default().to_owned();
     let mut authorization = None;
+    let mut referer = None;
     let mut content_length = 0usize;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else {
@@ -193,6 +195,7 @@ async fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Recorded
         let value = value.trim();
         match name.as_str() {
             "authorization" => authorization = Some(value.to_owned()),
+            "referer" => referer = Some(value.to_owned()),
             "content-length" => content_length = value.parse().unwrap_or(0),
             _ => {}
         }
@@ -211,6 +214,7 @@ async fn read_request(stream: &mut TcpStream) -> std::io::Result<Option<Recorded
         method,
         target,
         authorization,
+        referer,
         content_length,
         body,
     }))
@@ -376,8 +380,10 @@ fn sse_multi_chunk_with_extensions(chunks: usize, ext: &str) -> Vec<u8> {
 }
 
 fn redirect_response(status: u16, location: &str) -> Vec<u8> {
-    format!("HTTP/1.1 {status} Moved\r\nlocation: {location}\r\ncontent-length: 0\r\n\r\n")
-        .into_bytes()
+    format!(
+        "HTTP/1.1 {status} Moved\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    )
+    .into_bytes()
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +633,7 @@ async fn same_origin_redirect_keeps_authorization_with_exact_sends() {
         "the hop follows the Location target"
     );
     for request in &requests {
+        assert_eq!(request.referer, None, "redirects do not invent a Referer");
         assert_eq!(
             bearer_of(request),
             Some("Bearer acceptance-contract-key"),
@@ -671,6 +678,8 @@ async fn cross_origin_redirect_strips_protected_authorization() {
     let target_requests = target.stats.requests();
     assert_eq!(origin_requests.len(), 1);
     assert_eq!(target_requests.len(), 1);
+    assert_eq!(origin_requests[0].referer, None);
+    assert_eq!(target_requests[0].referer, None);
     assert_eq!(
         bearer_of(&origin_requests[0]),
         Some("Bearer acceptance-contract-key"),
@@ -1400,6 +1409,7 @@ async fn read_request_tls(
     let method = parts.next().unwrap_or_default().to_owned();
     let target = parts.next().unwrap_or_default().to_owned();
     let mut authorization = None;
+    let mut referer = None;
     let mut content_length = 0usize;
     for line in lines {
         let Some((name, value)) = line.split_once(':') else {
@@ -1407,6 +1417,7 @@ async fn read_request_tls(
         };
         match name.trim().to_ascii_lowercase().as_str() {
             "authorization" => authorization = Some(value.trim().to_owned()),
+            "referer" => referer = Some(value.trim().to_owned()),
             "content-length" => content_length = value.trim().parse().unwrap_or(0),
             _ => {}
         }
@@ -1425,6 +1436,7 @@ async fn read_request_tls(
         method,
         target,
         authorization,
+        referer,
         content_length,
         body,
     }))

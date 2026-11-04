@@ -108,18 +108,24 @@ pub(crate) fn provider_auth_failure(error: &AgentError) -> Option<ProviderAuthFa
         AgentError::AccountIdMissing { provider_id } => {
             Some(ProviderAuthFailure::AccountIdMissing(provider_id))
         }
-        AgentError::Provider(failure) => match failure.provider_error() {
-            opi_ai::provider::ProviderError::CredentialNeeded { provider_id } => {
-                Some(ProviderAuthFailure::CredentialNeeded(provider_id))
+        AgentError::Provider(failure) => {
+            let mut cause = failure.provider_error();
+            while let opi_ai::provider::ProviderError::StreamFailure(preparation) = cause {
+                cause = preparation.cause();
             }
-            opi_ai::provider::ProviderError::CredentialRevoked { provider_id } => {
-                Some(ProviderAuthFailure::CredentialRevoked(provider_id))
+            match cause {
+                opi_ai::provider::ProviderError::CredentialNeeded { provider_id } => {
+                    Some(ProviderAuthFailure::CredentialNeeded(provider_id))
+                }
+                opi_ai::provider::ProviderError::CredentialRevoked { provider_id } => {
+                    Some(ProviderAuthFailure::CredentialRevoked(provider_id))
+                }
+                opi_ai::provider::ProviderError::AccountIdMissing { provider_id } => {
+                    Some(ProviderAuthFailure::AccountIdMissing(provider_id))
+                }
+                _ => None,
             }
-            opi_ai::provider::ProviderError::AccountIdMissing { provider_id } => {
-                Some(ProviderAuthFailure::AccountIdMissing(provider_id))
-            }
-            _ => None,
-        },
+        }
         _ => None,
     }
 }
@@ -4638,6 +4644,173 @@ impl InteractiveCodingHooks {
 impl AgentHooks for InteractiveCodingHooks {
     fn convert_to_llm(&self, messages: &[AgentMessage]) -> Result<Vec<Message>, AgentError> {
         Ok(agent_messages_to_llm(messages))
+    }
+}
+
+#[cfg(test)]
+mod remediation_auth_wrapper_probe {
+    use super::{ProviderAuthFailure, provider_auth_failure};
+    use opi_agent::AgentError;
+    use opi_ai::auth::{AuthProvenanceSource, AuthResolver};
+    use opi_ai::provider::{
+        CacheRetention, ProviderError, ProviderErrorSummary, Request, ThinkingConfig,
+    };
+    use std::sync::Arc;
+    use tokio_util::sync::CancellationToken;
+
+    struct FailAuth(ProviderError);
+
+    impl AuthResolver for FailAuth {
+        fn resolve<'a>(
+            &'a self,
+        ) -> opi_ai::credential::BoxAuthFuture<'a, Result<opi_ai::auth::ResolvedAuth, ProviderError>>
+        {
+            let error = self.0.clone();
+            Box::pin(async move { Err(error) })
+        }
+    }
+
+    fn minimal_request() -> Request {
+        Request {
+            projection: Default::default(),
+            transport: Default::default(),
+            model: "mock:mock-model".into(),
+            context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                system_prompt: None,
+                messages: vec![],
+                tools: vec![],
+            })
+            .expect("valid context declarations"),
+            max_tokens: None,
+            temperature: None,
+            sampling_params: Default::default(),
+            thinking: ThinkingConfig::default(),
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: CancellationToken::new(),
+            timeout: None,
+            extra_headers: vec![],
+            cache_retention: CacheRetention::None,
+            session_id: None,
+            telemetry_context: None,
+            callbacks: Default::default(),
+        }
+    }
+
+    async fn prepared_failure(error: ProviderError) -> AgentError {
+        let expected_cause = error.clone();
+        let provider = opi_ai::test_support::MockProvider::new(
+            "mock",
+            vec![opi_ai::test_support::text_response("unused")],
+        );
+        let calls = provider.call_log_handle();
+        let mut models = opi_ai::Models::new();
+        models
+            .register_route(
+                Box::new(provider),
+                Arc::new(FailAuth(error)),
+                AuthProvenanceSource::Static,
+                opi_ai::CompatMetadata::default(),
+            )
+            .unwrap();
+        let failure = models
+            .prepare_call("mock:mock-model", minimal_request())
+            .await
+            .expect_err("auth setup must fail");
+        assert!(
+            calls.lock().unwrap().is_empty(),
+            "auth failure must prevent dispatch"
+        );
+        let opi_ai::ModelsError::Provider(ProviderError::StreamFailure(preparation)) = &failure
+        else {
+            panic!("prepare boundary must preserve the failure projection: {failure:?}");
+        };
+        assert_eq!(preparation.cause(), &expected_cause);
+        assert!(preparation.message().projection.is_some());
+        assert!(preparation.message().content.is_empty());
+        assert_eq!(
+            preparation.message().stop_reason,
+            opi_ai::stream::StopReason::Error
+        );
+        AgentError::from(failure)
+    }
+
+    #[test]
+    fn direct_auth_controls() {
+        let cases = [
+            (
+                ProviderError::CredentialNeeded {
+                    provider_id: "mock".into(),
+                },
+                ProviderAuthFailure::CredentialNeeded("mock"),
+            ),
+            (
+                ProviderError::CredentialRevoked {
+                    provider_id: "mock".into(),
+                },
+                ProviderAuthFailure::CredentialRevoked("mock"),
+            ),
+            (
+                ProviderError::AccountIdMissing {
+                    provider_id: "mock".into(),
+                },
+                ProviderAuthFailure::AccountIdMissing("mock"),
+            ),
+        ];
+        for (error, expected) in cases {
+            assert_eq!(
+                provider_auth_failure(&AgentError::from(error)),
+                Some(expected)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prepare_wrapped_credential_needed_retains_remediation() {
+        let failure = prepared_failure(ProviderError::CredentialNeeded {
+            provider_id: "mock".into(),
+        })
+        .await;
+        assert_eq!(
+            provider_auth_failure(&failure),
+            Some(ProviderAuthFailure::CredentialNeeded("mock"))
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_wrapped_credential_revoked_retains_remediation() {
+        let failure = prepared_failure(ProviderError::CredentialRevoked {
+            provider_id: "mock".into(),
+        })
+        .await;
+        assert_eq!(
+            provider_auth_failure(&failure),
+            Some(ProviderAuthFailure::CredentialRevoked("mock"))
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_wrapped_account_id_missing_retains_remediation() {
+        let failure = prepared_failure(ProviderError::AccountIdMissing {
+            provider_id: "mock".into(),
+        })
+        .await;
+        assert_eq!(
+            provider_auth_failure(&failure),
+            Some(ProviderAuthFailure::AccountIdMissing("mock"))
+        );
+    }
+
+    #[tokio::test]
+    async fn non_auth_controls() {
+        let config =
+            ProviderError::Config(ProviderErrorSummary::from_untrusted("synthetic config"));
+        assert_eq!(
+            provider_auth_failure(&AgentError::from(config.clone())),
+            None
+        );
+        let wrapped = prepared_failure(config).await;
+        assert_eq!(provider_auth_failure(&wrapped), None);
     }
 }
 

@@ -707,11 +707,14 @@ async fn openai_codex_static_catalog_lists_without_store_reads() {
 #[allow(clippy::await_holding_lock)] // Serializes process-env mutation; the awaited store orchestration never re-acquires this lock.
 async fn stored_only_credential_lists_models_through_async_orchestration() {
     use opi_coding_agent::config::CredentialBackendSource;
-    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing_with_store,
+    };
     use secrecy::SecretString;
 
-    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY"]);
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"]);
     env.remove("ANTHROPIC_API_KEY");
+    env.remove("ANTHROPIC_OAUTH_TOKEN");
 
     let canary = "sk-stored-only-listing-DO-NOT-LEAK";
     let store = ProbeOnlyCredentialStore::default();
@@ -730,8 +733,16 @@ async fn stored_only_credential_lists_models_through_async_orchestration() {
 
     let collection = outcome.expect("stored-only metadata collection");
     assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
-    let entries = model_entries_from_registry(collection.registry());
+    let barrier = collection
+        .mutation_barrier()
+        .expect("SDK local memory store");
+    assert_eq!(barrier.cutoff(), 0);
+    assert!(barrier.report().captured.is_empty());
+    let entries = available_model_entries(&collection)
+        .await
+        .expect("available metadata models");
     assert!(entries.iter().any(|entry| entry.provider_id == "anthropic"));
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
     let rendered = format!("{:?}", collection.probe("anthropic"))
         + &entries
             .iter()
@@ -831,11 +842,17 @@ async fn native_keyring_precedes_listing_orchestration() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serializes process-env mutation; listing only reads the already-probed metadata.
 async fn listing_presence_probe_never_reads_secret() {
     use opi_coding_agent::config::CredentialBackendSource;
     use opi_coding_agent::credential_store::KeychainCredentialStore;
-    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing_with_store,
+    };
 
+    let env = ScopedEnv::new(&["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"]);
+    env.remove("ANTHROPIC_API_KEY");
+    env.remove("ANTHROPIC_OAUTH_TOKEN");
     let secret_get_calls = Arc::new(AtomicUsize::new(0));
     let presence_calls = Arc::new(AtomicUsize::new(0));
     let dir = tempfile::tempdir().expect("temp dir");
@@ -854,6 +871,11 @@ async fn listing_presence_probe_never_reads_secret() {
         .await
         .expect("metadata listing");
     assert!(collection.registry().get_provider("anthropic").is_some());
+    let entries = available_model_entries(&collection)
+        .await
+        .expect("available metadata models");
+    assert!(entries.iter().any(|entry| entry.provider_id == "anthropic"));
+    assert!(collection.mutation_barrier().is_some());
     assert_eq!(secret_get_calls.load(Ordering::SeqCst), 0);
     assert!(presence_calls.load(Ordering::SeqCst) > 0);
 }
@@ -864,7 +886,9 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
     use opi_coding_agent::credential_store::{
         FakeKeyringBackend, KEYCHAIN_PRESENCE_SERVICE, KeychainCredentialStore, KeyringBackend,
     };
-    use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing_with_store,
+    };
 
     let env = ScopedEnv::new(&["ANTHROPIC_API_KEY", "ANTHROPIC_OAUTH_TOKEN"]);
     let env_canary = "listing-fail-closed-env-canary-DO-NOT-LEAK";
@@ -897,7 +921,18 @@ async fn listing_fails_closed_on_operational_and_corrupt_store_probes_with_env_p
             collection.registry().get_provider("anthropic").is_none(),
             "{name}: fail-closed store probe must not use API-key env fallback"
         );
-        let rendered = format!("{:?}", collection.auth_descriptor("anthropic"));
+        let entries = available_model_entries(&collection)
+            .await
+            .expect("fail-closed metadata listing");
+        assert!(!entries.iter().any(|entry| entry.provider_id == "anthropic"));
+        let rendered = format!(
+            "{:?}{:?}",
+            collection.auth_descriptor("anthropic"),
+            entries
+                .iter()
+                .map(|entry| (&entry.provider_id, &entry.model_id, &entry.display_name))
+                .collect::<Vec<_>>()
+        );
         assert!(!rendered.contains(env_canary), "{name}: {rendered}");
     }
 }

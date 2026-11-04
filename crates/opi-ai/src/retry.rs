@@ -599,6 +599,13 @@ impl AcquisitionCore {
             return;
         }
         let hint = cause.retry_after_ms();
+        if inner.policy.max_retry_delay_ms != 0
+            && hint.is_some_and(|hint| hint > inner.policy.max_retry_delay_ms)
+        {
+            inner.admission = None;
+            inner.sealed = Some(AcquisitionSeal::Finished);
+            return;
+        }
         let policy = inner.policy.clone();
         let delay_ms = retry_delay_ms(&policy, inner.retries_admitted + 1, hint, &mut inner.jitter);
         inner.retries_admitted += 1;
@@ -700,9 +707,9 @@ impl AcquisitionCore {
 
 /// Compute the source-qualified wait before the admitted retry.
 ///
-/// Server advisory hints win when present, bounded by
-/// `policy.max_retry_delay_ms` unless that bound is explicitly zero
-/// (zero disables only the upper-bound check; hints are still honored).
+/// Server advisory hints win when present. Admission rejects hints above a
+/// nonzero `policy.max_retry_delay_ms` before calling this helper, so admitted
+/// hints retain their original duration. Zero disables the upper-bound check.
 /// Without a hint the helper-family backoff runs: `min(500ms * 2^i, 8000ms)`
 /// for zero-based retry index `i`, multiplied by a jitter factor drawn from
 /// `[0.75, 1.0)`.
@@ -1005,7 +1012,7 @@ fn retryable_transient_pattern() -> &'static regex::Regex {
 }
 
 /// Classify a finished message for whole-call retry: quota/billing/usage
-/// limits veto first; only then may a transient family classify as
+/// limits and context overflow veto first; only then may a transient family classify as
 /// retryable. Messages that are not failures are valid; aborts are terminal.
 pub fn classify_whole_call_retry(
     message: &crate::message::AssistantMessage,
@@ -1016,7 +1023,9 @@ pub fn classify_whole_call_retry(
             let Some(error_message) = message.error_message.as_deref() else {
                 return WholeCallRetryClassification::Terminal;
             };
-            if non_retryable_limit_pattern().is_match(error_message) {
+            if non_retryable_limit_pattern().is_match(error_message)
+                || crate::message::is_context_overflow(message, None)
+            {
                 WholeCallRetryClassification::Terminal
             } else if retryable_transient_pattern().is_match(error_message) {
                 WholeCallRetryClassification::Transient
@@ -1100,7 +1109,7 @@ impl Default for WholeCallRetryCallbacks<'_> {
 /// - Omitted/disabled policy: `produce` runs exactly once and its message
 ///   returns unchanged (no callbacks fire).
 /// - Valid stops and aborts return immediately; aborts are never retried.
-/// - Quota/billing/usage-limit errors veto before transient classification
+/// - Quota/billing/usage-limit and context-overflow errors veto before transient classification
 ///   and fail fast; exhausted budgets return the final error message.
 /// - Each retry is a NEW logical call from `produce` (never a re-dispatch),
 ///   separated by `on_retry_scheduled` → cancellable backoff sleep →

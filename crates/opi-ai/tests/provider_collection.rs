@@ -803,9 +803,8 @@ fn credential_oauth_token_redacts_secrets_but_keeps_base_url() {
 
 #[tokio::test]
 async fn auth_descriptor_store_credential_checks_via_probe_snapshot() {
-    // Without a live store or probe snapshot the store-backed provider is
-    // simply unconfigured: the secret-free descriptor never fabricates a
-    // Configured answer.
+    // Empty constructor-owned memory without a probe snapshot leaves the
+    // store-backed provider unconfigured.
     let mut collection = Models::new();
     collection
         .register(
@@ -829,6 +828,14 @@ async fn auth_descriptor_store_credential_checks_via_probe_snapshot() {
         .unwrap()
         .expect("present probe snapshot is configured");
     assert_eq!(check.source.as_deref(), Some("keychain opi:anthropic"));
+    assert!(
+        collection
+            .get_auth("anthropic", Default::default())
+            .await
+            .unwrap()
+            .is_none(),
+        "a configured metadata probe never supplies authentication"
+    );
 
     // The descriptor itself carries no secret material.
     let debug = format!("{:?}", store_descriptor("anthropic"));
@@ -1909,17 +1916,26 @@ mod phase17 {
         if let opi_ai::WireCompat::AnthropicMessages(compat) = &mut adaptive.compat {
             compat.force_adaptive_thinking = true;
         }
+        let mut records = vec![
+            ModelInfo::new(
+                "anthropic",
+                "Anthropic",
+                WireApi::AnthropicMessages,
+                ModelCapabilities::new(32_768, 32_768).with_thinking(true),
+            ),
+            adaptive,
+        ];
+        records.extend([1, 1_024, 2_000].map(|limit| {
+            ModelInfo::new(
+                format!("anthropic-{limit}"),
+                "Small-cap Anthropic",
+                WireApi::AnthropicMessages,
+                ModelCapabilities::new(200_000, limit).with_thinking(true),
+            )
+        }));
         let provider = MockProvider::new_with_models(
             "budget",
-            vec![
-                ModelInfo::new(
-                    "anthropic",
-                    "Anthropic",
-                    WireApi::AnthropicMessages,
-                    ModelCapabilities::new(32_768, 32_768).with_thinking(true),
-                ),
-                adaptive,
-            ],
+            records,
             (0..6).map(|_| text_response("summary")).collect(),
         );
         let calls = provider.call_log_handle();
@@ -1954,33 +1970,31 @@ mod phase17 {
         }
         {
             let calls = calls.lock().unwrap();
-            assert_eq!(calls[0].thinking.budget_tokens, Some(7_976));
-            assert_eq!(calls[1].thinking.budget_tokens, Some(7_976));
+            for call in &calls[..2] {
+                assert_eq!(call.max_tokens, Some(17_192));
+                assert_eq!(call.thinking.budget_tokens, Some(8_192));
+            }
         }
-        // Task 20.39 replacement proof (annex row 165): the sub-1024 typed
-        // preflight is withdrawn — clamped zero budgets flow to the wire
-        // (where the Anthropic `|| 1024` default applies) and nonzero
-        // sub-1024 budgets pass through.
+        // Actual final model caps constrain the combined answer/thinking
+        // ceiling. Zero and sub-1024 budgets remain valid compiler results.
         for (limit, clamped) in [(1, 0), (1_024, 0), (2_000, 976)] {
-            let mut request = minimal_request("budget:anthropic");
-            request.max_tokens = Some(limit);
+            let spec = format!("budget:anthropic-{limit}");
+            let mut request = minimal_request(&spec);
+            request.max_tokens = Some(4_096);
             request.thinking = ThinkingConfig {
                 enabled: true,
                 budget_tokens: Some(8_192),
                 level: opi_ai::ThinkingLevel::Medium,
             };
-            let prepared = collection
-                .prepare_call("budget:anthropic", request)
-                .await
-                .unwrap();
+            let prepared = collection.prepare_call(&spec, request).await.unwrap();
             drain_to_completion(prepared.start_attempt().unwrap())
                 .await
                 .unwrap();
             let calls = calls.lock().unwrap();
             let recorded = calls.last().expect("recorded dispatch");
+            assert_eq!(recorded.max_tokens, Some(limit));
             assert_eq!(recorded.thinking.budget_tokens, Some(clamped));
         }
-        // Task 20.39: the withdrawn-preflight cases now dispatch too.
         assert_eq!(resolutions.load(Ordering::SeqCst), 5);
         assert_eq!(calls.lock().unwrap().len(), 5);
         let mut request = minimal_request("budget:adaptive");
@@ -2002,6 +2016,61 @@ mod phase17 {
             None,
             "adaptive thinking uses effort rather than a numeric minimum"
         );
+        assert_eq!(
+            calls.lock().unwrap().last().unwrap().max_tokens,
+            Some(1_024)
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_call_adds_bedrock_thinking_only_for_numeric_claude() {
+        for (id, name, expected_limit) in [
+            ("anthropic.claude-sonnet-4-5", "Numeric model", 6_144),
+            ("anthropic/claude-sonnet-4-5", "Numeric model", 6_144),
+            ("application-profile", "Claude Sonnet", 6_144),
+            ("openai.gpt-oss-120b", "GPT OSS", 4_096),
+            ("anthropic.claude-sonnet-4-6", "Claude Sonnet 4.6", 4_096),
+        ] {
+            let provider = MockProvider::new_with_models(
+                "budget",
+                vec![ModelInfo::new(
+                    id,
+                    name,
+                    WireApi::BedrockConverseStream,
+                    ModelCapabilities::new(200_000, 64_000).with_thinking(true),
+                )],
+                vec![text_response("done")],
+            );
+            let calls = provider.call_log_handle();
+            let mut collection = Models::new();
+            collection
+                .register_route(
+                    Box::new(provider),
+                    Arc::new(CountingResolver {
+                        count: Arc::new(AtomicUsize::new(0)),
+                        secret: SecretString::from("test"),
+                    }),
+                    AuthProvenanceSource::Static,
+                    CompatMetadata::default(),
+                )
+                .unwrap();
+            let spec = format!("budget:{id}");
+            let mut request = minimal_request(&spec);
+            request.max_tokens = Some(4_096);
+            request.thinking = ThinkingConfig {
+                enabled: true,
+                budget_tokens: Some(2_048),
+                level: opi_ai::ThinkingLevel::Low,
+            };
+            let prepared = collection.prepare_call(&spec, request).await.unwrap();
+            drain_to_completion(prepared.start_attempt().unwrap())
+                .await
+                .unwrap();
+            let calls = calls.lock().unwrap();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].max_tokens, Some(expected_limit), "model {id}");
+            assert_eq!(calls[0].thinking.budget_tokens, Some(2_048));
+        }
     }
 
     #[tokio::test]
@@ -6181,6 +6250,120 @@ async fn builtin_profile_api_base_paths_reach_exact_endpoints() {
             format!("{source_path}{suffix}"),
             "{provider}/{wire}"
         );
+    }
+}
+
+mod helper_retry_hints {
+    use super::*;
+    use opi_ai::http::HttpClient;
+    use opi_ai::openai_chat::OpenAiChatProvider;
+    use opi_ai::retry::{AcquisitionPolicy, AcquisitionSeal, RetryAdmission};
+    use std::sync::Arc;
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{method, path},
+    };
+
+    async fn assert_hint_admission(hint_seconds: u64, cap_ms: u64, expected_delay: Option<u64>) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(
+                ResponseTemplate::new(429)
+                    .insert_header("retry-after", hint_seconds.to_string())
+                    .set_body_json(serde_json::json!({"error": {"message": "rate limited"}})),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut models = Models::new();
+        models
+            .register_route(
+                Box::new(OpenAiChatProvider::with_client(
+                    Some(server.uri()),
+                    "openai".into(),
+                    vec![],
+                    Arc::new(HttpClient::new()),
+                )),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::Bearer,
+                    secrecy::SecretString::from("synthetic-hint-cap-key"),
+                )),
+                AuthProvenanceSource::Static,
+                CompatMetadata {
+                    openai_compatible: true,
+                    profile: None,
+                },
+            )
+            .unwrap();
+        let prepared = models
+            .prepare_call_with_policy(
+                "openai:gpt-4o",
+                minimal_request("openai:gpt-4o"),
+                AcquisitionPolicy {
+                    max_retries: 1,
+                    max_retry_delay_ms: cap_ms,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let failure = drain_to_completion(prepared.start_attempt().unwrap())
+            .await
+            .expect_err("scripted HTTP 429");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert_eq!(
+            failure.cause(),
+            &ProviderError::RateLimited {
+                retry_after_ms: Some(hint_seconds * 1000)
+            }
+        );
+        let expected = expected_delay.map(|delay_ms| RetryAdmission {
+            retry_index: 1,
+            delay_ms,
+        });
+        assert_eq!(prepared.retry_admission(), expected);
+        for _ in 0..2 {
+            if let Some(delay_ms) = expected_delay {
+                assert_eq!(prepared.acquisition_seal(), None);
+                match prepared.start_attempt() {
+                    Err(ModelsError::RetryNotReady { retry_ready_in_ms }) => {
+                        assert!(retry_ready_in_ms > 0 && retry_ready_in_ms <= delay_ms);
+                    }
+                    _ => panic!("admitted hint must refuse an early send"),
+                }
+            } else {
+                assert_eq!(prepared.acquisition_seal(), Some(AcquisitionSeal::Finished));
+                assert!(matches!(
+                    prepared.start_attempt(),
+                    Err(ModelsError::CallSealed {
+                        seal: AcquisitionSeal::Finished
+                    })
+                ));
+            }
+            assert_eq!(prepared.retry_admission(), expected);
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn helper_retry_hint_below_cap_is_preserved() {
+        assert_hint_admission(59, 60_000, Some(59_000)).await;
+    }
+
+    #[tokio::test]
+    async fn helper_retry_hint_equal_to_cap_is_preserved() {
+        assert_hint_admission(60, 60_000, Some(60_000)).await;
+    }
+
+    #[tokio::test]
+    async fn helper_retry_hint_above_cap_seals_without_retry() {
+        assert_hint_admission(120, 60_000, None).await;
+    }
+
+    #[tokio::test]
+    async fn helper_retry_hint_zero_cap_disables_the_bound() {
+        assert_hint_admission(120, 0, Some(120_000)).await;
     }
 }
 

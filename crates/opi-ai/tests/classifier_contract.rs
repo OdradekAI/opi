@@ -271,6 +271,96 @@ fn ok_response() -> ResponseTemplate {
     ResponseTemplate::new(200).set_body_json(serde_json::json!({ "answers": wire_answers() }))
 }
 
+fn assert_failure_diagnostics_private(
+    result: &ClassifierResult,
+    record: &ClassifierModelRecord,
+    canary: &str,
+) {
+    assert_eq!(result.stop_reason, ClassifierStopReason::Error);
+    assert_eq!(result.api, record.api.as_str());
+    assert_eq!(result.provider, record.provider_id);
+    assert_eq!(result.model, record.id);
+    let error = result.error.as_ref().expect("typed failure");
+    for diagnostic in [
+        format!("{result:?}"),
+        result.error_message.clone().expect("display diagnostic"),
+        error.to_string(),
+        format!("{error:?}"),
+    ] {
+        assert!(!diagnostic.contains(canary), "diagnostic: {diagnostic}");
+    }
+}
+
+#[tokio::test]
+async fn classify_http_failure_diagnostics_do_not_echo_provider_body() {
+    let canary = "synthetic-classifier-body-private-canary";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/systemone"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": { "message": canary }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = classifier_record(server.uri());
+    let (models, _) = classifier_models(&record);
+    let result = models
+        .classify(
+            record.clone(),
+            classify_context(),
+            ClassifierCall::default(),
+        )
+        .await;
+
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    assert_failure_diagnostics_private(&result, &record, canary);
+    assert!(matches!(
+        result.error,
+        Some(ProviderError::ServiceFault { status: 400, .. })
+    ));
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some("System One API HTTP 400: [REDACTED]")
+    );
+    assert!(result.usage.is_none());
+}
+
+#[tokio::test]
+async fn classify_failure_diagnostics_do_not_echo_probability_keys() {
+    let canary = "synthetic-probability-key-private-canary";
+    let mut answers = wire_answers();
+    answers["category"]["probabilities"][canary] = serde_json::json!("not a number");
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/systemone"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "answers": answers,
+            "usage": { "input_tokens": 10, "output_tokens": 2 }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = classifier_record(server.uri());
+    let (models, _) = classifier_models(&record);
+    let result = models
+        .classify(
+            record.clone(),
+            classify_context(),
+            ClassifierCall::default(),
+        )
+        .await;
+
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    assert_failure_diagnostics_private(&result, &record, canary);
+    assert!(matches!(result.error, Some(ProviderError::StreamError(_))));
+    assert!(result.answers.is_empty());
+    let usage = result
+        .usage
+        .expect("billed usage survives malformed probabilities");
+    assert_eq!((usage.input_tokens, usage.output_tokens), (10, 2));
+}
+
 /// A TCP server that accepts one request and then never responds: proves
 /// timeout and cancellation behavior without request accounting.
 async fn stalled_server() -> String {
@@ -743,20 +833,20 @@ async fn classify_zero_retries_fail_immediately_with_typed_rate_limit() {
         result.error,
         Some(ProviderError::RateLimited { .. })
     ));
-    // pi formatProviderError with the label prefix.
+    // The public diagnostic retains the service and status without its body.
     assert!(
         result
             .error_message
             .as_deref()
             .unwrap_or_default()
-            .starts_with("System One API error (429)"),
+            .starts_with("System One API HTTP 429: [REDACTED]"),
         "message was {:?}",
         result.error_message
     );
 }
 
 #[tokio::test]
-async fn classify_http_failures_format_body_and_map_status() {
+async fn classify_http_failures_redact_body_and_map_status() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/systemone"))
@@ -783,7 +873,7 @@ async fn classify_http_failures_format_body_and_map_status() {
     assert_eq!(result.stop_reason, ClassifierStopReason::Error);
     assert_eq!(
         result.error_message.as_deref(),
-        Some("System One API error (500): internal glitch")
+        Some("System One API HTTP 500: [REDACTED]")
     );
 }
 
@@ -1435,6 +1525,66 @@ async fn cloudflare_parses_direct_envelope_and_ignores_temperature() {
 }
 
 #[tokio::test]
+async fn cloudflare_failure_diagnostics_do_not_echo_envelope_messages() {
+    let canary = "synthetic-cloudflare-envelope-private-canary";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/accounts/account-id/ai/run"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "result": null,
+            "success": false,
+            "errors": [{ "code": 5007, "message": canary }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = cloudflare_jev(&server.uri());
+    let (models, _) = cloudflare_models(&record, Some("account-id".into()));
+    let result = models
+        .classify(
+            record.clone(),
+            classify_context(),
+            ClassifierCall::default(),
+        )
+        .await;
+
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    assert_failure_diagnostics_private(&result, &record, canary);
+    assert!(matches!(result.error, Some(ProviderError::StreamError(_))));
+    let message = result.error_message.as_deref().unwrap();
+    assert!(message.contains("Cloudflare Workers AI request failed"));
+    assert!(message.contains("[REDACTED]"));
+}
+
+#[tokio::test]
+async fn cloudflare_failure_diagnostics_do_not_echo_run_state() {
+    let canary = "synthetic-cloudflare-state-private-canary";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/accounts/account-id/ai/run"))
+        .respond_with(run_record_response(canary, serde_json::Value::Null))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = cloudflare_jev(&server.uri());
+    let (models, _) = cloudflare_models(&record, Some("account-id".into()));
+    let result = models
+        .classify(
+            record.clone(),
+            classify_context(),
+            ClassifierCall::default(),
+        )
+        .await;
+
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    assert_failure_diagnostics_private(&result, &record, canary);
+    assert!(matches!(result.error, Some(ProviderError::StreamError(_))));
+    let message = result.error_message.as_deref().unwrap();
+    assert!(message.contains("Cloudflare Workers AI run did not complete"));
+    assert!(message.contains("[REDACTED]"));
+}
+
+#[tokio::test]
 async fn cloudflare_reports_incomplete_runs_and_envelope_errors() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -1455,12 +1605,12 @@ async fn cloudflare_reports_incomplete_runs_and_envelope_errors() {
             .error_message
             .as_deref()
             .unwrap_or_default()
-            .contains("run did not complete (state: Queued)"),
+            .contains("run did not complete"),
         "message was {:?}",
         result.error_message
     );
 
-    // success: false aggregates the envelope's error messages.
+    // success: false reports failure without exposing its envelope messages.
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/accounts/account-id/ai/run"))
@@ -1484,7 +1634,7 @@ async fn cloudflare_reports_incomplete_runs_and_envelope_errors() {
             .error_message
             .as_deref()
             .unwrap_or_default()
-            .contains("Cloudflare Workers AI error: No such model"),
+            .contains("Cloudflare Workers AI request failed"),
         "message was {:?}",
         result.error_message
     );
@@ -2607,7 +2757,7 @@ async fn llama_observers_see_only_completion_payloads_and_responses() {
 
 #[tokio::test]
 async fn llama_reports_http_errors_api_mismatch_and_images() {
-    // A server error surfaces with the status and body, no retry.
+    // A server error retains the status, redacts the body and does not retry.
     let server = MockServer::start().await;
     let mut failing = LlamaServer::new();
     failing.fail_completion = Some(400);
@@ -2629,11 +2779,11 @@ async fn llama_reports_http_errors_api_mismatch_and_images() {
     assert_eq!(result.stop_reason, ClassifierStopReason::Error);
     let message = result.error_message.as_deref().unwrap_or_default();
     assert!(
-        message.contains("llama.cpp error (400)"),
+        message.contains("llama.cpp HTTP 400: [REDACTED]"),
         "message was {message}"
     );
     assert!(
-        message.contains("context overflow"),
+        !message.contains("context overflow"),
         "message was {message}"
     );
 
@@ -3228,7 +3378,7 @@ async fn decisions_still_retries_other_server_errors_with_frozen_payload() {
 }
 
 #[tokio::test]
-async fn decisions_reports_api_error_body() {
+async fn decisions_reports_redacted_api_error_status() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/v1/decisions"))
@@ -3258,11 +3408,11 @@ async fn decisions_reports_api_error_body() {
     assert_eq!(server.received_requests().await.unwrap().len(), 1);
     let message = result.error_message.as_deref().unwrap_or_default();
     assert!(
-        message.contains("OpenAI Decisions error (400)"),
+        message.contains("OpenAI Decisions HTTP 400: [REDACTED]"),
         "message was {message:?}"
     );
     assert!(
-        message.contains("Decision input exceeds the token limit."),
+        !message.contains("Decision input exceeds the token limit."),
         "message was {message:?}"
     );
 }

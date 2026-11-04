@@ -508,6 +508,76 @@ fn raw_input_is_never_mutated() {
 }
 
 #[test]
+fn null_coercion_preserves_existing_controls_and_rejects_literal_strings() {
+    let compiled = compile(serde_json::json!({"type": "null"})).unwrap();
+    for input in ["0", "false", "\"\"", "null"] {
+        let raw: Value = serde_json::from_str(input).unwrap();
+        let before = serde_json::to_vec(&raw).unwrap();
+        assert_eq!(
+            validate_tool_arguments(&compiled, &raw, None).unwrap(),
+            ToolArgumentOutcome::Valid {
+                normalized: Value::Null
+            },
+            "input {input}"
+        );
+        assert_eq!(serde_json::to_vec(&raw).unwrap(), before);
+    }
+    for input in [
+        "1",
+        "-1",
+        "0.5",
+        "-0.5",
+        "true",
+        "\"0\"",
+        "\"0.0\"",
+        "\"null\"",
+        "\"false\"",
+        "\" \"",
+        "[]",
+        "{}",
+    ] {
+        let raw: Value = serde_json::from_str(input).unwrap();
+        let before = serde_json::to_vec(&raw).unwrap();
+        assert!(
+            matches!(
+                validate_tool_arguments(&compiled, &raw, None).unwrap(),
+                ToolArgumentOutcome::Invalid { .. }
+            ),
+            "input {input}"
+        );
+        assert_eq!(serde_json::to_vec(&raw).unwrap(), before);
+    }
+    let contradictory = compile(serde_json::json!({
+        "type": "null", "not": {"type": "null"}
+    }))
+    .unwrap();
+    assert!(!contradictory.check(&Value::Null).unwrap());
+    assert!(matches!(
+        validate_tool_arguments(&contradictory, &serde_json::json!(0), None).unwrap(),
+        ToolArgumentOutcome::Invalid { .. }
+    ));
+}
+
+#[test]
+fn null_coercion_accepts_float_and_signed_zero_without_mutating_raw() {
+    let compiled = compile(serde_json::json!({"type": "null"})).unwrap();
+    for input in ["-0", "0.0", "-0.0"] {
+        let raw: Value = serde_json::from_str(input).unwrap();
+        let before = serde_json::to_vec(&raw).unwrap();
+        let outcome = validate_tool_arguments(&compiled, &raw, None).unwrap();
+        assert_eq!(
+            outcome,
+            ToolArgumentOutcome::Valid {
+                normalized: Value::Null
+            },
+            "input {input}"
+        );
+        assert!(compiled.check(&Value::Null).unwrap());
+        assert_eq!(serde_json::to_vec(&raw).unwrap(), before);
+    }
+}
+
+#[test]
 fn optional_null_deletion_and_required_null_coercion() {
     // Optional null whose sub-schema rejects null is deleted.
     let compiled = compile(serde_json::json!({

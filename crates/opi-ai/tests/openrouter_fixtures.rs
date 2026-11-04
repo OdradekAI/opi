@@ -427,26 +427,31 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 
 #[test]
 fn openrouter_profile_inherits_shared_compat_flags() {
-    // OpenRouter is a config-driven OpenAI-compatible profile. Constructed with
-    // the shared OpenAI Chat adapter under the "openrouter" identity + its
-    // identification headers + a developer-role/strict-tools compat, its request
-    // body reflects all compat flags. This proves the family inherits the shared
-    // profile path (DoD) rather than carrying a parallel serializer.
-    let provider = OpenAiChatProvider::new_for_profile(
-        "https://openrouter.example.com".into(),
-        "openrouter".into(),
-        CompatConfig {
-            instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
-            strict_tool_schema: true,
-            ..Default::default()
-        },
-        vec![
-            ("HTTP-Referer".into(), "https://myapp.example.com".into()),
-            ("X-Title".into(), "my-app".into()),
-        ],
-        vec![],
-    );
-    let request = Request {
+    use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+
+    // The profile's strict capability enables explicit per-tool intent;
+    // unconstrained tools retain the shared Chat default.
+    let input_schema = serde_json::json!({
+        "type": "object",
+        "properties": {"path": {"type": "string"}}
+    });
+    let build_provider = |strict_tool_schema| {
+        OpenAiChatProvider::new_for_profile(
+            "https://openrouter.example.com".into(),
+            "openrouter".into(),
+            CompatConfig {
+                instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
+                strict_tool_schema,
+                ..Default::default()
+            },
+            vec![
+                ("HTTP-Referer".into(), "https://myapp.example.com".into()),
+                ("X-Title".into(), "my-app".into()),
+            ],
+            vec![],
+        )
+    };
+    let build_request = |preference: Option<StrictPreference>| Request {
         projection: Default::default(),
         transport: Default::default(),
         model: "openrouter:openai/gpt-4o".into(),
@@ -461,8 +466,9 @@ fn openrouter_profile_inherits_shared_compat_flags() {
             tools: vec![ToolDef {
                 name: "list_dir".into(),
                 description: "list a directory".into(),
-                input_schema: serde_json::json!({"type":"object","properties":{}}),
-                constrained_sampling: None,
+                input_schema: input_schema.clone(),
+                constrained_sampling: preference
+                    .map(|strict| ConstrainedSampling::JsonSchema { strict }),
             }],
         })
         .expect("valid context declarations"),
@@ -480,17 +486,44 @@ fn openrouter_profile_inherits_shared_compat_flags() {
         telemetry_context: None,
         callbacks: Default::default(),
     };
-    let body = provider.build_request_body(&request).unwrap();
-    let messages = body["messages"].as_array().unwrap();
-    assert_eq!(
-        messages[0]["role"], "developer",
-        "OpenRouter inherits developer-role override from the shared compat path"
-    );
-    let tools = body["tools"].as_array().expect("tools present");
-    assert!(
-        tools[0]["function"]["strict"] == true,
-        "OpenRouter inherits strict-tool-schema from the shared compat path"
-    );
+    for strict_tool_schema in [false, true] {
+        for preference in [
+            None,
+            Some(StrictPreference::Prefer),
+            Some(StrictPreference::Require),
+        ] {
+            let provider = build_provider(strict_tool_schema);
+            let request = build_request(preference);
+            let original_context = request.context.clone();
+            let body = provider.build_request_body(&request);
+            assert_eq!(request.context, original_context);
+            if !strict_tool_schema && preference == Some(StrictPreference::Require) {
+                assert!(matches!(body, Err(ProviderError::Config(_))));
+                continue;
+            }
+            let body = body.unwrap();
+            let messages = body["messages"].as_array().unwrap();
+            assert_eq!(
+                messages[0]["role"], "developer",
+                "OpenRouter inherits developer-role override from the shared compat path"
+            );
+            let function = &body["tools"][0]["function"];
+            let expected_strict =
+                strict_tool_schema.then(|| serde_json::json!(preference.is_some()));
+            assert_eq!(function.get("strict"), expected_strict.as_ref());
+            if strict_tool_schema && preference.is_some() {
+                let parameters = &function["parameters"];
+                assert_eq!(parameters["additionalProperties"], false);
+                assert_eq!(parameters["required"], serde_json::json!(["path"]));
+                assert_eq!(
+                    parameters["properties"]["path"]["anyOf"],
+                    serde_json::json!([{"type": "string"}, {"type": "null"}])
+                );
+            } else {
+                assert_eq!(function["parameters"], input_schema);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -762,6 +795,76 @@ async fn images_first_choice_orders_text_then_data_url_images() {
 }
 
 #[tokio::test]
+async fn images_modalities_empty_metadata_still_requests_image() {
+    assert_images_modalities(vec![], &["image"]).await;
+}
+
+#[tokio::test]
+async fn images_modalities_text_only_metadata_requests_image_then_text() {
+    assert_images_modalities(vec![ImageOutputModality::Text], &["image", "text"]).await;
+}
+
+#[tokio::test]
+async fn images_modalities_image_only_metadata_requests_image() {
+    assert_images_modalities(vec![ImageOutputModality::Image], &["image"]).await;
+}
+
+#[tokio::test]
+async fn images_modalities_reorder_text_before_image_metadata() {
+    assert_images_modalities(
+        vec![ImageOutputModality::Text, ImageOutputModality::Image],
+        &["image", "text"],
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn images_modalities_deduplicate_output_metadata() {
+    assert_images_modalities(
+        vec![
+            ImageOutputModality::Image,
+            ImageOutputModality::Text,
+            ImageOutputModality::Image,
+            ImageOutputModality::Text,
+        ],
+        &["image", "text"],
+    )
+    .await;
+}
+
+async fn assert_images_modalities(output: Vec<ImageOutputModality>, expected: &[&str]) {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+            "id": "gen-modalities",
+            "choices": [{ "message": { "content": "text only", "images": [] } }]
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), output);
+    let models = image_models(&record);
+    let result = models
+        .generate_images(record, ImagesContext::default(), images_call())
+        .await;
+
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(result.stop_reason, ImagesStopReason::Stop);
+    assert_eq!(result.response_id.as_deref(), Some("gen-modalities"));
+    assert_eq!(
+        result.output,
+        vec![ImagesOutput::Text {
+            text: "text only".into()
+        }]
+    );
+    assert!(result.error.is_none());
+    let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+    assert_eq!(body["modalities"], serde_json::json!(expected));
+}
+
+#[tokio::test]
 async fn images_text_only_and_empty_results_stay_success() {
     let text_server = wiremock::MockServer::start().await;
     wiremock::Mock::given(method("POST"))
@@ -909,6 +1012,55 @@ async fn images_usage_splits_cache_buckets_and_costs_use_base_rates() {
 }
 
 #[tokio::test]
+async fn images_http_failure_diagnostics_do_not_echo_provider_body() {
+    let canary = "synthetic-image-private-canary";
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/chat/completions"))
+        .respond_with(ResponseTemplate::new(400).set_body_json(serde_json::json!({
+            "error": { "message": canary }
+        })))
+        .expect(1)
+        .mount(&server)
+        .await;
+    let record = image_record(server.uri(), vec![ImageOutputModality::Image]);
+    let models = image_models(&record);
+    let result = models
+        .generate_images(
+            record.clone(),
+            ImagesContext {
+                input: vec![ImagesInput::Text { text: "hi".into() }],
+            },
+            images_call(),
+        )
+        .await;
+
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    assert_eq!(result.stop_reason, ImagesStopReason::Error);
+    assert_eq!(result.api, record.api.as_str());
+    assert_eq!(result.provider, record.provider_id);
+    assert_eq!(result.model, record.id);
+    assert!(matches!(
+        result.error,
+        Some(ProviderError::ServiceFault { status: 400, .. })
+    ));
+    let error = result.error.as_ref().expect("typed HTTP failure");
+    for diagnostic in [
+        format!("{result:?}"),
+        result.error_message.clone().expect("display diagnostic"),
+        error.to_string(),
+        format!("{error:?}"),
+    ] {
+        assert!(!diagnostic.contains(canary), "diagnostic: {diagnostic}");
+    }
+    assert_eq!(
+        result.error_message.as_deref(),
+        Some("HTTP 400: [REDACTED]")
+    );
+    assert!(result.usage.is_none());
+}
+
+#[tokio::test]
 async fn images_default_zero_extra_retries_fails_immediately() {
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(method("POST"))
@@ -935,7 +1087,7 @@ async fn images_default_zero_extra_retries_fails_immediately() {
     assert_eq!(result.stop_reason, ImagesStopReason::Error);
     let message = result.error_message.expect("error message");
     assert!(message.contains("429"), "message: {message}");
-    assert!(message.contains("Rate limited"), "message: {message}");
+    assert_eq!(message, "HTTP 429: [REDACTED]");
     assert!(matches!(
         result.error.as_ref().expect("typed error"),
         ProviderError::RateLimited { .. }
@@ -1715,6 +1867,275 @@ async fn images_reused_callbacks_keep_each_calls_payload() {
         ]
     );
     assert_eq!(observed.load(AtomicOrdering::SeqCst), 2);
+}
+
+mod image_response_observer_facts {
+    use super::*;
+    use std::sync::{Arc, atomic::AtomicUsize};
+
+    use opi_ai::callbacks::{CallbackError, RequestCallbacks};
+    use opi_ai::images::ImagesResult;
+
+    fn received_body(with_usage: bool) -> serde_json::Value {
+        let mut body = serde_json::json!({
+            "id": "gen-received",
+            "choices": [{ "message": {
+                "content": "received text",
+                "images": [{ "image_url": "data:image/png;base64,QUJD" }]
+            } }]
+        });
+        if with_usage {
+            body["usage"] = serde_json::json!({
+                "prompt_tokens": 100,
+                "completion_tokens": 40,
+                "prompt_tokens_details": {"cached_tokens": 30, "cache_write_tokens": 10}
+            });
+        }
+        body
+    }
+
+    fn rejected_response(counter: Arc<AtomicUsize>) -> RequestCallbacks {
+        RequestCallbacks::new().with_on_response(Arc::new(move |status, _| {
+            assert_eq!(status, 200);
+            counter.fetch_add(1, AtomicOrdering::SeqCst);
+            Err(CallbackError::new("synthetic observer failure"))
+        }))
+    }
+
+    async fn observed_images(
+        response: ResponseTemplate,
+        known_prices: bool,
+        callbacks: RequestCallbacks,
+        cancel: CancellationToken,
+    ) -> (ImagesResult, MockServer) {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/chat/completions"))
+            .respond_with(response)
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut record = image_record(
+            server.uri(),
+            vec![ImageOutputModality::Image, ImageOutputModality::Text],
+        );
+        if !known_prices {
+            record.cost = None;
+        }
+        let mut models = Models::new();
+        let handle = models
+            .register_image_api(
+                Arc::new(OpenRouterImagesApi::new(HttpClient::new(), record.clone())),
+                Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    AuthScheme::Bearer,
+                    secrecy::SecretString::from("synthetic-observer-key"),
+                )),
+                AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let result = models
+            .generate_images_native(
+                record,
+                ImagesContext::default(),
+                ImagesCall {
+                    callbacks,
+                    cancel,
+                    ..images_call()
+                },
+                handle.options(OpenRouterImagesOptions {
+                    max_retries: 2,
+                    max_retry_delay_ms: None,
+                }),
+            )
+            .await;
+        (result, server)
+    }
+
+    async fn assert_observer_failure(
+        result: &ImagesResult,
+        server: &MockServer,
+        counter: &AtomicUsize,
+        cancelled: bool,
+    ) {
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert_eq!(counter.load(AtomicOrdering::SeqCst), 1);
+        if cancelled {
+            assert_eq!(result.stop_reason, ImagesStopReason::Aborted);
+            assert!(matches!(result.error, Some(ProviderError::Cancelled)));
+        } else {
+            assert_eq!(result.stop_reason, ImagesStopReason::Error);
+            assert!(matches!(
+                result.error,
+                Some(ProviderError::CallbackPhase(_))
+            ));
+        }
+        assert!(result.error_message.is_some());
+    }
+
+    fn assert_received_output(result: &ImagesResult) {
+        assert_eq!(result.api, "openrouter-images");
+        assert_eq!(result.provider, "openrouter");
+        assert_eq!(result.model, "google/gemini-2.5-flash-image");
+        assert_eq!(result.response_id.as_deref(), Some("gen-received"));
+        assert_eq!(
+            result.output,
+            vec![
+                ImagesOutput::Text {
+                    text: "received text".into()
+                },
+                ImagesOutput::Image {
+                    mime_type: "image/png".into(),
+                    data: "QUJD".into()
+                },
+            ]
+        );
+    }
+
+    fn assert_received_usage(result: &ImagesResult) {
+        let usage = result.usage.as_ref().expect("received usage retained");
+        assert!(usage.reported);
+        assert_eq!(usage.input_tokens, 70);
+        assert_eq!(usage.output_tokens, 40);
+        assert_eq!(usage.cache_read_tokens, 20);
+        assert_eq!(usage.cache_write_tokens, 10);
+        assert_eq!(usage.total_tokens, Some(140));
+    }
+
+    fn assert_received_known_facts(result: &ImagesResult) {
+        assert_received_output(result);
+        assert_received_usage(result);
+        let cost = result.cost.as_ref().expect("received cost retained");
+        for (actual, expected) in [
+            (cost.input, 0.000_21),
+            (cost.output, 0.000_6),
+            (cost.cache_read, 0.000_006),
+            (cost.cache_write, 0.000_037_5),
+            (cost.total, 0.000_853_5),
+        ] {
+            assert!((actual - expected).abs() < 1e-12);
+        }
+    }
+
+    #[tokio::test]
+    async fn failure_retains_received_result() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let (result, server) = observed_images(
+            ResponseTemplate::new(200).set_body_json(received_body(true)),
+            true,
+            rejected_response(counter.clone()),
+            CancellationToken::new(),
+        )
+        .await;
+        assert_observer_failure(&result, &server, &counter, false).await;
+        assert_received_known_facts(&result);
+    }
+
+    #[tokio::test]
+    async fn async_cancellation_retains_received_result() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let cancel = CancellationToken::new();
+        let callback_counter = counter.clone();
+        let callback_cancel = cancel.clone();
+        let callbacks = RequestCallbacks::new().with_async_on_response(move |status, _| {
+            let counter = callback_counter.clone();
+            let cancel = callback_cancel.clone();
+            async move {
+                assert_eq!(status, 200);
+                counter.fetch_add(1, AtomicOrdering::SeqCst);
+                cancel.cancel();
+                std::future::pending::<Result<(), CallbackError>>().await
+            }
+        });
+        let (result, server) = observed_images(
+            ResponseTemplate::new(200).set_body_json(received_body(true)),
+            true,
+            callbacks,
+            cancel,
+        )
+        .await;
+        assert_observer_failure(&result, &server, &counter, true).await;
+        assert_received_known_facts(&result);
+    }
+
+    #[tokio::test]
+    async fn synchronous_cancellation_retains_received_result() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let cancel = CancellationToken::new();
+        let callback_counter = counter.clone();
+        let callback_cancel = cancel.clone();
+        let callbacks = RequestCallbacks::new().with_on_response(Arc::new(move |status, _| {
+            assert_eq!(status, 200);
+            callback_counter.fetch_add(1, AtomicOrdering::SeqCst);
+            callback_cancel.cancel();
+            Ok(())
+        }));
+        let (result, server) = observed_images(
+            ResponseTemplate::new(200).set_body_json(received_body(true)),
+            true,
+            callbacks,
+            cancel,
+        )
+        .await;
+        assert_observer_failure(&result, &server, &counter, true).await;
+        assert_received_known_facts(&result);
+    }
+
+    #[tokio::test]
+    async fn unknown_usage_stays_unknown_after_failure() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let (result, server) = observed_images(
+            ResponseTemplate::new(200).set_body_json(received_body(false)),
+            true,
+            rejected_response(counter.clone()),
+            CancellationToken::new(),
+        )
+        .await;
+        assert_observer_failure(&result, &server, &counter, false).await;
+        assert_received_output(&result);
+        assert!(result.usage.is_none());
+        assert!(result.cost.is_none());
+    }
+
+    #[tokio::test]
+    async fn unknown_prices_stay_unknown_after_failure() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let (result, server) = observed_images(
+            ResponseTemplate::new(200).set_body_json(received_body(true)),
+            false,
+            rejected_response(counter.clone()),
+            CancellationToken::new(),
+        )
+        .await;
+        assert_observer_failure(&result, &server, &counter, false).await;
+        assert_received_output(&result);
+        assert_received_usage(&result);
+        assert!(result.cost.is_none());
+    }
+
+    #[tokio::test]
+    async fn invalid_json_does_not_notify_or_retry() {
+        let counter = Arc::new(AtomicUsize::new(0));
+        let callback_counter = counter.clone();
+        let callbacks = RequestCallbacks::new().with_on_response(Arc::new(move |_, _| {
+            callback_counter.fetch_add(1, AtomicOrdering::SeqCst);
+            Ok(())
+        }));
+        let (result, server) = observed_images(
+            ResponseTemplate::new(200).set_body_string("{incomplete"),
+            true,
+            callbacks,
+            CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        assert_eq!(counter.load(AtomicOrdering::SeqCst), 0);
+        assert_eq!(result.stop_reason, ImagesStopReason::Error);
+        assert!(matches!(result.error, Some(ProviderError::StreamError(_))));
+        assert!(result.output.is_empty());
+        assert!(result.response_id.is_none());
+        assert!(result.usage.is_none());
+        assert!(result.cost.is_none());
+    }
 }
 
 #[tokio::test]

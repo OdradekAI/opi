@@ -12,7 +12,7 @@
 //! `{success, result: {state, result: {answers, usage}}}` with `state`
 //! required to be `Completed`, while Cloudflare-hosted models return
 //! `{success, result: {answers, usage}}` directly; `success: false`
-//! aggregates the envelope's error messages. Everything else — Bearer auth,
+//! produces a closed redacted diagnostic. Everything else — Bearer auth,
 //! guards, the retry policy (two extra retries by default), per-attempt
 //! body-inclusive timeouts, billed-usage retention and tiered catalog
 //! pricing — is the shared System One core from
@@ -25,7 +25,7 @@ use crate::auth::ResolvedAuth;
 use crate::classifier::{ClassifierCall, ClassifierContext, ClassifierModelRecord};
 use crate::http::HttpClient;
 use crate::models::ApiId;
-use crate::provider::ProviderError;
+use crate::provider::{ProviderError, ProviderErrorSummary};
 
 /// The exact pi classifier API identity this adapter serves.
 pub const CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API_ID: &str = "cloudflare-workers-ai-system-one";
@@ -167,7 +167,7 @@ fn cloudflare_payload(body: serde_json::Value) -> serde_json::Value {
 }
 
 /// Unwrap Cloudflare's response envelope into the System One output record
-/// (`{answers, usage}`), preserving the source messages.
+/// (`{answers, usage}`), redacting upstream failure details.
 fn cloudflare_output(body: &serde_json::Value, label: &str) -> Result<serde_json::Value, String> {
     let unexpected = || format!("{label} returned an unexpected response");
     let record = || -> Option<&serde_json::Value> { body.is_object().then_some(body) };
@@ -186,12 +186,10 @@ fn cloudflare_output(body: &serde_json::Value, label: &str) -> Result<serde_json
     }
     // Third-party models add a run record gated on `state: "Completed"`.
     if result.get("state").and_then(serde_json::Value::as_str) != Some("Completed") {
-        let state = match result.get("state") {
-            Some(serde_json::Value::String(state)) => state.clone(),
-            Some(other) => other.to_string(),
-            None => "undefined".to_owned(),
-        };
-        return Err(format!("{label} run did not complete (state: {state})"));
+        return Err(format!(
+            "{label} run did not complete (state: {})",
+            ProviderErrorSummary::redacted()
+        ));
     }
     let inner = result
         .get("result")
@@ -200,17 +198,21 @@ fn cloudflare_output(body: &serde_json::Value, label: &str) -> Result<serde_json
     Ok(inner.clone())
 }
 
-/// pi `cloudflareErrorMessage`: joined envelope error messages, or the
-/// source's generic fallback when none are usable strings.
+/// Keep upstream envelope messages behind the closed diagnostic boundary.
 fn cloudflare_error_message(body: &serde_json::Value, label: &str) -> String {
-    if let Some(errors) = body.get("errors").and_then(serde_json::Value::as_array) {
-        let messages: Vec<&str> = errors
-            .iter()
-            .filter_map(|error| error.get("message").and_then(serde_json::Value::as_str))
-            .collect();
-        if !messages.is_empty() {
-            return format!("{label} error: {}", messages.join("; "));
-        }
+    if let Some(message) = body
+        .get("errors")
+        .and_then(serde_json::Value::as_array)
+        .and_then(|errors| {
+            errors
+                .iter()
+                .find_map(|error| error.get("message").and_then(serde_json::Value::as_str))
+        })
+    {
+        return format!(
+            "{label} request failed: {}",
+            ProviderErrorSummary::from_untrusted(message)
+        );
     }
     format!("{label} request failed")
 }

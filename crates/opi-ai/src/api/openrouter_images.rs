@@ -171,14 +171,11 @@ fn build_request_body(record: &ImageModelRecord, context: &ImagesContext) -> ser
             }),
         })
         .collect();
-    let modalities: Vec<&str> = record
-        .output
-        .iter()
-        .map(|modality| match modality {
-            ImageOutputModality::Text => "text",
-            ImageOutputModality::Image => "image",
-        })
-        .collect();
+    let modalities = if record.output.contains(&ImageOutputModality::Text) {
+        vec!["image", "text"]
+    } else {
+        vec!["image"]
+    };
     serde_json::json!({
         "model": record.id,
         "messages": [ { "role": "user", "content": content } ],
@@ -219,7 +216,10 @@ impl AttemptFailure {
             return should_retry;
         }
         match self.status {
-            None => true,
+            None => matches!(
+                self.error,
+                ProviderError::Network(_) | ProviderError::Timeout
+            ),
             Some(status) => status == 408 || status == 409 || status == 429 || status >= 500,
         }
     }
@@ -324,20 +324,13 @@ async fn generate_openrouter_images(
                         _ => None,
                     });
                 if !status.is_success() {
-                    let body_bytes =
-                        crate::http::read_bounded_error_body(response, &call.cancel, Some(timeout))
-                            .await
-                            .unwrap_or_default();
-                    let body_text = body_bytes
-                        .as_deref()
-                        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-                        .unwrap_or_default();
-                    let message = format_http_error(status, &body_text);
+                    let summary = ProviderErrorSummary::from_http_response(status.as_u16());
+                    let message = summary.to_string();
                     return Err(AttemptFailure {
                         status: Some(status.as_u16()),
                         x_should_retry,
                         server_retry_delay_ms: server_retry_delay_ms(&headers),
-                        error: map_status_error(status, &headers, &body_text),
+                        error: map_status_error(status, &headers, summary),
                         message,
                     });
                 }
@@ -390,15 +383,32 @@ async fn generate_openrouter_images(
                 Ok(Ok((parsed, status, headers))) => {
                     // JSON acquisition has handed off successfully. Callback
                     // time and failures cannot restart a generation attempt.
+                    let mut result = parse_openrouter_images_response(&record, &parsed);
                     let observed = tokio::select! {
                         biased;
                         _ = call.cancel.cancelled() => Err(ProviderError::Cancelled),
                         result = call.callbacks.notify_response_async(status, &headers) => result,
                     };
-                    if let Err(error) = observed {
-                        return failure_from_error(&record, &call, error);
+                    let failure = if call.cancel.is_cancelled() {
+                        Some(ProviderError::Cancelled)
+                    } else {
+                        observed.err()
+                    };
+                    if let Some(error) = failure {
+                        let aborted = matches!(error, ProviderError::Cancelled);
+                        result.stop_reason = if aborted {
+                            ImagesStopReason::Aborted
+                        } else {
+                            ImagesStopReason::Error
+                        };
+                        result.error_message = Some(if aborted {
+                            "Request aborted".to_owned()
+                        } else {
+                            error.to_string()
+                        });
+                        result.error = Some(error);
                     }
-                    return parse_openrouter_images_response(&record, &parsed);
+                    return result;
                 }
                 Ok(Err(failure)) => {
                     if retries_remaining == 0 || !failure.is_retryable() {
@@ -504,29 +514,12 @@ fn failure_from_error(
     ImagesResult::failure(record, ImagesStopReason::Error, error, message)
 }
 
-/// pi `formatProviderError` without prefix for the OpenAI SDK shape: the JSON
-/// `error.message` when present, else the bounded raw body.
-fn format_http_error(status: reqwest::StatusCode, body: &str) -> String {
-    let suffix = serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|parsed| {
-            parsed
-                .get("error")
-                .and_then(|error| error.get("message"))
-                .and_then(|message| message.as_str())
-                .map(str::to_owned)
-        })
-        .unwrap_or_else(|| crate::http::safe_excerpt(body));
-    format!("{}: {suffix}", status.as_u16())
-}
-
 fn map_status_error(
     status: reqwest::StatusCode,
     headers: &reqwest::header::HeaderMap,
-    body: &str,
+    summary: ProviderErrorSummary,
 ) -> ProviderError {
     let code = status.as_u16();
-    let summary = ProviderErrorSummary::sanitized(format_http_error(status, body));
     match code {
         429 => ProviderError::RateLimited {
             retry_after_ms: crate::retry::parse_retry_after(headers),

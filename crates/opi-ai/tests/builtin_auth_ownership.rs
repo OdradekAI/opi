@@ -85,11 +85,63 @@ impl LoginPresenter for NoLoginInteraction {
     }
 }
 
+struct CancelledFlow {
+    id: &'static str,
+    calls: Arc<AtomicUsize>,
+}
+
+impl OAuthProvider for CancelledFlow {
+    fn id(&self) -> &str {
+        self.id
+    }
+
+    fn to_auth(&self, _: &OAuthCredential) -> ResolvedAuth {
+        panic!("cancelled login has no credential")
+    }
+
+    fn login<'a>(
+        &'a self,
+        _: &'a dyn LoginPresenter,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        Box::pin(async move {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(ProviderError::LoginCancelled {
+                provider_id: self.id.into(),
+            })
+        })
+    }
+
+    fn refresh<'a>(
+        &'a self,
+        _: &'a OAuthCredential,
+    ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+        panic!("cancelled login must not refresh")
+    }
+}
+
 #[tokio::test]
 async fn remove_and_clear_keep_auth_only_flows_and_remove_model_owned_flows() {
+    fn assert_cancelled(result: Result<OAuthCredential, opi_ai::ModelsError>, id: &str) {
+        assert!(matches!(
+            result,
+            Err(opi_ai::ModelsError::AuthResolution { provider, error })
+                if provider == id && matches!(
+                    error.as_ref(),
+                    ProviderError::LoginCancelled { provider_id } if provider_id == id
+                )
+        ));
+    }
+
+    let calls = Arc::new(AtomicUsize::new(0));
+    let flow = |id| {
+        Arc::new(CancelledFlow {
+            id,
+            calls: calls.clone(),
+        })
+    };
     let mut models = Models::new();
     models.set_auth_context(Arc::new(NoAmbient));
-    models.register_oauth_flow("auth-only", Arc::new(UnusedFlow("auth-only")));
+    models.register_oauth_flow("auth-only", flow("auth-only"));
     for id in ["remove-me", "clear-me"] {
         models
             .register(
@@ -104,32 +156,34 @@ async fn remove_and_clear_keep_auth_only_flows_and_remove_model_owned_flows() {
                 Default::default(),
             )
             .unwrap();
-        models.register_oauth_flow(id, Arc::new(UnusedFlow(id)));
-        assert!(matches!(
-            models.login(id, &NoLoginInteraction).await,
-            Err(opi_ai::ModelsError::CredentialStore(_))
-        ));
+        models.register_oauth_flow(id, flow(id));
+        assert_cancelled(models.login(id, &NoLoginInteraction).await, id);
     }
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert!(!models.delete_provider("auth-only"));
     assert!(models.delete_provider("remove-me"));
     assert!(matches!(
         models.login("remove-me", &NoLoginInteraction).await,
         Err(opi_ai::ModelsError::UnknownOAuthFlow { .. })
     ));
-    assert!(matches!(
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    assert_cancelled(
         models.login("clear-me", &NoLoginInteraction).await,
-        Err(opi_ai::ModelsError::CredentialStore(_))
-    ));
+        "clear-me",
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
     models.clear_providers();
     assert!(models.provider_ids().is_empty());
     assert!(matches!(
         models.login("clear-me", &NoLoginInteraction).await,
         Err(opi_ai::ModelsError::UnknownOAuthFlow { .. })
     ));
-    assert!(matches!(
+    assert_eq!(calls.load(Ordering::SeqCst), 3);
+    assert_cancelled(
         models.login("auth-only", &NoLoginInteraction).await,
-        Err(opi_ai::ModelsError::CredentialStore(_))
-    ));
+        "auth-only",
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 4);
 }
 
 #[tokio::test]

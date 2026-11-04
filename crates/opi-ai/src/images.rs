@@ -133,7 +133,9 @@ pub struct ImageModelRecord {
     pub headers: Vec<(String, Option<String>)>,
     /// Source input-limit metadata; it does not impose SDK resize policy.
     pub input_limits: Option<serde_json::Value>,
-    /// Output modalities. Order is preserved on the wire.
+    /// Supported output modalities, retained as metadata. OpenRouter requests
+    /// image then text when text is present, otherwise image only, regardless
+    /// of metadata order or duplicates.
     pub output: Vec<ImageOutputModality>,
     /// Base per-million pricing rates, or `None` when catalog pricing is unknown.
     pub cost: Option<ImageCostRates>,
@@ -188,8 +190,11 @@ pub(crate) fn validate_image_request(
 /// The image-generation result: pi `AssistantImages` semantics.
 ///
 /// Provider failures never surface as `Err`: they keep the record identity,
-/// an empty output, `stop_reason = Error`/`Aborted`, a sanitized display
-/// message and the typed [`ProviderError`] cause.
+/// `stop_reason = Error`/`Aborted`, a sanitized display message and the typed
+/// [`ProviderError`] cause. Failures before successful JSON acquisition have
+/// empty output. A response-observer failure or cancellation after acquisition
+/// retains received output, response id and known usage/cost; unknown facts
+/// remain unknown.
 #[derive(Debug, Clone)]
 pub struct ImagesResult {
     /// Image API identity the record named.

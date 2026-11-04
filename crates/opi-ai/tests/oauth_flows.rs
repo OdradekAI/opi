@@ -957,6 +957,187 @@ async fn near_expiry_needs_refresh_uses_single_five_minute_window() {
 // Models::login — acknowledged store, shared transactions
 // ---------------------------------------------------------------------------
 
+mod default_memory_store {
+    use super::{
+        BoxAuthFuture, Credential, CredentialSource, LoginPresenter, Models, OAuthCredential,
+        OAuthProvider, ProviderError, ScriptedPresenter,
+    };
+    use secrecy::{ExposeSecret, SecretString};
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    const PROVIDER: &str = "local-memory";
+    const ACCESS: &str = "synthetic-default-memory-access";
+
+    #[derive(Default)]
+    struct Flow {
+        logins: AtomicUsize,
+    }
+
+    impl OAuthProvider for Flow {
+        fn id(&self) -> &str {
+            PROVIDER
+        }
+
+        fn login<'a>(
+            &'a self,
+            _: &'a dyn LoginPresenter,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            Box::pin(async move {
+                self.logins.fetch_add(1, Ordering::SeqCst);
+                Ok(OAuthCredential {
+                    access: SecretString::from(ACCESS),
+                    refresh: SecretString::from("synthetic-default-memory-refresh"),
+                    expires_at: None,
+                    base_url: None,
+                    account_id: None,
+                    client_id: None,
+                    enterprise_domain: None,
+                    available_model_ids: None,
+                    scopes: None,
+                })
+            })
+        }
+
+        fn refresh<'a>(
+            &'a self,
+            _: &'a OAuthCredential,
+        ) -> BoxAuthFuture<'a, Result<OAuthCredential, ProviderError>> {
+            panic!("configuration and stored-auth reads must not refresh")
+        }
+    }
+
+    fn construct(from_registry: bool, flow: Arc<Flow>) -> Models {
+        let mut models = if from_registry {
+            Models::from_registry(opi_ai::ProviderRegistry::new())
+        } else {
+            Models::new()
+        };
+        models
+            .register(
+                Box::new(opi_ai::test_support::MockProvider::new(PROVIDER, vec![])),
+                opi_ai::AuthDescriptor::StoreCredential {
+                    key: PROVIDER.into(),
+                    display_source: "local memory fixture".into(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+        models.register_oauth_flow(PROVIDER, flow);
+        models
+    }
+
+    #[tokio::test]
+    async fn constructors_login_to_independent_default_memory_and_ack() {
+        for from_registry in [false, true] {
+            let flow = Arc::new(Flow::default());
+            let mut left = construct(from_registry, flow.clone());
+            let right = construct(from_registry, flow.clone());
+            let presenter = ScriptedPresenter::default();
+            assert_eq!(flow.logins.load(Ordering::SeqCst), 0);
+            assert!(left.check_auth(PROVIDER).await.unwrap().is_none());
+            let credential = left.login(PROVIDER, &presenter).await.unwrap();
+            assert_eq!(credential.access.expose_secret(), ACCESS);
+            assert_eq!(flow.logins.load(Ordering::SeqCst), 1);
+            let barrier = left.mutation_barrier().expect("constructor owns a store");
+            let report = barrier.report();
+            assert!(report.is_complete());
+            assert_eq!(report.captured.len(), 1);
+            assert!(matches!(
+                &report.captured[0],
+                opi_ai::mutation::BarrierEntry::Settled(receipt)
+                    if receipt.provider_id == PROVIDER
+                    && matches!(receipt.outcome, opi_ai::mutation::MutationOutcome::Written { .. })
+            ));
+            assert!(presenter.success_at.lock().unwrap().is_some());
+            assert!(presenter.authorize_urls.lock().unwrap().is_empty());
+            assert!(presenter.device_codes.lock().unwrap().is_empty());
+            assert!(presenter.selected_provider_ids.lock().unwrap().is_empty());
+            assert!(presenter.failures.lock().unwrap().is_empty());
+
+            for probe in [
+                CredentialSource::Absent,
+                CredentialSource::Present {
+                    label: "stale keychain label".into(),
+                },
+                CredentialSource::BackendUnavailable {
+                    reason: "external backend is unavailable".into(),
+                },
+            ] {
+                left.set_probe(PROVIDER, probe);
+                let check = left.check_auth(PROVIDER).await.unwrap().unwrap();
+                assert_eq!(check.kind, opi_ai::AuthCheckKind::OAuth);
+                assert_eq!(check.source.as_deref(), Some("OAuth"));
+                let auth = left
+                    .get_auth(PROVIDER, Default::default())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(auth.secret.expose_secret(), ACCESS);
+            }
+            assert!(right.check_auth(PROVIDER).await.unwrap().is_none());
+            assert!(
+                right
+                    .get_auth(PROVIDER, Default::default())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                right
+                    .mutation_barrier()
+                    .expect("the other constructor owns a separate store")
+                    .report()
+                    .captured
+                    .is_empty()
+            );
+            assert_eq!(flow.logins.load(Ordering::SeqCst), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_store_replaces_default_memory_without_copy_or_probe_fallback() {
+        use opi_ai::CredentialStore;
+
+        for from_registry in [false, true] {
+            let flow = Arc::new(Flow::default());
+            let mut models = construct(from_registry, flow.clone());
+            let presenter = ScriptedPresenter::default();
+            models.login(PROVIDER, &presenter).await.unwrap();
+            let store = Arc::new(opi_ai::mutation::InMemoryCredentialStore::new());
+            models.set_credential_store(store.clone());
+            models.set_probe(
+                PROVIDER,
+                CredentialSource::Present {
+                    label: "stale presence must not override an explicit empty store".into(),
+                },
+            );
+            assert!(models.check_auth(PROVIDER).await.unwrap().is_none());
+            assert!(
+                models
+                    .get_auth(PROVIDER, Default::default())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(store.read(PROVIDER).await.unwrap().is_none());
+            models.login(PROVIDER, &presenter).await.unwrap();
+            let Credential::OAuthToken { access, .. } =
+                store.read(PROVIDER).await.unwrap().unwrap()
+            else {
+                panic!("login must acknowledge the explicitly attached store");
+            };
+            assert_eq!(access.expose_secret(), ACCESS);
+            assert_eq!(flow.logins.load(Ordering::SeqCst), 2);
+            let report = models.mutation_barrier().unwrap().report();
+            assert_eq!(report.captured.len(), 1);
+            assert!(report.is_complete());
+        }
+    }
+}
+
 fn register_oauth_assembly_route(
     models: &mut Models,
     flow: Arc<dyn OAuthProvider>,

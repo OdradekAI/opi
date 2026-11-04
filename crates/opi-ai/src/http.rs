@@ -384,6 +384,7 @@ impl HttpClientBuilder {
                 .pool_idle_timeout(Some(self.idle_timeout))
                 .retry(reqwest::retry::never())
                 .redirect(redirects.to_reqwest())
+                .referer(false)
                 .no_proxy()
                 .use_preconfigured_tls(config);
             if http1_only {

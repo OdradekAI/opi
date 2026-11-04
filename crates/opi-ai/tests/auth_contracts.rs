@@ -902,6 +902,54 @@ async fn store_and_check_errors_are_typed_not_empty() {
 }
 
 #[tokio::test]
+async fn explicit_store_absence_and_errors_override_present_probe_metadata() {
+    for fail_reads in [false, true] {
+        let mut store = RecordingStore::new([]);
+        store.fail_reads = fail_reads;
+        let store = Arc::new(store);
+        let context = Arc::new(CountingMapContext::new([]));
+        let mut models = opi_ai::Models::new();
+        models.set_auth_context(context.clone());
+        models.set_credential_store(store.clone());
+        models
+            .register(
+                provider_with_model("probe-owner"),
+                opi_ai::AuthDescriptor::StoreCredential {
+                    key: "probe-owner".into(),
+                    display_source: "explicit store".into(),
+                },
+                Default::default(),
+            )
+            .unwrap();
+        models.set_probe(
+            "probe-owner",
+            opi_ai::CredentialSource::Present {
+                label: "label-only metadata".into(),
+            },
+        );
+        let check = models.check_auth("probe-owner").await;
+        let auth = models.get_auth("probe-owner", Default::default()).await;
+        if fail_reads {
+            assert!(matches!(
+                check,
+                Err(opi_ai::ModelsError::CredentialStore(_))
+            ));
+            assert!(matches!(auth, Err(opi_ai::ModelsError::CredentialStore(_))));
+        } else {
+            assert!(check.unwrap().is_none());
+            assert!(
+                auth.unwrap().is_none(),
+                "a probe cannot supply authentication"
+            );
+        }
+        assert_eq!(store.reads.load(Ordering::SeqCst), 2);
+        assert_eq!(store.writes.load(Ordering::SeqCst), 0);
+        assert_eq!(context.env_reads.load(Ordering::SeqCst), 0);
+        assert_eq!(context.file_probes.load(Ordering::SeqCst), 0);
+    }
+}
+
+#[tokio::test]
 async fn selected_source_failure_never_falls_back() {
     // The route's selected source fails; an env var for the same provider is
     // present in the context, and a static descriptor also exists — none may
@@ -1506,9 +1554,47 @@ async fn barrier_captures_cutoff_across_models_sharing_store() {
     assert_eq!(report.captured.len(), 2);
     assert!(report.late.is_empty());
     assert!(report.is_complete());
+}
 
-    // Without an attached store there is no barrier to capture.
-    assert!(opi_ai::Models::new().mutation_barrier().is_none());
+#[tokio::test]
+async fn constructor_owned_mutation_barriers_start_empty_and_remain_isolated() {
+    let mut models = opi_ai::Models::new();
+    let isolated = [
+        opi_ai::Models::new(),
+        opi_ai::Models::from_registry(opi_ai::ProviderRegistry::new()),
+    ];
+    let before = models.mutation_barrier().expect("constructor-owned store");
+    for model in std::iter::once(&models).chain(isolated.iter()) {
+        let barrier = model.mutation_barrier().expect("constructor-owned store");
+        assert_eq!(barrier.cutoff(), 0);
+        assert!(barrier.report().captured.is_empty());
+        assert!(barrier.report().late.is_empty());
+        assert!(barrier.report().is_complete());
+    }
+    models.register_oauth_flow("mock", Arc::new(MockOAuthProvider { id: "mock".into() }));
+    models
+        .login(
+            "mock",
+            &MockLoginPresenter {
+                manual_code: "local-store".into(),
+                url_calls: AtomicUsize::new(0),
+            },
+        )
+        .await
+        .expect("fake login is acknowledged by local memory");
+    let after = models.mutation_barrier().unwrap();
+    assert_eq!(after.cutoff(), 1);
+    assert_eq!(after.report().captured.len(), 1);
+    assert!(after.report().is_complete());
+    assert_eq!(before.cutoff(), 0);
+    assert!(before.report().captured.is_empty());
+    assert_eq!(before.report().late.len(), 1);
+    for model in isolated {
+        let barrier = model.mutation_barrier().unwrap();
+        assert_eq!(barrier.cutoff(), 0);
+        assert!(barrier.report().captured.is_empty());
+        assert!(barrier.report().late.is_empty());
+    }
 }
 
 #[tokio::test]

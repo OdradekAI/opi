@@ -581,11 +581,12 @@ pub struct Models {
     /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
     /// and registration never touch it.
     auth_context: std::sync::Arc<dyn crate::auth::AuthContext>,
-    /// Optional credential store backing the auth management operations
-    /// (`check_auth`/`get_auth`/`logout` on store-backed sources). Absent by
-    /// construction-time design: no store, env, or network access happens
-    /// until the owner attaches one.
+    /// Credential store backing auth management. Each constructor owns an
+    /// independent memory store; callers may replace it explicitly.
     credential_store: Option<std::sync::Arc<dyn CredentialStore>>,
+    /// Explicit stores own configuration absence/errors. Only empty default
+    /// memory may consult label-only probe metadata for configuration checks.
+    credential_store_explicit: bool,
     /// Optional persisted dynamic-catalog store. Attached explicitly via
     /// [`Models::set_models_store`]; the SDK never creates one or fetches a
     /// remote catalog by default.
@@ -604,8 +605,9 @@ pub struct Models {
 }
 
 impl Models {
-    /// Construct an empty driver. Registers no provider and performs no
-    /// env/auth/store/external IO.
+    /// Construct an empty driver with an independent memory credential store.
+    /// Registers no provider, needs no runtime, and performs no external source
+    /// discovery or environment/file/network I/O.
     pub fn new() -> Self {
         Self {
             registry: ProviderRegistry::new(),
@@ -627,7 +629,8 @@ impl Models {
             classifier_apis: BTreeMap::new(),
             deferred_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
-            credential_store: None,
+            credential_store: Some(Arc::new(crate::InMemoryCredentialStore::new())),
+            credential_store_explicit: false,
             models_store: None,
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
@@ -637,7 +640,8 @@ impl Models {
     }
 
     /// Wrap an existing registry to layer the driver semantics onto providers
-    /// constructed by an outer factory.
+    /// constructed by an outer factory. Owns an independent memory credential
+    /// store without discovering external credential sources.
     ///
     /// Pre-registered providers are lookup-only until replaced by
     /// [`register_route`](Self::register_route) or
@@ -678,7 +682,8 @@ impl Models {
             classifier_apis: BTreeMap::new(),
             deferred_apis: BTreeMap::new(),
             auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
-            credential_store: None,
+            credential_store: Some(Arc::new(crate::InMemoryCredentialStore::new())),
+            credential_store_explicit: false,
             models_store: None,
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
@@ -1780,7 +1785,9 @@ impl Models {
     /// below that default limit. Implicit and explicit ceilings are then clamped
     /// to remaining context with 4,096 safety tokens (minimum one output token).
     /// Thinking that no longer fits is reduced to leave 1,024 answer tokens
-    /// where possible. The caller's request is not mutated.
+    /// where possible. Numeric Claude combines the answer ceiling and thinking
+    /// budget before applying the model and remaining-context ceilings. The
+    /// caller's request is not mutated.
     pub async fn prepare_call_with_policy(
         &self,
         spec: &str,
@@ -2255,13 +2262,13 @@ impl Models {
         }
     }
 
-    /// Attach the credential store backing store-sourced auth checks,
-    /// resolution, and [`logout`](Self::logout).
+    /// Replace the default memory store backing store-sourced auth checks,
+    /// resolution, and [`login`](Self::login).
     ///
-    /// Absent by default: constructing, registering, and statically looking up
-    /// providers never touches a store. Store-backed checks without a live
-    /// store consult the injected probe snapshot instead
-    /// ([`set_probe`](Self::set_probe)).
+    /// The explicitly selected store is authoritative, including absence and
+    /// errors; configuration checks do not fall back to probe metadata. Stored
+    /// credentials are not copied from the replaced store. Construction,
+    /// registration and static lookup perform no external store access.
     pub fn set_credential_store(&mut self, store: std::sync::Arc<dyn CredentialStore>) {
         for id in &self.oauth_routes {
             if let Some(flow) = self.oauth_flows.get(id) {
@@ -2276,6 +2283,7 @@ impl Models {
             }
         }
         self.credential_store = Some(store);
+        self.credential_store_explicit = true;
         let providers: Vec<_> = self.builtin_auth_factories.keys().cloned().collect();
         for id in providers {
             self.rebind_builtin_auth(&id);
@@ -2392,9 +2400,10 @@ impl Models {
         self.rebind_builtin_auth(provider_id);
     }
 
-    /// Bind an SDK OAuth flow to a dispatchable provider and the attached store.
+    /// Bind an SDK OAuth flow to a dispatchable provider and the selected store.
     /// Login, refresh, ACK and request authentication share that store. This
-    /// performs no source access; attach the store before registering the route.
+    /// performs no source access. The constructor-owned memory store is used
+    /// unless the caller explicitly replaces it.
     pub fn register_oauth_route(
         &mut self,
         provider: Box<dyn Provider>,
@@ -2426,7 +2435,7 @@ impl Models {
         Ok(())
     }
 
-    /// Run the provider's registered OAuth login and persist the resulting
+    /// Run the provider's registered OAuth login and store the resulting
     /// credential through the store-owned serialized mutation queue,
     /// acknowledging exactly that local write: success is reported only
     /// after the awaited store ACK, a failed write surfaces typed, and an
@@ -2434,10 +2443,9 @@ impl Models {
     ///
     /// No automatic browser launch, keychain read, environment fallback, or
     /// remote revocation happens: interaction goes through `presenter`, HTTP
-    /// through the flow's injected client, persistence through the attached
-    /// [`CredentialStore`]. Calling `login` for a provider without a
-    /// registered flow or without an attached store is a typed error before
-    /// any interaction.
+    /// through the flow's injected client, and the local write through the
+    /// selected [`CredentialStore`] (constructor-owned memory by default).
+    /// Calling `login` without a registered flow fails typed before interaction.
     pub async fn login(
         &self,
         provider_id: &str,
@@ -2499,9 +2507,10 @@ impl Models {
     ///
     /// Descriptor-sourced providers check through the injected
     /// [`AuthContext`](crate::auth::AuthContext) (or the live store for
-    /// [`AuthDescriptor::StoreCredential`]); store-backed providers without a
-    /// live store fall back to the redacted probe snapshot injected via
-    /// [`set_probe`](Self::set_probe). Route providers first use a declared
+    /// [`AuthDescriptor::StoreCredential`]). Actual credentials take priority;
+    /// only empty constructor-owned memory may fall back to the redacted probe
+    /// snapshot injected via [`set_probe`](Self::set_probe). Explicit-store
+    /// absence/errors remain authoritative. Route providers first use a declared
     /// configuration checker when present, then their non-secret source
     /// classification. Checking never resolves or refreshes authentication.
     pub async fn check_auth(&self, provider_id: &str) -> Result<Option<AuthCheck>, ModelsError> {
@@ -2786,9 +2795,10 @@ impl Models {
         }
     }
 
-    /// Synchronously capture the attached store's mutation cutoff. Every
+    /// Synchronously capture the selected store's mutation cutoff. Every
     /// `Models` instance sharing the same store observes the same
-    /// generations. `None` when no credential store is attached.
+    /// generations. Constructors provide an independent local memory barrier;
+    /// explicitly sharing a store also shares its cutoff and receipts.
     pub fn mutation_barrier(&self) -> Option<crate::mutation::MutationBarrier> {
         self.credential_store
             .as_ref()
@@ -2870,8 +2880,9 @@ impl Models {
 
     /// Store-backed check: a live store read classifies the credential kind
     /// (an expired OAuth credential still reports configured, never
-    /// refreshed); without a live store the injected probe snapshot decides,
-    /// with backend-unavailable snapshots surfacing as typed errors.
+    /// refreshed). Only empty constructor-owned memory may consult injected
+    /// probe metadata; explicit-store absence/errors remain authoritative.
+    /// Backend-unavailable snapshots surface as typed errors.
     async fn check_store_credential(
         &self,
         provider_id: &str,
@@ -2879,17 +2890,22 @@ impl Models {
         fallback_kind: AuthCheckKind,
     ) -> Result<Option<AuthCheck>, ModelsError> {
         if let Some(store) = self.credential_store.as_ref() {
-            return match store.read(key).await? {
-                Some(Credential::ApiKey(_)) => Ok(Some(AuthCheck {
-                    source: Some("credential store".to_owned()),
-                    kind: AuthCheckKind::ApiKey,
-                })),
-                Some(Credential::OAuthToken { .. }) => Ok(Some(AuthCheck {
-                    source: Some("OAuth".to_owned()),
-                    kind: AuthCheckKind::OAuth,
-                })),
-                None => Ok(None),
-            };
+            match store.read(key).await? {
+                Some(Credential::ApiKey(_)) => {
+                    return Ok(Some(AuthCheck {
+                        source: Some("credential store".to_owned()),
+                        kind: AuthCheckKind::ApiKey,
+                    }));
+                }
+                Some(Credential::OAuthToken { .. }) => {
+                    return Ok(Some(AuthCheck {
+                        source: Some("OAuth".to_owned()),
+                        kind: AuthCheckKind::OAuth,
+                    }));
+                }
+                None if self.credential_store_explicit => return Ok(None),
+                None => {}
+            }
         }
         match self.probed.get(provider_id) {
             Some(CredentialSource::Present { label }) => Ok(Some(AuthCheck {
@@ -3911,10 +3927,9 @@ fn drive_resolved_call_registered(
 // Shared compiler and auth resolution (the sole state machine)
 // ---------------------------------------------------------------------------
 
-/// Request preparation for neutral calls and the advanced entry: default
-/// output limit, context clamp, thinking resolution, and
-/// capability/wire validation, in that order, without mutating the caller's
-/// original `Request` (the compiler receives an owned copy).
+/// Request preparation for neutral calls and the advanced entry: output and
+/// thinking resolution, model/context clamping, and capability/wire validation,
+/// without mutating the caller's original `Request` (the compiler owns a copy).
 fn compile_prepared_request(
     provider_id: &str,
     model: &ModelInfo,
@@ -3944,7 +3959,7 @@ fn compile_prepared_request(
         request.max_tokens = Some(limit);
     }
     let context_limit = model.capabilities.context_window;
-    if context_limit > 0 {
+    let context_available = if context_limit > 0 {
         // Canonical system/tool declarations carry chronology and timestamp
         // facts needed to validate an anchor and estimate its tail. Passing
         // replayed current values separately would lose those facts or count
@@ -3956,14 +3971,16 @@ fn compile_prepared_request(
             .saturating_sub(4_096)
             .max(1);
         request.max_tokens = request.max_tokens.map(|limit| limit.min(available));
-    }
+        Some(available)
+    } else {
+        None
+    };
     if request.thinking.enabled {
         let numeric_anthropic = matches!(
             &model.compat,
             crate::WireCompat::AnthropicMessages(compat) if !compat.force_adaptive_thinking
         );
-        // Task 20.42: budget-based Claude models on the bedrock wire share
-        // the numeric neutral policy (pi streamSimple's adjust/clamp path);
+        // Non-adaptive Bedrock routes resolve a numeric neutral budget;
         // adaptive models keep the level flowing to `output_config.effort`.
         let numeric_bedrock = model.wire_api == crate::WireApi::BedrockConverseStream
             && !crate::bedrock::supports_adaptive_thinking(&model.id, &model.display_name);
@@ -3975,19 +3992,31 @@ fn compile_prepared_request(
                 crate::ThinkingLevel::High
                 | crate::ThinkingLevel::XHigh
                 | crate::ThinkingLevel::Max => 16_384,
-                // Legacy callers that enable thinking without selecting a
-                // level or budget take the source native default (task
-                // 20.39, pi `thinkingBudgetTokens || 1024`).
+                // Enabled thinking without a selected level or budget uses
+                // the source default of 1024.
                 crate::ThinkingLevel::None => 1_024,
             });
+        }
+        let numeric_claude = numeric_anthropic
+            || (numeric_bedrock
+                && (model.id.to_lowercase().contains("anthropic.claude")
+                    || model.id.to_lowercase().contains("anthropic/claude")
+                    || model.display_name.to_lowercase().contains("claude")));
+        if numeric_claude
+            && let (Some(budget), Some(limit)) =
+                (request.thinking.budget_tokens, request.max_tokens)
+        {
+            let combined = limit
+                .saturating_add(budget)
+                .min(model.capabilities.max_output_tokens);
+            request.max_tokens =
+                Some(context_available.map_or(combined, |available| combined.min(available)));
         }
         if let (Some(budget), Some(limit)) = (request.thinking.budget_tokens, request.max_tokens) {
             request.thinking.budget_tokens = Some(budget.min(limit.saturating_sub(1_024)));
         }
-        // Task 20.39 (annex row 165): no typed preflight for sub-1024
-        // numeric budgets — the wire assembly applies the source
-        // `|| 1024` semantics (a zero budget sends 1024; nonzero budgets
-        // pass through).
+        // Zero numeric budgets retain their wire-specific mapping:
+        // Anthropic sends the source default 1024; Bedrock preserves zero.
     }
     crate::provider::validate_request_for_model(provider_id, Some(model), request)
 }

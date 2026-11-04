@@ -852,6 +852,12 @@ impl Stream for ChatStream {
                 match &event {
                     AssistantStreamEvent::Done { reason, message } => {
                         let outcome = match reason {
+                            _ if *reason != message.stop_reason => Err(CallFailure::from_partial(
+                                Some(message.clone()),
+                                ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                                    "provider terminal stop reasons disagree",
+                                )),
+                            )),
                             StopReason::Stop
                             | StopReason::Length
                             | StopReason::ToolUse

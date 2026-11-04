@@ -3,7 +3,7 @@
 //! The helper is a standalone policy loop: it consumes message-shaped
 //! results from a caller-owned `produce` closure (each invocation a NEW
 //! logical call), classifies failures against the pinned source pattern
-//! lists (quota/billing/usage-limit vetoes first), and sleeps a
+//! lists (quota/billing/usage-limit and context-overflow vetoes first), and sleeps a
 //! cancellable exponential backoff between calls. It never wires product
 //! recovery, mutates transcripts, re-executes tools or resets prepared
 //! call budgets; omission/disability means exactly one call.
@@ -86,6 +86,49 @@ fn classification_vetoes_quota_billing_and_usage_limits_first() {
             classified,
             WholeCallRetryClassification::Terminal,
             "must veto first: {text}"
+        );
+    }
+}
+
+#[test]
+fn classification_vetoes_context_overflow_before_transient_patterns() {
+    for text in [
+        "maximum context length is 500000 tokens",
+        "HTTP 500: prompt is too long",
+        "input token count 504000 exceeds the maximum 500000",
+        "input (503000 tokens) is longer than the model's context length (500000 tokens)",
+        "too large for model with 429000 maximum context length",
+    ] {
+        let failed = message(StopReason::Error, Some(text));
+        assert!(
+            opi_ai::message::is_context_overflow(&failed, None),
+            "fixture must match the existing overflow utility: {text}"
+        );
+        assert_eq!(
+            opi_ai::retry::classify_whole_call_retry(&failed),
+            WholeCallRetryClassification::Terminal,
+            "overflow vetoes transient-looking token counts or statuses: {text}"
+        );
+    }
+}
+
+#[test]
+fn classification_keeps_context_overflow_utility_exclusions() {
+    for text in [
+        "rate limit exceeded: maximum context length is 500000 tokens",
+        "Throttling error: prompt is too long (HTTP 503)",
+        "Service unavailable: input token count 504000 exceeds the maximum 500000",
+        "too many requests; maximum context length is 500000 tokens",
+    ] {
+        let failed = message(StopReason::Error, Some(text));
+        assert!(
+            !opi_ai::message::is_context_overflow(&failed, None),
+            "fixture must retain the existing overflow exclusion: {text}"
+        );
+        assert_eq!(
+            opi_ai::retry::classify_whole_call_retry(&failed),
+            WholeCallRetryClassification::Transient,
+            "the overflow veto must respect source throttling exclusions: {text}"
         );
     }
 }
@@ -347,6 +390,60 @@ async fn quota_veto_is_terminal_without_any_retry_scheduling() {
         finished.load(std::sync::atomic::Ordering::SeqCst),
         0,
         "finished fires only when a retry was scheduled"
+    );
+}
+
+#[tokio::test]
+async fn context_overflow_stops_enabled_helper_without_retry_callbacks() {
+    let policy = transient_policy(2, 1);
+    let mut expected = message(
+        StopReason::Error,
+        Some("maximum context length is 500000 tokens"),
+    );
+    expected.usage.reported = true;
+    assert!(opi_ai::message::is_context_overflow(&expected, None));
+    let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let callback_counts = std::sync::Arc::new(std::sync::Mutex::new([0u32; 3]));
+    let calls_for_produce = calls.clone();
+    let produced = expected.clone();
+    let scheduled = callback_counts.clone();
+    let started = callback_counts.clone();
+    let finished = callback_counts.clone();
+    let mut callbacks = WholeCallRetryCallbacks::new();
+    callbacks.on_retry_scheduled = Some(Box::new(move |_, _, _, _| {
+        scheduled.lock().unwrap()[0] += 1;
+        Ok(())
+    }));
+    callbacks.on_retry_attempt_start = Some(Box::new(move || {
+        started.lock().unwrap()[1] += 1;
+        Ok(())
+    }));
+    callbacks.on_retry_finished = Some(Box::new(move |_, _, _| {
+        finished.lock().unwrap()[2] += 1;
+        Ok(())
+    }));
+    let result = retry_assistant_call(
+        move || {
+            calls_for_produce.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            std::future::ready(produced.clone())
+        },
+        Some(&policy),
+        tokio_util::sync::CancellationToken::new(),
+        Some(callbacks),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        result, expected,
+        "terminal partial and known usage are retained"
+    );
+    assert_eq!(
+        (
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            *callback_counts.lock().unwrap(),
+        ),
+        (1, [0, 0, 0]),
+        "overflow must stop before scheduling, starting, or finishing a retry"
     );
 }
 

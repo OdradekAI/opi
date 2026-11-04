@@ -4156,6 +4156,112 @@ fn consecutive_success_tool_results_group_into_one_user_message() {
 }
 
 #[tokio::test]
+async fn simple_numeric_claude_adds_thinking_before_model_and_context_caps() {
+    #[derive(Debug, Clone, Copy)]
+    enum Mode {
+        Numeric,
+        Disabled,
+        Adaptive,
+        Native,
+    }
+
+    for (mode, model_cap, context_window, expected_limit, expected_budget) in [
+        (Mode::Numeric, 64_000, 200_000, 6_144, Some(2_048)),
+        (Mode::Numeric, 5_000, 200_000, 5_000, Some(2_048)),
+        (Mode::Numeric, 64_000, 6_000, 1_904, Some(880)),
+        (Mode::Numeric, 1, 200_000, 1, Some(1_024)),
+        (Mode::Numeric, 1_024, 200_000, 1_024, Some(1_024)),
+        (Mode::Numeric, 2_000, 200_000, 2_000, Some(976)),
+        (Mode::Disabled, 64_000, 200_000, 4_096, None),
+        (Mode::Adaptive, 64_000, 200_000, 4_096, None),
+        (Mode::Native, 64_000, 200_000, 4_096, Some(2_048)),
+    ] {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/messages"))
+            .and(header("x-api-key", "test-key"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_string(text_fixture())
+                    .insert_header("content-type", "text/event-stream"),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+        let mut model = model_39(
+            "claude-sonnet-4-5",
+            compat_39(matches!(mode, Mode::Adaptive), false, false),
+        )
+        .with_base_url(server.uri());
+        model.capabilities.context_window = context_window;
+        model.capabilities.max_output_tokens = model_cap;
+        let provider = std::sync::Arc::new(AnthropicProvider::for_route(
+            "anthropic".into(),
+            vec![model.clone()],
+            None,
+            Default::default(),
+            std::sync::Arc::new(HttpClient::new()),
+            false,
+        ));
+        let api = AnthropicMessagesChatApi::new(provider, model.clone()).expect("valid record");
+        let mut models = Models::new();
+        let handle = models
+            .register_chat_api(
+                std::sync::Arc::new(api),
+                std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+                    opi_ai::auth::AuthScheme::ApiKey,
+                    secrecy::SecretString::from("test-key"),
+                )),
+                opi_ai::AuthProvenanceSource::Static,
+            )
+            .unwrap();
+        let mut request = request_39(ThinkingConfig {
+            enabled: matches!(mode, Mode::Numeric | Mode::Adaptive),
+            budget_tokens: matches!(mode, Mode::Numeric).then_some(2_048),
+            level: opi_ai::ThinkingLevel::Low,
+        });
+        request.context =
+            opi_ai::transcript::normalize_context(opi_ai::transcript::Context::default()).unwrap();
+        let record = opi_ai::models::ChatModelRecord::new("anthropic", model);
+        let message = if matches!(mode, Mode::Native) {
+            let mut options = AnthropicMessagesOptions::default();
+            options.thinking_enabled = Some(true);
+            options.thinking_budget_tokens = Some(2_048);
+            let options = handle.options(options);
+            models.complete(record, request, options).await
+        } else {
+            models
+                .complete_simple(record, request, SimpleOptions::default())
+                .await
+        }
+        .expect("one request completes");
+        assert_eq!(message.stop_reason, StopReason::Stop);
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), 1);
+        let body: serde_json::Value = serde_json::from_slice(&sent[0].body).unwrap();
+        assert_eq!(
+            body["max_tokens"], expected_limit,
+            "{mode:?}, cap={model_cap}"
+        );
+        assert_eq!(
+            body["thinking"].get("budget_tokens"),
+            expected_budget
+                .map(|budget| serde_json::json!(budget))
+                .as_ref(),
+            "{mode:?}, cap={model_cap}, context={context_window}"
+        );
+        if matches!(mode, Mode::Adaptive) {
+            assert_eq!(body["thinking"]["type"], "adaptive");
+        } else if matches!(mode, Mode::Disabled) {
+            assert!(body.get("thinking").is_none());
+        } else {
+            assert_eq!(body["thinking"]["type"], "enabled");
+        }
+        server.verify().await;
+    }
+}
+
+#[tokio::test]
 async fn native_options_from_simple_map_neutral_tool_choice_only() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

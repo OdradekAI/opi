@@ -111,7 +111,10 @@ async fn default_url_supplier_get_follows_redirects_and_strips_cross_origin_auth
     let reply = opi_ai::auth::adc::native::ReqwestAdcTransport::new()
         .send(AdcSourceRequest {
             method: "GET".into(),
-            url: format!("{}/redirect", source.uri()),
+            url: format!(
+                "{}/redirect?subject_token=synthetic-query-canary",
+                source.uri()
+            ),
             headers: vec![("authorization".into(), "Bearer synthetic-source".into())],
             body: None,
             timeout: Some(std::time::Duration::from_secs(2)),
@@ -119,11 +122,121 @@ async fn default_url_supplier_get_follows_redirects_and_strips_cross_origin_auth
         .await
         .unwrap();
     assert_eq!(reply.body, b"subject");
-    assert!(
-        !target.received_requests().await.unwrap()[0]
-            .headers
-            .contains_key("authorization")
+    let source_requests = source.received_requests().await.unwrap();
+    let target_requests = target.received_requests().await.unwrap();
+    assert_eq!(source_requests.len(), 1);
+    assert_eq!(target_requests.len(), 1);
+    assert_eq!(
+        source_requests[0].headers["authorization"],
+        "Bearer synthetic-source"
     );
+    assert!(!target_requests[0].headers.contains_key("authorization"));
+    assert!(!source_requests[0].headers.contains_key("referer"));
+    assert!(
+        !target_requests[0].headers.contains_key("referer"),
+        "the redirect must not disclose its source query through a generated Referer"
+    );
+}
+
+#[tokio::test]
+async fn default_url_supplier_get_preserves_explicit_referer_across_redirect() {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+    let source = MockServer::start().await;
+    let target = MockServer::start().await;
+    Mock::given(path("/subject"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("subject"))
+        .mount(&target)
+        .await;
+    Mock::given(path("/redirect"))
+        .respond_with(
+            ResponseTemplate::new(302)
+                .insert_header("location", format!("{}/subject", target.uri())),
+        )
+        .mount(&source)
+        .await;
+    let referer = "https://caller.example/declared-source";
+    let reply = opi_ai::auth::adc::native::ReqwestAdcTransport::new()
+        .send(AdcSourceRequest {
+            method: "GET".into(),
+            url: format!(
+                "{}/redirect?subject_token=synthetic-query-canary",
+                source.uri()
+            ),
+            headers: vec![("referer".into(), referer.into())],
+            body: None,
+            timeout: Some(std::time::Duration::from_secs(2)),
+        })
+        .await
+        .unwrap();
+    assert_eq!(reply.body, b"subject");
+    let source_requests = source.received_requests().await.unwrap();
+    let target_requests = target.received_requests().await.unwrap();
+    assert_eq!(source_requests.len(), 1);
+    assert_eq!(target_requests.len(), 1);
+    assert_eq!(source_requests[0].headers["referer"], referer);
+    assert_eq!(target_requests[0].headers["referer"], referer);
+}
+
+#[tokio::test]
+async fn default_url_supplier_direct_get_does_not_add_referer() {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+    let source = MockServer::start().await;
+    Mock::given(path("/subject"))
+        .respond_with(ResponseTemplate::new(200).set_body_string("subject"))
+        .mount(&source)
+        .await;
+    let reply = opi_ai::auth::adc::native::ReqwestAdcTransport::new()
+        .send(AdcSourceRequest {
+            method: "GET".into(),
+            url: format!(
+                "{}/subject?subject_token=synthetic-query-canary",
+                source.uri()
+            ),
+            headers: vec![("authorization".into(), "Bearer synthetic-source".into())],
+            body: None,
+            timeout: Some(std::time::Duration::from_secs(2)),
+        })
+        .await
+        .unwrap();
+    assert_eq!(reply.body, b"subject");
+    let requests = source.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].headers["authorization"],
+        "Bearer synthetic-source"
+    );
+    assert!(!requests[0].headers.contains_key("referer"));
+}
+
+#[tokio::test]
+async fn default_token_post_refuses_redirect_without_contacting_target() {
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+    let source = MockServer::start().await;
+    let target = MockServer::start().await;
+    Mock::given(path("/token"))
+        .respond_with(
+            ResponseTemplate::new(307).insert_header("location", format!("{}/token", target.uri())),
+        )
+        .mount(&source)
+        .await;
+    let result = opi_ai::auth::adc::native::ReqwestAdcTransport::new()
+        .send(AdcSourceRequest {
+            method: "POST".into(),
+            url: format!("{}/token", source.uri()),
+            headers: vec![("authorization".into(), "Bearer synthetic-source".into())],
+            body: Some("grant_type=synthetic".into()),
+            timeout: Some(std::time::Duration::from_secs(2)),
+        })
+        .await;
+    assert!(matches!(result, Err(AdcSourceHttpError::Redirect)));
+    let requests = source.received_requests().await.unwrap();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].headers["authorization"],
+        "Bearer synthetic-source"
+    );
+    assert!(!requests[0].headers.contains_key("referer"));
+    assert!(target.received_requests().await.unwrap().is_empty());
 }
 
 #[tokio::test]

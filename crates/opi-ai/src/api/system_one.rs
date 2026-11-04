@@ -435,24 +435,12 @@ pub(crate) async fn classify_over_system_one(
                         _ => None,
                     });
                 if !status.is_success() {
-                    let read_timeout = call.timeout.unwrap_or(Duration::from_secs(30));
-                    let body_bytes = crate::http::read_bounded_error_body(
-                        response,
-                        &call.cancel,
-                        Some(read_timeout),
-                    )
-                    .await
-                    .unwrap_or_default();
-                    let body_text = body_bytes
-                        .as_deref()
-                        .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
-                        .unwrap_or_default();
-                    let message = format_http_error(label, status, &body_text);
+                    let message = format_http_error(label, status, "");
                     return Err(AttemptFailure {
                         status: Some(status.as_u16()),
                         x_should_retry,
                         server_retry_delay_ms: server_retry_delay_ms(&headers),
-                        error: map_status_error(label, status, &headers, &body_text),
+                        error: map_status_error(label, status, &headers, ""),
                         message,
                     });
                 }
@@ -650,11 +638,12 @@ fn failure_from_error(
     ClassifierResult::failure(record, ClassifierStopReason::Error, error, message)
 }
 
-/// pi `formatProviderError` with the label prefix: `"<label> error
-/// (<status>): <body|message>"`, the body truncated to the source cap.
-pub(super) fn format_http_error(label: &str, status: reqwest::StatusCode, body: &str) -> String {
-    let suffix = crate::http::safe_excerpt(body);
-    format!("{label} error ({}): {suffix}", status.as_u16())
+/// Preserve the service label and HTTP status without exposing upstream bodies.
+pub(super) fn format_http_error(label: &str, status: reqwest::StatusCode, _body: &str) -> String {
+    format!(
+        "{label} {}",
+        ProviderErrorSummary::from_http_response(status.as_u16())
+    )
 }
 
 pub(super) fn map_status_error(
@@ -831,7 +820,7 @@ fn parse_answer(
     }
     let wire_type = answer.get("type").and_then(serde_json::Value::as_str);
     match question {
-        crate::classifier::ClassifierQuestion::Choice { .. } => {
+        crate::classifier::ClassifierQuestion::Choice { criteria, .. } => {
             if wire_type != Some("choice") {
                 return Err(format!("{label} did not return a choice answer for {id}"));
             }
@@ -850,11 +839,12 @@ fn parse_answer(
                 .as_object()
                 .expect("checked object")
             {
-                let value = required_number(
-                    label,
-                    Some(probability),
-                    &format!("probability for {id}.{key}"),
-                )?;
+                let field = if criteria.contains_key(key) {
+                    format!("probability for {id}.{key}")
+                } else {
+                    format!("probability for {id}")
+                };
+                let value = required_number(label, Some(probability), &field)?;
                 probabilities.insert(key.clone(), value);
             }
             let confidence = required_number(

@@ -137,15 +137,21 @@ async fn public_retry_retains_initial_steering_after_auth_preparation_failure() 
     let mut agent = public_agent(collection, Box::new(Hooks::default()));
     agent.steer("must keep".into());
     let failed = agent.prompt("start").await;
-    assert!(
-        matches!(
-            failed.error(),
-            Some(AgentError::Provider(failure))
-                if matches!(failure.provider_error(), opi_ai::provider::ProviderError::CredentialNeeded { .. })
-        ),
-        "{:?}",
-        failed.error()
-    );
+    let Some(AgentError::Provider(failure)) = failed.error() else {
+        panic!(
+            "expected the retained provider failure: {:?}",
+            failed.error()
+        );
+    };
+    let opi_ai::provider::ProviderError::StreamFailure(preparation) = failure.provider_error()
+    else {
+        panic!("expected the preparation projection: {failure:?}");
+    };
+    assert!(matches!(
+        preparation.cause(),
+        opi_ai::provider::ProviderError::CredentialNeeded { provider_id } if provider_id == "mock"
+    ));
+    assert!(preparation.message().projection.is_some());
     assert!(calls.lock().unwrap().is_empty());
     agent
         .retry_last_turn()

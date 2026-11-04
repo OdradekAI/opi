@@ -432,7 +432,11 @@ async fn session_affinity_wire_mappings() {
             Some("session-compatible")
         );
         assert_eq!(header_value(&chat_requests[2], name), None);
-        assert_eq!(header_value(&chat_requests[3], name), None);
+        assert_eq!(
+            header_value(&chat_requests[3], name),
+            Some("session-disabled"),
+            "explicit Chat affinity is independent of prompt-cache retention"
+        );
     }
     for request in &chat_requests[1..] {
         assert!(request_body_json(request).get("prompt_cache_key").is_none());

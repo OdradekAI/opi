@@ -588,6 +588,41 @@
 
 ### Fixed
 
+- `opi-ai`: JSON Schema null coercion accepts floating and signed zero while
+  preserving raw inputs and the final original-schema validation.
+- `opi-ai`: image response-observer failures and cancellations retain received
+  outputs, response ids and known usage/cost. Invalid JSON does not notify the
+  observer or start another generation attempt.
+- `opi-ai`: OpenRouter image requests always include `image` first and include
+  `text` once when the model supports it, regardless of output metadata order,
+  duplicates or absence.
+- `opi-ai`: each `Models` constructor owns an independent memory credential
+  store, so login can acknowledge a local write without store injection.
+  Actual credentials take priority over probe metadata; only empty default
+  memory consults label-only probes, and explicit-store absence/errors remain
+  authoritative. Probes never authenticate or authorize dispatch.
+- `opi-ai`: numeric Claude preparation adds the thinking budget to the answer
+  ceiling before the final model/context clamp, then reduces thinking against
+  that combined ceiling. For example, 4096 answer tokens plus 2048 thinking
+  tokens now requests 6144 total tokens when both ceilings allow it.
+- `opi-ai`: whole-call retry vetoes recognized context overflow before transient
+  text matching, so token limits containing strings such as `500` cannot cause
+  another logical call or retry callbacks.
+- `opi-ai`: acquisition retries refuse server-required waits above a nonzero
+  delay cap instead of shortening them. Equal-cap hints and an explicitly
+  unlimited cap retain their exact server-requested duration.
+- `opi-ai`: `ChatStream` rejects contradictory terminal stop reasons with one
+  typed protocol failure, retaining terminal content and usage and releasing
+  the producer before permanent EOF.
+- `opi-coding-agent`: auth remediation recognizes credential failures inside
+  prepared-call projection envelopes, retaining typed failure and projection
+  facts for TUI, RPC and CLI consumers.
+- `opi-ai`: image and classifier failure diagnostics redact provider bodies,
+  envelope messages and undeclared probability keys while preserving typed
+  status, operation identity and known billed usage.
+- `opi-ai`: HTTP redirects no longer generate a `Referer` header containing
+  the source URL or its query. Explicit caller-supplied Referer values are
+  preserved under the source-qualified redirect header policy.
 - `opi-ai`: builtin API-key candidates resolve credential-scoped environment
   fields before ambient values. An explicit empty scoped field masks its
   ambient counterpart, while an explicitly stored key retains priority.

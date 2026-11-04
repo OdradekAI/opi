@@ -607,7 +607,11 @@ fn coerce_primitive_by_type(value: &Value, schema_type: &str) -> Value {
         },
         "null" => match value {
             Value::String(text) if text.is_empty() => Value::Null,
-            Value::Number(n) if n.as_u64() == Some(0) || n.as_i64() == Some(0) => Value::Null,
+            Value::Number(n)
+                if n.as_u64() == Some(0) || n.as_i64() == Some(0) || n.as_f64() == Some(0.0) =>
+            {
+                Value::Null
+            }
             Value::Bool(false) => Value::Null,
             _ => value.clone(),
         },

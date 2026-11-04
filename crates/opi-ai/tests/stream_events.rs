@@ -571,9 +571,14 @@ async fn chat_stream_converts_legacy_error_event_to_call_failure() {
 
 #[tokio::test]
 async fn chat_stream_error_and_aborted_done_reasons_are_failures() {
-    // AIR-047: Stop/Length/ToolUse (and later Deferred) are Ok;
+    // AIR-047: Stop/Length/ToolUse/Deferred are Ok;
     // Error/Aborted are Err.
-    for reason in [StopReason::Stop, StopReason::Length, StopReason::ToolUse] {
+    for reason in [
+        StopReason::Stop,
+        StopReason::Length,
+        StopReason::ToolUse,
+        StopReason::Deferred,
+    ] {
         let (events, text) = text_events(1, None);
         let mut events = events;
         events.push(Ok(done_terminal(&text, reason)));
@@ -600,6 +605,140 @@ async fn chat_stream_error_and_aborted_done_reasons_are_failures() {
         assert_eq!(failure.message().stop_reason, reason);
         assert_eq!(assistant_text_of(failure.message()), text);
     }
+}
+
+#[tokio::test]
+async fn chat_stream_rejects_mismatched_done_reasons_with_one_retained_failure() {
+    use std::pin::Pin;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::task::{Context, Poll};
+
+    struct CountedStream {
+        events: std::vec::IntoIter<Result<AssistantStreamEvent, ProviderError>>,
+        polls: Arc<AtomicUsize>,
+        drops: Arc<AtomicUsize>,
+    }
+    impl futures_core::Stream for CountedStream {
+        type Item = Result<AssistantStreamEvent, ProviderError>;
+
+        fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            self.polls.fetch_add(1, Ordering::SeqCst);
+            Poll::Ready(self.events.next())
+        }
+    }
+    impl Drop for CountedStream {
+        fn drop(&mut self) {
+            self.drops.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    let reasons = [
+        StopReason::Stop,
+        StopReason::Error,
+        StopReason::Aborted,
+        StopReason::Length,
+        StopReason::ToolUse,
+        StopReason::Deferred,
+    ];
+    let mut checked_modes = 0;
+    for reason in reasons {
+        for message_reason in reasons {
+            if reason == message_reason {
+                continue;
+            }
+            let mut message = sample_assistant_message();
+            message.stop_reason = message_reason;
+            message.content = vec![AssistantContent::Text {
+                text: "terminal content".into(),
+                signature: Some("terminal-signature".into()),
+            }];
+            message.usage = Usage {
+                input_tokens: 3,
+                output_tokens: 5,
+                reported: true,
+                ..Usage::default()
+            };
+            message.error_message = Some("safe terminal diagnostic".into());
+            message.response_id = Some("terminal-response".into());
+            message.projection = Some(opi_ai::transcript::ProjectionFacts {
+                source_prefix: opi_ai::transcript::SourcePrefix {
+                    message_count: 2,
+                    sha256: "0".repeat(64),
+                },
+                temporal: opi_ai::transcript::TemporalProjectionFacts {
+                    mode: opi_ai::transcript::ProjectionMode::Collapse,
+                    affected_ranges: vec![opi_ai::transcript::MessageRange { start: 0, end: 2 }],
+                },
+                replay: opi_ai::replay::ReplayFacts {
+                    losses: vec![opi_ai::replay::ReplayLoss::ImagePlaceholder { count: 1 }],
+                },
+            });
+            let mut expected_message = message.clone();
+            expected_message.stop_reason = StopReason::Error;
+            let (mut events, _) = text_events(1, None);
+            events.push(Ok(AssistantStreamEvent::Done { reason, message }));
+            let terminal_polls = events.len();
+            events.push(Ok(done_terminal("repeated terminal", StopReason::Stop)));
+            events.push(Ok(AssistantStreamEvent::TextDelta {
+                content_index: 0,
+                delta: "tail".into(),
+                partial: sample_assistant_message(),
+            }));
+            let mut first_outcome = None;
+            // One Rust test covers 30 unequal pairs through three consumption modes.
+            for mode in 0..3 {
+                let polls = Arc::new(AtomicUsize::new(0));
+                let drops = Arc::new(AtomicUsize::new(0));
+                let mut stream = ChatStream::new(Box::pin(CountedStream {
+                    events: events.clone().into_iter(),
+                    polls: polls.clone(),
+                    drops: drops.clone(),
+                }));
+                if mode == 1 {
+                    assert!(matches!(
+                        stream.next().await,
+                        Some(Ok(AssistantStreamEvent::Start { .. }))
+                    ));
+                }
+                let outcome = if mode == 2 {
+                    let mut delivered_failure = None;
+                    while let Some(item) = stream.next().await {
+                        match item {
+                            Ok(event) => assert!(!event.is_terminal()),
+                            Err(failure) => {
+                                assert!(delivered_failure.replace(failure).is_none());
+                            }
+                        }
+                    }
+                    let delivered_failure = delivered_failure.expect("one failure is delivered");
+                    assert_eq!(drops.load(Ordering::SeqCst), 1);
+                    assert!(stream.next().await.is_none());
+                    assert!(stream.next().await.is_none());
+                    let cached = stream.result().await;
+                    assert_eq!(cached, Err(delivered_failure));
+                    cached
+                } else {
+                    stream.result().await
+                };
+                let failure = outcome.expect_err("contradictory terminal reasons must fail");
+                assert!(matches!(
+                    failure.cause(),
+                    ProviderError::StreamError(summary) if summary.contains("terminal")
+                ));
+                assert_eq!(failure.message(), &expected_message);
+                assert_eq!(polls.load(Ordering::SeqCst), terminal_polls);
+                assert_eq!(drops.load(Ordering::SeqCst), 1);
+                if let Some(first) = &first_outcome {
+                    assert_eq!(&failure, first);
+                } else {
+                    first_outcome = Some(failure);
+                }
+                checked_modes += 1;
+            }
+        }
+    }
+    assert_eq!(checked_modes, 90);
 }
 
 #[tokio::test]
