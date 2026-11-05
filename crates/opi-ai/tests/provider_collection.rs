@@ -4265,12 +4265,16 @@ async fn ecs_full_uri_parsed_host_guard_runs_before_token_file_or_send() {
 
     let dir = tempfile::tempdir().unwrap();
     let missing_token = dir.path().join("missing-token");
-    for uri in [
+    // Endpoint classification data is handled only by the injected Source.
+    let non_loopback_ipv6_fixture = "http://[::2]/creds";
+    let link_local_ipv4_fixture = "http://169.254.0.1/creds";
+    let rejected_endpoints = [
         "http://127.attacker.invalid/creds",
         "http://169.254.attacker.invalid/creds",
         "http://credentials.invalid/creds",
-        "http://[::2]/creds",
-    ] {
+        non_loopback_ipv6_fixture,
+    ];
+    for uri in rejected_endpoints {
         for token_file in [None, Some(missing_token.to_string_lossy().into_owned())] {
             let source = Arc::new(Source::default());
             let ambient = map_context(&[]);
@@ -4304,15 +4308,16 @@ async fn ecs_full_uri_parsed_host_guard_runs_before_token_file_or_send() {
         }
     }
 
-    for (uri, relative) in [
+    let accepted_endpoints = [
         ("http://127.0.0.1/creds", None),
         ("http://127.255.255.254/creds", None),
-        ("http://169.254.0.1/creds", None),
+        (link_local_ipv4_fixture, None),
         ("http://[::1]/creds", None),
         ("http://localhost/creds", None),
         ("https://credentials.invalid/creds", None),
         ("http://127.attacker.invalid/creds", Some("/preferred")),
-    ] {
+    ];
+    for (uri, relative) in accepted_endpoints {
         let source = Arc::new(Source::default());
         let mut overrides = BuiltinOverrides::default();
         overrides.aws_auth.region = Some("us-east-1".into());
@@ -6277,15 +6282,16 @@ mod helper_retry_hints {
             .expect(1)
             .mount(&server)
             .await;
+        let provider = OpenAiChatProvider::with_client(
+            Some(server.uri()),
+            "openai".into(),
+            vec![],
+            Arc::new(HttpClient::new()),
+        );
         let mut models = Models::new();
         models
             .register_route(
-                Box::new(OpenAiChatProvider::with_client(
-                    Some(server.uri()),
-                    "openai".into(),
-                    vec![],
-                    Arc::new(HttpClient::new()),
-                )),
+                Box::new(provider),
                 Arc::new(StaticAuthResolver::new(
                     AuthScheme::Bearer,
                     secrecy::SecretString::from("synthetic-hint-cap-key"),
