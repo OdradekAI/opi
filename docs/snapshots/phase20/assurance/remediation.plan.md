@@ -2,12 +2,13 @@
 
 **Status**: READY-FOR-APPLY
 **Audit index SHA-256**: `e1b34739db46331707a93ab0f6f9336ed6386a4564b0215d8488ce288319f0ae`
-**Remediation head**: `dcd01d9a06bb075aa4b63378cdec23a8f880d5e0`
+**Remediation head**: `4e662a02c8a26d23986b12129b6f47a7a8822fcc`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged:none; unstaged:only this task-owned fixed plan pair; untracked:none. Continuation entry and authorized cleanup checkpoint receipts below preserve the prior inventory. No unowned source overlaps remain.
+**Dirty-worktree baseline**: staged:none, unstaged:none, untracked:none at the committed handoff. The bound workflow inputs are committed at `Remediation head`.
+**Workflow inputs**: [{"path":".agents/skills/README.md","sha256":"0285300b308bf16a8b679e7c049d9ec751178771d179c72b637e058cda47efef"},{"path":".agents/skills/README.zh.md","sha256":"c6cb83c18e0682c13c6ce2cc95c8142adf8e30318ae526cee634571b83555119"},{"path":".agents/skills/_shared/references/remediation-disposition-contract.md","sha256":"1c22e3c0b11a2dbfd063c5686bf295614ffdee7cec710160c9dea20c4ac3d40c"},{"path":".agents/skills/_shared/scripts/remediation_source_proof.py","sha256":"e4439db033cfa25b58bcb702b7981130af41379fbf55e270d72f713737cb6aa3"},{"path":".agents/skills/_shared/scripts/test_remediation_closure.py","sha256":"56b8fa9e9acfd1d89c6ecab64f1e9c3399c64652ddfb1d41f6815327c8d5ab23"},{"path":".agents/skills/_shared/scripts/test_remediation_source_proof.py","sha256":"db486e4845c445e0edb6fc513785839ec9ed4216c13483721331a79148dd98e8"},{"path":".agents/skills/_shared/scripts/validate_assurance_artifact.py","sha256":"c35da8999a6b5bcea9c21f8269e60f1a014cbd3c132418859c8028f364d59c2f"},{"path":".agents/skills/opi-remediate/references/execution-protocol.md","sha256":"7b42a5ae983388e7e909e4a6140dc3441be63ba4a86f282aea0e74d55b4a07bd"}]
 **Unresolved decisions**: none
 
-This plan covers exactly28 indexed source keys:21Refuted,5Confirmed,2Partially confirmed. All fixes have a chosen source-backed root, predicate, caller/schema migration, observed behavioral red where required, and concrete matching future verification. No future green is represented as observed. This is planning readiness, not applied repairs, complete acceptance or PhasePASS. Only the fixed plan pair is newly changed by sealing; no source/ledger/audit/result/CI/branch/push mutation is authorized by this artifact alone.
+This plan covers exactly28 indexed source keys:21Refuted,5Confirmed,2Partially confirmed. All fixes have a chosen source-backed root, predicate, caller/schema migration, observed behavioral red where required, and concrete matching future verification. The reseal binds the committed workflow baseline. The audit index, finding decisions and closure predicates retain their original authority. Three machine dispositions carry the revised verification commands. All repair and native greens remain not-run. This plan requires a fresh exact-digest apply invocation.
 
 ## Source, authority and evidence boundary
 
@@ -16,6 +17,45 @@ The source baseline includes authorized checkpoint2078c70dba7056a791d988ab1c753f
 Current owning opi-implement plan was explicitly invoked. All16 canonical normalized source hashes match; initializer refuses NO DRIFT and ledger-schema says frozen Phase snapshots are historical and NOT re-synced. P006 is Refuted; no P0/P2/P4 confirmation/graph/hash write remains. Independent F1a remains futurePhaseexit authority, never a circular precondition or an inferred historical pass. B_QUOTA will precisely change registered Chinese wording later; actual future source drift then returns to the owning gate, without remediation installing pins or declaringPhaseexit.
 
 User-approved native route is scope.md SHA256 `2c72a21837fe505f37b00e21a1500b9e4a84a32d4f39bac09448861c84f88e08`: after separately approvedapply/localchecks, commit/push only approvedfixes/CIacceptance on `codex/phase20-remediation-ci` in `OdradekAI/opi`,trigger sixnativejobs,download originalproof. No apply now/main/merge/tag/release/liveprovider or unsolicited message publication. This resolves execution-resource authority; actualnativegreen remainsnot-run. No repeatedpermission is needed inside that bounded futurepath.
+
+## CI checkpoints and final delivery proof
+
+Use the [execution protocol](../../../../.agents/skills/opi-remediate/references/execution-protocol.md#source-and-materialization-proof).
+The workflow commit `4e662a02c8a26d23986b12129b6f47a7a8822fcc` is the remediation baseline.
+The committed comparison from `dcd01d9a06bb075aa4b63378cdec23a8f880d5e0` to this baseline contains only the
+previous plan pair and the eight bound workflow files. Product sources,
+verification runners for the finding evidence, specifications and live audit
+artifacts have the same committed entries. The original evidence receipts retain
+their recorded execution identities. Capture the external baseline after
+validating the approved digest. The plan-only commit may be the execution HEAD.
+
+1. Complete the required local checks before B_NATIVE. For the local package
+   runs on the repaired worktree, use the real direct cache owner and retain
+   the original dirty-source package metadata and exact tested inputs. B_EXPORT
+   separately proves the committed archive/cache-owner route. The native jobs
+   prove the actual published checkpoint with a clean checkout.
+2. Capture a `tested` receipt before checking each CI candidate. After the
+   local checks, stage only the currently implemented approved repairs and CI
+   acceptance files. Run `checkpoint --stage index`, commit under the existing
+   bounded authorization, and run `checkpoint --stage commit` before pushing.
+   Keep the plan, audit and result Git entries at their parent values. Retain
+   both receipts, their digests, the actual commit SHA, the CI checkout SHA and
+   all six native proof sets. The checkpoint proves source identity; native
+   execution still supplies the green evidence.
+3. If B_FINAL_DOCS changes packaged documentation or other build inputs, use
+   the prior commit receipt and digest with `tested`, verify and publish the
+   next source-only checkpoint on the same authorized branch, and run the
+   required package and native checks against that exact commit. Preserve both
+   checkpoints and their original evidence; do not attribute an old run to a
+   new commit.
+4. After obtaining all required evidence, capture the final `tested` receipt
+   with the latest checkpoint binding before the final verification union.
+   Validate the full result and run `verify --stage worktree` for the cumulative
+   repair delta from the original baseline. Final delivery is separate: when
+   explicitly authorized, verify the index with all four fixed outputs and the
+   frozen audit set, then verify the final commit as a direct child of the last
+   checkpoint. A result-only final commit is valid if all source is already
+   proved. The authorized CI checkpoint pushes do not publish that final result.
 
 | Indexed run | Findings SHA-256 | Keys |
 |---|---|---|
@@ -598,7 +638,7 @@ Select the Gaxios agent ONCE at initial source URL and retain it across redirect
 **Root change**: Add one actual extracted-.crate public SDK consumer family to existing package_slice.
 **Closure predicate**: All18 fixed public targets execute their full nonempty exact case inventories in all6 named independent consumer profiles with0failed/ignored/filtered,public API only,actual package/source/lock/feature/native identities and retained originals.
 **Dependencies**: ["PXY_HTTP", "PXY_WS", "PXY_AWS", "PXY_ADC", "B_ADC_REDIRECT", "B_BUDGET", "B_RECEIPT", "B_SCHEMA", "B_EXE_RECEIPTS", "B_CACHE", "B_EXPIRY"]
-**Verification union**: python scripts/pi-sdk-conformance/package_slice.py --family sdk with admitted export/cache identity, --offline, fresh scratch,persistenttarget; exact six profiles pass check_sdk_evidence with actual complete18target lists==runs, all source/fixture/lock/graph/native/binary proofs. New detailed case manifest must execute actualselected-context positive,modelmap,publicactions,customclassifier checks. Full new/modified Rust and Python test targets PASS.
+**Verification union**: python scripts/pi-sdk-conformance/package_slice.py --family sdk --offline, fresh scratch and the persistent direct-owner target for the local repaired worktree; exact six profiles pass check_sdk_evidence with actual complete18target lists==runs, all source/fixture/lock/graph/native/binary proofs and original package VCS metadata. B_EXPORT separately verifies the committed export/cache admission. New detailed case manifest must execute actualselected-context positive,modelmap,publicactions,customclassifier checks. Full new/modified Rust and Python test targets PASS.
 
 #### Fix B_SDK.1: Actual assembled external SDK consumer
 
@@ -611,7 +651,7 @@ Select the Gaxios agent ONCE at initial source URL and retain it across redirect
 - **Change**: Add one actual extracted-.crate public SDK consumer family to existing package_slice.
 - **Closure predicate**: All18 fixed public targets execute their full nonempty exact case inventories in all6 named independent consumer profiles with0failed/ignored/filtered,public API only,actual package/source/lock/feature/native identities and retained originals.
 - **Red-before**: N/A: current external_sdk is a workspace test and no actual package consumer selects the assembled matrix; static missing selection is confirmed,not a reproduced SDK runtimefailure.
-- **Green-after**: python scripts/pi-sdk-conformance/package_slice.py --family sdk with admitted export/cache identity, --offline, fresh scratch,persistenttarget; exact six profiles pass check_sdk_evidence with actual complete18target lists==runs, all source/fixture/lock/graph/native/binary proofs. New detailed case manifest must execute actualselected-context positive,modelmap,publicactions,customclassifier checks. Full new/modified Rust and Python test targets PASS. Observed:not-run.
+- **Green-after**: Run the actual local SDK package family through the direct-owner route in the verification union, with the original package VCS metadata. Verify the complete six-profile execution evidence and the independent B_EXPORT archive admission proof. Observed:not-run.
 
 ### Batch B_HTTP_PACKAGE: External parser acceptance corpus
 
@@ -638,7 +678,7 @@ Select the Gaxios agent ONCE at initial source URL and retain it across redirect
 **Root change**: Install the reviewed native CI acceptance route and collect its original six-host/toolchain proof sets.
 **Closure predicate**: Reserved-branch push runs native ubuntu/macos/windows×stable/exact1.97.0; each job completes the fixed offline workspace/package/SDK/native-material union and retained original artifacts with exactsource+host+toolchain identities. No cross-build is labeled native.
 **Dependencies**: ["B_SDK", "B_HTTP_PACKAGE"]
-**Verification union**: 20 runner/proposal checks,6dryruns,then actual six nativejobs and downloaded original proof allvalidate. Each sixjob completes41ordered commands as reviewed,including fullSDK6profiles,boundedfamilies,workspace gates and exactlocked material/source/native/unit identities. Inspect actual job exits/counts and artifact bytes; configured CI is not PASS.
+**Verification union**: 20 runner/proposal checks and 6 dry runs; verify the source-only checkpoint index and commit before the authorized push. Validate all six actual native jobs and downloaded original proof against that checkpoint SHA. Each job completes 41 ordered commands as reviewed, including full SDK six profiles, bounded families, workspace gates and exact locked material/source/native/unit identities. Inspect job exits, executed counts and artifact bytes.
 
 #### Fix B_NATIVE.1: Six owning-host CI verification jobs
 
@@ -651,7 +691,7 @@ Select the Gaxios agent ONCE at initial source URL and retain it across redirect
 - **Change**: Install the reviewed native CI acceptance route and collect its original six-host/toolchain proof sets.
 - **Closure predicate**: Reserved-branch push runs native ubuntu/macos/windows×stable/exact1.97.0; each job completes the fixed offline workspace/package/SDK/native-material union and retained original artifacts with exactsource+host+toolchain identities. No cross-build is labeled native.
 - **Red-before**: N/A: this installs test/CI verification code for current mandatory missing native evidence; all future native greens are not-run. No compiler/setup failure is a productred.
-- **Green-after**: 20 runner/proposal checks,6dryruns,then actual six nativejobs and downloaded original proof allvalidate. Each sixjob completes41ordered commands as reviewed,including fullSDK6profiles,boundedfamilies,workspace gates and exactlocked material/source/native/unit identities. Inspect actual job exits/counts and artifact bytes; configured CI is not PASS. Observed:not-run.
+- **Green-after**: Run the verification union, retaining the checked checkpoint index and commit receipts and binding every actual CI run and artifact to the verified checkpoint SHA. Observed:not-run.
 
 ### Batch B_QUOTA: Align Chinese below-cost retry wording
 
@@ -678,7 +718,7 @@ Select the Gaxios agent ONCE at initial source URL and retain it across redirect
 **Root change**: Update only current delivery manuals with actual final proof and complete test dispositions.
 **Closure predicate**: Paired SDK/product/delivery documents describe resulting current contracts and bind actual package/native/MSRV/case/material receipts with limits; no inventory,guardmock,historicalsnapshot or remediation result claims PhasePASS.
 **Dependencies**: ["B_NATIVE", "B_QUOTA"]
-**Verification union**: Docchecker,diffcheck,READMEsourceembedcheck and final affectedgates PASS. If finalpackagedREADME bytes change, publish finalapprovedcheckpoint on sameauthorizedbranch and rerun sixnative/package sets once docs arefixed; collect finalreceipt externally withouteditingmanuals again. Documents link stable externalproofmanifest paths and immutable reviewed runtimeinputs so this is no reseal loop; never claim a new packagehash from an oldartifact.
+**Verification union**: Docchecker, diffcheck, README source-embed check and final affected gates PASS. If packaged README bytes or other build inputs change, bind the previous checkpoint, prove the next source-only checkpoint and publish it on the same authorized branch. Rerun the six native/package sets against its exact SHA and collect the original receipts externally without editing the manuals again. Manuals link stable external proof paths and immutable runtime inputs.
 
 #### Fix B_FINAL_DOCS.1: Factual bilingual delivery handoff
 
@@ -691,7 +731,7 @@ Select the Gaxios agent ONCE at initial source URL and retain it across redirect
 - **Change**: Update only current delivery manuals with actual final proof and complete test dispositions.
 - **Closure predicate**: Paired SDK/product/delivery documents describe resulting current contracts and bind actual package/native/MSRV/case/material receipts with limits; no inventory,guardmock,historicalsnapshot or remediation result claims PhasePASS.
 - **Red-before**: N/A: factual documentation/handoff repair follows actual proof; no behavioral productionedit in this batch.
-- **Green-after**: Docchecker,diffcheck,READMEsourceembedcheck and final affectedgates PASS. If finalpackagedREADME bytes change, publish finalapprovedcheckpoint on sameauthorizedbranch and rerun sixnative/package sets once docs arefixed; collect finalreceipt externally withouteditingmanuals again. Documents link stable externalproofmanifest paths and immutable reviewed runtimeinputs so this is no reseal loop; never claim a new packagehash from an oldartifact. Observed:not-run.
+- **Green-after**: Run the verification union and bind any required rerun to the verified documentation checkpoint. Validate final applicability before writing the fixed result. Observed:not-run.
 
 ## Final Verification
 
@@ -701,8 +741,8 @@ Execute each step -> verify its exact predicate and preserve receipts before dep
 2. Deduplicated workspace gates after all runtime/caller changes -> verify `cargo fmt --check --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --all-targets`, `cargo test --workspace --doc`, `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-D warnings`, plus `python scripts/opi-doc-check.py`, `git diff --check`. No paid/livecredential tests. The known ignoredprivilegedcase is reported separately,not countedacceptance.
 3. Actual extracted-package README3,Schema73(defaultsoff/callerdefault),HTTP6+fullparser(ordinary/gzip),crypto6(ordinary/ring),WS10+separateprivatecorpus(ordinary/default/Czlib),SDK18targets×6profiles -> verify exactcasecounts,artifact/extractedsources,independentconsumerlock/graph,cfg/feature/sourcechecksum,library+consumerunit/executable and retained originals. No workspace external_sdk or sourceinclude substitutes.
 4. Finite A/L criterion selectors and E08/09/10/11 materials -> verify each exact original predicate,source-bound assertion,input graph and observedcount; authenticationmanagement/refresh/ACK/unknown/barriers,customAPI/context/telemetry/image/classifier/deferred,callback/order/usage/partial/error/cancel and realprofile/transport/parser/schema controls retain their own assertions. AWSLC source/nativearchive/output/link andCzlib distinct. Existingcatalogmaterialcheck reproduces42provider artifactmanifest; actualpackage loader+tampers run separately.
-5. Six authorized nativejobs -> verify actual Linux/macOS/Windows×stable/1.97.0 complete offlinepackage/SDK/native/workspace union with exacthost/toolchain/source/artifact andoriginal downloadablebytes. No cross/metadata/dryrun substitution. If B_FINAL_DOCS changes packagedREADME/buildinputs, make a finalapprovedsamebranchcheckpoint and repeat affectednative/package sets against that finalsource; references use a stableexternal finalmanifest and immutableinputs so no automaticmanualrewrite/reseal loop follows. This repeatedcheck is justified only by those changedinputs.
-6. Sourceclosure -> verify every source has all ordered closure_batches PASS and its exact conjunction,including165criterionmapping,finaldoc/currentinputapplicability and auditindeximmutability. Write result only under laterapprovedapply; no Phaseconformance/ledger update/F1a inferred.
+5. Verified CI checkpoints -> verify actual Linux/macOS/Windows × stable/1.97.0 complete offline package/SDK/native/workspace union, exact checkpoint/host/toolchain/source/artifact identities and original downloaded bytes. Repeat against a later verified source-only checkpoint only if B_FINAL_DOCS changes packaged documentation or other build inputs.
+6. Source closure -> verify all assigned `closure_batches` and their conjunctions, the 165-row criterion join, final input applicability, and the unchanged live audit index. Bind the final tested input to the latest checkpoint and verify the full cumulative source delta with the validated result. No Phase conformance, ledger update or F1a execution is inferred.
 
 All plan-stage green_after.observed values remain `not-run`. Changes to code/dependency/authority beyond named causal roots, changed index/plan inputs, unavailable requiredrunner or failedpredicates stop closure honestly. Future known greens are assignedchecks,not waived obligations.
 
