@@ -53,6 +53,7 @@ disposition's `remaining_obligations`; any such gap keeps the whole plan draft.
 **Closure predicate**: <one falsifiable outcome>
 **Dependencies**: []
 **Verification union**: <deduplicated checks>
+**Contract rehearsal**: <record below, or concrete reason the batch preserves its contracts>
 
 #### Fix B1.1: <short title>
 
@@ -103,3 +104,30 @@ planning; do not exempt report-only changes from the index binding.
 `Remediation head` records the source evidence baseline. If the user commits
 the fixed plan pair afterward, retain that baseline and use the shared
 disposition contract's apply admission check; plan-only commits need no reseal.
+
+## Contract rehearsal
+
+Rehearse changes to public APIs, accepted inputs, observable errors or behavior,
+wire or durable formats, and other contracts relied on by callers. Keep all
+trial source and fixture edits in the isolated export. For each affected batch:
+
+1. Trace the changed contract through production and downstream test callers,
+   including reverse dependencies, fixtures and package consumers as applicable.
+   Select checks for the affected seams and record the inspected scope.
+2. Run the selected tests against the baseline and the minimum contract change
+   with existing downstream expectations. Bind the committed source and the
+   trial diff. Record exact commands, exits, executed tests and counts, and raw
+   proof references.
+   Separate expected contract migrations from unexpected failures.
+3. Rehearse each necessary caller or fixture migration. Preserve the assertion's
+   intent, then rerun the affected checks on the candidate with those migrations.
+   Keep the plan draft for unexplained failures or required checks without proof.
+4. Compare the export delta and the required path inventory with the batch's
+   `File(s)` and its assigned dispositions' `changed_paths`. For a compound
+   disposition, check the union of its assigned batches. Include every required
+   migration in the approved checkpoint path set when CI needs it. Recheck the
+   affected trial and path inventory after a change to the proposed contract.
+
+Record the commands, observations and paths under `Contract rehearsal` or link
+their exact receipts there. Treat trial passes as planning evidence. The actual
+apply still owes its own green-after, verification union and source proof.

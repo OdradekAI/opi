@@ -68,7 +68,8 @@ flowchart TD
   `no-history` 结果；附录未完成时保留有效核心，并与 verdict 分开报告。
 - `opi-eval` 的[用户确认源码修复分支](opi-eval/SKILL.md#user-confirmed-source-repairs)
   无需另行调用实现技能，但不改变台账/Phase 所有权，也不授权新增真实试次。
-- `opi-remediate mode=plan` 核验全部活动成员与 findings 严格并集；
+- `opi-remediate mode=plan` 核验全部活动成员与 findings 严格并集。
+  封存契约变更前，在隔离副本中试跑下游测试，并核对计划是否覆盖全部必改路径。
   `mode=apply` 需要两个精确摘要绑定，仅允许契约限定的顺手修复。
   两种模式均不写正式台账。
   仅提交该 Phase 的固定计划文件对，会保留源码基线与批准；

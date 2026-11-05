@@ -78,7 +78,9 @@ Open the selected `SKILL.md`, then only references required by its active mode.
   to separate implementation-skill invocation; it does not change ledger/Phase
   ownership or authorize new live trials.
 - `opi-remediate mode=plan` verifies every live indexed member and the strict
-  finding union. `mode=apply` requires both exact digest bindings and permits
+  finding union. Before sealing a contract change, it rehearses downstream
+  tests in an isolated export and checks that the plan covers every required
+  migration path. `mode=apply` requires both exact digest bindings and permits
   only contract-bounded incidental repairs. Neither writes the live ledger.
   Committing only that Phase's fixed plan pair preserves its source baseline
   and approval; the [disposition contract](_shared/references/remediation-disposition-contract.md#plan-approval-identity)

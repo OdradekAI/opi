@@ -106,12 +106,22 @@ Behavioral fixes require discriminating red-before evidence before production
 edits and a matching green-after check. Shared evidence may close identical
 closure keys; every source key still needs exactly one disposition.
 
-### 3. Seal and validate the fixed plan
+### 3. Rehearse contract changes
+
+For each batch that changes a caller-visible contract, rehearse its smallest
+source-backed change in the isolated `git archive` export before sealing. Use
+the [plan template](references/remediation-plan-template.md#contract-rehearsal)
+to trace downstream callers, exercise their tests, and reconcile every required
+path with the batch and its dispositions. Before Cargo verification, follow
+the [Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md#build-and-inspect).
+Record incomplete rehearsal or unexplained failures as remaining obligations.
+
+### 4. Seal and validate the fixed plan
 
 Use the plan template. `READY-FOR-APPLY` requires exact strict-union coverage,
-complete closure decisions/proofs, required red-before evidence, no unresolved
-decision or remaining obligation, and exact active-index binding. Otherwise produce a validated
-`DRAFT-UNRESOLVED`.
+complete closure decisions/proofs, required red-before and contract rehearsal
+evidence, no unresolved decision or remaining obligation, and exact active-index
+binding. Otherwise produce a validated `DRAFT-UNRESOLVED`.
 
 Run the dispositions validator, then:
 
@@ -119,8 +129,9 @@ Run the dispositions validator, then:
 python .agents/skills/_shared/scripts/validate_assurance_artifact.py plan docs/snapshots/phase<N>/assurance/remediation.plan.md
 ```
 
-Present the emitted digest and wait for a new apply invocation containing that
-exact digest. If every disposition is no-action, use the disposition contract's
+Present a ready plan's emitted digest and wait for a new apply invocation
+containing that exact digest. If every disposition is no-action, use the
+disposition contract's
 [no-change result](../_shared/references/remediation-disposition-contract.md#no-change-result)
 branch instead. A draft containing both fixes and unresolved items stays a draft;
 there is no partial-apply branch.
