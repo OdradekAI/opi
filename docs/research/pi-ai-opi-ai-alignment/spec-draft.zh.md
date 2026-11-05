@@ -590,6 +590,12 @@ policy。那里可以选择 Pi 1.4 配置词汇，不替换本 Phase 的 Pi 1.3 
 
 本轮不实施／运行产品测试或runtime suites；另行记录的离线研究harness已执行。旧 70 个 Rust tests/probes 保留历史基线；它们不使新验收组通过。未来执行遵循实际 change-scope verification union 和唯一 matrix，包括经审查的 Pi mock-only 选择、隔离 HOME/env、禁止 credentials 触发 live，以及不静默安装／hydrate。
 
+### 修复应用与 Phase exit
+
+本 Phase 的审计集修复以精确的本地试验回执作为 apply 就绪证据。绑定活动审计集、已提交基线、候选补丁，以及每项选定修复的受影响调用方和测试证据。Windows 打包、Linux/MSRV 工作区和行为检查只覆盖各自实际执行的范围。应用前解决其余适用的 finding 义务，并按修复流程在实际修复后的源码上执行受影响的检查集合。
+
+DEL-14 下的源码绑定 CI 配置及运行，以及 macOS 原生构建、工作区测试、打包、行为和 feature-union 证明，安排在独立 Phase exit。此顺序适用于关联验收条款中对应的部分。实际回执绑定最终交付源码前，这些义务保持开放。已声明的平台范围和独立 F.1a 退出决定仍要求完整的适用证据。
+
 ## 证据导航与剩余边界
 
 | 契约 | 修改时阅读 |

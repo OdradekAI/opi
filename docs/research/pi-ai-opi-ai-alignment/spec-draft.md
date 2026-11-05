@@ -599,6 +599,12 @@ Differential inputs are fixed artificial fixtures, with both source versions, ac
 
 No product tests or runtime suites are implemented/run here; the separately recorded offline research harnesses are executed. The old 70 Rust tests/probes retain their historical baseline; they do not pass the new acceptance groups. Future execution follows the actual change-scope verification union and the unique matrix, including reviewed Pi mock-only selection, isolated HOME/env, no credentials-triggered live and no silent install/hydration.
 
+### Remediation apply and Phase exit
+
+For this Phase's audit-set remediation, use exact local rehearsal receipts for apply readiness. Bind the active audit set, committed baseline, candidate patch and every selected repair's affected caller and test evidence. Use the observed Windows package and Linux/MSRV workspace and behavior checks for their exercised scopes. Resolve the remaining applicable finding obligations before apply and run the affected verification union on the actual repaired source under the remediation workflow.
+
+Under DEL-14, schedule source-pinned CI configuration and execution and native macOS build, workspace tests, package, behavior and feature-union proof for independent Phase exit. This timing applies to the corresponding portions of linked acceptance criteria. Keep those portions open until their actual receipts bind the final delivered source. The declared platform scope and independent F.1a exit decision continue to require the full applicable evidence.
+
 ## Evidence navigation and remaining boundaries
 
 | Contract | Read when changing it |
