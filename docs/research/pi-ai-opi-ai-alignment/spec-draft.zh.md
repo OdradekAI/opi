@@ -467,6 +467,10 @@ CredentialStore::mutation_barrier(options) 和 Models::credential_mutation_barri
 
 只有一个显式 transport/retry owner；关闭嵌套 retry，不改来源限定的实际 sends。撤回 blanket redirect:none/仅 same-origin ADC GET<=5/16-total-send 的 parity 默认。复现固定各路径 redirect status/method/body/header stripping 和 retry；不向未授权目标泄漏 credential 或切换 auth identity。更强宿主 routing policy 须显式且记录接受差异。来源/backend 证明缺失是缺口，不是统一3xx失败。
 
+内置 ADC URL subject supplier 将 `credential_source.headers` 的全部配置值（包括显式 Referer）绑定到配置来源的协议、主机和有效端口。同源跳转按该来源的 method 和 body 规则保留配置值。首次跨 origin 后，本次尝试的所有后续跳转均移除配置值，回到原 origin 也不恢复。每次重试从配置来源和冻结的输入重新开始。transport 自行生成的 header 及其他 ADC 来源的协议自有 header 各按原有合同处理。SDK 不生成 Referer。
+
+内置 ADC HTTP 来源只接受 HTTP(S) 重定向目标。遇到其他协议（包括内联 `data:` subject），须在向目标发送请求或处理内联 subject 前返回类型化脱敏重定向错误。令牌交换 POST 拒绝重定向。注入的 transport 接收原始请求并按自身显式合同负责重定向。接受差异见 [RDF-08](pi-1.3.0-rust-differences.md)。
+
 保留 scoped proxy/NO_PROXY、TLS 验证及实例所有权，不改全局 env/provider/subscriber 或绕过。WS Upgrade 与显式 proxy-placeholder 的 H1 不表示所有 Bedrock 流量 H1。撤回 CONNECT64KiB/124-header 和 close2s SDK 政策；选定owned Upgrade与RDF-24私有codec替代这些handshake/compression约束；完整集成仍需覆盖证明。cross-origin/redirect/proxy fixtures 计合法 sends 并验 credential stripping/source binding。
 
 #### 上游 HTTP 依赖 profile
