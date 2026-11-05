@@ -1208,7 +1208,7 @@ Regex and URL operations use upstream crates.io `regress 0.12.0` and `url 2.5.8`
 Unicode properties, scripts, case mapping and IDNA data follow the supported
 dependency profile, rather than a fixed Unicode version. The permitted data
 differences and upgrade checks are recorded in
-[RDF-21](../../docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile).
+RDF-21 upstream profile review (historical Phase 20 evidence).
 The workspace lock does not fix every library consumer's graph. Opi disables
 regress default features and enables `std`, `utf16`, `prohibit-unsafe`; ordinary
 external consumers also exercise feature union. These data differences do not
@@ -1216,7 +1216,7 @@ relax schema guards, admission/ref order, normalization, authorization or the
 no-I/O contract. Full schema conformance closure stays with the
 P20-GAP-SCHEMA scenario and its recorded mechanism owners; package/platform
 acceptance evidence lives in
-[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md)
+the [Phase 20 implementation snapshot](../../docs/snapshots/phase20/opi-impl-state.json)
 (Linux and Windows executed, macOS pending an owning host).
 
 Upstream profile review (regress, `url`, `idna`, `idna_adapter`, ICU4X
@@ -1321,7 +1321,7 @@ serialize/reload it, then send same-identity, changed-model and foreign-wire
 requests while keeping canonical signed/redacted or encrypted data intact.
 These checks complement, and do not replace, the final SDK package and
 platform matrix; the matrix's executed evidence is recorded in
-[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md).
+the [Phase 20 implementation snapshot](../../docs/snapshots/phase20/opi-impl-state.json).
 
 ## Canonical Context/Transcript Chronology
 

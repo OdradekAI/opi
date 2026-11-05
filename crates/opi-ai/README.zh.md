@@ -1078,13 +1078,13 @@ annotation 对象只有被引用为 schema 时才参与验证。引用目标在�
 数组仍保持 inert。regex 与 URL 使用 crates.io 上游 `regress 0.12.0` 和
 `url 2.5.8`。Unicode 属性、脚本、大小写映射和 IDNA 数据随受支持的依赖
 profile，不承诺固定 Unicode 版本。允许的数据差异与升级检查见
-[RDF-21](../../docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md#rdf-21-upstream-data-profile)。
+RDF-21 上游 profile 审查（Phase 20 历史证据）。
 workspace lock 不固定所有库消费者的图。Opi 关闭 regress 默认 features，
 启用 `std`、`utf16`、`prohibit-unsafe`；普通外部消费者也验证 feature union。
 数据差异不放宽 schema guard、admission/ref 顺序、normalization、授权或
 零 I/O 合同。完整 schema conformance 闭合仍由 P20-GAP-SCHEMA 场景及其记录的
 机制归属任务承担；包／平台验收证据见
-[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md)
+[`Phase 20 实现快照`](../../docs/snapshots/phase20/opi-impl-state.json)
 （Linux 与 Windows 已实际执行，macOS 待 owning host）。
 
 上游 profile 审查（regress、`url`、`idna`、`idna_adapter`、ICU4X `icu_*`、
@@ -1167,7 +1167,7 @@ item id。固定参考：
 loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重新加载后实际发送
 同身份、改模型及跨 wire 请求，同时保持 canonical 的 signed/redacted 或加密数据
 不变。这些检查补充而不替代最终 SDK package 与平台矩阵；矩阵已执行的证据记录在
-[phase20-delivery-evidence](../../docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md)。
+[`Phase 20 实现快照`](../../docs/snapshots/phase20/opi-impl-state.json)。
 
 ## 规范 Context／Transcript 时序
 

@@ -36,8 +36,10 @@
 
 ## References
 
-- Registered source: [spec-draft.md](../research/pi-ai-opi-ai-alignment/spec-draft.md) (placement case; AIR-023/046/051/063; OAuth/rotation annex), [acceptance-matrix.md](../research/pi-ai-opi-ai-alignment/acceptance-matrix.md) (V-09/39/43/55; R-02/R-03), [pi-1.3.0-sdk-contracts.md](../research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md) §5 (nine flows, store transactions).
-- Historical first-hand evidence: [sdk-auth-provider-migration.md](../research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md) (OA-01–06, BP-01–04; Pi 1.0.0 window, qualified by the current sources).
+The former Phase 20 research bundle was retired from this checkout; the labels below preserve provenance without local links.
+
+- Registered source: `spec-draft.md` (placement case; AIR-023/046/051/063; OAuth/rotation annex), `acceptance-matrix.md` (V-09/39/43/55; R-02/R-03), `pi-1.3.0-sdk-contracts.md` §5 (nine flows, store transactions).
+- Historical first-hand evidence: `sdk-auth-provider-migration.md` (OA-01–06, BP-01–04; Pi 1.0.0 window, qualified by the current sources).
 - Parent specification: [opi-spec.md](../opi-spec.md) §4, §8.1–8.2; [opi-spec.zh.md](../opi-spec.zh.md).
 - Current consumers: `crates/opi-ai/src/auth.rs`; `crates/opi-coding-agent/src/oauth.rs`, `src/credential_store.rs`, `src/interactive_auth.rs`, `src/provider_factory.rs`, `src/harness.rs`.
-- Delivery-input baseline: [phase20-delivery-inputs.md](../research/pi-ai-opi-ai-alignment/phase20-delivery-inputs.md). Chinese counterpart: [0001-sdk-auth-placement.zh.md](0001-sdk-auth-placement.zh.md).
+- Delivery-input baseline: `phase20-delivery-inputs.md`. Chinese counterpart: [0001-sdk-auth-placement.zh.md](0001-sdk-auth-placement.zh.md).

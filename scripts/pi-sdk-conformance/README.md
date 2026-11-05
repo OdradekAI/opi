@@ -3,10 +3,8 @@
 This offline harness checks the public `opi-ai` Schema seam from an actual
 `cargo package` artifact in a workspace-external ordinary Cargo consumer. It
 uses crates.io `regress 0.12.0` and `url 2.5.8`, with the supported upstream data
-profile recorded by each run. It does not pin a Unicode release. The selected
-contract and accepted data differences are recorded in the
-[Schema readiness source](../../docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md)
-and [Rust difference register](../../docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-rust-differences.md).
+profile recorded by each run. It does not pin a Unicode release. The selected contract and accepted data differences are captured by the frozen
+fixtures and evidence files in this directory.
 
 The harness retains bounded dependency, conformance and package evidence for
 the current tasks. Full strict/grammar projection, conformance and final SDK

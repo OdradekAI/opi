@@ -36,8 +36,10 @@
 
 ## 参考
 
-- 注册来源：[spec-draft.zh.md](../research/pi-ai-opi-ai-alignment/spec-draft.zh.md)（归属案例；AIR-023/046/051/063；OAuth/rotation 附件）、[acceptance-matrix.md](../research/pi-ai-opi-ai-alignment/acceptance-matrix.md)（V-09/39/43/55；R-02/R-03）、[pi-1.3.0-sdk-contracts.md](../research/pi-ai-opi-ai-alignment/pi-1.3.0-sdk-contracts.md) §5（九个 flow、store 事务）。
-- 历史一手证据：[sdk-auth-provider-migration.md](../research/pi-ai-opi-ai-alignment/sdk-auth-provider-migration.md)（OA-01–06、BP-01–04；Pi 1.0.0 窗口，以当前来源限定）。
+此前的 Phase 20 研究资料包已从此 checkout 移除；以下名称保留来源溯源，不再提供本地链接。
+
+- 注册来源：`spec-draft.zh.md`（归属案例；AIR-023/046/051/063；OAuth/rotation 附件）、`acceptance-matrix.md`（V-09/39/43/55；R-02/R-03）、`pi-1.3.0-sdk-contracts.md` §5（九个 flow、store 事务）。
+- 历史一手证据：`sdk-auth-provider-migration.md`（OA-01–06、BP-01–04；Pi 1.0.0 窗口，以当前来源限定）。
 - 父规范：[opi-spec.zh.md](../opi-spec.zh.md) §4、§8.1–8.2；[opi-spec.md](../opi-spec.md)。
 - 当前消费者：`crates/opi-ai/src/auth.rs`；`crates/opi-coding-agent/src/oauth.rs`、`src/credential_store.rs`、`src/interactive_auth.rs`、`src/provider_factory.rs`、`src/harness.rs`。
-- 交付输入基线：[phase20-delivery-inputs.zh.md](../research/pi-ai-opi-ai-alignment/phase20-delivery-inputs.zh.md)。英文对应页：[0001-sdk-auth-placement.md](0001-sdk-auth-placement.md)。
+- 交付输入基线：`phase20-delivery-inputs.zh.md`。英文对应页：[0001-sdk-auth-placement.md](0001-sdk-auth-placement.md)。

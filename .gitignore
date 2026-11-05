@@ -75,3 +75,5 @@ release-notes.md
 .opi-impl-state.*candidate*.json
 .opi-impl-state.*backup*.json
 .opi-impl-state.pre-*.json
+
+.pi

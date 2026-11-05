@@ -34,8 +34,8 @@ of this work. The unrelated `pi-1.4.0-upgrade-assessment.md` is excluded.
 ## Existing sources and observed gaps
 
 The parent [specification](../../opi-spec.md) owns architecture and authority;
-the registered [Phase 20 source](../../research/pi-ai-opi-ai-alignment/spec-draft.md)
-owns the current SDK contract. In particular, AIR-045/046 and its public SDK
+the former registered Phase 20 source set is historical and is no longer
+retained in this checkout. In particular, AIR-045/046 and its public SDK
 table require ordinary direct calls, default memory stores, lazy sources and
 explicit built-in assembly. The [ledger](../../../.opi-impl-state.json) already
 assigns factories, native options, external packages and final evidence.

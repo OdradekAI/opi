@@ -26,9 +26,8 @@ Cargo 文件及规范账本均保持不变；不提交、不发布、不调用�
 
 ## 现有来源与已观察到的缺口
 
-父级[规范](../../opi-spec.md)拥有架构和权威，登记的
-[Phase 20 来源](../../research/pi-ai-opi-ai-alignment/spec-draft.md)拥有当前 SDK 合同。
-其中 AIR-045/046 与公开 SDK 表已要求普通直接调用、默认内存 stores、惰性来源和
+父级[规范](../../opi-spec.md)拥有架构和权威；此前登记的 Phase 20 来源集属于历史资料，
+已不再保留在此 checkout 中。其中 AIR-045/046 与公开 SDK 表已要求普通直接调用、默认内存 stores、惰性来源和
 显式内置组装。[账本](../../../.opi-impl-state.json)已分配 factories、原生选项、
 外部包和最终证据责任。
 
