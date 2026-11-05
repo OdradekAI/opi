@@ -366,6 +366,341 @@ class SourceProofTests(SourceProofFixture):
         self.assertTrue(injected)
 
 
+class SourceCheckpointProofTests(SourceProofFixture):
+    def checkpoint_tested(
+        self, output: Path, predecessor: Path | None = None, predecessor_digest: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        args: list[str | Path] = [
+            "tested", self.baseline, "--baseline-sha256", sha256(self.baseline),
+            "--output", output,
+        ]
+        if predecessor is not None:
+            args.extend(("--checkpoint", predecessor, "--checkpoint-sha256", predecessor_digest or sha256(predecessor)))
+        return self.proof(*args)
+
+    def capture_checkpoint_tested(self, name: str, predecessor: Path | None = None) -> None:
+        self.tested = self.receipts / f"{name}.tested.json"
+        checked = self.checkpoint_tested(self.tested, predecessor)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+
+    def reject_checkpoint_tested(self, predecessor: Path | None = None, digest: str | None = None) -> None:
+        output = self.receipts / "unexpected.tested.json"
+        checked = self.checkpoint_tested(output, predecessor, digest)
+        self.assertNotEqual(0, checked.returncode, checked.stdout)
+        self.assertFalse(output.exists())
+
+    def stage_checkpoint(self) -> None:
+        staged = run_git(self.root, "add", "--", self.source.relative_to(self.root).as_posix())
+        self.assertEqual(0, staged.returncode, staged.stderr)
+
+    def checkpoint(self, stage: str, output: Path, *args: str | Path) -> subprocess.CompletedProcess[str]:
+        return self.proof(
+            "checkpoint", self.baseline, "--baseline-sha256", sha256(self.baseline),
+            "--tested", self.tested, "--tested-sha256", sha256(self.tested),
+            "--stage", stage, "--output", output, *args,
+        )
+
+    def reject_checkpoint(self, stage: str, *args: str | Path, reason: str | None = None) -> None:
+        output = self.receipts / f"unexpected.{stage}.json"
+        checked = self.checkpoint(stage, output, *args)
+        self.assertNotEqual(0, checked.returncode, checked.stdout)
+        if reason is not None:
+            self.assertIn(reason, checked.stderr)
+        self.assertFalse(output.exists())
+
+    def seal_checkpoint(self, name: str, predecessor: Path | None = None) -> Path:
+        self.capture_checkpoint_tested(name, predecessor)
+        self.stage_checkpoint()
+        candidate = self.receipts / f"{name}.candidate.json"
+        checked = self.checkpoint("index", candidate)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        committed = run_git(self.root, "commit", "-m", f"fix: {name} checkpoint")
+        self.assertEqual(0, committed.returncode, committed.stderr)
+        head = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        receipt = self.receipts / f"{name}.commit.json"
+        checked = self.checkpoint(
+            "commit", receipt, "--candidate", candidate,
+            "--candidate-sha256", sha256(candidate), "--commit", head,
+        )
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        return receipt
+
+    def test_two_source_checkpoints_allow_complete_result_only_final_commit(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("first repaired source\n", encoding="utf-8")
+        first = self.seal_checkpoint("first")
+        self.source.write_text("second repaired source\n", encoding="utf-8")
+        second = self.seal_checkpoint("second", first)
+        self.capture_checkpoint_tested("final", second)
+        result = self.write_applied_result()
+        checked = self.verify(result)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        self.stage_result(result)
+        checked = self.verify(result, "--stage", "index")
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        committed = run_git(self.root, "commit", "-m", "test: final complete result")
+        self.assertEqual(0, committed.returncode, committed.stderr)
+        head = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        checked = self.verify(result, "--stage", "commit", "--commit", head)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+
+    def test_final_source_edit_after_checkpoint_requires_its_own_tested_input(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        checkpoint = self.seal_checkpoint("first")
+        self.source.write_text("final verified source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("final", checkpoint)
+        result = self.write_applied_result()
+        self.stage_result(result)
+        checked = self.verify(result, "--stage", "index")
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        committed = run_git(self.root, "commit", "-m", "fix: final source and complete result")
+        self.assertEqual(0, committed.returncode, committed.stderr)
+        head = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        checked = self.verify(result, "--stage", "commit", "--commit", head)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+
+    def test_checkpoint_does_not_create_or_replace_complete_result(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        checkpoint = self.seal_checkpoint("first")
+        self.assertFalse(self.plan.with_name("remediation.result.md").exists())
+        self.assertFalse(self.plan.with_name("remediation.result.dispositions.jsonl").exists())
+        self.capture_checkpoint_tested("final", checkpoint)
+        checked = self.verify(self.plan.with_name("remediation.result.md"))
+        self.assertNotEqual(0, checked.returncode)
+
+    def test_later_tested_capture_requires_checkpoint_predecessor(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.seal_checkpoint("first")
+        self.reject_checkpoint_tested()
+
+    def test_checkpoint_predecessor_digest_must_match_original_bytes(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        checkpoint = self.seal_checkpoint("first")
+        self.reject_checkpoint_tested(checkpoint, "0" * 64)
+
+    def test_earlier_checkpoint_cannot_replace_current_predecessor(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("first source\n", encoding="utf-8")
+        first = self.seal_checkpoint("first")
+        self.source.write_text("second source\n", encoding="utf-8")
+        self.seal_checkpoint("second", first)
+        self.reject_checkpoint_tested(first)
+
+    def test_index_candidate_is_not_a_committed_checkpoint_predecessor(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.seal_checkpoint("first")
+        self.reject_checkpoint_tested(self.receipts / "first.candidate.json")
+
+    def test_commit_without_checkpoint_receipt_cannot_advance_tested_input(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("unreceipted source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        committed = run_git(self.root, "commit", "-m", "fix: unreceipted checkpoint")
+        self.assertEqual(0, committed.returncode, committed.stderr)
+        self.reject_checkpoint_tested()
+
+    def test_additional_unreceipted_commit_cannot_follow_checkpoint(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        checkpoint = self.seal_checkpoint("first")
+        committed = run_git(self.root, "commit", "--allow-empty", "-m", "test: unrelated commit")
+        self.assertEqual(0, committed.returncode, committed.stderr)
+        self.reject_checkpoint_tested(checkpoint)
+
+    def test_checkpoint_commit_rejects_merge_with_exact_candidate_tree(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        candidate = self.receipts / "first.candidate.json"
+        checked = self.checkpoint("index", candidate)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        source_tree = run_git(self.root, "rev-parse", "HEAD^{tree}").stdout.strip()
+        side = run_git(self.root, "commit-tree", source_tree, "-p", self.source_head, "-m", "test: side commit")
+        self.assertEqual(0, side.returncode, side.stderr)
+        index_tree = run_git(self.root, "write-tree").stdout.strip()
+        merged = run_git(
+            self.root, "commit-tree", index_tree, "-p", self.source_head,
+            "-p", side.stdout.strip(), "-m", "test: merge with checkpoint tree",
+        )
+        self.assertEqual(0, merged.returncode, merged.stderr)
+        head = merged.stdout.strip()
+        moved = run_git(self.root, "update-ref", "HEAD", head, self.source_head)
+        self.assertEqual(0, moved.returncode, moved.stderr)
+        self.reject_checkpoint(
+            "commit", "--candidate", candidate,
+            "--candidate-sha256", sha256(candidate), "--commit", head,
+        )
+
+    def test_checkpoint_rejects_unrelated_staged_blob_even_when_worktree_matches(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        original = self.research.read_bytes()
+        self.research.write_text("unrelated staged content\n", encoding="utf-8")
+        staged = run_git(self.root, "add", "--", self.research.name)
+        self.assertEqual(0, staged.returncode, staged.stderr)
+        self.research.write_bytes(original)
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_preserves_but_cannot_publish_carried_in_staged_work(self) -> None:
+        self.research.write_text("carried in staged research\n", encoding="utf-8")
+        staged = run_git(self.root, "add", "--", self.research.name)
+        self.assertEqual(0, staged.returncode, staged.stderr)
+        before = run_git(self.root, "ls-files", "--stage", "--", self.research.name).stdout
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        self.reject_checkpoint("index")
+        self.assertEqual(before, run_git(self.root, "ls-files", "--stage", "--", self.research.name).stdout)
+        self.assertEqual("carried in staged research\n", self.research.read_text(encoding="utf-8"))
+
+    def test_checkpoint_rejects_source_outside_approved_paths(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.research.write_text("unplanned repair\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_rejects_changed_frozen_audit(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        report = self.assurance_dir / "audit.codex.gpt56.md"
+        with report.open("a", encoding="utf-8") as handle:
+            handle.write("\nChanged observation\n")
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_rejects_changed_approved_plan(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        with self.plan.open("a", encoding="utf-8") as handle:
+            handle.write("\nChanged plan\n")
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_rejects_stale_staged_source(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("old staged source\n", encoding="utf-8")
+        self.stage_checkpoint()
+        self.source.write_text("new tested source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_rejects_staged_repair_reverted_in_tested_worktree(self) -> None:
+        other = self.source.with_name("other.rs")
+        records = [json.loads(line) for line in self.dispositions.read_text(encoding="utf-8").splitlines()]
+        records[0]["changed_paths"].append(other.relative_to(self.root).as_posix())
+        write_jsonl(self.dispositions, records)
+        self.capture_baseline()
+        original = self.source.read_bytes()
+        self.source.write_text("staged edit later reverted in worktree\n", encoding="utf-8")
+        self.stage_checkpoint()
+        self.source.write_bytes(original)
+        other.write_text("actual checkpoint repair\n", encoding="utf-8")
+        staged = run_git(self.root, "add", "--", other.relative_to(self.root).as_posix())
+        self.assertEqual(0, staged.returncode, staged.stderr)
+        self.capture_checkpoint_tested("first")
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_rejects_source_modified_after_tested_capture(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("tested source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.source.write_text("untested source\n", encoding="utf-8")
+        self.stage_checkpoint()
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_cannot_publish_result_outputs_before_complete_verification(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        result = self.write_applied_result()
+        self.stage_checkpoint()
+        staged = run_git(
+            self.root, "add", "--", result.relative_to(self.root).as_posix(),
+            result.with_name("remediation.result.dispositions.jsonl").relative_to(self.root).as_posix(),
+        )
+        self.assertEqual(0, staged.returncode, staged.stderr)
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_cannot_publish_bound_plan_pair(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        staged = run_git(
+            self.root, "add", "--", self.plan.relative_to(self.root).as_posix(),
+            self.dispositions.relative_to(self.root).as_posix(),
+        )
+        self.assertEqual(0, staged.returncode, staged.stderr)
+        self.reject_checkpoint("index")
+
+    def test_checkpoint_commit_must_match_sealed_index_candidate(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        candidate = self.receipts / "first.candidate.json"
+        checked = self.checkpoint("index", candidate)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        self.source.write_text("different committed source\n", encoding="utf-8")
+        self.stage_checkpoint()
+        committed = run_git(self.root, "commit", "-m", "fix: changed candidate")
+        self.assertEqual(0, committed.returncode, committed.stderr)
+        head = run_git(self.root, "rev-parse", "HEAD").stdout.strip()
+        self.reject_checkpoint(
+            "commit", "--candidate", candidate,
+            "--candidate-sha256", sha256(candidate), "--commit", head,
+        )
+
+    def test_replace_ref_cannot_mask_unverified_checkpoint_tree(self) -> None:
+        self.capture_baseline()
+        self.source.write_text("checkpoint source\n", encoding="utf-8")
+        self.capture_checkpoint_tested("first")
+        self.stage_checkpoint()
+        candidate = self.receipts / "first.candidate.json"
+        checked = self.checkpoint("index", candidate)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+
+        verified_tree = run_git(self.root, "write-tree").stdout.strip()
+        verified = run_git(self.root, "commit-tree", verified_tree, "-p", self.source_head, "-m", "test: verified tree")
+        self.assertEqual(0, verified.returncode, verified.stderr)
+        source_name = self.source.relative_to(self.root).as_posix()
+        original_blob = run_git(self.root, "rev-parse", f"{self.source_head}:{source_name}").stdout.strip()
+        changed = run_git(self.root, "update-index", "--cacheinfo", f"100644,{original_blob},{source_name}")
+        self.assertEqual(0, changed.returncode, changed.stderr)
+        wrong_tree = run_git(self.root, "write-tree").stdout.strip()
+        wrong = run_git(self.root, "commit-tree", wrong_tree, "-p", self.source_head, "-m", "test: wrong tree")
+        self.assertEqual(0, wrong.returncode, wrong.stderr)
+        head = wrong.stdout.strip()
+        for args in (
+            ("read-tree", verified_tree),
+            ("update-ref", "HEAD", head, self.source_head),
+            ("config", "core.useReplaceRefs", "true"),
+            ("replace", head, verified.stdout.strip()),
+        ):
+            checked = run_git(self.root, *args)
+            self.assertEqual(0, checked.returncode, checked.stderr)
+        self.assertNotEqual(wrong_tree, verified_tree)
+        self.assertEqual("checkpoint source\n", run_git(self.root, "show", f"HEAD:{source_name}").stdout)
+        self.reject_checkpoint(
+            "commit", "--candidate", candidate, "--candidate-sha256", sha256(candidate),
+            "--commit", head, reason="verified index",
+        )
+
+
 class UncommittedAuditProofTests(SourceProofFixture):
     commit_live_audit = False
 

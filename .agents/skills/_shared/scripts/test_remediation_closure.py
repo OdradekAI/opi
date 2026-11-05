@@ -32,6 +32,40 @@ class RemediationClosureTests(AssuranceFixture):
         record.update(changes)
         return record
 
+    def test_workflow_inputs_bind_exact_local_bytes_without_changing_findings(self):
+        workflow = self.root / "workflow.py"
+        workflow.write_bytes(b"approved workflow\n")
+        plan, _ = self.write_plan(disposition=self.record())
+        binding = [{"path": "workflow.py", "sha256": hashlib.sha256(workflow.read_bytes()).hexdigest()}]
+        with plan.open("a", encoding="utf-8") as handle:
+            handle.write("\n**Workflow inputs**: " + json.dumps(binding) + "\n")
+        checked = run_validator("plan", plan)
+        self.assertEqual(0, checked.returncode, checked.stderr)
+        workflow.write_bytes(b"changed workflow\n")
+        checked = run_validator("plan", plan)
+        self.assertNotEqual(0, checked.returncode)
+        self.assertIn("Workflow inputs", checked.stderr)
+
+    def test_workflow_inputs_reject_unsafe_duplicate_and_missing_bindings(self):
+        bad_bindings = [
+            [{"path": "../outside", "sha256": "0" * 64}],
+            [{"path": "C:/outside", "sha256": "0" * 64}],
+            [{"path": "missing", "sha256": "0" * 64}],
+            [{"path": ".", "sha256": "0" * 64}],
+            [{"path": "workflow.py", "sha256": "invalid"}],
+            [{"path": "workflow.py", "sha256": "0" * 64}] * 2,
+            [{"path": "workflow.py", "sha256": "0" * 64, "extra": True}],
+            {"workflow.py": "0" * 64},
+        ]
+        for binding in bad_bindings:
+            with self.subTest(binding=binding):
+                plan, _ = self.write_plan(disposition=self.record())
+                with plan.open("a", encoding="utf-8") as handle:
+                    handle.write("\n**Workflow inputs**: " + json.dumps(binding) + "\n")
+                checked = run_validator("plan", plan)
+                self.assertNotEqual(0, checked.returncode)
+                self.assertIn("Workflow inputs", checked.stderr)
+
     def compound_plan(self):
         record = self.record(closure_batches=["B1", "B2"])
         record["closure_key"] = "session.binding-and-reopen"

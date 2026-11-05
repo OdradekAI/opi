@@ -120,7 +120,50 @@ Before production edits, after apply admission:
 python .agents/skills/_shared/scripts/remediation_source_proof.py baseline docs/snapshots/phase<N>/assurance/remediation.plan.md --plan-sha256 <approved-digest> --output <external-baseline.json>
 ```
 
-Immediately before the final verification union, capture its input:
+### CI checkpoints (only when required by the approved plan)
+
+Use this branch when a bounded, explicitly authorized commit/push must precede
+execution of a required CI check. Keep the original baseline for the entire
+apply. Before local verification of each candidate, run `tested` as below.
+For a later candidate, add `--checkpoint <previous-commit-receipt>` and
+`--checkpoint-sha256 <previous-commit-receipt-digest>` to `tested`.
+
+1. Finish the planned local checks for the candidate. Stage only currently
+   implemented planned source changes. Keep the fixed outputs and frozen audit
+   artifacts at their parent Git entries; the baseline still binds the exact
+   plan and live audit bytes locally. Verify the entire index before committing:
+
+   ```text
+   python .agents/skills/_shared/scripts/remediation_source_proof.py checkpoint <external-baseline.json> --baseline-sha256 <baseline-digest> --tested <external-tested.json> --tested-sha256 <tested-digest> --stage index --output <external-candidate.json>
+   ```
+
+2. After the authorized commit, bind its exact tree and sole parent to the
+   checked candidate before pushing it:
+
+   ```text
+   python .agents/skills/_shared/scripts/remediation_source_proof.py checkpoint <external-baseline.json> --baseline-sha256 <baseline-digest> --tested <external-tested.json> --tested-sha256 <tested-digest> --stage commit --candidate <external-candidate.json> --candidate-sha256 <candidate-digest> --commit <full-commit-SHA> --output <external-checkpoint.json>
+   ```
+
+3. Publish only the verified commit to the authorized target. Preserve the
+   receipts and digests, CI checkout SHA, and original execution evidence.
+   Verify the CI checkout is that exact commit. A source checkpoint receipt
+   proves content and ancestry; it supplies no observed green or finding closure.
+
+Checkpoint proof accepts a subset of planned repairs with the exact tested
+source. Staged assurance artifacts and unplanned paths (including incidental
+paths outside the plan) block the checkpoint. If CI needs any of those paths,
+return to planning. The complete fixed outputs and frozen audit artifacts are
+required for final delivery proof. No receipt grants
+commit or push authorization or allows a merge, skipped commit or new baseline.
+After a checkpoint, `tested` and final verification check each linked receipt,
+parent and tree back to the original execution HEAD. A fresh `apply` admission
+still allows only plan-pair commits after `Remediation head`; checkpoint receipts
+continue an already admitted apply, they do not relax fresh admission.
+
+### Final result and delivery
+
+Immediately before the final verification union, capture its input. When CI
+checkpoints exist, supply the last commit receipt and digest to `tested` as above:
 
 ```text
 python .agents/skills/_shared/scripts/remediation_source_proof.py tested <external-baseline.json> --baseline-sha256 <baseline-digest> --output <external-tested.json>
@@ -134,7 +177,7 @@ the fixed result and compare it with the actual source state:
 python .agents/skills/_shared/scripts/remediation_source_proof.py verify docs/snapshots/phase<N>/assurance/remediation.result.md --baseline <external-baseline.json> --baseline-sha256 <baseline-digest> --tested <external-tested.json> --tested-sha256 <tested-digest> --stage worktree
 ```
 
-This compares actual task changes with attributed result paths, confirms tested
+This compares cumulative task changes from the original baseline with attributed result paths, confirms tested
 input is unchanged at verification observations, and preserves ordinary carried-in worktree,
 index and untracked content. Two artifact groups are separate from the source
 delta: the four fixed plan/result outputs, which may be generated or changed
@@ -156,7 +199,7 @@ checks within the approved scope. A new tested receipt belongs to a new
 verification execution, not a relabeling of an earlier pass. Never relax a
 snapshot to make altered source appear tested.
 
-Only after explicit user authorization to commit, stage task-owned paths, the
+Only after explicit user authorization for final delivery, stage remaining task-owned paths, the
 required fixed outputs and any uncommitted bound frozen audit artifacts, then
 repeat `verify` with `--stage index`. After the
 authorized commit, repeat with `--stage commit --commit <full-commit-SHA>`.
@@ -164,8 +207,13 @@ Index proof covers the entire index: unrelated staged paths, including
 carried-in staged work, block it. The helper preserves that state and never
 unstages files or supplies a partial-commit mode. Both stages require all four
 fixed outputs and bound frozen audit artifacts to match their current bytes;
-unchanged artifacts already committed need not be restaged. Commit proof requires
-the current HEAD's sole parent to equal the baseline execution HEAD.
+unchanged paths already in verified checkpoints need not be restaged. Commit
+proof requires the current HEAD's sole parent to be the last verified checkpoint,
+or the baseline execution HEAD when there are none. A result-only final commit
+is valid when all repaired source is already in those checkpoints. A final
+commit with changed build inputs requires its own applicable test evidence.
+Record which exact checkpoint each CI run tested and prove applicability to
+the final inputs; never relabel CI evidence with the final commit SHA.
 Record the commit and verified content association in the handoff; the helper
 does not stage, commit or push. Keep any original dirty-package VCS metadata
 unchanged even when its relevant source is proved equal to the final commit.

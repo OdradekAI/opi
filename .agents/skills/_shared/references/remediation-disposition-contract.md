@@ -197,6 +197,14 @@ their new exact digest; changes to any other path require a new plan, even if
 a later commit restores the original bytes. Other Phases' plans, result files,
 audit artifacts, specifications, ledgers and source are outside this exception.
 
+When a reseal depends on local workflow maintenance, add a `**Workflow inputs**`
+header with a JSON array of `{ "path": "repo/relative/file", "sha256": "..." }`
+bindings. Validation checks each unique ordinary file's exact bytes. These
+bindings neither move the committed source baseline nor authorize those files
+as repair paths. Uncommitted workflow inputs are carried in and preserved by
+source proof. Keep them available at their bound bytes for apply and result
+validation.
+
 Run the locked admission check before production edits:
 
 ```text
@@ -207,6 +215,10 @@ It validates the fixed plan, live set, ready status, exact approved digest and
 committed source boundary. The execution protocol still owns carried-in path
 inventory and overlapping unowned-change admission. Planning and applying do
 not grant commit authorization; commit only on an explicit user request.
+After admission, an approved CI publication route can use the execution
+protocol's [CI checkpoints](../../opi-remediate/references/execution-protocol.md#ci-checkpoints-only-when-required-by-the-approved-plan).
+Their receipts extend the original execution baseline for this run without
+creating a result or changing fresh apply admission.
 
 ## No-change result
 

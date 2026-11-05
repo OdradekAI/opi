@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -1440,6 +1441,50 @@ def validate_batch_dependencies(text: str, records: list[dict[str, Any]]) -> lis
     return errors
 
 
+def validate_workflow_inputs(path: Path, text: str) -> list[str]:
+    """Bind local workflow maintenance without changing the product baseline."""
+    headers = re.findall(r"(?m)^\*\*Workflow inputs\*\*:[ \t]*(.*)$", text)
+    if not headers:
+        return []
+    errors: list[str] = []
+    try:
+        if len(headers) != 1:
+            raise ValueError("expected one binding header")
+        records = json.loads(headers[0])
+        if not isinstance(records, list) or not records:
+            raise ValueError("expected a non-empty JSON array")
+        root = run_git(path.parent, "rev-parse", "--show-toplevel")
+        if root.returncode:
+            raise ValueError("expected a Git repository")
+        repository = Path(root.stdout.strip()).resolve()
+        seen: set[str] = set()
+        for record in records:
+            if not isinstance(record, dict) or set(record) != {"path", "sha256"}:
+                raise ValueError("each binding requires exactly path and sha256")
+            name, expected = record["path"], record["sha256"]
+            if not isinstance(name, str):
+                raise ValueError("invalid repository path")
+            relative = PurePosixPath(name)
+            if (not relative.parts or relative.is_absolute() or ".." in relative.parts
+                    or "\\" in name or ":" in name or relative.as_posix() != name
+                    or relative.parts[0].casefold() == ".git"):
+                raise ValueError("invalid repository path: " + name)
+            if name in seen:
+                raise ValueError("duplicate binding: " + name)
+            seen.add(name)
+            if not isinstance(expected, str) or SHA256_RE.fullmatch(expected) is None:
+                raise ValueError("invalid SHA-256: " + name)
+            source = repository / name
+            if (source.is_symlink() or any(parent.is_symlink() for parent in source.parents if parent != repository)
+                    or not source.resolve().is_relative_to(repository) or not source.is_file()):
+                raise ValueError("expected an ordinary repository file: " + name)
+            if hashlib.sha256(source.read_bytes()).hexdigest() != expected:
+                raise ValueError("bytes changed: " + name)
+    except (OSError, ValueError, TypeError) as exc:
+        errors.append("Workflow inputs: " + str(exc))
+    return errors
+
+
 def validate_plan(path: Path) -> list[str]:
     errors: list[str] = []
     if path.name != "remediation.plan.md":
@@ -1448,6 +1493,7 @@ def validate_plan(path: Path) -> list[str]:
     disposition_path = directory / "remediation.plan.dispositions.jsonl"
     context = load_remediation_context(directory, errors)
     text = read_text(path, errors)
+    errors.extend(validate_workflow_inputs(path, text))
     status = header_value(text, "Status")
     if status not in PLAN_STATUSES:
         errors.append("Status must be DRAFT-UNRESOLVED or READY-FOR-APPLY")
@@ -1753,10 +1799,11 @@ def validate_result(path: Path) -> list[str]:
 
 def run_git(path: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", "-C", str(path), *args],
+        ["git", "--no-replace-objects", "-C", str(path), *args],
         capture_output=True,
         text=True,
         check=False,
+        env=dict(os.environ, GIT_GRAFT_FILE=os.devnull),
     )
 
 

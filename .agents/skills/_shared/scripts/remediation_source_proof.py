@@ -38,9 +38,9 @@ def require(condition: bool, message: str) -> None:
 
 
 def git(repository: Path, *args: str, data: bytes | None = None) -> bytes:
-    environment = dict(os.environ, GIT_OPTIONAL_LOCKS="0")
+    environment = dict(os.environ, GIT_OPTIONAL_LOCKS="0", GIT_GRAFT_FILE=os.devnull)
     result = subprocess.run(
-        ["git", "-C", str(repository), *args], input=data,
+        ["git", "--no-replace-objects", "-C", str(repository), *args], input=data,
         capture_output=True, check=False, env=environment,
     )
     require(result.returncode == 0, "Git inspection failed: " + result.stderr.decode("utf-8", errors="replace").strip())
@@ -218,6 +218,87 @@ def check_index_ownership(baseline: dict[str, Any], current: dict[str, Any], own
     require(not unowned, "unowned index changes: " + ", ".join(sorted(unowned)))
 
 
+def attributed_paths(dispositions: Path) -> set[str]:
+    return {
+        repo_path(name)
+        for line in dispositions.read_text(encoding="utf-8").splitlines() if line
+        for name in json.loads(line)["changed_paths"]
+    }
+
+
+def receipt_link(repository: Path, path: Path, sha256: str) -> dict[str, str]:
+    resolved = path.resolve()
+    require(not resolved.is_relative_to(repository), "linked receipt must be outside the repository")
+    return {"path": str(resolved), "sha256": sha256}
+
+
+def linked_receipt(repository: Path, link: dict[str, str], kind: str) -> dict[str, Any]:
+    require(isinstance(link, dict) and set(link) == {"path", "sha256"}, "invalid receipt link")
+    path = Path(link["path"])
+    require(path.is_absolute(), "linked receipt must have an absolute path")
+    receipt_link(repository, path, link["sha256"])
+    return read_receipt(path, link["sha256"], kind)
+
+
+def read_tested(path: Path, sha256: str, baseline_sha256: str) -> dict[str, Any]:
+    tested = read_receipt(path, sha256, "tested")
+    require(tested.get("baseline_sha256") == baseline_sha256, "tested receipt belongs to another baseline")
+    return tested
+
+
+def commit_parent(repository: Path, commit: str, expected: str) -> None:
+    require(validator.FULL_SHA_RE.fullmatch(commit) is not None, "invalid commit SHA")
+    header = git(repository, "cat-file", "commit", commit).split(b"\n\n", 1)[0]
+    parents = [line[7:] for line in header.splitlines() if line.startswith(b"parent ")]
+    require(parents == [expected.encode("ascii")], "commit parent does not match expected source proof HEAD")
+
+
+def checkpoint_delta(parent: dict[str, Any], target: dict[str, Any], planned: set[str]) -> None:
+    changed = changed_paths(parent, target)
+    unexpected = changed - planned
+    require(not unexpected, "unrelated staged or committed checkpoint paths: " + ", ".join(sorted(unexpected)))
+    for name in changed & planned:
+        require(all(tree.get(name, {}).get("mode") != "120000" for tree in (parent, target)), "changed symlink is outside source proof: " + name)
+
+
+def checkpoint_head(
+    repository: Path, plan: Path, exempt: set[str], baseline: dict[str, Any],
+    baseline_sha256: str, link: dict[str, str] | None,
+) -> str:
+    """Verify the full linear chain back to the original execution HEAD."""
+    original = baseline["snapshot"]["head"]
+    if link is None:
+        return original
+    planned = attributed_paths(plan.with_name("remediation.plan.dispositions.jsonl"))
+    require(not planned.intersection(exempt), "fixed or frozen artifacts cannot be planned source paths")
+    tip = None
+    expected_commit = None
+    seen: set[str] = set()
+    while link is not None:
+        receipt = linked_receipt(repository, link, "checkpoint-commit")
+        require(receipt.get("baseline_sha256") == baseline_sha256, "checkpoint receipt belongs to another baseline")
+        commit = receipt["commit"]
+        require(commit not in seen, "checkpoint chain repeats a commit")
+        require(expected_commit is None or commit == expected_commit, "checkpoint predecessor does not match commit parent")
+        seen.add(commit)
+        if tip is None:
+            tip = commit
+        candidate = linked_receipt(repository, receipt["candidate"], "checkpoint-index")
+        require(candidate.get("baseline_sha256") == baseline_sha256, "checkpoint candidate belongs to another baseline")
+        tested = linked_receipt(repository, candidate["tested"], "tested")
+        require(tested.get("baseline_sha256") == baseline_sha256, "checkpoint tested receipt belongs to another baseline")
+        parent = tested["snapshot"]["head"]
+        commit_parent(repository, commit, parent)
+        target = tree_entries(repository, commit)
+        require(target == candidate["index"], "checkpoint commit tree differs from its verified index")
+        checkpoint_delta(tree_entries(repository, parent), target, planned)
+        expected_commit = parent
+        link = tested.get("checkpoint")
+    require(expected_commit == original, "checkpoint chain does not reach baseline execution HEAD")
+    assert tip is not None
+    return tip
+
+
 def capture_baseline(args: argparse.Namespace) -> str:
     plan = args.path.resolve()
     require(validator.SHA256_RE.fullmatch(args.plan_sha256) is not None, "invalid plan_sha256")
@@ -227,8 +308,7 @@ def capture_baseline(args: argparse.Namespace) -> str:
     frozen = artifact_states(repository, frozen_paths(repository, plan))
     exempt = fixed_paths(repository, plan) | set(frozen)
     state = stable_snapshot(repository, exempt)
-    records = [json.loads(line) for line in plan.with_name("remediation.plan.dispositions.jsonl").read_text(encoding="utf-8").splitlines() if line]
-    owned = {repo_path(name) for record in records for name in record["changed_paths"]}
+    owned = attributed_paths(plan.with_name("remediation.plan.dispositions.jsonl"))
     require(not owned.intersection(state["dirty_paths"]), "planned paths overlap carried-in work")
     value = {
         "schema": SCHEMA, "kind": "baseline", "repository": str(repository),
@@ -246,19 +326,19 @@ def capture_baseline(args: argparse.Namespace) -> str:
 
 def capture_tested(args: argparse.Namespace) -> str:
     baseline = read_receipt(args.path, args.baseline_sha256, "baseline")
-    repository, plan, exempt = validate_binding(baseline, admission=True)
+    repository, plan, exempt = validate_binding(baseline, admission=args.checkpoint is None)
+    link = receipt_link(repository, args.checkpoint, args.checkpoint_sha256) if args.checkpoint else None
+    expected_head = checkpoint_head(repository, plan, exempt, baseline, args.baseline_sha256, link)
     current = stable_snapshot(repository, exempt)
-    require(current["head"] == baseline["snapshot"]["head"], "HEAD changed since baseline capture")
+    require(current["head"] == expected_head, "HEAD changed since baseline or last verified checkpoint")
     check_carried(baseline, current)
-    planned = {
-        repo_path(name)
-        for line in plan.with_name("remediation.plan.dispositions.jsonl").read_text(encoding="utf-8").splitlines() if line
-        for name in json.loads(line)["changed_paths"]
-    }
+    planned = attributed_paths(plan.with_name("remediation.plan.dispositions.jsonl"))
     actual = changed_paths(baseline["snapshot"]["working"], current["working"])
     check_index_ownership(baseline, current, planned | actual)
     value = {"schema": SCHEMA, "kind": "tested", "baseline_sha256": args.baseline_sha256, "snapshot": current}
-    validate_binding(baseline, admission=True)
+    if link is not None:
+        value["checkpoint"] = link
+    validate_binding(baseline, admission=link is None)
     check_capture_identity(repository, exempt, current)
     return write_receipt(repository, args.output, value)
 
@@ -286,18 +366,64 @@ def expected_entry(repository: Path, name: str, state: dict[str, str] | None) ->
     return {"mode": state["mode"], "blob": blob}
 
 
+def verify_checkpoint(args: argparse.Namespace) -> str:
+    baseline = read_receipt(args.path, args.baseline_sha256, "baseline")
+    tested = read_tested(args.tested, args.tested_sha256, args.baseline_sha256)
+    predecessor = tested.get("checkpoint")
+    initial_admission = args.stage == "index" and predecessor is None
+    repository, plan, exempt = validate_binding(baseline, admission=initial_admission)
+    parent = checkpoint_head(repository, plan, exempt, baseline, args.baseline_sha256, predecessor)
+    require(tested["snapshot"]["head"] == parent, "tested receipt does not match checkpoint parent")
+    current = stable_snapshot(repository, exempt)
+    check_carried(baseline, current)
+    require(current["working"] == tested["snapshot"]["working"], "working tree differs from tested input")
+    planned = attributed_paths(plan.with_name("remediation.plan.dispositions.jsonl"))
+    require(not planned.intersection(exempt), "fixed or frozen artifacts cannot be planned source paths")
+    actual = changed_paths(baseline["snapshot"]["working"], current["working"])
+    require(not actual - planned, "unplanned checkpoint source changes: " + ", ".join(sorted(actual - planned)))
+    target = index_entries(repository)
+    tested_link = receipt_link(repository, args.tested, args.tested_sha256)
+    if args.stage == "index":
+        require(current["head"] == parent, "HEAD changed since baseline or last verified checkpoint")
+        value = {
+            "schema": SCHEMA, "kind": "checkpoint-index", "baseline_sha256": args.baseline_sha256,
+            "tested": tested_link, "index": target,
+        }
+    else:
+        candidate_link = receipt_link(repository, args.candidate, args.candidate_sha256)
+        candidate = linked_receipt(repository, candidate_link, "checkpoint-index")
+        require(candidate.get("baseline_sha256") == args.baseline_sha256, "checkpoint candidate belongs to another baseline")
+        require(candidate.get("tested") == tested_link, "checkpoint candidate belongs to another tested receipt")
+        require(args.commit == current["head"], "checkpoint commit proof requires the current HEAD")
+        commit_parent(repository, args.commit, parent)
+        require(tree_entries(repository, args.commit) == candidate["index"] == target, "checkpoint commit tree or current index differs from the verified index")
+        value = {
+            "schema": SCHEMA, "kind": "checkpoint-commit", "baseline_sha256": args.baseline_sha256,
+            "commit": args.commit, "candidate": candidate_link,
+        }
+    checkpoint_delta(tree_entries(repository, parent), target, planned)
+    for name in sorted(planned):
+        state = tested["snapshot"]["working"].get(name)
+        require(target.get(name) == expected_entry(repository, name, state), "checkpoint index differs from tested source: " + name)
+    validate_binding(baseline, admission=initial_admission)
+    require(stable_snapshot(repository, exempt) == current and index_entries(repository) == target, "source or index changed during checkpoint verification")
+    return write_receipt(repository, args.output, value)
+
+
 def verify(args: argparse.Namespace) -> None:
     baseline = read_receipt(args.baseline, args.baseline_sha256, "baseline")
-    tested = read_receipt(args.tested, args.tested_sha256, "tested")
-    require(tested.get("baseline_sha256") == args.baseline_sha256, "tested receipt belongs to another baseline")
-    repository, plan, exempt = validate_binding(baseline, admission=args.stage != "commit")
+    tested = read_tested(args.tested, args.tested_sha256, args.baseline_sha256)
+    predecessor = tested.get("checkpoint")
+    initial_admission = args.stage != "commit" and predecessor is None
+    repository, plan, exempt = validate_binding(baseline, admission=initial_admission)
+    parent = checkpoint_head(repository, plan, exempt, baseline, args.baseline_sha256, predecessor)
+    require(tested["snapshot"]["head"] == parent, "tested receipt does not match final verification parent")
     result = args.path.resolve()
     require(result == plan.with_name("remediation.result.md"), "result is not the fixed sibling of the bound plan")
     artifacts = artifact_states(repository, exempt)
     check_errors(validator.validate_result(result))
     require(validator.header_value(result.read_text(encoding="utf-8"), "Outcome") == "APPLIED", "source materialization proof requires APPLIED result")
-    records = [json.loads(line) for line in result.with_name("remediation.result.dispositions.jsonl").read_text(encoding="utf-8").splitlines() if line]
-    owned = {repo_path(name) for record in records for name in record["changed_paths"]}
+    owned = attributed_paths(result.with_name("remediation.result.dispositions.jsonl"))
     require(not owned.intersection(exempt), "fixed remediation outputs cannot be attributed as source repairs")
     require(not owned.intersection(baseline["snapshot"]["dirty_paths"]), "result paths overlap carried-in work")
     actual = changed_paths(baseline["snapshot"]["working"], tested["snapshot"]["working"])
@@ -310,7 +436,7 @@ def verify(args: argparse.Namespace) -> None:
     check_index_ownership(baseline, current, owned)
     require(current["working"] == tested["snapshot"]["working"], "working tree differs from tested input")
     if args.stage != "commit":
-        require(current["head"] == baseline["snapshot"]["head"], "HEAD changed since baseline capture")
+        require(current["head"] == parent, "HEAD changed since baseline or last verified checkpoint")
     target = None
     if args.stage == "index":
         target = index_entries(repository)
@@ -318,22 +444,23 @@ def verify(args: argparse.Namespace) -> None:
         require(not changed - owned - exempt, "unrelated staged paths: " + ", ".join(sorted(changed - owned - exempt)))
     elif args.stage == "commit":
         require(args.commit == current["head"], "commit proof requires the current HEAD")
-        parents = git(repository, "rev-list", "--parents", "-n", "1", args.commit).decode().split()[1:]
-        require(parents == [baseline["snapshot"]["head"]], "commit parent does not match baseline execution HEAD")
+        commit_parent(repository, args.commit, parent)
         target = tree_entries(repository, args.commit)
-        changed = changed_paths(tree_entries(repository, parents[0]), target)
+        changed = changed_paths(tree_entries(repository, parent), target)
         require(not changed - owned - exempt, "commit includes unrelated paths: " + ", ".join(sorted(changed - owned - exempt)))
         for name in set(target) | set(current["index"]):
             if name not in exempt and name not in baseline["snapshot"]["dirty_paths"]:
                 require(target.get(name) == current["index"].get(name), "index changed after commit: " + name)
     if target is not None:
-        require(not owned - changed, args.stage + " omits repaired paths")
+        cumulative = changed_paths(baseline["snapshot"]["tree"], target)
+        require(not owned - cumulative, args.stage + " omits repaired paths")
+        require(not cumulative - owned - exempt, args.stage + " includes unattributed checkpoint paths")
         for name in sorted(owned | exempt):
             state = artifacts[name] if name in exempt else tested["snapshot"]["working"].get(name)
             require(target.get(name) == expected_entry(repository, name, state), args.stage + " differs from tested source or fixed artifacts: " + name)
     # The phase lock coordinates assurance tools, not editors. Detect drift over
     # this observation window without claiming to lock the user's filesystem.
-    validate_binding(baseline, admission=args.stage != "commit")
+    validate_binding(baseline, admission=initial_admission)
     require(artifact_states(repository, exempt) == artifacts, "fixed or frozen assurance artifacts changed during verification")
     final = stable_snapshot(repository, exempt)
     require(final == current, "source or index changed during tested input verification")
@@ -354,6 +481,18 @@ def main() -> int:
     tested_parser.add_argument("path", type=Path)
     tested_parser.add_argument("--baseline-sha256", required=True)
     tested_parser.add_argument("--output", type=Path, required=True)
+    tested_parser.add_argument("--checkpoint", type=Path)
+    tested_parser.add_argument("--checkpoint-sha256")
+    checkpoint_parser = subparsers.add_parser("checkpoint", help="prove a CI candidate index or its committed tree")
+    checkpoint_parser.add_argument("path", type=Path, help="original baseline receipt")
+    checkpoint_parser.add_argument("--baseline-sha256", required=True)
+    checkpoint_parser.add_argument("--tested", type=Path, required=True)
+    checkpoint_parser.add_argument("--tested-sha256", required=True)
+    checkpoint_parser.add_argument("--stage", choices=("index", "commit"), required=True)
+    checkpoint_parser.add_argument("--candidate", type=Path)
+    checkpoint_parser.add_argument("--candidate-sha256")
+    checkpoint_parser.add_argument("--commit")
+    checkpoint_parser.add_argument("--output", type=Path, required=True)
     verify_parser = subparsers.add_parser("verify")
     verify_parser.add_argument("path", type=Path)
     verify_parser.add_argument("--baseline", type=Path, required=True)
@@ -363,16 +502,23 @@ def main() -> int:
     verify_parser.add_argument("--stage", choices=("worktree", "index", "commit"), default="worktree")
     verify_parser.add_argument("--commit")
     args = parser.parse_args()
-    if args.command == "verify":
+    if args.command == "tested" and bool(args.checkpoint) != bool(args.checkpoint_sha256):
+        parser.error("--checkpoint and --checkpoint-sha256 are required together")
+    if args.command in {"verify", "checkpoint"}:
         if (args.stage == "commit") != bool(args.commit):
             parser.error("--commit is required only for --stage commit")
         if args.commit and validator.FULL_SHA_RE.fullmatch(args.commit) is None:
             parser.error("--commit must be a full lowercase commit SHA")
+    if args.command == "checkpoint":
+        if args.stage == "commit" and not (args.candidate and args.candidate_sha256):
+            parser.error("--stage commit requires --candidate and --candidate-sha256")
+        if args.stage == "index" and (args.candidate or args.candidate_sha256):
+            parser.error("--candidate and --candidate-sha256 are only for --stage commit")
     try:
         if args.command == "baseline":
             plan = args.path.resolve()
         else:
-            receipt = read_receipt(args.path if args.command == "tested" else args.baseline, args.baseline_sha256, "baseline")
+            receipt = read_receipt(args.baseline if args.command == "verify" else args.path, args.baseline_sha256, "baseline")
             plan = Path(receipt["repository"]) / repo_path(receipt["plan_path"])
         repository = assurance_set.repository_root(plan.parent)
         phase_directory = plan.parent.parent
@@ -384,6 +530,8 @@ def main() -> int:
                 proof_digest = capture_baseline(args)
             elif args.command == "tested":
                 proof_digest = capture_tested(args)
+            elif args.command == "checkpoint":
+                proof_digest = verify_checkpoint(args)
             else:
                 verify(args)
                 proof_digest = None

@@ -89,8 +89,9 @@ Open the selected `SKILL.md`, then only references required by its active mode.
   Residual proof or authority obligations keep the whole plan draft. A planning
   [no-change result](_shared/references/remediation-disposition-contract.md#no-change-result)
   records an all-no-action set without apply permission or a Phase verdict.
-  Applied results require source/diff proof under the execution protocol and a
-  ledger-owner handoff; Git authorization remains separate.
+  The execution protocol proves authorized CI checkpoints before publication
+  and proves final delivery against the original baseline and full result.
+  Applied results require a ledger-owner handoff; Git authorization remains separate.
 - Local preparation and verification continue within existing authorization.
   Reconfirm when the authorized object, scope or required binding changes,
   or a workflow explicitly requires a fresh final gate. Public, destructive,
