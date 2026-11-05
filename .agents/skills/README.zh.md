@@ -77,7 +77,9 @@ flowchart TD
   定义机械校验边界，无需因计划 commit 重新封存 HEAD。
   已验证的 indexed 历史附录只能引导当前核验与精确原始证明查找，不能决定来源或关闭。
   批准后追加附录会改变 index 绑定，使原计划失效。
-  残留证明义务或权威裁定会使整个计划保持 draft。计划分支的
+  索引发现所需的证明或权威裁定尚未完成时，整个计划保持 draft。独立的台账维护按
+  [disposition 契约](_shared/references/remediation-disposition-contract.md#finding-obligations-and-owner-handoff)
+  单列为所有者后续事项。计划分支的
   [no-change 结果](_shared/references/remediation-disposition-contract.md#no-change-result)
   记录全部无需行动的处置，不授予 apply 权限或 Phase 结论。
   执行协议在发布前核验已授权的 CI 检查点，并按原始基线与完整结果核验最终交付。

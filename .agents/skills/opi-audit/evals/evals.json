@@ -211,6 +211,28 @@
         "Keeps process conformance separate from product behavior and historical causation.",
         "Uses preflight-filtered raw proof without loading prior reviewer conclusions or raw ledger gate_results."
       ]
+    },
+    {
+      "id": 20,
+      "prompt": "A committed Phase snapshot pins a source file. The scope reader reports a mismatch at audit_head after a later correction. The snapshot and its normalized source pin both match the archive commit. How should the audit handle the discrepancy and later repair evidence?",
+      "expected_output": "Record the verified archive pin and the later version change in Baseline Sources. Judge findings using registered sources and implementation at audit_head. Preserve the snapshot and record repair evidence through assurance, with applicable raw proof supplied separately to a future independent audit.",
+      "files": [],
+      "expectations": [
+        "Uses the exact archive commit and ledger hash convention to validate the snapshot pin.",
+        "Classifies the later hash change as historical version drift and assesses any live-ledger mismatch separately.",
+        "Keeps prior remediation conclusions outside the independent core and records later evidence with its actual source identity."
+      ]
+    },
+    {
+      "id": 21,
+      "prompt": "A Phase snapshot blob is identical at the archive commit and audit_head, but one stored pin disagrees with the corresponding normalized source bytes at the archive commit itself. Current behavior independently satisfies the current product criterion. How should the audit classify this?",
+      "expected_output": "Record the confirmed archived-pin mismatch under the applicable archive or process criterion and assess the current product behavior separately at audit_head. Keep both evidence sources and the original snapshot.",
+      "files": [],
+      "expectations": [
+        "Distinguishes a mismatch at archive from a later version change.",
+        "Keeps an archive provenance issue separate from current product conformance.",
+        "Reports exact commits and hashes without changing either ledger."
+      ]
     }
   ]
 }

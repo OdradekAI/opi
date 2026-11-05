@@ -42,8 +42,13 @@ determines the closure predicate; do not add placeholder fixes.
 | ... | ... | ... | ... | ... |
 
 Use `none` when no additional probe is needed. Complete this work before sealing
-an executable plan. Carry any residual proof or authority gap into the source
-disposition's `remaining_obligations`; any such gap keeps the whole plan draft.
+an executable plan. Carry each gap required by an indexed finding into its
+disposition's `remaining_obligations`. Each such gap keeps the whole plan draft.
+
+## Owner Follow-up
+
+Record independent ledger maintenance here with the owning workflow, or use
+`none`. Carry relevant items to the result's ledger-owner handoff.
 
 ## Closure Batches
 
@@ -104,6 +109,10 @@ planning; do not exempt report-only changes from the index binding.
 `Remediation head` records the source evidence baseline. If the user commits
 the fixed plan pair afterward, retain that baseline and use the shared
 disposition contract's apply admission check; plan-only commits need no reseal.
+
+Use the disposition contract's
+[finding obligations and owner handoff](../../_shared/references/remediation-disposition-contract.md#finding-obligations-and-owner-handoff)
+to separate finding blockers from independent owner follow-up.
 
 ## Contract rehearsal
 

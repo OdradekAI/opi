@@ -88,12 +88,11 @@ with a later repair commit. Current applicability and the final source state
 require their own evidence under the execution protocol.
 
 `remaining_obligations` is a required array of non-empty strings, or `[]` when
-this disposition has no known residual obligation. Record missing proof and
-unresolved source applicability or precedence here, with the affected criterion
-and the evidence or authority needed. Refuting a finding's claim does not mark
-its linked requirements `met` or remove their proof obligations. Any non-empty
-array keeps the entire plan `DRAFT-UNRESOLVED`; exclusions do not bypass this
-gate. New evidence that changes an approved disposition requires a new plan.
+this disposition has no known residual obligation. Classify gaps using
+[finding obligations and owner handoff](#finding-obligations-and-owner-handoff).
+Any non-empty array keeps the entire plan `DRAFT-UNRESOLVED`, including when
+the disposition excludes a fix. New evidence that changes an approved
+disposition requires a new plan.
 
 `closure_batches` is a required ordered array of unique, non-empty batch IDs,
 listed in plan execution order. Use `fix:<decision>` only for `Confirmed` or
@@ -122,6 +121,29 @@ The old scalar `closure_batch` field is invalid, including alongside
 `closure_batches`. Regenerate and validate older plans using the required array;
 the resulting bytes have a new plan digest and require new apply approval.
 Adding fields to an approved plan does not preserve its approval.
+
+## Finding obligations and owner handoff
+
+For each proposed blocker, name the indexed criterion or exact remediation
+admission check that depends on it. Put unresolved proof, source applicability,
+precedence or authority for an indexed finding in that disposition's
+`remaining_obligations`. Cite the affected criterion and the evidence or
+decision needed. Keep any such obligations for linked requirements when a
+finding's narrower claim is refuted.
+
+A Phase snapshot records the source pins at archive. When an indexed finding
+questions one of those pins, compare it with the exact archived source named by
+the evidence. Evaluate the current finding and rehearse its repair against
+the registered source and committed code at `Remediation head`.
+
+If the evidence identifies the governing source and resolves the finding's
+ledger-related question, record any separate live-ledger pin synchronization
+or task-history maintenance as owner follow-up in the plan and in the result's
+ledger-owner handoff. Keep that maintenance outside `remaining_obligations`
+and the unresolved decisions list. If pin drift leaves a required source
+identity or finding predicate uncertain, keep the specific evidence gap in the
+disposition until the owner resolves it. Apply admission still checks the
+[exact plan, audit set and committed source boundary](#plan-approval-identity).
 
 ## Evidence work and closure dependencies
 
@@ -171,8 +193,8 @@ or obligation waiver.
 
 `remediation.plan.md` records the exact `Audit index SHA-256` of the current
 live index, `Remediation head`, the fixed disposition filename, status, and
-unresolved decisions. The index digest is the complete approval binding: it
-covers membership, revision, every member head, and every member digest, so
+unresolved decisions. The index digest binds the full audit set. It covers
+membership, revision, every member head, and every member digest, so
 any installed, replaced, or edited member invalidates the plan. The validator
 computes:
 

@@ -143,8 +143,9 @@ non-`READY` admission verdict or the P.4 gate); `<task-id>` → run-specific mod
 bare → make-progress mode (sync-if-needed → auto-pick → run). Only `--status`
 bypasses drift handling.
 
-Apply the Spec alignment rule before mutation or task selection. No-drift
-make-progress and run-specific modes continue to execution; drift enters
+Within `opi-implement`, apply the Spec alignment rule before ledger mutation
+or task selection. No-drift make-progress and run-specific modes continue to
+execution; drift enters
 plan+pause at P.4. `--status` is read-only. Plan, status, clear-blocker, and
 lifecycle modes run only their applicable steps, not the full task sequence.
 

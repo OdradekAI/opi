@@ -88,8 +88,10 @@ Open the selected `SKILL.md`, then only references required by its active mode.
   A validated indexed history appendix may guide current verification and exact
   raw-proof lookup, never source membership or closure. An appendix added after
   approval changes the index binding and makes that plan stale.
-  Residual proof or authority obligations keep the whole plan draft. A planning
-  [no-change result](_shared/references/remediation-disposition-contract.md#no-change-result)
+  Residual proof or authority obligations for indexed findings keep the whole
+  plan draft. Record independent ledger maintenance as owner follow-up under the
+  [disposition contract](_shared/references/remediation-disposition-contract.md#finding-obligations-and-owner-handoff).
+  A planning [no-change result](_shared/references/remediation-disposition-contract.md#no-change-result)
   records an all-no-action set without apply permission or a Phase verdict.
   The execution protocol proves authorized CI checkpoints before publication
   and proves final delivery against the original baseline and full result.

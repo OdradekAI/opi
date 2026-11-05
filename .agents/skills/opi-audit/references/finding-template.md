@@ -40,7 +40,10 @@ appendix or its reserved envelope.
 
 | Path | SHA-256 | Registration note |
 |---|---|---|
-| ... | ... | current committed source / stored-hash mismatch |
+| ... | ... | current committed source / archive-pin comparison / live-ledger pin discrepancy |
+
+For a questioned snapshot pin, record the archive commit and the observed
+comparison at that commit separately from the raw baseline hash at `audit_head`.
 
 ## Requirement Conformance
 

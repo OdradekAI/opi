@@ -15,8 +15,14 @@ Before editing:
    shared disposition contract's plan-only commit rule;
 5. reproduce staged, unstaged, and untracked baseline and stop on overlapping
    unowned changes;
-6. verify `READY-FOR-APPLY`, no unresolved decision or remaining obligation,
-   complete strict-union coverage, and observed behavioral red-before.
+6. verify `READY-FOR-APPLY`, no unresolved decision or remaining obligation
+   for an indexed finding, complete strict-union coverage, and observed
+   behavioral red-before.
+
+Carry independent ledger maintenance to the
+[materialization handoff](#materialization-handoff). Use the shared
+[obligation rule](../../_shared/references/remediation-disposition-contract.md#finding-obligations-and-owner-handoff)
+if a source-pin discrepancy affects the admitted closure evidence.
 
 Run `validate_assurance_artifact.py apply` with the invocation's exact
 `--plan-sha256` using the shared disposition contract's command. It checks
@@ -220,11 +226,12 @@ unchanged even when its relevant source is proved equal to the final commit.
 
 ## Materialization handoff
 
-Do not modify the plan retroactively and do not commit automatically. A fresh
-audit or reviewer re-run may be requested only after fixes plus the current
-live set are committed, the assurance directory is clean, external evidence is
-resolved, and any owning-workflow return is complete. `opi-remediate` never
-invokes another explicit-only skill itself and never grants a Phase PASS.
+Do not modify the plan retroactively and do not commit automatically. Before
+requesting a fresh audit or reviewer re-run, require committed fixes and a
+committed current live set, a clean assurance directory, and resolution of
+external evidence and any owner return required by the indexed findings or
+the next audit's admission. `opi-remediate` never invokes another explicit-only
+skill itself and never grants a Phase PASS.
 
 Include a ledger-owner handoff, or `none` with a concrete reason no maintenance
 is indicated. Identify affected tasks as direct repair, linked revalidation or

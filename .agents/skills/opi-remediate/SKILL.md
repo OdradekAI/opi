@@ -44,10 +44,11 @@ Read before branching:
 - `../_shared/references/remediation-disposition-contract.md`
 
 Bind the exact active index SHA-256 and each member's full `audit_run_id` and
-`findings_sha256`. Keep history, prior conclusions, eval artifacts, lineage and
-alternate source/plan paths outside context except for the shared contract's
-validated indexed advisory appendix and its exact candidate raw proofs. That
-exception supplies inspection leads, never finding or closure authority.
+`findings_sha256`. Use the current indexed evidence, including any Phase
+snapshot it binds. For historical advisory lookup, use only the shared
+contract's validated indexed appendix and its exact candidate raw proofs.
+Advisory material supplies inspection leads. The current indexed findings
+and their applicable proof govern closure.
 
 ## `mode=plan`
 
@@ -70,8 +71,11 @@ It recovers interrupted installations under lock and emits the exact index
 digest for plan/result headers.
 
 Record full committed `remediation_head` and the staged, unstaged, and untracked
-path inventory. Use the shared disposition contract's source-baseline rule
-when the user commits the fixed plan; do not reseal solely for plan-only commits.
+path inventory. Use the indexed findings for repair scope, any Phase snapshot
+bound by their evidence for archived task and source identities, and committed
+source at `remediation_head` for current applicability and rehearsal. Bind the
+plan to that committed baseline under the shared disposition contract. A later
+plan-only commit retains the baseline.
 Inspect committed code and run plan-stage checks in a unique
 temporary `git archive` export; do not use a Git worktree. Refuse overlap with
 uncommitted fixed remediation outputs. A clean tracked group may be replaced
@@ -98,9 +102,10 @@ the index binding and invalidates an already approved plan.
 One closure batch requires one root change and one predicate proving its
 assigned portion of every member. For a compound finding, list each required
 batch in `closure_batches`, retain one source disposition, and require their
-conjunction for source closure under the shared disposition contract.
-New product meaning, public contract, authority, scope or
-contested trade-off remains `DRAFT-UNRESOLVED` for the owning authority.
+conjunction for source closure under the shared disposition contract. Keep the
+plan `DRAFT-UNRESOLVED` when product meaning, the public contract, authority,
+scope or a contested trade-off still requires an owner decision. Rehearse
+settled contract migrations in step 3.
 
 Behavioral fixes require discriminating red-before evidence before production
 edits and a matching green-after check. Shared evidence may close identical
@@ -120,8 +125,11 @@ Record incomplete rehearsal or unexplained failures as remaining obligations.
 
 Use the plan template. `READY-FOR-APPLY` requires exact strict-union coverage,
 complete closure decisions/proofs, required red-before and contract rehearsal
-evidence, no unresolved decision or remaining obligation, and exact active-index
-binding. Otherwise produce a validated `DRAFT-UNRESOLVED`.
+evidence, exact active-index binding, and no unresolved decision or remaining
+obligation for an indexed finding. Use
+[finding obligations and owner handoff](../_shared/references/remediation-disposition-contract.md#finding-obligations-and-owner-handoff)
+to classify source-pin drift and other owner work before declaring a blocker.
+If a required condition is unmet, produce a validated `DRAFT-UNRESOLVED`.
 
 Run the dispositions validator, then:
 
@@ -147,10 +155,10 @@ Before a closure batch starts Cargo verification, read the shared
 [Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md) for
 the quick selected-target check and coordinated observation. Cache reports and
 maintenance proposals remain separate from closure proof and the ledger handoff.
-Proceed through the approved batches without renewed permission inside that
-scope. Changed index/member bytes, plan digest, source drift after the remediation
-head or overlapping unowned paths fail admission before production edits. The
-shared disposition contract admits committed fixed plans without a HEAD-reseal loop.
+Proceed through the approved batches within their authorized scope. Before
+production edits, admission checks the exact index and plan digests, every
+committed path after `Remediation head`, and overlap with unowned work. The
+shared disposition contract admits plan-only commits against that baseline.
 
 ## Completion criterion
 

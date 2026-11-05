@@ -263,6 +263,28 @@
         "Assesses evidence sufficiency rather than treating every tool failure as uncertainty.",
         "Preserves exact proof class, original execution facts and residual obligations."
       ]
+    },
+    {
+      "id": 25,
+      "prompt": "Use $opi-remediate mode=plan phase=20. Phase 20 is archived. A snapshot pin matches the spec at archive, and the corresponding live-ledger pin is stale after a translation correction. The current indexed repair has an unambiguous governing clause and every required proof. Must we synchronize either pin before sealing?",
+      "expected_output": "The archived pin retains its historical source identity. Record the live-ledger synchronization as owner follow-up and allow the fixed plan to become READY-FOR-APPLY once its admission checks pass.",
+      "files": [],
+      "expectations": [
+        "Distinguishes the archived source identity from the current remediation source baseline.",
+        "Keeps standalone ledger maintenance out of remaining_obligations and the unresolved decisions list.",
+        "Keeps both ledgers byte-identical during remediation and retains exact approval requirements."
+      ]
+    },
+    {
+      "id": 26,
+      "prompt": "Use $opi-remediate mode=apply phase=20 with the exact approved plan digest. After the remediation head was recorded, a separate owner committed only a live-ledger pin synchronization. The audit set and plan bytes still match. May apply use the approval?",
+      "expected_output": "The ledger-only commit is outside the plan-only commit rule. Stop before edits and obtain a validated plan bound to the new committed baseline and approval of its exact digest.",
+      "files": [],
+      "expectations": [
+        "Distinguishes independent ledger maintenance from the mechanical committed source boundary.",
+        "Checks intervening commit paths and rejects the old approval.",
+        "Preserves the fixed audit identity and avoids modifying the approved plan retroactively."
+      ]
     }
   ]
 }

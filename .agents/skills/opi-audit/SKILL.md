@@ -99,8 +99,11 @@ declarations establish scope, not conformance.
 
 Use its ordered `baseline_sources` and `stored_hash_mismatches`. Baseline hashes
 cover complete committed bytes, never the projection or a reserialized ledger.
-The reader compares stored v2 hashes with the ledger's CRLF-normalized
-convention; mismatches are current metadata evidence. Keep the projection as
+The reader compares both ledgers' pins to source at `audit_head` using each
+ledger's hash convention. Treat the mismatches as comparison results. Before
+interpreting a snapshot mismatch, use the
+[archived source pin check](references/audit-proof-obligations.md#archived-source-pins).
+Then assess current findings using `audit_head`. Keep the projection as
 read-only scope input.
 
 Record `audit_head`, reviewer and model identity, `model_identity_source`,
@@ -157,8 +160,9 @@ Run the narrowest sufficient checks in the export. Completion requires:
 ### 5. Render, validate, and install
 
 Read `../_shared/references/finding-contract.md` for finding records and
-`references/finding-template.md` for rendering. Write findings only from
-`audit_head` evidence, producing this peer's LF-only
+`references/finding-template.md` for rendering. Use evidence applicable to
+`audit_head`, including verified archive provenance for applicable process
+criteria. Produce this peer's LF-only
 `audit.<reviewer-id>.<model-id>.*` four-file group in the member directory.
 
 Install the completed report into the live set under the assurance lock:

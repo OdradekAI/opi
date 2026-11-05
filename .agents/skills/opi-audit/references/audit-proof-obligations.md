@@ -3,6 +3,35 @@
 Turn the latest committed registered requirements into falsifiable evidence
 obligations before inspecting implementation.
 
+## Archived source pins
+
+1. Identify the commit that archived the exact Phase snapshot pointed to by the
+   scope reader. If needed, inspect the addition history of just that snapshot
+   path at `audit_head` with `git log --full-history --diff-filter=A`. Establish
+   a single archive commit that is an ancestor of `audit_head`. Compare the
+   snapshot blobs by Git object ID or hash. If they match, use the stored pins
+   from the reader's projection. If they differ, record the snapshot-byte
+   difference separately and use the reader at the archive commit to obtain
+   the original pins. Keep raw ledger contents outside the independent context.
+2. Compare each questioned snapshot pin with the exact registered source bytes
+   at that archive commit. Use CRLF-to-LF normalization for v2 and the stored
+   hash convention for older snapshots. A matching archived pin and different
+   bytes at `audit_head` establish historical version drift. Record the archive
+   commit and comparison in the report's Baseline Sources notes. An unavailable
+   archive identity is a provenance limitation. A confirmed mismatch at archive
+   belongs to the applicable archive or process criterion.
+3. Judge current findings against the registered specification and
+   implementation at `audit_head`. Assess live-ledger pin mismatches separately
+   under the applicable current workflow criterion. Keep raw
+   `baseline_sources` hashes bound to `audit_head`.
+
+Preserve the archived snapshot as the record of its original source. Record
+later repair source identities, affected criteria, and verification evidence
+references in the owning remediation result under the Phase's `assurance/`
+directory.
+For a fresh independent audit, supply any relevant raw repair proof through
+the preflight below. Prior remediation conclusions stay outside its core.
+
 ## Requirement records
 
 Create one record per independently decidable requirement in the current
