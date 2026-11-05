@@ -1,775 +1,443 @@
 # Phase 20 Remediation Plan
 
-**Status**: READY-FOR-APPLY
+**Status**: DRAFT-UNRESOLVED
 **Audit index SHA-256**: `e1b34739db46331707a93ab0f6f9336ed6386a4564b0215d8488ce288319f0ae`
-**Remediation head**: `4e662a02c8a26d23986b12129b6f47a7a8822fcc`
+**Remediation head**: `065af6d0e82a5efe78a5c4eaf3979e9140a612a1`
 **Disposition artifact**: `remediation.plan.dispositions.jsonl`
-**Dirty-worktree baseline**: staged:none, unstaged:none, untracked:none at the committed handoff. The bound workflow inputs are committed at `Remediation head`.
-**Workflow inputs**: [{"path":".agents/skills/README.md","sha256":"0285300b308bf16a8b679e7c049d9ec751178771d179c72b637e058cda47efef"},{"path":".agents/skills/README.zh.md","sha256":"c6cb83c18e0682c13c6ce2cc95c8142adf8e30318ae526cee634571b83555119"},{"path":".agents/skills/_shared/references/remediation-disposition-contract.md","sha256":"1c22e3c0b11a2dbfd063c5686bf295614ffdee7cec710160c9dea20c4ac3d40c"},{"path":".agents/skills/_shared/scripts/remediation_source_proof.py","sha256":"e4439db033cfa25b58bcb702b7981130af41379fbf55e270d72f713737cb6aa3"},{"path":".agents/skills/_shared/scripts/test_remediation_closure.py","sha256":"56b8fa9e9acfd1d89c6ecab64f1e9c3399c64652ddfb1d41f6815327c8d5ab23"},{"path":".agents/skills/_shared/scripts/test_remediation_source_proof.py","sha256":"db486e4845c445e0edb6fc513785839ec9ed4216c13483721331a79148dd98e8"},{"path":".agents/skills/_shared/scripts/validate_assurance_artifact.py","sha256":"c35da8999a6b5bcea9c21f8269e60f1a014cbd3c132418859c8028f364d59c2f"},{"path":".agents/skills/opi-remediate/references/execution-protocol.md","sha256":"7b42a5ae983388e7e909e4a6140dc3441be63ba4a86f282aea0e74d55b4a07bd"}]
-**Unresolved decisions**: none
-
-This plan covers exactly28 indexed source keys:21Refuted,5Confirmed,2Partially confirmed. All fixes have a chosen source-backed root, predicate, caller/schema migration, observed behavioral red where required, and concrete matching future verification. The reseal binds the committed workflow baseline. The audit index, finding decisions and closure predicates retain their original authority. Three machine dispositions carry the revised verification commands. All repair and native greens remain not-run. This plan requires a fresh exact-digest apply invocation.
-
-## Source, authority and evidence boundary
-
-The source baseline includes authorized checkpoint2078c70dba7056a791d988ab1c753f5188d42993 and the separately authorized verbatim three-hunk provider-fixture cleanup checkpointdcd01d9. A unique complete git-archive export at `D:/Luiz/Odradek/opi-remediation-evidence/phase20/ready-src-dcd01d9` is bound by committed-export.json. The failed Windows-long-path partial export is excluded. Old source execution receipts retain2078 identities;922 relevant inputs were independently compared atdcd01d9 and only behavior-neutral providerfixture setup differs. That target was rebuilt with fresh=false againstdcd01d9 and111tests/clippy PASS. The old provider binary was preserved before replacement.
-
-Current owning opi-implement plan was explicitly invoked. All16 canonical normalized source hashes match; initializer refuses NO DRIFT and ledger-schema says frozen Phase snapshots are historical and NOT re-synced. P006 is Refuted; no P0/P2/P4 confirmation/graph/hash write remains. Independent F1a remains futurePhaseexit authority, never a circular precondition or an inferred historical pass. B_QUOTA will precisely change registered Chinese wording later; actual future source drift then returns to the owning gate, without remediation installing pins or declaringPhaseexit.
-
-User-approved native route is scope.md SHA256 `2c72a21837fe505f37b00e21a1500b9e4a84a32d4f39bac09448861c84f88e08`: after separately approvedapply/localchecks, commit/push only approvedfixes/CIacceptance on `codex/phase20-remediation-ci` in `OdradekAI/opi`,trigger sixnativejobs,download originalproof. No apply now/main/merge/tag/release/liveprovider or unsolicited message publication. This resolves execution-resource authority; actualnativegreen remainsnot-run. No repeatedpermission is needed inside that bounded futurepath.
-
-## CI checkpoints and final delivery proof
-
-Use the [execution protocol](../../../../.agents/skills/opi-remediate/references/execution-protocol.md#source-and-materialization-proof).
-The workflow commit `4e662a02c8a26d23986b12129b6f47a7a8822fcc` is the remediation baseline.
-The committed comparison from `dcd01d9a06bb075aa4b63378cdec23a8f880d5e0` to this baseline contains only the
-previous plan pair and the eight bound workflow files. Product sources,
-verification runners for the finding evidence, specifications and live audit
-artifacts have the same committed entries. The original evidence receipts retain
-their recorded execution identities. Capture the external baseline after
-validating the approved digest. The plan-only commit may be the execution HEAD.
-
-1. Complete the required local checks before B_NATIVE. For the local package
-   runs on the repaired worktree, use the real direct cache owner and retain
-   the original dirty-source package metadata and exact tested inputs. B_EXPORT
-   separately proves the committed archive/cache-owner route. The native jobs
-   prove the actual published checkpoint with a clean checkout.
-2. Capture a `tested` receipt before checking each CI candidate. After the
-   local checks, stage only the currently implemented approved repairs and CI
-   acceptance files. Run `checkpoint --stage index`, commit under the existing
-   bounded authorization, and run `checkpoint --stage commit` before pushing.
-   Keep the plan, audit and result Git entries at their parent values. Retain
-   both receipts, their digests, the actual commit SHA, the CI checkout SHA and
-   all six native proof sets. The checkpoint proves source identity; native
-   execution still supplies the green evidence.
-3. If B_FINAL_DOCS changes packaged documentation or other build inputs, use
-   the prior commit receipt and digest with `tested`, verify and publish the
-   next source-only checkpoint on the same authorized branch, and run the
-   required package and native checks against that exact commit. Preserve both
-   checkpoints and their original evidence; do not attribute an old run to a
-   new commit.
-4. After obtaining all required evidence, capture the final `tested` receipt
-   with the latest checkpoint binding before the final verification union.
-   Validate the full result and run `verify --stage worktree` for the cumulative
-   repair delta from the original baseline. Final delivery is separate: when
-   explicitly authorized, verify the index with all four fixed outputs and the
-   frozen audit set, then verify the final commit as a direct child of the last
-   checkpoint. A result-only final commit is valid if all source is already
-   proved. The authorized CI checkpoint pushes do not publish that final result.
-
-| Indexed run | Findings SHA-256 | Keys |
-|---|---|---|
-| `phase20-codex-gpt61-b3f1810-20261103t142820z` | `4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6` | 21 |
-| `phase20-pi-glm53-44374ec-20261103t160703z` | `f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990` | 7 |
-
-C/P below abbreviate the two full run identities only in tables. Exact source/run/digest tuples remain literal in every assigned Fix and once per JSONL source disposition. Original source severities remain unchanged; batches are topological and dependency-ready highest-source-severity first. Historical material/eval/prior plan conclusions supply no disposition authority.
+**Dirty-worktree baseline**: only the fixed plan pair was unstaged before this source rebind. The four workflow inputs below are committed at the remediation head. Staged and untracked inventories were empty.
+**Workflow inputs**: [{"path":".agents/skills/README.md","sha256":"c34958e77a5342c4d6576a15161f3c054d33ec7de73de039241055a89ccd27c5"},{"path":".agents/skills/README.zh.md","sha256":"d11ff48c197b3f3ebc530e7907872e6f8ed6625ad5a47d1f973a24d6b954f4e4"},{"path":".agents/skills/opi-remediate/SKILL.md","sha256":"21cda82f73f7d34e292ecfa46efd90f8c0e656a5ff525690cff5e3bec7145d5a"},{"path":".agents/skills/opi-remediate/references/remediation-plan-template.md","sha256":"be97a67a42feb713f647cba09f6ca68135967610161da8c35cefe2b3db518c4d"}]
+**Unresolved decisions**: D1, D2, D3, D6
 
 ## Current Finding Verification
 
-| Source / Finding | Current verification / counter-evidence | Source → final severity | Closure key / family | Batches | Decision / residual |
+The current audit set validated before inspection. C and P identify the runs below. Every disposition binds the full source tuple. Source severities and reviewer requirement states are retained. Refutations below address the bounded current claim. The remaining linked delivery predicates are tracked separately.
+
+| Alias | Indexed run | Findings SHA-256 | Keys |
+|---|---|---|---:|
+| C | `phase20-codex-gpt61-b3f1810-20261103t142820z` | `4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6` | 21 |
+| P | `phase20-pi-glm53-44374ec-20261103t160703z` | `f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990` | 7 |
+
+| Source / finding | Verification and current evidence | Severity | Closure key / family | Batches | Decision and residuals |
 |---|---|---|---|---|---|
-| C001 / P20-AUD-001 | Refuted. BuiltinResolver::select overlays credential.env through scoped_context before candidate-key lookup (auth/builtin.rs:209–221); empty scoped entries return Some(empty) and mask ambient before filtering (69–73). The original wrong-account proposition fails; candidate order and explicit-key precedence remain source-owned. Fresh current-source exact-binary proof: opi-ai/builtin_auth_ownership 9 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | credential.scoped-key-selection / auth.scoped-source | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C002 / P20-AUD-002 | Refuted. HttpClientBuilder creates the shared HTTP and websocket clients with referer(false) (http.rs:382–402); ReqwestAdcTransport constructs both selected clients with that builder (auth/adc/native.rs:350–379). The original automatic-Referer proposition fails. Existing explicit caller headers remain caller-owned. Fresh current-source exact-binary proof: opi-ai/adc_owner_regressions 22 passed; opi-ai/http_acceptance 21 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | adc.redirect-no-unsolicited-referer / http.redirect-audience | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C003 / P20-AUD-003 | Refuted. Image HTTP failures now derive display message from ProviderErrorSummary::from_http_response instead of the response body (api/openrouter_images.rs:319–334). Cloudflare envelope messages use from_untrusted and run states use redacted() (api/cloudflare.rs:188–215). Public result fields still exist, but the original raw-provider-text path is absent. Fresh current-source exact-binary proof: opi-ai/openrouter_fixtures 55 passed; opi-ai/classifier_contract 84 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | nonchat.diagnostic-body-redaction / nonchat.diagnostics | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C004 / P20-AUD-004 | Refuted. provider_auth_failure recursively unwraps StreamFailure before matching all three credential variants (harness.rs:111–125). Prepared failures may retain StreamFailure and projection facts; that surviving wrapper is no longer evidence of a missed remediation classifier. Fresh current-source exact-binary proof: opi-coding-agent/opi_coding_agent 234 passed, 1 default ignored/not executed; opi-agent/continuation_contract 15 passed; opi-coding-agent/json_mode 36 passed; opi-coding-agent/session_runtime 64 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | auth.prepared-credential-consumer-classification / auth.preparation | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C005 / P20-AUD-005 | Refuted. ChatStream compares Done.reason with message.stop_reason before accepting a success terminal; disagreement produces one typed CallFailure with the message, then releases the inner stream (stream.rs:853–873). The claimed Ok(Error) path fails that guard. Fresh current-source exact-binary proof: opi-ai/stream_events 29 passed; opi-ai/external_sdk 11 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | stream.consistent-terminal-stop-reasons / stream.terminal | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C006 / P20-AUD-006 | Refuted. AcquisitionCore::note_failure rejects a hint greater than a nonzero max_retry_delay_ms before admission (retry.rs:601–609); only admitted hints reach retry_delay_ms. The helper still has a defensive min, which is unreachable for an over-cap admitted hint. Explicit zero continues to disable the hint bound. Fresh current-source exact-binary proof: opi-ai/provider_collection 111 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | retry.server-hint-cap-refuses-send / retry.acquisition | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C007 / P20-AUD-007 | Refuted. classify_whole_call_retry invokes is_context_overflow before the transient pattern (retry.rs:1026–1031). A token-count string containing 500 cannot override a recognized overflow. Fresh current-source exact-binary proof: opi-ai/whole_call_retry 21 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | retry.context-overflow-veto-before-transient / retry.whole-call | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C008 / P20-AUD-008 | Refuted. The shared compiler now computes numeric Claude combined=min(base+budget,model cap), clamps to context available and then clamps budget to final ceiling minus1024 (models.rs:4000–4016). The original omission of the addition is absent for Anthropic and numeric Claude Bedrock routes. Fresh current-source exact-binary proof: opi-ai/anthropic_fixtures 153 passed; opi-ai/context_budget 14 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | simple.numeric-claude-answer-plus-thinking / models.simple-budget | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C009 / P20-AUD-009 | Refuted. AnthropicMessagesCompat now has typed empty-signature/tool-cache/long-cache/mid-conversation-effort/affinity/fallback fields and source defaults (model_info.rs:349–412). catalog/wire.rs decodes and stores these fields (182–219,623–659,983–1018), and anthropic.rs consumes them in replay/cache/effort/beta/headers/fallback/cost paths. The six-flag/no-production-caller proposition fails. Unknown fields still do not confer active behavior. Fresh current-source exact-binary proof: opi-ai/anthropic_fixtures 153 passed; opi-ai/model_wire_metadata 24 passed; opi-ai/catalog_operations 27 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | anthropic.complete-compat-source-branches / anthropic.compat | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C010 / P20-AUD-010 | Confirmed. Confirmed by6 valid failing public route tests: prepared HTTP/WS/Bedrock45 cases,builtinHTTP/Bedrock18cases,defaultVertexADC16cases,with passing direct/explicit/bypass controls. Selected source proxy behavior differs from current real routes. Pinned helper35/Gaxios26 and redirect40 exact primary controls settle source-specific precedence/matcher/initialagent rules; no blanket resolver may replace ADC. | Major → Major | proxy.scoped-source-protocol-resolution / http.source-proxy | ["PXY_HTTP", "PXY_WS", "PXY_AWS", "PXY_ADC"] | fix:source-qualified-four-route-proxy; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C011 / P20-AUD-011 | Refuted. ClassifierDeclarations<T> is a minimal Vec collection with numeric canonical-index prefix and ordinary-key insertion tail, stable replacement and remove/reinsert semantics (classifier.rs:43–94); questions and choice criteria use it. The BTreeMap source-order-loss premise is absent. Fresh current-source exact-binary proof: opi-ai/classifier_contract 84 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | classifier.js-declaration-enumeration / classifier.declarations | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C012 / P20-AUD-012 | Refuted. Models::new and from_registry initialize separate InMemoryCredentialStore values (models.rs:632,685). The old None-store predicate no longer holds. Explicit injected stores retain their authority. Fresh current-source exact-binary proof: opi-ai/external_sdk 11 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | models.default-memory-credential-store / auth.store-default | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C013 / P20-AUD-013 | Refuted. openrouter_images.rs:174–178 derives [image,text] whenever Text is present and [image] otherwise. It does not copy output ordering, duplicates or omission. The accepted custom Text-only counterexample now follows the source rule. Fresh current-source exact-binary proof: opi-ai/openrouter_fixtures 55 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | images.modalities-source-rule / images.request | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C014 / P20-AUD-014 | Refuted. The adapter parses the fully acquired response into result before notifying onResponse, then changes only stop_reason/error fields on observer error or cancellation (openrouter_images.rs:383–411). Output/responseId/usage/cost and unknownness survive; acquisition cannot restart after this handoff. Fresh current-source exact-binary proof: opi-ai/openrouter_fixtures 55 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | images.observer-failure-retains-received-facts / images.response-handoff | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C015 / P20-AUD-015 | Refuted. The null coercion number branch additionally accepts n.as_f64()==Some(0.0) (schema/normalize.rs:610–612), so Float zero reaches Null. Nonzero values still require final validation. Fresh current-source exact-binary proof: opi-ai/schema_public 28 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | schema.null-coercion-float-zero / schema.normalization | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C016 / P20-AUD-016 | Refuted. Mistral/OpenRouter compat fixtures now distinguish capability false/true and per-tool None/Prefer/Require, and Chat enrichment expects explicit affinity to survive Disabled retention (request_enrichment.rs:435–438). The source suite no longer contains the cited stale expectations. Fresh current-source exact-binary proof: opi-ai/mistral_fixtures 54 passed; opi-ai/openrouter_fixtures 55 passed; opi-ai/request_enrichment 45 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | compat.strict-and-chat-affinity-current-tests / compat.fixture-gates | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C017 / P20-AUD-017 | Confirmed. external_sdk.rs remains a workspace test binary and current run_readme_examples.py creates/executes only the three onboarding examples. No current runner copies or executes the assembled external_sdk matrix outside the workspace. This confirms a current execution-evidence gap, not failure of the SDK behavior. Fresh current-source exact-binary proof: opi-ai/external_sdk 11 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Actual packagefullSDK consumer with18fixedtargets×6profiles nowfullyspecified; source/testselection,independentlock,selectedContext,customclassifier and executableproof predicates are fixed; futuregreens notrun. | Major → Major | package.actual-external-assembled-sdk-matrix / delivery.external-package | ["B_SDK"] | fix:actual-extracted-package-sdk-matrix; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C018 / P20-AUD-018 | Partially confirmed. Partially confirmed: original broad missing-conjunction claim survives; current bounded counter-evidence refutes specific old runtime premises but not complete delivery. Exact165 original linked requirement records/138 criterion identities remain unchanged with3 current static governance proofs and162 fixed current+future verification mappings; no remaining unknown facts/authority. C018 includes observed budget/reclamation/defaultADCredirect reds and wrong schemafixture; all actual repair/harness/native/documentation roots are assigned. Source findings close only after all actual assigned greens, never from this plan or prior audit/historical conclusions. | Major → Major | delivery.acceptance.full-linked-conjunction / delivery.evidence | ["PXY_HTTP", "PXY_WS", "PXY_AWS", "PXY_ADC", "B_ADC_REDIRECT", "B_BUDGET", "B_RECEIPT", "B_SCHEMA", "B_EXPORT", "B_EXE_RECEIPTS", "B_CACHE", "B_EXPIRY", "B_SDK", "B_HTTP_PACKAGE", "B_NATIVE", "B_FINAL_DOCS"] | fix:complete-source-bound-acceptance-conjunction; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C019 / P20-AUD-019 | Confirmed. ModelInfo (model_info.rs:1226–1246) has no promptCache duration representation; catalog/wire.rs has no promptCache encode/decode. Capability booleans and retained raw catalog JSON are counter-evidence to total cache-metadata loss but do not preserve executable complete-model short/long seconds through typed storage. Fresh current-source exact-binary proof: opi-ai/model_wire_metadata 24 passed; opi-ai/catalog_operations 27 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Current public red1PASS/3FAIL proves fractional/short-only known metadata lost and invalidknown0 accepted; exact typed/source/store design fixed. | Minor → Minor | model.prompt-cache-durations-owned-roundtrip / models.metadata | ["B_CACHE"] | fix:owned-prompt-cache-durations; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C020 / P20-AUD-020 | Confirmed. OAuthCredential.expires_at and Credential::OAuthToken.expires_at remain Option<OffsetDateTime>; OpenRouter login constructs Some(openrouter_permanent_key_expiry()), whose year9999 sentinel remains exported (auth/oauth/openrouter.rs:43–53,324–331). Permanent keys do avoid normal refresh, but the explicit typed-permanence contract is unmet. Fresh current-source exact-binary proof: opi-ai/oauth_flows 195 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Actual public loopback login2PASS/1FAIL proves finite9999 metadata stands in for permanence; exact enum,caller and durablev2/v1reader migration fixed. | Minor → Minor | oauth.typed-permanent-expiry / auth.oauth-expiry | ["B_EXPIRY"] | fix:typed-oauth-lifetime; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| C021 / P20-AUD-021 | Confirmed. English spec-draft.md:334 explicitly rejects capacity below required cost; Chinese spec-draft.zh.md:334 still states only capacity 为零禁止 retry. The Chinese does not explicitly allow below-cost retries, and no production defect follows; the finding remains documentary precision only. | Minor → Minor | docs.bedrock-below-cost-quota-bilingual / docs.bilingual-contract | ["B_QUOTA"] | fix:precise-bilingual-quota; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P001 / P20-AUD-001 | Refuted. redirect_response now advertises connection: close while the scripted server closes each leg (http_acceptance.rs:382–385). This removes the cited keep-alive pool mismatch; twenty-hop acceptance and twenty-one-hop refusal still require actual execution. Fresh current-source exact-binary proof: opi-ai/http_acceptance 21 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | http.redirect-budget-harness-connection-close / http.redirect-test-harness | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P002 / P20-AUD-002 | Refuted. Current fixture loops exercise strict capability and per-tool preference rather than forcing true on an unannotated tool. Independent pinned Pi raw openai-completions.ts:1507–1515 uses strict??false and current shared adapter defaults false. Fresh current-source exact-binary proof: opi-ai/mistral_fixtures 54 passed; opi-ai/openrouter_fixtures 55 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | compat.unannotated-tools-default-false-tests / compat.fixture-gates | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P003 / P20-AUD-003 | Refuted. The current Chat fixture explicitly expects session-disabled affinity headers (request_enrichment.rs:435–438). Independent raw Pi openai-completions.ts:778–788 makes Chat affinity depend on nonempty session and configured send flag; cache key alone is retention-gated (347–348). This conclusion does not change the distinct user-selected Responses policy. Fresh current-source exact-binary proof: opi-ai/request_enrichment 45 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | chat.affinity-independent-of-cache-retention / compat.chat-affinity | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P004 / P20-AUD-004 | Refuted. The prepared error wrapper persists to retain projection facts, while harness.rs:111–125 traverses it before matching credential variants. That is direct counter-evidence to the original consumer-classification failure. Agent acceptance must likewise inspect the typed cause rather than demand wrapper removal. Fresh current-source exact-binary proof: opi-coding-agent/opi_coding_agent 234 passed, 1 default ignored/not executed; opi-agent/continuation_contract 15 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | auth.prepared-credential-consumer-classification / auth.preparation | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P005 / P20-AUD-005 | Refuted. function_tool_value now defaults resolved strict intent to false and clones original schema when false (mistral.rs:446–474); the comment states the same. Independently read Pi mistral-conversations.ts:777–787 also uses strict??false. Fresh current-source exact-binary proof: opi-ai/mistral_fixtures 54 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | Major → Major | mistral.unannotated-tools-default-false / mistral.tool-projection | [] | no-action:refuted-current-source; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P006 / P20-AUD-006 | Refuted. Current owning opi-implement plan canonical projection: all16 normalized root registered-source hashes match; initializer Reinit step1 refuses NO DRIFT. ledger-schema explicitly says frozen Phase snapshots are historical and NOT re-synced. The original both-ledgers reconciliation premise is refuted; old snapshot hash remains history. No ledger/hash/graph edit or new P0/P2/P4 confirmation is indicated. Owner admission and projection receipts below exclude historical task/exit conclusions. | Minor → Minor | ledger.registered-source-hash-reconciliation / delivery.ledger-owner | [] | no-action:refuted-current-root-drift-premise; remaining_obligations=[]; assigned fixed greens remainnot-run. |
-| P007 / P20-AUD-007 | Partially confirmed. Partially confirmed: original broad missing-conjunction claim survives; current bounded counter-evidence refutes specific old runtime premises but not complete delivery. Exact165 original linked requirement records/138 criterion identities remain unchanged with3 current static governance proofs and162 fixed current+future verification mappings; no remaining unknown facts/authority. C018 includes observed budget/reclamation/defaultADCredirect reds and wrong schemafixture; all actual repair/harness/native/documentation roots are assigned. Source findings close only after all actual assigned greens, never from this plan or prior audit/historical conclusions. | Major → Major | delivery.current-input-evidence.full-linked-conjunction / delivery.evidence | ["PXY_HTTP", "PXY_WS", "PXY_AWS", "PXY_ADC", "B_ADC_REDIRECT", "B_EXPORT", "B_EXE_RECEIPTS", "B_CACHE", "B_EXPIRY", "B_SDK", "B_HTTP_PACKAGE", "B_NATIVE", "B_FINAL_DOCS"] | fix:actual-current-input-package-native-conjunction; remaining_obligations=[]; assigned fixed greens remainnot-run. |
+| C001 / P20-AUD-001 | Refuted. Scoped context overlays the stored map before candidate lookup and returns an explicitly empty entry before candidate filtering. Explicit-key selection remains earlier. `crates/opi-ai/src/auth/builtin.rs:50–73,173–221`. | Major retained | `credential.scoped-key-selection` / `auth.scoped-source` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C002 / P20-AUD-002 | Refuted. Both HTTP builders disable automatic Referer, and the default ADC transport uses those builders. A caller-supplied Referer remains caller-owned. `crates/opi-ai/src/http.rs:380–402`; `auth/adc/native.rs:350–379`. | Major retained | `adc.unsolicited-referer` / `http.redirect-audience` | [] | `no-action:refuted-current-source`. D1. |
+| C003 / P20-AUD-003 | Refuted. Image failures use a status-based summary. Cloudflare envelope failures use the redacted summary projection. `crates/opi-ai/src/api/openrouter_images.rs:319–334`; `api/cloudflare.rs:173–215`. | Major retained | `nonchat.diagnostic-redaction` / `nonchat.diagnostics` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C004 / P20-AUD-004 | Refuted. The product classifier walks nested StreamFailure causes and matches all three credential variants. The wrapper retains typed failure context. `crates/opi-coding-agent/src/harness.rs:100–127`. | Major retained | `auth.prepared-failure-consumer` / `auth.preparation` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C005 / P20-AUD-005 | Refuted. A contradictory Done becomes one retained failure, and the collector absorbs the inner stream. `crates/opi-ai/src/stream.rs:853–873`. | Major retained | `stream.matching-stop-reasons` / `stream.terminal` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C006 / P20-AUD-006 | Refuted. The acquisition guard refuses a server wait above a nonzero cap before calculating a delay or admitting the send. The zero-cap sentinel remains source-owned. `crates/opi-ai/src/retry.rs:601–613,711–734`. | Major retained | `retry.server-hint-admission` / `retry.acquisition` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C007 / P20-AUD-007 | Refuted. The context overflow veto executes before the transient-pattern match. `crates/opi-ai/src/retry.rs:1017–1037`. | Major retained | `retry.context-overflow-veto` / `retry.whole-call` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C008 / P20-AUD-008 | Refuted. The numeric Claude branch adds answer and thinking before the model and context clamps. The separate zero-limit admission case still needs B_BUDGET. `crates/opi-ai/src/models.rs:3981–4016`. | Major retained | `simple.numeric-claude-addition` / `models.simple-budget` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C009 / P20-AUD-009 | Refuted. Typed compatibility fields round-trip and reach the Anthropic replay, cache, effort, header, fallback and cost paths. `crates/opi-ai/src/model_info.rs:349–412`; `catalog/wire.rs:182–201,623–659,983–1018`; `anthropic.rs:1407–1429,1526,1585,1677–1735,1917–1931,2566`. | Major retained | `anthropic.compat-branches` / `anthropic.compat` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C010 / P20-AUD-010 | Confirmed. Isolated Chat, Codex WS, Bedrock and direct ADC source routes pass. Selected ordinary adapter and actual ADC CONNECT/identity cases also pass. The remaining ordinary owners and integrated path union are open. | Major retained | `proxy.source-qualified-routes` / `http.source-proxy` | PXY_HTTP, PXY_HTTP_OWNERS, PXY_WS, PXY_AWS, PXY_ADC_SOURCE, B_ADC_REDIRECT, B_ADC_CONNECT | `pending:rehearse-source-qualified-proxy`. D1. |
+| C011 / P20-AUD-011 | Refuted. The declaration collection uses a Vec with a numeric prefix and insertion-ordered ordinary keys. The Llama path consumes that order. `crates/opi-ai/src/classifier.rs:43–94,192,229`; `api/llama.rs:652,729–736`. | Major retained | `classifier.declaration-order` / `classifier.declarations` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C012 / P20-AUD-012 | Refuted. Both constructors install independent default stores. Login reads the selected store path. `crates/opi-ai/src/models.rs:632,685,2449–2467`. | Major retained | `models.default-memory-store` / `auth.store-default` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C013 / P20-AUD-013 | Refuted. The image request emits image plus text when text is present and image otherwise. Caller modality ordering and duplicates do not determine the wire order. `crates/opi-ai/src/api/openrouter_images.rs:174–178`. | Major retained | `images.source-modalities` / `images.wire` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C014 / P20-AUD-014 | Refuted. Image result parsing precedes the response callback. Failure updates the terminal projection while retaining output and usage. `crates/opi-ai/src/api/openrouter_images.rs:383–411`. | Major retained | `images.observer-retains-result` / `images.diagnostics` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C015 / P20-AUD-015 | Refuted. The numeric branch recognizes floating and signed zero before final validation. `crates/opi-ai/src/schema/normalize.rs:608–615`; `crates/opi-ai/tests/schema_public.rs:589,640`. | Major retained | `schema.float-zero-null` / `schema.coercion` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C016 / P20-AUD-016 | Refuted. The owning fixtures cover capability by per-tool intent and expect Chat affinity under disabled retention. `crates/opi-ai/tests/mistral_fixtures.rs:475–566`; `openrouter_fixtures.rs:429–519`; `request_enrichment.rs:417–439`. | Major retained | `chat.compat-fixture-expectations` / `chat.compat` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| C017 / P20-AUD-017 | Confirmed. The original CLI rejects the SDK family. The isolated actual extracted consumer passed all 48 selected cases with reviewed HTTP versions. | Major retained | `sdk.extracted-full-public-consumer` / `delivery.package` | B_SDK | `fix:execute-extracted-full-sdk-consumer`. Local planning proof complete. |
+| C018 / P20-AUD-018 | Partially confirmed. Bounded source and runner rehearsals exist. The exact linked acceptance conjunction remains open. | Major retained | `delivery.complete-current-criterion-conjunction` / `delivery.evidence` | B_BUDGET, PXY_HTTP, PXY_HTTP_OWNERS, PXY_WS, PXY_AWS, PXY_ADC_SOURCE, B_ADC_REDIRECT, B_ADC_CONNECT, B_EXPORT, B_SDK, B_RECEIPT, B_SCHEMA, B_NATIVE | `pending:complete-current-criterion-conjunction`. D1, D2, D3, D6. |
+| C019 / P20-AUD-019 | Confirmed. Actual typed catalog/store red and 87-test candidate pass prove the chosen metadata repair and consumer paths. | Minor retained | `models.prompt-cache-durations-roundtrip` / `models.metadata` | B_CACHE | `fix:preserve-typed-prompt-cache-durations`. Local planning proof complete. |
+| C020 / P20-AUD-020 | Confirmed. Actual OpenRouter and keychain red plus 688-test candidate pass prove the chosen lifetime migration and consumer paths. | Minor retained | `oauth.typed-permanent-lifetime` / `auth.expiry` | B_EXPIRY | `fix:typed-permanent-oauth-lifetime`. Local planning proof complete. |
+| C021 / P20-AUD-021 | Refuted at current head. The registered source owner committed the below-cost wording. Live pin reconciliation remains owner work. | Minor retained | `bedrock.quota-bilingual-boundary` / `docs.quota` | [] | `no-action:corrected-by-registered-source-owner`. D6. |
+| P001 / P20-AUD-001 | Refuted. The redirect response now advertises Connection: close to match the per-leg server lifecycle. Exact hop counts remain a runtime predicate. `crates/opi-ai/tests/http_acceptance.rs:382–385`. | Major retained | `http.redirect-test-peer-lifetime` / `http.redirects` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| P002 / P20-AUD-002 | Refuted. The current fixture cases distinguish capability from None, Prefer and Require tool intent. `crates/opi-ai/tests/mistral_fixtures.rs:475–566`; `openrouter_fixtures.rs:429–519`. | Major retained | `chat.tool-strict-fixture-intent` / `chat.compat` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| P003 / P20-AUD-003 | Refuted. The current Chat fixture expects affinity to remain under disabled retention. `crates/opi-ai/tests/request_enrichment.rs:419–438`. | Major retained | `chat.affinity-under-disabled-retention` / `chat.compat` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| P004 / P20-AUD-004 | Refuted. The product classifier recursively walks the wrapper, and interactive, RPC and runner entry points use it. `crates/opi-coding-agent/src/harness.rs:100–127`; `interactive.rs:766`; `rpc.rs:1100`; `runner.rs:840,882,919`. | Major retained | `auth.prepared-failure-consumer` / `auth.preparation` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| P005 / P20-AUD-005 | Refuted. The Mistral Conversations adapter defaults strict to false and retains the original schema in that branch. `crates/opi-ai/src/mistral.rs:447–464`. | Major retained | `mistral.unannotated-tool-wire` / `chat.compat` | [] | `no-action:refuted-current-source`. No distinct repair for this bounded claim. |
+| P006 / P20-AUD-006 | Refuted for the original matrix claim. The new Chinese clause pin drift is explicit and separate. | Minor retained | `ledger.current-source-pins` / `ledger.authority` | [] | `no-action:refuted-current-source`. D6. |
+| P007 / P20-AUD-007 | Partially confirmed. Actual ordinary package and local native route rehearsals are complete. Full current native/feature/source-material execution remains future proof. | Major retained | `delivery.current-native-package-applicability` / `delivery.evidence` | B_NATIVE | `pending:prove-current-delivery-applicability`. D2, D3. |
 
 ## Unresolved Decisions
 
-none. Missing past native/fullconsumer passes are not retroactively filled. Their exact admitted future checks and resource authority are fixed in real harness/CI roots; they must actually pass duringapply. Any new product meaning/public authority/dependency expansion outside these decisions stops and requires replanning.
+| ID | Required decision or proof | Current evidence and exit condition | Owner or authority |
+|---|---|---|---|
+| D1 | Complete the remaining source-qualified proxy profiles | Prepared Chat, Anthropic/federation, Responses, Azure, Codex WS pool migration, Bedrock scoped route, and direct ADC raw-env/cache/redirect trials pass. The integrated ADC trial passed real clear-target CONNECT, anonymous outer TLS, exact inner STS identity and unapproved certificate redirect refusal. Other ordinary owners such as Gemini/Vertex, Mistral, Pi Messages and typed operations remain. Join the source owners in one candidate and repeat the full downstream union. In a separate fresh candidate, anonymous HTTPS proxy TLS and CONNECT completed, then the inner connection driver returned UnexpectedEof before the response consumer could read the complete two-byte framed body. Leaving framing completion to the consumer passed the immediate complete response and rejected its one-byte truncation. Nine targeted cases passed. [https-diagnostic/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-diagnostic/receipt.json>) (`8f6a18677f329fd62eda6f7e9a6b5963d724cbd3a6d8c5614868e7fee0d44148`). [https-framing-green/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-framing-green/receipt.json>) (`5382bce1f36b938c3eac2efe9b34bc4abfaafeabf206c70554fbda9634302974`). Join this exact framing correction and its probes with the builtin candidate, including the complete certificate file-supplier and audience paths. | Transport and downstream test owners. No product policy choice is pending. |
+| D2 | Bind the integrated package/native acceptance route | Actual extracted ordinary SDK and six local CI plans are now rehearsed. Rehearse the integrated archive, package and feature-union selectors and map the required native material checks to exact checkpoint paths before sealing. The six actual host/toolchain runs use the verified checkpoint after explicit apply. | Package and CI execution owners. |
+| D3 | Finish the linked delivery criteria and integrated rehearsal | Join the remaining finite public cases, authoritative same-key reconciliation, distinct HTTP/WS/crypto/schema package and native source/material proofs, and factual delivery documentation to the 165 current source rows. Keep formal Phase exit in its owning workflow. | Required owning runtime/package checks and the separate Phase exit owner. |
+| D6 | Reconcile the live registered-source pin | The exact Chinese clause was committed independently. The scoped projection detects the corresponding one live pin mismatch. The registered source is fixed; live ledger admission requires the explicitly invoked opi-implement plan path and its own review gates. | Live ledger owner through explicit `$opi-implement plan`. |
 
 ## Planning Evidence Work
 
-No additional evidence question remains before sealing. The completed distinguishing probes are retained below. Compiler/setup failures (private BoxAuthFuture import,wrong builtinopenai fixture,earlier --nocapture checker interleaving) are excluded from behavioralred.
+- Committed source archive and worktree inventory: [contract-replan-20261105T064655Z-4f969318/baseline.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-replan-20261105T064655Z-4f969318/baseline.json>) (`f1b68845be0c70af00026f1a22df09dab9aad239b661e7fff20506a6fab50893`).
+- Package CLI and cache owner/archive controls: [contract-replan-20261105T064655Z-4f969318/package-admission.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-replan-20261105T064655Z-4f969318/package-admission.json>) (`488d52f762d34edf830dd7eeeaec660605647e5c605ddc775caff2d1a1caa127`). The direct-owner check accepted and the archive check rejected before scratch. The `sdk` selector exited 2 before packaging.
+- Current owner pin projection: [contract-replan-20261105T064655Z-4f969318/owner-pin-projection.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-replan-20261105T064655Z-4f969318/owner-pin-projection.json>) (`dbf4d96c5c3578163a42b48b56cca44a97ab15051823534cb043fd5527036eaa`). Only the frozen snapshot reports a stored hash mismatch. Independent Phase exit still belongs to the owning workflow.
+- Exact current C018/P007 requirement projection: [contract-replan-20261105T064655Z-4f969318/linked-delivery-criteria.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-replan-20261105T064655Z-4f969318/linked-delivery-criteria.jsonl>) (`c57adab725fbab66b0a0e7afb54e212c77960fb9289f003930dd6ae7b9c133ac`). The 165 records represent 138 criterion identities, with 155 `not-assessable`, 9 `partially-met`, and one `not-met` in the source sidecars. The draft preserves those states and treats remaining proof separately.
 
-| Question | Source/build and controls | Actual distinguishing observation | Fixed decision |
-|---|---|---|---|
-| Proxy profile/source | Helper35/Gaxios26 untouched pinned cases; realHTTP/WS/Bedrock45+builtin18+ADC16 route observations; actual selected source and passingdirect/explicit/bypasscontrols |6Rust tests FAIL after validbuild; selected source reacheswrongorigin orfailsbypass |4source-qualified roots,raw-env+frozen opaque carrier,validatebefore send |
-| ADC redirect owner | ExactGaxios/GoogleAuth/node-fetch primary40valid sourcecases; realtoken200positive plus5redirectstatus cases; publicGETcrossport |2/2Rust testsFAIL; tokenredirects neverreach target; GETdrops protectedheads |B_ADC_REDIRECT,staticinitialGaxiosagent; no sourcecrash emulation |
-| Modelzero fallback |8192/64positive plus3independentzero inputcases |1PASS/3FAIL predispatchConfig |B_BUDGET sourceSDK165 max(1,M) |
-| Receipt resource lifetime |Livebarrier andworkerpanicUnknown positives; dropall observers negative |2PASS/1FAIL confirmedhistoryneverreclaimed |B_RECEIPT privatelease ownership |
-| Cachemetadata |Absentpositive,fractional/short-only/knowninvalid controls |1PASS/3FAIL |B_CACHE exacttyped source/store roundtrip |
-| OAuth lifetime |ActualloopbackOpenRouterlogin,identityrefresh andUnknown/4min/6mincontrols |2PASS/1FAIL finite9999metadata |B_EXPIRY enum+strict durable migration |
-| Schemafixture |PinnedTypeBox1.3.27 compiled/interpreted54vsRustpublic54 |Both54/54; originalschema_engine72PASS/1FAIL wrongpositive |B_SCHEMA testonly,noresolverwidening |
-| Archive/cache authority |Actualownedworkspacepositive vsrealcommittedarchive+samecache |Archivewrongworkspace ValueError before scratch |B_EXPORT explicit verifiedexport+realowner |
-| Owner/native/resources |Canonical16hashprojection; exactCI scopeuserapproval;20purechecks+6dryruns |NO DRIFT; future6nativejobs authorized,notrun |P006Refuted;nativegreen fixedfuture |
+The current-source counter-evidence in the verification table is static unless a receipt records execution. Runtime selectors retained for later criterion verification:
 
-Current bounded execution set is35selected binaries,2097executed=2096PASS/1FAIL plus1defaultignored/notexecuted,workspaceall-targetclippyPASS. The replacementdcdprovider111receipt preserves these totals. Valid additional public probes are22executed=6PASS/16FAIL,0ignored. They reproduce distinct source roots; they are not22new auditfindings. Current54source comparator is separate. One privileged Windows collision fixture remains a transparently recorded ordinary-suite ignore; it is never counted as complete native acceptance.
-
-## Bound evidence and detailed input contracts
-
-Every listed exact file is an apply input, not an independently authoritative plan. If an input is missing/drifted, stop before affected edits rather than infer its content. Parent-selected design and the explicit batches override discarded alternatives. The proof receipts recursively bind original command/source/compiler/list/run/raw bytes and applicability; setup diagnostics stay excluded.
-
-| Exact external file | SHA-256 |
-|---|---|
-| [entry.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/entry.json>) | `547d9423f2720d8b71fe6f82c395e07d2b47200e3d560c4c80dd8a97127a7a2a` |
-| [cleanup-checkpoint.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/cleanup-checkpoint.json>) | `5014e5da61952fcaa03f32dc3ff64e0672aa52deac369b2abd9d0232d9956713` |
-| [committed-export.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/committed-export.json>) | `844b5ddef9ca3285085191e07f56edf38da868409ed443e7106fa66b3d949d90` |
-| [artifact-relocation.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/artifact-relocation.json>) | `8f475a4eefce5dedaa7d77f998c3b00c68d12638800aa6e8114ce10807c50665` |
-| [complete.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/new-checkpoint-execution/complete.json>) | `2994fa77ab06749d75b81c11eebae5b87f3ef3d6e991126137600e211be987f6` |
-| [red-proof-summary.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/red-proof-summary.json>) | `d0f1c29f51130642fd909f037172ddfc1e605ab4f60596132b9a0dec99262877` |
-| [complete.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/adc-redirect-red-v1/complete.json>) | `f51b27e6453e78313c3b7fbbb60fe928ba13b125a6637cdcbf8944dbb489084c` |
-| [opi-implement-plan-admission.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/opi-implement-plan-admission.json>) | `2357c67f6eb1a3b476c4480051774877fdc7445b54931058cf13120fb204ad89` |
-| [native-ci-authorization.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/native-ci-authorization.json>) | `bd0476df1336be4ba056be083683c7cc5f329f4a66b51f2d3dbc8b3084dc6972` |
-| [proxy-selected-design.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/proxy-selected-design.md>) | `cc4fba43ffbcbf658b60cac8df8c6c40a3e669cd97ec2d6962b1baf58befb6ec` |
-| [proxy-caller-migration.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/proxy-caller-migration.json>) | `d2b4ef9533fbe6cf4bee233294331b3d5c9758d24aa9306dba8c0fc05b7c1825` |
-| [batches.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/batches.json>) | `bb5e7827852f7df6bdc7eabed7d505c3c43581984d35d1f926f0e7ed85a8c527` |
-| [batches.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/batches.md>) | `70f97fbaee5d7fa26d0a97d16686e55b7208ab6ee727dd597ca629b55e9c7ac4` |
-| [design.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-model-oauth/design.md>) | `aa59189ee019d948e5809535052bf601fa6025571060e15394b824158063a9ca` |
-| [caller-inventory.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-model-oauth/caller-inventory.json>) | `4855de2941a8942b426de70e6a21bf32aa72ee8c8a261b568ad1b317f7ee510c` |
-| [criteria165.design.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/criteria165.design.jsonl>) | `c450d2030b83b5399ff181ecbf2dfc59cce0875171e237868e54a8709f04226a` |
-| [criteria165.mapping.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/criteria165.mapping.md>) | `7ac3a7e939dcc8b13f47245c9c425d9a2c27bbb82970f82b14aa9b360826c563` |
-| [coverage-design.validation.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/coverage-design.validation.json>) | `75d804175c54a0f23994b6fca71ba22950ece2eddf15fc726585990b21e1c502` |
-| [roots-and-authority.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/roots-and-authority.md>) | `10b15462b52b83fd6d03bd026ce9d502bfbc583a5e54bd32f8b5bd426d3fcc55` |
-| [newhead-applicability.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/newhead-applicability.json>) | `c4fe57dfe7c02165bae7817170cf46d39802f4d71b11610093b5561833341a54` |
-| [owner-source-projection.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/owner-source-projection.json>) | `e442f5bc0cc4621536d6ccdac77b46de0bb2e82e0d5ef0656648c41a4cfc3ad1` |
-| [catalog-materials.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/catalog-materials.json>) | `98317d51dce90636eda9f6732280a3f09475ab70a2a569c9208e3eec87f6fe4d` |
-| [archive-cache-admission.red.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/archive-cache-admission.red.json>) | `95eb0fac46dcf0e6287fc1e7373d88675d18992bfa3d5639d39b8529d50a4ebe` |
-| [auth-finite-cases.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/auth-finite-cases.json>) | `4bd04462c93f3ba1f2f2b9df8365cd0cc1c9c3fbeb38c75352f73c9f345baa8c` |
-| [consumer-sdk.design.toml](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/consumer-sdk.design.toml>) | `521378cdf98fa5213750c9bb406bbaaf27134aa1f06e86e2d1dbf7c01e3b5702` |
-| [sdk-evidence-contract.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/sdk-evidence-contract.json>) | `ec7fe6cbabe28c5205b67ba463ead1af55f863efc673433e48bde05ca2b60dd4` |
-| [scope.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-native-ci/scope.md>) | `2c72a21837fe505f37b00e21a1500b9e4a84a32d4f39bac09448861c84f88e08` |
-| [phase20-native.yml](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-native-ci/.github/workflows/phase20-native.yml>) | `1e8aec93b55dcb9879f8879ef5b2ba840015d961bda73a6f134528e5c8def1b4` |
-| [native_matrix.py](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-native-ci/scripts/phase20-native/native_matrix.py>) | `083f815f4d4a3f88ea47a7a02736a33976e139f13d2993a65ec104e5b87a32b1` |
-| [test_native_matrix.py](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-native-ci/scripts/phase20-native/test_native_matrix.py>) | `bb356ec59237dc1f98cc48127a1f0463c10c48a387f3d0659dbd767fabf82a35` |
-| [receipt-enhancements.patch](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-native-ci/receipt-enhancements.patch>) | `332d434eb437abfbd0c8832fef2a0b16a2e8fb053a1b31f566cd6f089490c158` |
-| [receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-native-ci/validation/receipt.json>) | `28ea618204498300fcb1de8da780da7ac047f1672e2573eab09e6a6ded440b68` |
-| [ready-receipt-design.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-receipt-design.md>) | `278b50c3aa3c5bf9dd24bde9903b611174b98c3a5cefeb171544627e506eb94a` |
-| [source-evidence.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/schema-source/source-evidence.json>) | `3c472780a9824afc5765f64cf1abaa2f9ea4737c6daa4f700f16a8902045b369` |
-| [acquisition.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/redirect-source/acquisition.json>) | `8d58e5d4c0faab6813e8bf2744a222230c57608a8c2b4e89556e666d89c132b1` |
-| [adc-redirect-batch.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/adc-redirect-batch.json>) | `5520522cd83bacf130b2496cf940e659d7ccdcd787f0f04efb8304b946f7ced8` |
-| [adc-redirect-batch.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/adc-redirect-batch.md>) | `e24a9f5b6c280d82cc442f65f095d2f25218f8c01d8f0d8a081a53bc2313b02d` |
-| [adc-redirect-proof.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/adc-redirect-proof.json>) | `9a9af5cad50700af3c81b9ebdfdbbb18b3cc7763aecdfae3a037d020a49bf2e0` |
-| [gaxios-proxy-corpus.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/gaxios-proxy-corpus.jsonl>) | `542a3c22a219a480eb0f6b9704b393eee4547b30ded558dbd80cf51c3bf67d93` |
-| [gaxios-proxy-corpus.mjs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/gaxios-proxy-corpus.mjs>) | `23a5a2f7f6e62f8109f4a2eae0fb2903e90b9d7138063d358fbd8adf4b5328f5` |
-| [gaxios-redirect-oracle.first-run.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/gaxios-redirect-oracle.first-run.jsonl>) | `b915c084667082a65cbe4f27f0a6c8bcddfab695cecb88b9c099a51e3eea467f` |
-| [gaxios-redirect-oracle.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/gaxios-redirect-oracle.jsonl>) | `a9e929bb31512f3f4c4f51ef32853c4618756fbdaa7682d37869f1455b76f17a` |
-| [gaxios-redirect-oracle.mjs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/gaxios-redirect-oracle.mjs>) | `0c9b19f51b82e7c86bf35a5ebbf611058fd2fa50284ea615fd77efcd6c9c974e` |
-| [input-proof.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/input-proof.json>) | `9a9a3a6fc7fdecae4aa223dc645c8307c4da3f9833d423d5681deb777e4494c7` |
-| [node-fetch-post-multihop-diagnostic.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/node-fetch-post-multihop-diagnostic.jsonl>) | `958af6418582203eb31167cc582a96469819b2594aba91fa8fd2d3c12e5c25c7` |
-| [node-fetch-post-multihop-diagnostic.mjs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/node-fetch-post-multihop-diagnostic.mjs>) | `7a5b310550bf4651d2627546257395000d7c4afa2c3e2241e5b7e6562a3ccc40` |
-| [node-fetch-post-replay-controls.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/node-fetch-post-replay-controls.jsonl>) | `416b0dcc5750901f3f28d1ae7679eb07c1328848afd38ec5522b09b0bcf0291b` |
-| [node-fetch-post-replay-controls.mjs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/node-fetch-post-replay-controls.mjs>) | `528c023aec704e54088bd7fdf37ea082c771c86089e9b8bcf17b533cf43a5acb` |
-| [pinned-proxy-corpus.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/pinned-proxy-corpus.jsonl>) | `e3cce7a5bee59f3674ad8974caebced576a7066c386ccef723676bc178c05bcc` |
-| [pinned-proxy-corpus.mjs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/pinned-proxy-corpus.mjs>) | `76271a55a100f8bef04cac3da606fde9931fea25b78f5ad0ab4fbc1b61fe7519` |
-| [remediation_adc_redirect_probes.rs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/remediation_adc_redirect_probes.rs>) | `d6b1ca706f834760fec53aea1eb4fbea48d4e682f0334a25e3d2574a7f137b76` |
-| [remediation_proxy_adc_probes.rs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/remediation_proxy_adc_probes.rs>) | `53867feb153d3f8d322418ebd502e35b5535d48de0c77ddb62f09752276e2ad1` |
-| [remediation_proxy_builtin_probes.rs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/remediation_proxy_builtin_probes.rs>) | `0dd076df4bbf7baa163ee93055898bba6d6ec0281abb3af9d958c1bae8d6879f` |
-| [remediation_proxy_probes.rs](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-proxy/remediation_proxy_probes.rs>) | `11424b721c020e584610def490230b1de34031e89db294ea2879aa3c0198b713` |
-| [finding-runtime-evidence.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/findings/finding-runtime-evidence.json>) | `b3e9ec19038418aa5d1be2403fb30b2f39cd735b135dfc4d792a186048748a22` |
-| [current-runtime-verification.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/findings/current-runtime-verification.json>) | `6213439a247b7451700b0ec97da9feb20ff7c5f68d8a81df5f2495d6b315279e` |
-| [static-current-excerpts.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/findings/static-current-excerpts.json>) | `2f9c8cc297d89c714a7a67f930d4369bcceda5e63b99374141d024572181683f` |
-| [source-identities.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/findings/source-identities.json>) | `a37095bea2f397732c1e969268a6771c63fe205bdc3372b211522c6091eaec71` |
-| [pi-primary-identity.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/findings/pi-primary-identity.json>) | `1db058995f7d38372b0a8bd315fcc6f6f98484f2de564a53a68c96cbb563c5dc` |
-| [complete.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/execution/complete.json>) | `57d2b0bf56c8821372f43a8a855babf4249620be438a0f479a442e4886681962` |
-| [actual-artifacts.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/execution/actual-artifacts.json>) | `54bc70041c27156e269dacca92d91127075dfcf700f97dbff0371111250e60ab` |
-| [executed-targets.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/execution/executed-targets.json>) | `d36c6e7a18828c364546336a524eb9e2c6b3133c8076da8bae4bc62a8a2637cc` |
-| [independent-receipt-check.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/execution/independent-receipt-check.json>) | `664f86c7a6c1244e689f80eda9ae67491ea1676fcc396b5976376acd8a23d3f1` |
-| [final-coverage.validation.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/final-coverage.validation.json>) | `d6628e48bff8747e117fbebea4f258b4542d5b3316e245196c8140e2a1d47c32` |
-| [fixed-root-catalog.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-coverage/fixed-root-catalog.json>) | `85a5e30731383689b4a72bae7de3964be3728efbf3cf4b8df78ebcac2cade6f6` |
-
-Complete same-run binding manifest: [ready-evidence-bindings.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/checkpoint-replan-20261104T184534Z/plan/ready-20261105T021608Z/ready-evidence-bindings.json>) SHA256 `a3da6b51157f4f8ba968de50983cee5adfe061bcaa3cc7026058378129ff33a9`.
-
-## Selected proxy API and transport decision
+- C001: `builtin_auth_ownership / scoped_candidate_`.
+- C002: `adc_owner_regressions / default_url_supplier_`.
+- C003: `openrouter_fixtures / images_http_failure_diagnostics_do_not_echo_provider_body; classifier_contract / cloudflare_failure_diagnostics_do_not_echo_`.
+- C004: `opi-coding-agent --lib / prepare_wrapped_; continuation_contract / public_retry_retains_initial_steering_after_auth_preparation_failure`.
+- C005: `stream_events / chat_stream_rejects_mismatched_done_reasons_with_one_retained_failure`.
+- C006: `provider_collection / helper_retry_hint_`.
+- C007: `whole_call_retry / context_overflow`.
+- C008: `anthropic_fixtures / simple_numeric_claude_adds_thinking_before_model_and_context_caps; context_budget / public_prepare_numeric_claude_`.
+- C009: `anthropic_fixtures; model_wire_metadata; catalog_operations`.
+- C011: `classifier_contract / llama_tied_choice_preserves_declared_first and llama_question_wire_sequence`.
+- C012: `external_sdk / constructors_own_default_memory_without_a_runtime; oauth_flows / constructors_login_to_independent_default_memory_and_ack`.
+- C013: `openrouter_fixtures / images_modalities_`.
+- C014: `openrouter_fixtures / retains_received_result and unknown_usage_stays_unknown_after_failure`.
+- C015: `schema_public / null_coercion_`.
+- C016: `mistral_fixtures / mistral_profile_inherits_shared_compat_flags; openrouter_fixtures / openrouter_profile_inherits_shared_compat_flags; request_enrichment / session_affinity_wire_mappings`.
+- P001: `http_acceptance / redirect budget acceptance`.
+- P002: `mistral_fixtures; openrouter_fixtures`.
+- P003: `request_enrichment / session_affinity_wire_mappings`.
+- P004: `opi-coding-agent --lib / prepare_wrapped_; continuation_contract / public_retry_retains_initial_steering_after_auth_preparation_failure`.
+- P005: `mistral_fixtures / mistral_profile_inherits_shared_compat_flags`.
 
 
+### Continued rehearsal and owner baseline
 
-Keep `AuthContext::env` and credential empty-value masking unchanged. Add the
-required object-safe method
-`fn raw_env(&self, name: &str) -> Result<Option<String>, AuthContextError>`.
-There is no default forwarding implementation: `env` intentionally loses the
-absent/empty distinction. `None` means absent, `Some` contains the exact Unicode
-value including empty/whitespace, and failure remains typed. AmbientAuthContext
-uses `std::env::var` without trimming; ScopedAuthContext returns its stored value
-verbatim or delegates to the selected base's `raw_env`. Injected contexts never
-fall back to ambient reads.
+- Workflow commit `065af6d0e82a5efe78a5c4eaf3979e9140a612a1` changes exactly the four bound workflow documents after the Chinese source owner commit. The indexed audit and rehearsal inputs are unchanged across that workflow commit. Trial receipts retain the source commits they actually executed.
 
-Add `pub proxy_source: Option<PreparedProxySource>` to existing `ResolvedAuth`.
-`PreparedProxySource` is an immutable Clone public opaque value defined beside
-the auth types and re-exported at the SDK root. Its private Arc contains only
-the permitted base per-key raw results (including latent errors), never a
-context, registry handle or deferred source closure. The builtin resolver
-captures those results once during selected resolution. `ResolvedAuth.env`
-remains byte-for-byte the selected scoped map; do not flatten sources, synthesize
-env keys, or add another trait/configuration surface. `None` for a custom
-resolver means use only `auth.env`, with no ambient discovery. Custom injected
-transports/clients retain their existing priority and perform no proxy reads.
-
-For the helper profile capture lower/upper HTTP_PROXY, HTTPS_PROXY, ALL_PROXY,
-NO_PROXY and the existing explicitly permitted Bedrock force-H1 key; ws/wss
-select after mapping to http/https. Within each key pair use scoped lower||upper
-before base lower||upper. JS truthiness treats empty as false and whitespace as
-true. Then select protocol pair before ALL. Preserve the helper's actual
-hostname/domain/port/IPv6/wildcard matching and bypass-before-invalid behavior.
-Only an actually consulted raw error is fatal; an overridden or irrelevant
-key's failure is latent. ADC has the distinct pinned Gaxios profile: its own
-HTTPS-first/uppercase-first key order, ignored ALL, nullish uppercase NO_PROXY
-(present empty masks lower), comma-only list, and exact source matcher.
-
-The same Arc and original scoped selection are consumed before default ADC
-token I/O and carried to later prepared generation. Capturing permitted raw
-results does not enable eager construction/static-list/unpolled-call I/O; it
-occurs at the existing auth resolve boundary. Update every actual AuthContext
-implementation, ResolvedAuth literal, embedded README consumer and external
-WS consumer from the bound migration inventory. Common clones carry the Arc;
-custom literal constructors set None. Explain both deliberate 0.x breaks in
-Unreleased and paired SDK/product manuals. No dependency or feature is added.
-
-**Frozen transport and failure boundary**
-
-Retain the actual already-built private FrozenTls inside HttpClient, together
-with the explicit-client/proxy ownership marker. Derive any source-bound client
-from that frozen trust/identity and original pool/timeout settings. Do not rebuild
-from TlsOptions or reread host roots/client keys. Keep source-derived route/cache
-identity private and redact Debug/errors; proxy userinfo and synthetic source
-secrets must never appear in telemetry, receipt strings or cache diagnostics.
-
-Locked reqwest0.12.28 `Custom::call` converts callback Err to direct. Consequently
-Proxy::custom alone is forbidden as an error boundary. For helper HTTP clients,
-validate the selected route before first send and validate the next route in the
-existing redirect-policy callback before following it; callback failure stops
-the leg with a typed redacted error. A pure custom selector may then return only
-previously admissible Some(proxy) or intentional None. Per-profile WS/Bedrock
-owners validate at their actual acquisition/send boundary. No invalid selected
-proxy may become a direct send, SSE fallback or alternate source attempt.
-
-ADC chooses and validates its Gaxios route once at the initial source URL,
-constructs a fixed source-bound client without backend NO_PROXY, and reuses that
-agent across redirect legs. The source's NO_PROXY is not reevaluated for a
-redirect target. Bind that frozen route plus TLS/source identity to the existing
-ADC cache config; A->B->A source revisions isolate B and may reuse original A.
-In-flight A refresh retains A and cannot publish into B. Caller-injected ADC
-owners/transports are never wrapped or replaced.
-
-Here a source URL belongs to one logical HTTP request: subject-token, STS and
-IAM are distinct requests and each selects its own initial Gaxios agent from
-the same frozen raw binding. Each retains that agent through its own redirects
-and retries. Cache identity binds the raw snapshot and TLS/source identity,
-not merely the route for the first URL of a whole credential family.
-
-The certificate STS path in `auth/adc/external.rs` builds its own mTLS client
-and must also receive this binding. A private crate-visible binder stores it
-in the cloned AdcNativeOwner/AdcSnapshot; thread an optional private exchange
-context through exchange_family -> resolve_external_account. Build the owned
-STS client from its newly admitted/frozen certificate TLS plus the captured
-Gaxios binding, selecting/validating the initial token_url before send. Do not
-reuse generation TLS or attach that certificate to subject-token/IAM/generation
-clients. Public AdcNativeInput, ScopedAdcEnv and AdcSourceTransport remain
-unchanged. Public wrappers pass None unless the builtin private owner supplies
-the captured context; standalone with_tls remains explicit-only. This adds no
-ambient reads to caller-owned paths and retains no deferred source closure.
-Add an actual certificate proxy CONNECT/inner-mTLS control with zero direct
-decoy sends, STS-only certificate scope and frozen binding after source mutation.
-
-**Independent ADC redirect owner**
-
-The two actual current Rust reds and the exact untouched Gaxios7.1.4 /
-GoogleAuth10.6.2 / node-fetch3.3.2 source oracle settle a separate root under C018:
-default ADC uses an explicit source-specific redirect driver with library
-automatic redirects disabled. Token POST301/302/303 switches to GET with no
-body/content-length; 307/308 preserves method/body. GET preserves the source's
-same-host cross-port Authorization/Cookie/Cookie2/WWW-Authenticate behavior.
-Cross-host/downgrade stripping follows node-fetch's actual domain/protocol test,
-not an invented blanket same-origin rule. Preserve selected-source validation,
-no synthesized Referer, exact20-hop follow /21st refusal, bounded response-body
-and cancellation behavior, and existing source retry accounting. Scope is the
-default ADC transport, not generic generation redirects.
-
-The untouched source crashes on a second redirected POST/PUT body because its
-recursive node-fetch call loses options_. This diagnostic is retained but is
-not a Rust behavioral oracle and must not be copied as a panic. The approved
-Rust driver uses owned replayable bytes and existing bounded typed-failure /
-cancellation contracts; 40 valid source cases prove the one-hop token and GET
-budget predicates, not successful20-hop source POST replay. Add Rust-owned
-bounded multi-hop replay/failure controls without asserting an upstream pass.
-
-Test impact: add route/source/redirect/credential-leak controls; update literal
-and context callers plus paired docs; retain explicit/custom transports, TLS,
-FIFO/cache/retry/cancellation/EOF/security controls; delete none.
-
-
-## Exact complete-criterion join
-
-The bound165-row criteria165.design.jsonl retains156C018+9P007 originalrecords and138exactcriterionidentities with reviewer states unchanged. Every exact tuple has its own expectedpredicate,currentbounded/static proof,sourcehash/applicability,concrete closure batches and finalselectors;3staticgovernance proofs+162current/fixedfuturechecks,0unresolvedfacts/authority. No filename/suite/guardmock stands in for a criterion. The boundauth-finite-cases.json fixes26source-family authselectors and roots-and-authority.md fixes E03/E04/E06/E07/E08/E09/E10/E11/E13 and L-* finite selectors. These retained verification/material predicates do not manufacture fake production batches.
-
-Retain sourceboundaries: unknowncompat storage MAY isoptional and inert; samplingNone/empty remainsdistinct; Copilot uses finalmessage/nonemptyhistory; product ownskeychain/OSlocks and4h/304/404/501wrapper; SDKstaysinjectable; acceptedAUTH006staticmissing-longer-floor baseline staysscoped. Responses userchoices retain session+retentiongeneratedaffinity; Directlegacyfalse suppressesonlyliteral session_id; rawheaders/format/lawfuloverride/customopt-in andChatindependence remain. JSclassifierauthorizedVec enumeration andcompleteAnthropicdefaults remain. Noadjacent behavioralrepair follows from a futuretest failure without its own approvedcausalroot.
+- Source owner commit and exact one-path diff from the prior runtime baseline: [contract-continue-20261105T070028Z-405ed662/bedrock-owner-commit.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/bedrock-owner-commit.json>) (`975409e8f8b4ce920f0b724dcf98bfab08c3686154ae9d1ec692f98a5de1ecd4`). Trial receipts keep their actual recorded source identity, including `c6d38728934c30eff30ba9e5956a6fa84b0239ef` for pre-commit exports. This commit changes only the Chinese registered clause; production source, Cargo inputs, harnesses and indexed audit bytes match the trial baseline.
+- Exact owner wording and boundary: [contract-continue-20261105T070028Z-405ed662/bedrock-quota-owner-handoff.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/bedrock-quota-owner-handoff.json>) (`b57d9a17da256eaf585117d24dbc359a70c88318e9d0713e2c88c2f5f7363539`). D6 is the only pending authority step. D1–D3 track technical work and evidence.
+- One combined invocation reported `opi_ai fresh=True` after a different export built the same cache output. Its results are excluded. Fresh rebuild evidence binds the isolated input mtimes and runtime source: [contract-continue-20261105T070028Z-405ed662/candidate-fresh-freshness-input.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/candidate-fresh-freshness-input.json>) (`ef1ea2b2e65cc0751a1929be13d80aadf43abbd589cb218d93b15be88c822efc`).
+- All 165 source rows remain distinct. The selector leads are source-linked inspection inputs and do not establish full predicates: [contract-continue-20261105T070028Z-405ed662/delivery-selector-leads.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/delivery-selector-leads.jsonl>) (`adb284c94f2422da7e2f4fc2d7bd2f34793a15635496181e0f80e3c855eeb7e1`).
+- Exact downstream adapter ownership and remaining path leads: [metadata-trials-8a36672b/d1-adapter-inventory.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/d1-adapter-inventory.md>) (`337bec026338e6fe4447f9a6a6187899d365c44bfbb7ddbc321db10519fd58dc`). The additional selected ordinary routes and ten remaining owner paths are in [ordinary-http-trials-f342aa50/route-evidence.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/ordinary-http-trials-f342aa50/route-evidence.md>) (`9a0eaedef1c38b066e57cd793ae8d32f43933b148081b15a91b3d10f4b2b11d9`).
+- Pinned proxy refusal cases: [adc-connect-plan-68e2ca4f/gaxios-connect-refusal.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/gaxios-connect-refusal.jsonl>) (`b780a0492d3982a543524e1eac3da98fcbb687bd45e0826897e4a6bcb8bc041f`). This generic Gaxios probe configured two retries and observed one CONNECT for 407 and three for 502. The actual source family retains the default budget and is independently bound to one and four in B_ADC_CONNECT.
+- The standalone outer TLS comparator independently observed reqwest offering the synthetic target certificate to the proxy. That separate anonymous-proxy candidate failed on the clear target with an immediately framed response. The B_ADC_CONNECT trials record a passing nested TLS identity witness and the separate framed-response correction: [https-green/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-green/receipt.json>) (`47bdc4d13a899d4cccc1191d770e2a14ded80a3493444e468bbe253ed87cf527`).
+- Exact unchanged ordinary CONNECT dependency resolution: [adc-connect-plan-68e2ca4f/exact-graph-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/exact-graph-delta.json>) (`1fa2bc60dfc44697dcf5bec0f16506ada4416aabc11726605d6e986800f9f165`). The separate actual plain CONNECT candidate passed six controls and retained its expected HTTPS red: [plain-green-https-red/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/plain-green-https-red/receipt.json>) (`1ca4d3f44f792582257ad615ecf549ae55660858f3891a5ca694cf9a5a57a2b0`). Preserve inner/outer identity and integrate the same frozen source redirect owner.
+- Pinned Gaxios source loopback output: [proxy-plan-h422v3ff/gaxios-probe.stdout.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/gaxios-probe.stdout.jsonl>) (`17d8689182a4f8616c8248d42a7bf8ac79f49e7bbfc2750903dc4d8f4a8bb51e`). Clear HTTP requires CONNECT under the ADC source contract.
 
 ## Closure Batches
 
-### Batch PXY_HTTP: source-owned default HTTP proxy selection
+### Batch B_BUDGET: Admit lawful zero limits and preserve the simple-call minimum
 
-**Root change**: the default HTTP owner consumes one frozen source proxy snapshot, using the shared private resolver and actual target URL.
-**Closure predicate**: the real prepared Chat path and builtin selected-source path reach exactly the source-selected origin/proxy with no decoy or fallback send for every declared HTTP case; default HTTP adapters use the same private source selection, preserve explicit client precedence, frozen TLS and current retry/redirect ownership, and leave custom transports untouched.
+**Root change**: Admit zero model metadata and apply the registered minimum of one token to the zero-context simple-call output fallback.
+**Closure predicate**: Public prepared calls send the source-defined zero-context simple output limit, while native omission, genuine invalid-input rejection and product configuration validation retain their predicates.
 **Dependencies**: []
-**Verification union**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered.
+**Verification union**: Re-run the sixteen unfiltered affected binaries in the candidate receipt, the exact public wire case, and affected crate checks after implementation. Rehearse the separate numeric-thinking preflight and remaining wire selectors under D3 before sealing an executable plan.
+**Contract rehearsal**: Passed for the bounded zero-limit change and seven-path delta described below. Package/native and separate thinking-budget predicates remain open.
 
-#### Fix PXY_HTTP.1: source-owned default HTTP proxy selection
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C010, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: private pure target resolver, private source-env capture,
-private explicit-set marker, frozen-state client selection; replace each listed
-default adapter's bare `.client()` acquisition with that selection at its
-existing final URL/source boundary. Classifier/image helper bodies keep their
-own send/retry owners; pass the selected default client into them. Federation
-binds its existing identity cache to the selected frozen transport, without
-changing exchange authority. No provider_collection.rs edit is needed.
-Do not enable backend env discovery. Document the scoped source path separately
-from legacy explicit convenience functions in both READMEs; add Unreleased only
-after reading its complete current section.
-
-
-
-The parent-selected source/API/transport decision below is binding and supersedes draft carrier, normalization, redirect and Proxy::custom alternatives. Baseline observations use the valid v3/groq fixtures and no --nocapture; previous setup/checker failures are excluded. Reuse existing owning test fixtures and add the frozen public scenarios to those targets; do not introduce audit-ID production names.
-- **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/api/cloudflare.rs`, `crates/opi-ai/src/api/decisions.rs`, `crates/opi-ai/src/api/llama.rs`, `crates/opi-ai/src/api/openrouter_images.rs`, `crates/opi-ai/src/api/system_one.rs`, `crates/opi-ai/src/auth.rs`, `crates/opi-ai/src/auth/adc/native.rs`, `crates/opi-ai/src/auth/anthropic_federation.rs`, `crates/opi-ai/src/auth/aws/local.rs`, `crates/opi-ai/src/auth/builtin.rs`, `crates/opi-ai/src/auth/builtin_vertex.rs`, `crates/opi-ai/src/auth/oauth/copilot.rs`, `crates/opi-ai/src/auth/oauth/radius.rs`, `crates/opi-ai/src/azure_openai.rs`, `crates/opi-ai/src/bedrock/mod.rs`, `crates/opi-ai/src/gemini.rs`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/src/lib.rs`, `crates/opi-ai/src/mistral.rs`, `crates/opi-ai/src/models.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/pi_messages.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/src/test_support.rs`, `crates/opi-ai/src/vertex.rs`, `crates/opi-ai/src/ws/tests/logical_cancel_probe.rs`, `crates/opi-ai/tests/adc_owner_regressions.rs`, `crates/opi-ai/tests/anthropic_fixtures.rs`, `crates/opi-ai/tests/anthropic_thinking_roundtrip.rs`, `crates/opi-ai/tests/api_mapped_provider.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-ai/tests/auth_process_lifecycle.rs`, `crates/opi-ai/tests/azure_openai_fixtures.rs`, `crates/opi-ai/tests/bedrock_fixtures.rs`, `crates/opi-ai/tests/builtin_auth_ownership.rs`, `crates/opi-ai/tests/builtin_native_scoped.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`, `crates/opi-ai/tests/catalog_operations.rs`, `crates/opi-ai/tests/chat_capture_replay.rs`, `crates/opi-ai/tests/chat_pi_messages.rs`, `crates/opi-ai/tests/classifier_contract.rs`, `crates/opi-ai/tests/codex_native_options.rs`, `crates/opi-ai/tests/codex_telemetry.rs`, `crates/opi-ai/tests/custom_provider_registration.rs`, `crates/opi-ai/tests/external_sdk.rs`, `crates/opi-ai/tests/gemini_fixtures.rs`, `crates/opi-ai/tests/http_acceptance.rs`, `crates/opi-ai/tests/image_provider_serialization.rs`, `crates/opi-ai/tests/mistral_fixtures.rs`, `crates/opi-ai/tests/oauth_wire_shape.rs`, `crates/opi-ai/tests/openai_chat_fixtures.rs`, `crates/opi-ai/tests/openai_codex_responses.rs`, `crates/opi-ai/tests/openai_responses_fixtures.rs`, `crates/opi-ai/tests/openrouter_fixtures.rs`, `crates/opi-ai/tests/per_request_auth.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-ai/tests/provider_lifecycle.rs`, `crates/opi-ai/tests/proxy_support.rs`, `crates/opi-ai/tests/resource_cleanup.rs`, `crates/opi-ai/tests/service_tier_cost.rs`, `crates/opi-ai/tests/telemetry_operations.rs`, `crates/opi-ai/tests/vertex_fixtures.rs`, `crates/opi-coding-agent/README.md`, `crates/opi-coding-agent/README.zh.md`, `crates/opi-coding-agent/src/credential_store.rs`, `crates/opi-coding-agent/src/provider_factory.rs`, `crates/opi-coding-agent/tests/azure_openai_provider_wiring.rs`, `crates/opi-coding-agent/tests/oauth_auth.rs`, `crates/opi-coding-agent/tests/provider_factory.rs`, `crates/opi-coding-agent/tests/provider_runtime.rs`, `crates/opi-coding-agent/tests/runtime_failure_recovery.rs`, `scripts/pi-sdk-conformance/consumer-ws/src/main.rs`, `scripts/pi-sdk-conformance/run_readme_examples.py`
-- **Change kind**: behavioral
-- **Change**: the default HTTP owner consumes one frozen source proxy snapshot, using the shared private resolver and actual target URL.
-- **Closure predicate**: the real prepared Chat path and builtin selected-source path reach exactly the source-selected origin/proxy with no decoy or fallback send for every declared HTTP case; default HTTP adapters use the same private source selection, preserve explicit client precedence, frozen TLS and current retry/redirect ownership, and leave custom transports untouched.
-- **Red-before**: proxy-red-v3/remediation_proxy_probes and remediation_proxy_builtin_probes: HTTP15-case and builtin9-case tests fail after valid build;6+3 routing controls match,9+6 source cases fail.
-- **Green-after**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered. Observed:not-run.
-
-### Batch PXY_WS: Codex WS source mapping and pool binding
-
-**Root change**: bind the Codex WS acquisition/reuse owner to its resolved source proxy after the actual ws/wss to http/https mapping.
-**Closure predicate**: a prepared actual Codex WS call selects http_proxy for ws and https_proxy for wss, with scoped precedence/ALL/NO_PROXY/failure rules; strict H1 Upgrade retains frozen TLS/identity, an effective proxy/source revision cannot reuse another route's pooled socket or continuation, and explicit clients and custom transports retain authority. Failed proxy setup performs zero origin business sends and zero SSE fallback.
-**Dependencies**: ["PXY_HTTP"]
-**Verification union**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered.
-
-#### Fix PXY_WS.1: Codex WS source mapping and pool binding
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C010, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: feed the shared private source selection into existing WS
-acquisition after scheme mapping, before Upgrade. Bind existing pool eligibility
-to effective endpoint+proxy+frozen transport/source identity, retaining its
-existing session owner, cancellation, cleanup and continuation state. Preserve
-ordinary SSE acquisition and all existing protocol/PMD semantics. No public WS
-proxy type or generic transport trait is introduced.
-
-frozen 15-case actual ws corpus plus an actual wss
-CONNECT+inner TLS fixture; http/https key selected with ws/wss key decoys; same
-session different proxy/source must establish a new connection and discard old
-continuation, same frozen transport may reuse; cancellation/drop/cleanup closes
-the owned leg and suppresses late output. Retain existing16Upgrade checks.
-
-The parent-selected source/API/transport decision below is binding and supersedes draft carrier, normalization, redirect and Proxy::custom alternatives. Baseline observations use the valid v3/groq fixtures and no --nocapture; previous setup/checker failures are excluded. Reuse existing owning test fixtures and add the frozen public scenarios to those targets; do not introduce audit-ID production names.
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/openai_codex_responses/ws_transport.rs`, `crates/opi-ai/tests/openai_codex_responses.rs`, `crates/opi-ai/tests/ws_upgrade.rs`
-- **Change kind**: behavioral
-- **Change**: bind the Codex WS acquisition/reuse owner to its resolved source proxy after the actual ws/wss to http/https mapping.
-- **Closure predicate**: a prepared actual Codex WS call selects http_proxy for ws and https_proxy for wss, with scoped precedence/ALL/NO_PROXY/failure rules; strict H1 Upgrade retains frozen TLS/identity, an effective proxy/source revision cannot reuse another route's pooled socket or continuation, and explicit clients and custom transports retain authority. Failed proxy setup performs zero origin business sends and zero SSE fallback.
-- **Red-before**: proxy-red-v3/remediation_proxy_probes: actual WS15-case test fails;6 direct/explicit/bypass controls match,9 source cases mismatch.
-- **Green-after**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered. Observed:not-run.
-
-### Batch PXY_AWS: Bedrock generation proxy and H1 selection
-
-**Root change**: Bedrock's existing generation acquisition owner selects its source proxy and H1/H2 profile from the prepared source snapshot.
-**Closure predicate**: real prepared and builtin Bedrock generation reaches the selected target/proxy under every declared case; effective proxy or the pinned `AWS_BEDROCK_FORCE_HTTP1=1` uses H1, ordinary unproxied generation retains H2, the explicit placeholder path retains its dedicated H1 and standard-endpoint guard, and Bearer/SigV4/source identity are never mixed or rediscovered.
-**Dependencies**: ["PXY_HTTP"]
-**Verification union**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered.
-
-#### Fix PXY_AWS.1: Bedrock generation proxy and H1 selection
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C010, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: freeze permitted proxy env during the existing AWS resolver,
-then resolve against the final effective generation endpoint and select a
-derived client from already frozen TLS. Reuse the existing H1 mechanism for
-effective proxies/FORCE_HTTP1; maintain separate ordinary-H2 and placeholder-H1
-ownership. Source-exchange transport remains separate, and a custom injected
-AwsSourceTransport is not wrapped or replaced.
-
-frozen24Bedrock route/source cases plus real TLS
-server observed ALPN H2 for ordinary generation, H1 for effective HTTP/HTTPS
-proxy and FORCE_HTTP1, placeholder H1+fixed synthetic identity; NO_PROXY bypass
-does not unnecessarily demote ordinary generation. Preserve exact Smithy
-attempt/send counts, cancellation/partial/usage/terminal/EOF and custom source
-transport call counts, with zero source refresh from proxy failure.
-
-The parent-selected source/API/transport decision below is binding and supersedes draft carrier, normalization, redirect and Proxy::custom alternatives. Baseline observations use the valid v3/groq fixtures and no --nocapture; previous setup/checker failures are excluded. Reuse existing owning test fixtures and add the frozen public scenarios to those targets; do not introduce audit-ID production names.
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/src/auth/builtin_aws.rs`, `crates/opi-ai/src/bedrock/mod.rs`, `crates/opi-ai/tests/bedrock_fixtures.rs`, `crates/opi-ai/tests/builtin_native_scoped.rs`, `crates/opi-ai/tests/proxy_support.rs`
-- **Change kind**: behavioral
-- **Change**: Bedrock's existing generation acquisition owner selects its source proxy and H1/H2 profile from the prepared source snapshot.
-- **Closure predicate**: real prepared and builtin Bedrock generation reaches the selected target/proxy under every declared case; effective proxy or the pinned `AWS_BEDROCK_FORCE_HTTP1=1` uses H1, ordinary unproxied generation retains H2, the explicit placeholder path retains its dedicated H1 and standard-endpoint guard, and Bearer/SigV4/source identity are never mixed or rediscovered.
-- **Red-before**: proxy-red-v3: actual Bedrock15-case plus builtin9-case fail;6+3 controls match,9+6 source cases mismatch.
-- **Green-after**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered. Observed:not-run.
-
-### Batch PXY_ADC: default ADC source transport's Gaxios proxy profile
-
-**Root change**: the default builtin Vertex ADC source transport consumes its own frozen Gaxios proxy snapshot, while explicitly injected ADC owners and transports retain their existing authority.
-**Closure predicate**: actual builtin Vertex preparation performs only the Gaxios-selected source leg (or typed pre-send rejection), with the source's agent/proxy/HTTPS-first/uppercase-first/no_proxy semantics and no direct fallback; the same frozen proxy/trust/identity remains bound across its retries, redirect legs, single-flight/cache and asynchronous refresh lifetime. An injected source transport is called exactly as before and is not wrapped.
-**Dependencies**: ["PXY_HTTP"]
-**Verification union**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered. Execute certificate source CONNECT+inner-mTLS with direct decoy0, STS-only certificate identity and frozen proxy across source mutation/redirects; retain caller-owned transport positives.
-
-#### Fix PXY_ADC.1: default ADC source transport's Gaxios proxy profile
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C010, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: bind a private default-backed ADC transport to the selected
-source's raw scoped/injected-context proxy values before source I/O. Replace
-the default LazyTransport's context-free OnceLock with an owned frozen default
-transport binding; retain AdcNativeOwner's mutation/cache owner. Include the
-frozen Gaxios proxy/NO_PROXY and TLS/source transport identity in the existing
-`config` component passed to `AdcCacheKey::from_parts` at source snapshot time;
-do not change its public key API or add proxy data to diagnostics. A→B→A source
-revisions must select separate B and reusable original A cache entries, while
-an in-flight A refresh retains its captured transport and cannot publish into B.
-Only the builtin-owned default transport is rebound (the existing config's
-`adc.is_none()` distinguishes this ownership); `BuiltinVertexConfig.adc`
-and caller-injected `AdcSourceTransport` are authoritative. Reuse frozen TLS
-state and minimal common transport construction, not the Node helper's resolver
-or NO_PROXY matcher. Do not add a public proxy-config surface to ADC.
-
-Gaxios's concrete resolver preserves these exact source rules:
-explicit agent/custom transport precedes all default proxy logic;
-source explicit proxy when present precedes HTTPS_PROXY, https_proxy,
-HTTP_PROXY, http_proxy, independent of HTTP/HTTPS target; ALL_PROXY is ignored.
-For env NO_PROXY choose uppercase when present, including empty, otherwise
-lowercase; split commas only and trim entries. Plain string matches target
-hostname/origin/href exactly; `.domain`/`*.domain` match subdomains but not root;
-`*` is not a wildcard, bare host:port is not a match, and origin URL is a match.
-The exposed string env path does not require new RegExp/URL config values;
-custom transports retain those richer abilities if a caller needs them.
-NO_PROXY still bypasses before proxy construction. Validate URL/scheme with
-redacted typed failure; SDK193's HTTP(S)-only rule rejects SOCKS/PAC rather than
-pretending to implement those protocols. Preserve Gaxios's existing source GET
-versus token POST redirect/retry owners, credentials and status classification.
-
-
-
-The parent-selected source/API/transport decision below is binding and supersedes draft carrier, normalization, redirect and Proxy::custom alternatives. Baseline observations use the valid v3/groq fixtures and no --nocapture; previous setup/checker failures are excluded. Reuse existing owning test fixtures and add the frozen public scenarios to those targets; do not introduce audit-ID production names.
-
-Select the Gaxios agent ONCE at initial source URL and retain it across redirect targets, including a target matching NO_PROXY. Do not preserve the currently wrong POSTNone redirect behavior: the independent B_ADC_REDIRECT root owns its replacement. The earlier packet sentence saying preserve GET-versus-POST redirect owners refers to source authority, not the current bug. The owned certificate STS leg currently constructs with_tls directly in auth/adc/external.rs. Thread the selected optional private exchange context from cloned AdcNativeOwner/AdcSnapshot through exchange_family to resolve_external_account, and construct that STS leg with its own admitted frozen certificate TLS plus captured proxy binding. No public input/trait/ScopedAdcEnv field is added. Caller-owned wrappers with None stay explicit-only. Each logical subject/STS/IAM request chooses its initial agent separately from the same snapshot and freezes it only across that request redirects/retries; cache identity binds raw source/TLS identity, not one family-wide route.
-- **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/auth/adc/external.rs`, `crates/opi-ai/src/auth/adc/native.rs`, `crates/opi-ai/src/auth/builtin_vertex.rs`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/tests/adc_owner_regressions.rs`, `crates/opi-ai/tests/builtin_native_scoped.rs`
-- **Change kind**: behavioral
-- **Change**: the default builtin Vertex ADC source transport consumes its own frozen Gaxios proxy snapshot, while explicitly injected ADC owners and transports retain their existing authority.
-- **Closure predicate**: actual builtin Vertex preparation performs only the Gaxios-selected source leg (or typed pre-send rejection), with the source's agent/proxy/HTTPS-first/uppercase-first/no_proxy semantics and no direct fallback; the same frozen proxy/trust/identity remains bound across its retries, redirect legs, single-flight/cache and asynchronous refresh lifetime. An injected source transport is called exactly as before and is not wrapped.
-- **Red-before**: adc-red-v1/remediation_proxy_adc_probes: actual builtin Vertex source16-case test fails;6 controls match,10 source cases mismatch; no generation attempt.
-- **Green-after**: Run the same frozen public scenarios without --nocapture using their owning canonical tests, then full proxy_support, builtin_scoped_env, builtin_native_scoped, adc_owner_regressions, ws_upgrade, openai_codex_responses, bedrock_fixtures and each modified adapter target. Every declared case and exact send/ALPN/cache/secret-negative control must pass,0ignored/filtered. Execute certificate source CONNECT+inner-mTLS with direct decoy0, STS-only certificate identity and frozen proxy across source mutation/redirects; retain caller-owned transport positives. Observed:not-run.
-
-### Batch B_ADC_REDIRECT: Source-qualified default ADC redirect driver
-
-**Root change**: Replace only default ADC automatic GET/no-follow POST policy with its explicit source-specific bounded driver.
-**Closure predicate**: Both public ADC reds pass: token301/302/303 become GET/no-body,307/308 replay POST/body; same-host cross-port protected headers are retained; exact source40 controls, audience stripping, no Referer,20/21-hop bound and cancellation/partial/send accounting hold with the initially selected fixed Gaxios route.
-**Dependencies**: ["PXY_ADC"]
-**Verification union**: Run same2 public scenarios against canonical ADC tests plus source-qualified40 finite vectors, GET20/21 controls, same-host/cross-host/protocol negatives, initial-proxy reuse when redirect target matches NO_PROXY, typed invalidLocation/body/cancel/EOF; full adc_owner_regressions and builtin_native_scoped PASS.
-
-#### Fix B_ADC_REDIRECT.1: Source-qualified default ADC redirect driver
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Use the selected design below and the source-qualified redirect packet. Disable backend auto-follow on both clients. Follow validated Location with owned replayable bytes; apply node-fetch method/body/header/domain/protocol rules per source, preserve original source guards and source retry owner. No generic generation policy change, no implicit credential discovery. Upstream multi-hop POST crash is retained as diagnostic and is not a successful source oracle; safe Rust owns bounded replay/error behavior. The bound worker packet uses advisory ID ADC_REDIRECT; the fixed executable ID is B_ADC_REDIRECT and the dependency order here supersedes the packet. A single deadline spans the whole redirect sequence; pass remaining time to each leg, drop intermediate bodies and preserve send_with_gaxios_retry as the sole retry owner. Update only the two stale default-GET crossport/default-token-POST assertions while retaining their send/body/header positives.
-- **Verification status**: Partially confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/auth/adc/native.rs`, `crates/opi-ai/tests/adc_owner_regressions.rs`, `crates/opi-ai/tests/builtin_native_scoped.rs`
-- **Change kind**: behavioral
-- **Change**: Replace only default ADC automatic GET/no-follow POST policy with its explicit source-specific bounded driver.
-- **Closure predicate**: Both public ADC reds pass: token301/302/303 become GET/no-body,307/308 replay POST/body; same-host cross-port protected headers are retained; exact source40 controls, audience stripping, no Referer,20/21-hop bound and cancellation/partial/send accounting hold with the initially selected fixed Gaxios route.
-- **Red-before**: adc-redirect-red-v1: build0,2listed/2executed,0PASS/2FAIL; token200 positive passes; all5 redirect statuses currently make0 target sends, and GET crossport loses Authorization.
-- **Green-after**: Run same2 public scenarios against canonical ADC tests plus source-qualified40 finite vectors, GET20/21 controls, same-host/cross-host/protocol negatives, initial-proxy reuse when redirect target matches NO_PROXY, typed invalidLocation/body/cancel/EOF; full adc_owner_regressions and builtin_native_scoped PASS. Observed:not-run.
-
-### Batch B_BUDGET: Admit source-lawful zero model limits
-
-**Root change**: Remove blanket positive-only model-cap admission and apply source max(1,M) in the shared simple zero-context branch.
-**Closure predicate**: Public simple calls with context0 and model cap64/default,cap64/explicit0,cap0/default dispatch with max64,1,1 respectively; normal8192/64 remains64; native wire omissions/explicit0 and PiMessages bypass retain their own source semantics. Enabled supported numeric thinking with modelcap0/custombudget0 orpositive and omittedmax reaches the source max1/budget0 outcome; ordinary modelcap with budget>=cap is source-clamped rather than pre-rejected.
-**Dependencies**: []
-**Verification union**: Same4 public scenarios PASS with exact captured max values; full simple_budget,provider_collection,model_wire_metadata,request_enrichment,anthropic_fixtures,bedrock_fixtures,openai_responses_fixtures,codex_native_options,chat_pi_messages PASS. Retain SDK165 per-wire vectors. Add zero-cap custom0/custompositive and ordinary-cap budget>=cap simple-call controls with exact effective ceiling/budget captures; update only existing assertions requiring that removed blanket preflight.
-
-#### Fix B_BUDGET.1: Admit source-lawful zero model limits
+#### Fix B_BUDGET.1: Preserve zero-limit acceptance and downstream validation intent
 
 - **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
-- **Assigned portion**: C018: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Delete only context/max zero blanket rejection in ModelInfo::validate. Existing u64 ownership already bounds representation. In compile_prepared_request zero-context branch set selected output to max(1,M); numeric Claude combined fallback also uses the same source clamp, with no extra global clamp or explicit-to-model-cap clamp. Retain source-specific thinking/default/zero validation and PiMessages early bypass. Inspect existing invalid-zero assertions and update only source-backed expected outcomes; add independent public simple_budget controls for each red plus positive/tiny-budget/native cases. Remove the blanket pre-clamp thinking.enabled && budget>=default modelcap UnsupportedCapability guard in compile_prepared_request, including newly lawful cap0. SDK165, source adjustMaxTokensForThinking and spec-draft357/359 require the source allocation/clamp to reduce the budget, not reject before that arithmetic. This is the same bounded allocation root. Preserve actual wire-owned validation after arithmetic; do not retain this blanket guard under that phrase.
-- **Verification status**: Partially confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/model_info.rs`, `crates/opi-ai/src/models.rs`, `crates/opi-ai/tests/model_wire_metadata.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-ai/tests/simple_budget.rs`
-- **Change kind**: behavioral
-- **Change**: Remove blanket positive-only model-cap admission and apply source max(1,M) in the shared simple zero-context branch.
-- **Closure predicate**: Public simple calls with context0 and model cap64/default,cap64/explicit0,cap0/default dispatch with max64,1,1 respectively; normal8192/64 remains64; native wire omissions/explicit0 and PiMessages bypass retain their own source semantics. Enabled supported numeric thinking with modelcap0/custombudget0 orpositive and omittedmax reaches the source max1/budget0 outcome; ordinary modelcap with budget>=cap is source-clamped rather than pre-rejected.
-- **Red-before**: local-red-v2/ready_budget:1PASS/3FAIL, every independent zero case reaches Config(context_window must be greater than zero) before dispatch.
-- **Green-after**: Same4 public scenarios PASS with exact captured max values; full simple_budget,provider_collection,model_wire_metadata,request_enrichment,anthropic_fixtures,bedrock_fixtures,openai_responses_fixtures,codex_native_options,chat_pi_messages PASS. Retain SDK165 per-wire vectors. Add zero-cap custom0/custompositive and ordinary-cap budget>=cap simple-call controls with exact effective ceiling/budget captures; update only existing assertions requiring that removed blanket preflight. Observed:not-run.
+- **Assigned portion**: C018 / P20-SDK-MODEL-021 zero-context model-limit admission and simple output minimum. The other portions of C018 remain pending.
+- **Decision**: Remove the blanket positive-only model metadata checks and clamp the selected zero-context simple limit to at least one. Keep product TOML validation, native omission, and genuinely invalid model or wire rejection. Update acceptance and rejection fixtures at the observed consumers.
+- **Verification status**: Partially confirmed for C018 as a whole.
+- **File(s)**: `CHANGELOG.md`, `crates/opi-agent/tests/agent_wrapper.rs`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/model_info.rs`, `crates/opi-ai/src/models.rs`, `crates/opi-ai/tests/api_mapped_provider.rs`, `crates/opi-ai/tests/codex_native_options.rs`, `crates/opi-ai/tests/context_budget.rs`, `crates/opi-ai/tests/custom_provider_registration.rs`, `crates/opi-ai/tests/node4_preparation.rs`, `crates/opi-ai/tests/provider_collection.rs`
+- **Change kind**: behavioral.
+- **Change**: Implement the rehearsed metadata admission, source-specific simple fallback, and assertion migrations.
+- **Closure predicate**: Zero metadata reaches the public API. Native omission remains visible. A simple zero-context call with explicit zero or zero model maximum sends one; a positive default remains positive. The Agent and native API continue to reject truly invalid metadata.
+- **Red-before**: Validation-only trial ran 306 tests with five failed assertions. After their migration, the exact public fallback test failed because the outgoing JSON omitted max_completion_tokens for explicit zero.
+- **Green-after**: Re-run the exact public fallback test and complete affected-target union against the approved source. Observed: not-run.
 
-### Batch B_RECEIPT: Reclaim confirmed unreferenced mutation records
+| Trial | Observation | Command, input and raw logs |
+|---|---|---|
+| Baseline | 306 passed across nine binaries | [baseline/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/budget-plan-lsgr7phy/baseline/receipt.json>) (`adf9f271f2140f556cec500581715802920538b42207557f78ff1db39c079319`) |
+| Remove the two zero-admission checks | 301 passed, five failed across four test paths | [candidate/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/budget-plan-lsgr7phy/candidate/receipt.json>) (`691c750bfa3d04d90467769de48e916796490171749569e7be037cc4dcdc0ffa`) |
+| Migrate four test paths and add public fallback probe | 332 passed, one failed on explicit zero | [fallback-red/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/budget-plan-lsgr7phy/fallback-red/receipt.json>) (`03aae6e0b686e7c7de1cdb3232bf69dbfe8011cad859eef5505c8197eec31344`) |
+| Add zero-context simple output minimum | 916 passed across sixteen binaries | [fallback-green/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/budget-plan-lsgr7phy/fallback-green/receipt.json>) (`5a206d81b8700e4a20a225d6379aa48ea55ee49209a0733e5888de64fb9a67f4`) |
 
-**Root change**: Add private reference ownership to the existing mutation queue and reclaim only confirmed unreferenced records.
-**Closure predicate**: After all relevant handle/receipt/report/barrier owners release, fresh barrier omits confirmed success history; every live observer retains captured/late facts and Unknown survives unrelated or ordinary same-key success without eviction or admission limits.
+Per-target source, executable and run inventory: [budget-plan-lsgr7phy/executed-targets.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/budget-plan-lsgr7phy/executed-targets.json>) (`33a8bde62b81d72ad89ce9ebfabafc4f9b0e5b0e1bb4bb3d9536770fe9817ef6`). The raw build events and source-path inventory distinguish the SDK and product targets that share the custom_provider_registration name.
+
+The five migrated assertions were the Agent constructor and idle replacement tests, API-mapped construction, custom model registration, and Codex native construction. The Agent and native rejection fixtures still test invalid inputs. Public SDK acceptance tests now exercise lawful zero input. Product config and custom-provider loader tests remain positive-only controls.
+
+Path reconciliation: the seven modified export paths and their exact before/after hashes are in [budget-plan-lsgr7phy/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/budget-plan-lsgr7phy/trial-delta.json>) (`b4213814ddf2418e2a88310e505ea60b3d41f3e2806608585f160c6af4aa0c01`). They are the seven paths in the first bounded trial. The numeric extension adds `context_budget.rs` and `provider_collection.rs`. The paired SDK README and Unreleased are planned user-facing contract updates. The compound disposition carries the union of its assigned batch paths. Four paths are existing downstream tests. `node4_preparation.rs` gains the public-wire regression case. Test impact is `update` for the four fixtures, `add` for the public case, `retain` for the other assertions, and `delete` none.
+
+Numeric-Claude extension rehearsal: the original guard caused two public cases to fail. The candidate clamps numeric thinking after the output cap, including zero-context zero model cap and custom budget at or above a positive cap. It migrates the existing default-budget rejection test. [before-numeric-reclaim-schema/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/before-numeric-reclaim-schema/receipt.json>) (`5c359c47b49563d2a417f581f3e80576a3c61a6c726d1af5e195ead8416e24b1`). The compiler-selected library rebuilt, with context_budget 16 and node4_preparation 27 passing while independent receipt expectations failed elsewhere. [candidate-fresh/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/candidate-fresh/receipt.json>) (`945d8c32892729d5078bc8e32cfcb1eb52ef0ab039ea9bac9e342fef29893577`). Common trial delta in [contract-continue-20261105T070028Z-405ed662/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/trial-delta.json>) (`b6ba3830573b1de45c3a8a43e61f3b1cbbd1b87dbd9db8dbe26a6c59382a5606`).
+
+### Batch PXY_HTTP: Route prepared builtin Chat through the selected source
+
+**Root change**: Route prepared builtin Chat through the selected source.
+**Closure predicate**: Prepared builtin Chat selects the source-qualified route with scoped priority, exact protocol/ALL and bypass handling. Explicit direct ownership wins; malformed selected proxy fails safely without a fallback send.
 **Dependencies**: []
-**Verification union**: Same3 scenarios PASS plus cloned receipt/report/handle/barrier drop order, pending report settles, concurrent submit-versus-barrier sweep, live cutoff late records, long no-barrier submit sequence, failures/Unknown retention, same-key ordinary success not reconciliation, no implicit runtime/deadline/cap; full auth_contracts,oauth_flows,oauth_store_integration,mutation_reclamation and product credential_store PASS.
+**Verification union**: Repeat real prepared Chat scenarios plus the four-target union. Rehearse each remaining source owner separately under D1.
+**Contract rehearsal**: 166 passing tests across builtin_scoped_env, http_acceptance, openai_chat_fixtures and proxy_support, including nine real routing cases. [baseline/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/baseline/receipt.json>) (`6c40f4c3e9089c7ab0ebac9ee2865a89c4ae53d6cffba33ab7b541d90b150551`). [candidate/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/candidate/receipt.json>) (`b1b29eb53275335d5248a3892068f97d57f542c8baf62cb374820454002cb18c`). [proxy-plan-h422v3ff/http-candidate-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/http-candidate-delta.json>) (`c33720d08d4e0e0be06c8ae7ae58b489a00629ac8304a7af0620afde0c6bd93b`). This observes the Chat portion of the broader proxy finding.
 
-#### Fix B_RECEIPT.1: Reclaim confirmed unreferenced mutation records
+#### Fix PXY_HTTP.1: Route prepared builtin Chat through the selected source
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`
+- **Change kind**: behavioral
+- **Change**: Freeze selected request routing in the scoped auth context and bind the prepared Chat acquisition to it.
+- **Closure predicate**: Prepared builtin Chat selects the source-qualified route with scoped priority, exact protocol/ALL and bypass handling. Explicit direct ownership wins; malformed selected proxy fails safely without a fallback send.
+- **Red-before**: Existing controls passed; the new actual prepared call failed the scoped-over-injected route assertion.
+- **Green-after**: Repeat real prepared Chat scenarios plus the four-target union. Rehearse each remaining source owner separately under D1. Observed: not-run.
+
+### Batch PXY_HTTP_OWNERS: Bind selected ordinary adapter clients before acquisition
+
+**Root change**: Bind selected ordinary adapter clients before acquisition.
+**Closure predicate**: Actual builtin Anthropic, Responses and Azure Chat/Responses retain the frozen proxy route through selected endpoint and acquisition. Anthropic federation reuses the token under an unchanged policy and re-exchanges on a changed policy.
+**Dependencies**: ["PXY_HTTP"]
+**Verification union**: Repeat five public route controls plus the eleven selected downstream targets on the integrated source.
+**Contract rehearsal**: All five new scenarios passed and eleven unfiltered targets executed 483 passing tests. [red-ordinary-executed/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/ordinary-http-trials-f342aa50/red-ordinary-executed/receipt.json>) (`89f43790b2db3c339e86ae628dad39d32aaefa7e2cee894ec7ab13d7d3e0a311`). [green-ordinary/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/ordinary-http-trials-f342aa50/green-ordinary/receipt.json>) (`f05b6126ed580ea822997871eb99d412446ad120e5aee607978eb9609c08c80a`). Exact eight-path scope and hunk roles: [ordinary-http-trials-f342aa50/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/ordinary-http-trials-f342aa50/trial-delta.json>) (`d0403a991ac12d895171943bda8610eb3d214a3b59cdcf10dd2e7f5bd8640d8b`). Integrate these bytes with the separately rehearsed raw-source changes before a ready seal.
+
+#### Fix PXY_HTTP_OWNERS.1: Bind selected ordinary adapter clients before acquisition
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/anthropic.rs`, `crates/opi-ai/src/auth/anthropic_federation.rs`, `crates/opi-ai/src/azure_openai.rs`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/src/openai_chat.rs`, `crates/opi-ai/src/openai_responses.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`
+- **Change kind**: behavioral
+- **Change**: Use the scoped HTTP client at Anthropic generation/federation, Responses and Azure wrapper acquisition. Include the frozen route in the federation token cache identity.
+- **Closure predicate**: Actual builtin Anthropic, Responses and Azure Chat/Responses retain the frozen proxy route through selected endpoint and acquisition. Anthropic federation reuses the token under an unchanged policy and re-exchanges on a changed policy.
+- **Red-before**: Five actual new public scenarios failed against the inherited Chat-only trial. The inherited Chat route control passed.
+- **Green-after**: Repeat five public route controls plus the eleven selected downstream targets on the integrated source. Observed: not-run.
+
+### Batch PXY_WS: Bind Codex WebSocket acquisition to the selected proxy
+
+**Root change**: Bind Codex WebSocket acquisition to the selected proxy.
+**Closure predicate**: Actual Codex Upgrade uses the selected source route. A proxy identity change under the same session/account invalidates the old pooled socket and continuation.
+**Dependencies**: ["PXY_HTTP"]
+**Verification union**: Repeat the real Codex route/pool case and Upgrade suites.
+**Contract rehearsal**: [expanded-baseline/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-baseline/receipt.json>) (`e25ec9dae3178cfde91b58d35899406948a50d94b58f5c02f37f8b3cf8523b6f`). Expanded source candidate passed 1,609 tests in 20 binaries, with one existing Windows privilege case ignored. [expanded-reverified-native/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-native/receipt.json>) (`1ed2fed5e63efd1d70f7f96ae531f6b13a38dffba0e10d54536848dec32325f3`). The 26 source/test paths and shared caller migration are in [proxy-plan-h422v3ff/expanded-reverified-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-delta.json>) (`77d3e3376a27c43fadf51c7213775244a6b00d91d5bc426fd631aa62ec89e7bb`).
+
+#### Fix PXY_WS.1: Bind Codex WebSocket acquisition to the selected proxy
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/src/openai_codex_responses.rs`, `crates/opi-ai/src/openai_codex_responses/ws_transport.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/tests/openai_codex_responses.rs`
+- **Change kind**: behavioral
+- **Change**: Use the frozen route for Codex Upgrade and include its identity in the WebSocket pool/continuation boundary.
+- **Closure predicate**: Actual Codex Upgrade uses the selected source route. A proxy identity change under the same session/account invalidates the old pooled socket and continuation.
+- **Red-before**: Baseline direct send produced 401 instead of reaching the chosen proxy.
+- **Green-after**: Repeat the real Codex route/pool case and Upgrade suites. Observed: not-run.
+
+### Batch PXY_AWS: Bind builtin Bedrock generation to the selected proxy
+
+**Root change**: Bind builtin Bedrock generation to the selected proxy.
+**Closure predicate**: Actual builtin Bedrock generation uses the scoped route while explicit AWS selection keeps its no-discovery contract and stored bearer avoids AWS credential-source reads.
+**Dependencies**: ["PXY_HTTP"]
+**Verification union**: Repeat the real scoped route and the retained explicit/no-credential-read fixture controls.
+**Contract rehearsal**: [expanded-baseline/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-baseline/receipt.json>) (`e25ec9dae3178cfde91b58d35899406948a50d94b58f5c02f37f8b3cf8523b6f`). Expanded source candidate passed 1,609 tests in 20 binaries, with one existing Windows privilege case ignored. [expanded-reverified-native/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-native/receipt.json>) (`1ed2fed5e63efd1d70f7f96ae531f6b13a38dffba0e10d54536848dec32325f3`). The 26 source/test paths and shared caller migration are in [proxy-plan-h422v3ff/expanded-reverified-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-delta.json>) (`77d3e3376a27c43fadf51c7213775244a6b00d91d5bc426fd631aa62ec89e7bb`).
+
+#### Fix PXY_AWS.1: Bind builtin Bedrock generation to the selected proxy
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/bedrock/mod.rs`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/tests/bedrock_fixtures.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`
+- **Change kind**: behavioral
+- **Change**: Attach the scoped route at Bedrock acquisition and preserve selected source credential isolation.
+- **Closure predicate**: Actual builtin Bedrock generation uses the scoped route while explicit AWS selection keeps its no-discovery contract and stored bearer avoids AWS credential-source reads.
+- **Red-before**: Baseline produced no proxy sends for the selected Bedrock source.
+- **Green-after**: Repeat the real scoped route and the retained explicit/no-credential-read fixture controls. Observed: not-run.
+
+### Batch PXY_ADC_SOURCE: Freeze distinct ADC proxy settings at source selection
+
+**Root change**: Freeze distinct ADC proxy settings at source selection.
+**Closure predicate**: Builtin-selected ADC captures raw present-empty versus absent env, retains injected custom transport ownership, and binds token caching to the selected source proxy profile.
+**Dependencies**: ["PXY_HTTP"]
+**Verification union**: Repeat actual builtin ADC source and custom owner controls, the AuthContext implementer/caller union and embedded README consumer.
+**Contract rehearsal**: [expanded-baseline/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-baseline/receipt.json>) (`e25ec9dae3178cfde91b58d35899406948a50d94b58f5c02f37f8b3cf8523b6f`). Expanded source candidate passed 1,609 tests in 20 binaries, with one existing Windows privilege case ignored. [expanded-reverified-native/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-native/receipt.json>) (`1ed2fed5e63efd1d70f7f96ae531f6b13a38dffba0e10d54536848dec32325f3`). The 26 source/test paths and shared caller migration are in [proxy-plan-h422v3ff/expanded-reverified-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-delta.json>) (`77d3e3376a27c43fadf51c7213775244a6b00d91d5bc426fd631aa62ec89e7bb`).
+
+#### Fix PXY_ADC_SOURCE.1: Freeze distinct ADC proxy settings at source selection
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/auth.rs`, `crates/opi-ai/src/auth/adc/native.rs`, `crates/opi-ai/src/auth/builtin.rs`, `crates/opi-ai/src/auth/builtin_vertex.rs`, `crates/opi-ai/src/provider_collection.rs`, `crates/opi-ai/tests/adc_owner_regressions.rs`, `crates/opi-ai/tests/anthropic_fixtures.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-ai/tests/auth_process_lifecycle.rs`, `crates/opi-ai/tests/builtin_auth_ownership.rs`, `crates/opi-ai/tests/builtin_native_scoped.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`, `crates/opi-ai/tests/chat_capture_replay.rs`, `crates/opi-ai/tests/external_sdk.rs`, `crates/opi-ai/tests/openrouter_fixtures.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-ai/tests/vertex_fixtures.rs`, `crates/opi-coding-agent/src/provider_factory.rs`, `scripts/pi-sdk-conformance/run_readme_examples.py`
+- **Change kind**: behavioral
+- **Change**: Capture raw ADC proxy environment with distinct absent and empty states and bind the selected route to the token cache.
+- **Closure predicate**: Builtin-selected ADC captures raw present-empty versus absent env, retains injected custom transport ownership, and binds token caching to the selected source proxy profile.
+- **Red-before**: Baseline source route and raw setting controls did not meet the Gaxios case.
+- **Green-after**: Repeat actual builtin ADC source and custom owner controls, the AuthContext implementer/caller union and embedded README consumer. Observed: not-run.
+
+### Batch B_ADC_REDIRECT: Apply the selected ADC source redirect rules
+
+**Root change**: Apply the selected ADC source redirect rules.
+**Closure predicate**: The actual authorized-user exchange follows cross-port 302 POST to GET on the initial chosen direct route, retains the admitted Authorization and Cookie headers, avoids synthesized Referer, and observes the bounded redirect/cancellation contract.
+**Dependencies**: ["PXY_ADC_SOURCE"]
+**Verification union**: Repeat actual source redirect/cache/cancellation and distinct connector/certificate cases on the integrated candidate.
+**Contract rehearsal**: [expanded-baseline/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-baseline/receipt.json>) (`e25ec9dae3178cfde91b58d35899406948a50d94b58f5c02f37f8b3cf8523b6f`). Expanded source candidate passed 1,609 tests in 20 binaries, with one existing Windows privilege case ignored. [expanded-reverified-native/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-native/receipt.json>) (`1ed2fed5e63efd1d70f7f96ae531f6b13a38dffba0e10d54536848dec32325f3`). The 26 source/test paths and shared caller migration are in [proxy-plan-h422v3ff/expanded-reverified-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/expanded-reverified-delta.json>) (`77d3e3376a27c43fadf51c7213775244a6b00d91d5bc426fd631aa62ec89e7bb`). The direct-route case passed. CONNECT, outer TLS, certificate STS and protected audience remain D1 integration proof.
+
+#### Fix B_ADC_REDIRECT.1: Apply the selected ADC source redirect rules
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `crates/opi-ai/src/auth/adc/native.rs`, `crates/opi-ai/tests/adc_owner_regressions.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`
+- **Change kind**: behavioral
+- **Change**: Follow the admitted token-source redirect set with the initial route and bounded redirect/cancellation handling.
+- **Closure predicate**: The actual authorized-user exchange follows cross-port 302 POST to GET on the initial chosen direct route, retains the admitted Authorization and Cookie headers, avoids synthesized Referer, and observes the bounded redirect/cancellation contract.
+- **Red-before**: Original default ADC refused the tested token POST redirect.
+- **Green-after**: Repeat actual source redirect/cache/cancellation and distinct connector/certificate cases on the integrated candidate. Observed: not-run.
+
+### Batch B_ADC_CONNECT: Use the selected ADC tunnel with separate proxy and target identities
+
+**Root change**: Use the selected ADC tunnel with separate proxy and target identities.
+**Closure predicate**: Use the selected frozen proxy for actual ADC CONNECT to clear or TLS targets. Anonymous outer proxy TLS and approved STS-only inner identity stay separate. Preserve 407 and 502 refusal status, source retry count, redirect audience, cancellation and no direct fallback.
+**Dependencies**: ["B_ADC_REDIRECT"]
+**Verification union**: Repeat actual builtin CONNECT, raw setting, redirect and cache probes together with the library refusal, trust, identity, cancellation and audience controls and final dependency/feature checks.
+**Contract rehearsal**: Actual builtin scoped integration passed all eight cases, including two-hop CONNECT with frozen raw-empty/cache ownership. The library passed 371 cases, including anonymous outer TLS, exact inner STS identity and cross-origin certificate refusal. The initial refusal witnesses exposed a Windows reset handling assumption and an incorrect retry budget. [focused/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/integrated-connect/focused/receipt.json>) (`81b91e2250202f63e5dd2b8ca1ffc1e43f033b886d24108590f1e1ce12d07e75`). [focused-refusal-green/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/integrated-connect/focused-refusal-green/receipt.json>) (`7efd0b359f7dfc3ce73bcefcd2b70b045dbef1f28916c56591ca05bde8a35828`). The corrected two-case run passed with freshly compiled source and retained binaries. [focused-source-budget/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/integrated-connect/focused-source-budget/receipt.json>) (`552319fe3b5ea7d694d3338878bb968d4545ddd31921eab400f7d5b3d93d37ed`). Pinned actual ExternalAccountAuthorizedUser source returns 407 after one attempt and 502 after four, with no inner send. [proxy-plan-h422v3ff/gaxios-source-connect-refusal.jsonl](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/gaxios-source-connect-refusal.jsonl>) (`2550ae35bfad4d221afd4d29a67d040a7611089c8424e21091d7a72dc0c89185`). In a separate fresh candidate, anonymous HTTPS proxy TLS and CONNECT completed, then the inner connection driver returned UnexpectedEof before the response consumer could read the complete two-byte framed body. Leaving framing completion to the consumer passed the immediate complete response and rejected its one-byte truncation. Nine targeted cases passed. [https-diagnostic/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-diagnostic/receipt.json>) (`8f6a18677f329fd62eda6f7e9a6b5963d724cbd3a6d8c5614868e7fee0d44148`). [https-framing-green/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-framing-green/receipt.json>) (`5382bce1f36b938c3eac2efe9b34bc4abfaafeabf206c70554fbda9634302974`). Join this exact framing correction and its probes with the builtin candidate, including the complete certificate file-supplier and audience paths. Independent framing experiment patch and exact five-path delta [https-framing-trial.patch](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-framing-trial.patch>) (`502d20e59d683827d59898f86eb6ce2e6509ae31d7a12f42cf6c42fa62cfd745`), [https-framing-trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/adc-connect-plan-68e2ca4f/https-framing-trial-delta.json>) (`87be27f4c172f6b194f9ffb24cf897474fedc7eae4f39debc6e0c3dea268386a`). Exact nine-path delta in [integrated-connect/final-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/integrated-connect/final-delta.json>) (`e58bbf1dec61650c4948b2b868ff33aa8121b42f29365ce734845b163dd77f5e`). The effective ordinary graph is unchanged; the Windows 193-unit feature union drops only the tokio-rustls `default` marker and retains its constituent leaf features. [integrated-connect/ordinary-graph-diff.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/integrated-connect/ordinary-graph-diff.json>) (`72837bc50b05a1ecd54ac7fcf0def4df782aafe5ddf1d2958312d102a5774e6d`). [integrated-connect/windows-graph-union.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/proxy-plan-h422v3ff/integrated-connect/windows-graph-union.json>) (`66cdb2f843ad2e7cfee0af971b39f77459f89b49fe828a7b9addb57311315330`).
+
+#### Fix B_ADC_CONNECT.1: Use the selected ADC tunnel with separate proxy and target identities
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-010; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C010, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Partially confirmed
+- **File(s)**: `CHANGELOG.md`, `Cargo.toml`, `crates/opi-ai/Cargo.toml`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/auth.rs`, `crates/opi-ai/src/auth/adc/connect_proxy.rs`, `crates/opi-ai/src/auth/adc/external.rs`, `crates/opi-ai/src/auth/adc/impersonation.rs`, `crates/opi-ai/src/auth/adc/native.rs`, `crates/opi-ai/src/http.rs`, `crates/opi-ai/tests/builtin_scoped_env.rs`
+- **Change kind**: behavioral
+- **Change**: Build an ADC-owned CONNECT tunnel on already resolved HTTP/TLS dependencies. Separate outer proxy and inner STS TLS configuration and retain typed refusal status.
+- **Closure predicate**: Use the selected frozen proxy for actual ADC CONNECT to clear or TLS targets. Anonymous outer proxy TLS and approved STS-only inner identity stay separate. Preserve 407 and 502 refusal status, source retry count, redirect audience, cancellation and no direct fallback.
+- **Red-before**: A default clear HTTP proxy used forwarding rather than CONNECT. A separate reqwest comparator offered the synthetic target client certificate to the outer proxy. The pinned actual source discriminates one 407 attempt and four 502 attempts with the default budget.
+- **Green-after**: Repeat actual builtin CONNECT, raw setting, redirect and cache probes together with the library refusal, trust, identity, cancellation and audience controls and final dependency/feature checks. Observed: not-run.
+
+### Batch B_EXPORT: Admit a bound archive through its actual Cargo cache owner
+
+**Root change**: Admit a bound archive through its actual Cargo cache owner.
+**Closure predicate**: The package runner accepts the actual owner or an explicitly bound exact committed export and refuses missing/forged owner or source identity before creating scratch.
+**Dependencies**: []
+**Verification union**: Run exact owner/archive positives, wrong head, foreign marker, source-tree drift and package runner checks.
+**Contract rehearsal**: Candidate owner/archive controls and package unit checks pass. [delivery-plan-6e6e8141/owner-archive-admission.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/owner-archive-admission.json>) (`eddccc25ce8d0a2008b83b437bbbf0918f4f365595333869913bd7066972ab0d`). Shared runner and consumer paths in [delivery-plan-6e6e8141/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/trial-delta.json>) (`a0e7c8bbaee1a4348ae9842368d2ad5a0bc7233b2dc5b94207f83bff414a9190`).
+
+#### Fix B_EXPORT.1: Admit a bound archive through its actual Cargo cache owner
 
 - **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
-- **Assigned portion**: C018: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Implement the exact selected lease design bound below. Sweep under QueueInner mutex at existing submit/barrier entries before new admission/observer; retain queue-owned unknown outcomes and all live generations. No scheduler/task/public prune/cap. Pending report snapshots also pin their generations through settlement. The necessary detached-receipt constructor preserves real custom CredentialStore ACK construction without granting queue-history control. Update current all-session-history prose/intentional assertions only to the required reference-scoped contract; preserve ACK, FIFO, same-key reconciliation, deferred runtime, unknown and barrier limits.
-- **Verification status**: Partially confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/credential.rs`, `crates/opi-ai/src/mutation.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-ai/tests/mutation_reclamation.rs`, `crates/opi-ai/tests/oauth_flows.rs`
+- **Assigned portion**: Only this batch predicate for C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `scripts/pi-sdk-conformance/package_slice.py`, `scripts/pi-sdk-conformance/run_early_package_proof.py`, `scripts/pi-sdk-conformance/test_package_slice.py`
 - **Change kind**: behavioral
-- **Change**: Add private reference ownership to the existing mutation queue and reclaim only confirmed unreferenced records.
-- **Closure predicate**: After all relevant handle/receipt/report/barrier owners release, fresh barrier omits confirmed success history; every live observer retains captured/late facts and Unknown survives unrelated or ordinary same-key success without eviction or admission limits.
-- **Red-before**: local-red-v2/ready_receipt_reclaim:2PASS/1FAIL; live cutoff and caught workerpanic Unknown controls pass; fresh barrier retains confirmed receipt after all owners released.
-- **Green-after**: Same3 scenarios PASS plus cloned receipt/report/handle/barrier drop order, pending report settles, concurrent submit-versus-barrier sweep, live cutoff late records, long no-barrier submit sequence, failures/Unknown retention, same-key ordinary success not reconciliation, no implicit runtime/deadline/cap; full auth_contracts,oauth_flows,oauth_store_integration,mutation_reclamation and product credential_store PASS. Observed:not-run.
+- **Change**: Add exact committed-export admission to the existing owner-bound package runner and reject invalid material before creating scratch.
+- **Closure predicate**: The package runner accepts the actual owner or an explicitly bound exact committed export and refuses missing/forged owner or source identity before creating scratch.
+- **Red-before**: Actual owner accepted. The same marker refused the committed archive before scratch.
+- **Green-after**: Run exact owner/archive positives, wrong head, foreign marker, source-tree drift and package runner checks. Observed: not-run.
 
-### Batch B_SCHEMA: Correct the encoded-resource positive fixture
+### Batch B_SDK: Execute the assembled public SDK as an actual package consumer
 
-**Root change**: Correct only the wrong positive in schema_engine using independently established source54 outcomes.
-**Closure predicate**: Original root-only absolute-ID/no-$schema record remains negative; branch-local leaf resources give positive; encoded/missing/unknown-false,relative/$schema/admission controls retain correct outcomes and full schema_engine passes.
+**Root change**: Execute the assembled public SDK as an actual package consumer.
+**Closure predicate**: The actual extracted .crate is the only Opi runtime dependency in an independently locked external workspace. The declared SDK inventory executes real public native/simple/direct/custom, typed operations, Send, ownership, and offline-resource cases.
+**Dependencies**: ["B_EXPORT"]
+**Verification union**: Execute independent real package consumer on final sources with exact test, graph, binary and lock receipts. Wider feature/native coverage is B_NATIVE and D3.
+**Contract rehearsal**: Actual Windows ordinary package candidate passed 48 exact tests with reviewed HTTP graph, retained binaries, package and lock. [sdk-trial-reviewed/evidence.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/sdk-trial-reviewed/evidence.json>) (`98279f1d57cf1d0e74eec72407f36c1045da9626b0cc0986dd2d2916d4de6387`). [delivery-plan-6e6e8141/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/trial-delta.json>) (`a0e7c8bbaee1a4348ae9842368d2ad5a0bc7233b2dc5b94207f83bff414a9190`).
+
+#### Fix B_SDK.1: Execute the assembled public SDK as an actual package consumer
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-017; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C017, C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Partially confirmed
+- **File(s)**: `scripts/pi-sdk-conformance/README.md`, `scripts/pi-sdk-conformance/consumer-sdk/Cargo.toml`, `scripts/pi-sdk-conformance/consumer-sdk/tests/entrances.rs`, `scripts/pi-sdk-conformance/package_slice.py`, `scripts/pi-sdk-conformance/test_package_slice.py`
+- **Change kind**: behavioral
+- **Change**: Run the assembled SDK inventory in the independently locked extracted-package consumer.
+- **Closure predicate**: The actual extracted .crate is the only Opi runtime dependency in an independently locked external workspace. The declared SDK inventory executes real public native/simple/direct/custom, typed operations, Send, ownership, and offline-resource cases.
+- **Red-before**: Original package runner rejected the sdk selector. First exploratory independent resolution exposed versions outside RDF-22.
+- **Green-after**: Execute independent real package consumer on final sources with exact test, graph, binary and lock receipts. Wider feature/native coverage is B_NATIVE and D3. Observed: not-run.
+
+### Batch B_RECEIPT: Reclaim confirmed mutation receipts after observers release them
+
+**Root change**: Reclaim confirmed mutation receipts after observers release them.
+**Closure predicate**: Drop confirmed unreferenced records on queue activity. Keep receipts observed by ACKs, cloned barriers, pending reports and late captures. Preserve Failed/Unknown records across ordinary success.
 **Dependencies**: []
-**Verification union**: Run exact corrected test and full schema_engine, schema_public, schema-cache/worker/visited internal cases plus fixed54 public comparator; all PASS. Retain73 outside-package schema controls in defaults-off and caller-default union.
+**Verification union**: Repeat all queue/auth/credential tests and verify pending/late protection and source-scoped reconciliation separately.
+**Contract rehearsal**: Five new reclamation tests passed on the freshly rebuilt candidate. [before-numeric-reclaim-schema/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/before-numeric-reclaim-schema/receipt.json>) (`5c359c47b49563d2a417f581f3e80576a3c61a6c726d1af5e195ead8416e24b1`). [candidate-fresh/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/candidate-fresh/receipt.json>) (`945d8c32892729d5078bc8e32cfcb1eb52ef0ab039ea9bac9e342fef29893577`). After migrating seven downstream observer assertions, five unfiltered targets passed all 545 tests. [candidate-verified/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/candidate-verified/receipt.json>) (`107963cf5f52fa412b4f10d9f092b4489e8a1eb7f5e99fb54e1d6b7b5b57999a`). Exact common source/test delta in [contract-continue-20261105T070028Z-405ed662/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/trial-delta.json>) (`b6ba3830573b1de45c3a8a43e61f3b1cbbd1b87dbd9db8dbe26a6c59382a5606`). Same-key authoritative reconciliation remains a separate D3 predicate.
 
-#### Fix B_SCHEMA.1: Correct the encoded-resource positive fixture
+#### Fix B_RECEIPT.1: Reclaim confirmed mutation receipts after observers release them
 
 - **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
-- **Assigned portion**: C018: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Retain the original root-only data as an explicit negative; move/add positive leaf metadata under its selected resource branches. Keep encoded pointer/decoys/unknown-keyword and independent schema admission cases. The pinned TypeBox compiled+interpreted54/54 agrees with Rust public54/54. No resolver, schema feature, codec or rejection-policy widening.
+- **Assigned portion**: Only this batch predicate for C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
 - **Verification status**: Partially confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/mutation.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-ai/tests/bedrock_fixtures.rs`, `crates/opi-ai/tests/mutation_reclamation.rs`, `crates/opi-ai/tests/oauth_flows.rs`, `crates/opi-coding-agent/README.md`, `crates/opi-coding-agent/README.zh.md`, `crates/opi-coding-agent/tests/credential_store.rs`
+- **Change kind**: behavioral
+- **Change**: Track which barrier, ACK and late-capture observers retain each receipt. Reclaim only confirmed receipts with no live observer.
+- **Closure predicate**: Drop confirmed unreferenced records on queue activity. Keep receipts observed by ACKs, cloned barriers, pending reports and late captures. Preserve Failed/Unknown records across ordinary success.
+- **Red-before**: Five public queue reclamation scenarios failed on original production bytes.
+- **Green-after**: Repeat all queue/auth/credential tests and verify pending/late protection and source-scoped reconciliation separately. Observed: not-run.
+
+### Batch B_SCHEMA: Correct the selected resource fixture against pinned TypeBox
+
+**Root change**: Correct the selected resource fixture against pinned TypeBox.
+**Closure predicate**: The encoded pointer controls retain their original checks. The absolute selected resource fixture accepts the intended value and rejects all wrong-resource values under the actual engine.
+**Dependencies**: []
+**Verification union**: Repeat schema_engine and schema_public plus package data-profile proofs; this batch changes the fixture only.
+**Contract rehearsal**: Pinned TypeBox1.3.27 under Node24.13.0 compared 40 compiled/interpreted cases; the absolute positive and wrong-resource negatives agree. [schema-oracle/reference-variants.receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/schema-oracle/reference-variants.receipt.json>) (`1eb9d27cd1af3f19dd0ae09fd6ba360fc836747633d0c3a11cce15ec4aa95691`). Actual Rust candidate schema_engine 73 and schema_public 28 passed in [candidate-fresh/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/contract-continue-20261105T070028Z-405ed662/candidate-fresh/receipt.json>) (`945d8c32892729d5078bc8e32cfcb1eb52ef0ab039ea9bac9e342fef29893577`); unrelated receipt assertions failed in other binaries.
+
+#### Fix B_SCHEMA.1: Correct the selected resource fixture against pinned TypeBox
+
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018
+- **Assigned portion**: Only this batch predicate for C018. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
 - **File(s)**: `crates/opi-ai/tests/schema_engine.rs`
 - **Change kind**: test-only
-- **Change**: Correct only the wrong positive in schema_engine using independently established source54 outcomes.
-- **Closure predicate**: Original root-only absolute-ID/no-$schema record remains negative; branch-local leaf resources give positive; encoded/missing/unknown-false,relative/$schema/admission controls retain correct outcomes and full schema_engine passes.
-- **Red-before**: Current source schema_engine has72PASS/1FAIL at encoded_pointer_targets_preserve_selected_resource_identity; TypeBox and Rust independent comparator54/54 prove the expected positive is wrong.
-- **Green-after**: Run exact corrected test and full schema_engine, schema_public, schema-cache/worker/visited internal cases plus fixed54 public comparator; all PASS. Retain73 outside-package schema controls in defaults-off and caller-default union. Observed:not-run.
+- **Change**: Correct the resource fixture identity and retain paired positive and wrong-resource controls, leaving engine behavior as rehearsed.
+- **Closure predicate**: The encoded pointer controls retain their original checks. The absolute selected resource fixture accepts the intended value and rejects all wrong-resource values under the actual engine.
+- **Red-before**: Rust baseline fixture returned false at the asserted positive. The original TypeBox compiled and interpreted cases also reject the relative form.
+- **Green-after**: Repeat schema_engine and schema_public plus package data-profile proofs; this batch changes the fixture only. Observed: not-run.
 
-### Batch B_EXPORT: Truthful archive-source cache admission
+### Batch B_CACHE: Preserve typed prompt-cache duration metadata
 
-**Root change**: Extend the existing shared package-runner admission with explicitly verified archive source identity and separate real cache owner.
-**Closure predicate**: A verified committed git-archive export uses the actual persistent owner/toolchain cache without marker rewrite; missing/forged/drifted identity or unsafe scratch fails before scratch,lease or Cargo.
+**Root change**: Preserve typed prompt-cache duration metadata.
+**Closure predicate**: ModelInfo and the typed catalog store preserve independently optional finite positive seconds, including fractional durations and explicit empty metadata. Invalid writes leave revision and stored bytes unchanged.
 **Dependencies**: []
-**Verification union**: Repeat exact owner+archive admission probe: both positives succeed only with explicit identity; all missing/forged/wronghead/archive/tree/runner/toolchain/marker,source drift,reparse/traversal/existing scratch negatives reject before side effects. All3 runner guard suites PASS.
+**Verification union**: Repeat the five unfiltered targets and actual extracted package applicability after the approved edits.
+**Contract rehearsal**: Observed 87 passing tests across catalog_artifact, catalog_lifecycle, catalog_operations, model_wire_metadata and product list_models. [d4-red/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/d4-red/receipt.json>) (`d9eda1c5dce1e025620d1b1dba55e467cabc999083e11736e73645a3a2f75374`). [d4-green/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/d4-green/receipt.json>) (`a6f5162307c1f36cb74be4ae723734f6e54358c9bf94d83a3f569e76c5767c70`). Exact runtime/test paths in [metadata-trials-8a36672b/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/trial-delta.json>) (`f1ba589518cda5ca404574d90cf8f22855ab281556e7f5865ef85a83651b3922`). User-facing documentation paths in [metadata-trials-8a36672b/docs-candidate.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/docs-candidate.md>) (`efcc4ceccd49df54d8b85918ffe82647880e6be3ba680246aedd96608cab2be1`).
 
-#### Fix B_EXPORT.1: Truthful archive-source cache admission
+#### Fix B_CACHE.1: Preserve typed prompt-cache duration metadata
 
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Implement E01 in the bound coverage design: --source-export <verified identity> and --cache-owner <actual owning workspace>, verify committed objects/archive/tree/source/manifests/lock/runner bytes and actual marker/toolchain. Preserve normal direct-owner path, source/config/patch/native/environment/graph guards and real lifecycle lease. Never new per-session target, marker ownership rewrite or cargo clean. The archive identity remains exact before/after; CLI/subprocess guards exercise actual admission with same positive/negative controls.
-- **Verification status**: Partially confirmed
-- **File(s)**: `scripts/pi-sdk-conformance/package_slice.py`, `scripts/pi-sdk-conformance/run_early_package_proof.py`, `scripts/pi-sdk-conformance/run_readme_examples.py`, `scripts/pi-sdk-conformance/test_package_proof.py`, `scripts/pi-sdk-conformance/test_package_slice.py`, `scripts/pi-sdk-conformance/test_run_readme_examples.py`
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-019
+- **Assigned portion**: C019 whole finding
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Confirmed
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/catalog/wire.rs`, `crates/opi-ai/src/lib.rs`, `crates/opi-ai/src/model_info.rs`, `crates/opi-ai/tests/catalog_lifecycle.rs`
 - **Change kind**: behavioral
-- **Change**: Extend the existing shared package-runner admission with explicitly verified archive source identity and separate real cache owner.
-- **Closure predicate**: A verified committed git-archive export uses the actual persistent owner/toolchain cache without marker rewrite; missing/forged/drifted identity or unsafe scratch fails before scratch,lease or Cargo.
-- **Red-before**: ready-coverage/archive-cache-admission.red.json: real owner positive admitted; genuine complete archive with same persistent owned target is rejected as wrong workspace before scratch. This is a script behavioral red, not compile/setup failure.
-- **Green-after**: Repeat exact owner+archive admission probe: both positives succeed only with explicit identity; all missing/forged/wronghead/archive/tree/runner/toolchain/marker,source drift,reparse/traversal/existing scratch negatives reject before side effects. All3 runner guard suites PASS. Observed:not-run.
+- **Change**: Carry both independent typed cache-duration tiers through model and catalog storage, with validation before mutation.
+- **Closure predicate**: ModelInfo and the typed catalog store preserve independently optional finite positive seconds, including fractional durations and explicit empty metadata. Invalid writes leave revision and stored bytes unchanged.
+- **Red-before**: Two discriminating public catalog lifecycle failures on the original code.
+- **Green-after**: Repeat the five unfiltered targets and actual extracted package applicability after the approved edits. Observed: not-run.
 
-### Batch B_EXE_RECEIPTS: Retain actual package-consumer execution identities
+### Batch B_EXPIRY: Expose typed permanent OAuth lifetime and restore legacy credentials
 
-**Root change**: Instrument the three existing package runners at their actual Cargo-selected unit/executable boundary.
-**Closure predicate**: Each profile receipt binds current SDK+consumer package/manifest/source/lock/feature/native units and exact executable/list/run counts, retaining original binary/native/source bytes before overwrite or hosted runner removal.
-**Dependencies**: ["B_EXPORT"]
-**Verification union**: Run runner guard tests and actual package families with source/compiler/executable/list/run/material receipts. Tampered/swapped/missing artifact,wrong target/src/manifest,filtered/ignored/duplicate/zero counts,stale native provenance and unretained originals fail closed; exact actual positive receipts validate.
-
-#### Fix B_EXE_RECEIPTS.1: Retain actual package-consumer execution identities
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Apply the bound native proposal receipt-enhancements.patch sequentially after E01 and reconcile only overlapping E02 interfaces. Parse actual CargoJSON compiler-artifact/build-script outputs; never infer basename, use no-run compile as runtime proof, or replace execution with mocked guards. Per-profile preserve executable before next build and original native archives/output/fingerprints/source packages plus restoration mapping. Validate full unique list==executed set,N>0,0failed/ignored/filtered and final per-profile SHA stability. Graph/source/material predicates E08/E09/E10/E11 remain distinct.
-- **Verification status**: Partially confirmed
-- **File(s)**: `scripts/pi-sdk-conformance/package_slice.py`, `scripts/pi-sdk-conformance/run_early_package_proof.py`, `scripts/pi-sdk-conformance/run_readme_examples.py`, `scripts/pi-sdk-conformance/test_package_proof.py`, `scripts/pi-sdk-conformance/test_package_slice.py`, `scripts/pi-sdk-conformance/test_run_readme_examples.py`
-- **Change kind**: test-only
-- **Change**: Instrument the three existing package runners at their actual Cargo-selected unit/executable boundary.
-- **Closure predicate**: Each profile receipt binds current SDK+consumer package/manifest/source/lock/feature/native units and exact executable/list/run counts, retaining original binary/native/source bytes before overwrite or hosted runner removal.
-- **Red-before**: N/A: current runners do not retain complete original per-profile executable/native proof required by the confirmed current delivery-evidence gap; this changes verification instrumentation, not product behavior.
-- **Green-after**: Run runner guard tests and actual package families with source/compiler/executable/list/run/material receipts. Tampered/swapped/missing artifact,wrong target/src/manifest,filtered/ignored/duplicate/zero counts,stale native provenance and unretained originals fail closed; exact actual positive receipts validate. Observed:not-run.
-
-### Batch B_CACHE: Preserve prompt-cache duration metadata
-
-**Root change**: Carry source promptCache lifetime metadata through the existing complete model and common source/store codec.
-**Closure predicate**: Absent object/tier remains unknown,explicit empty stays empty,each finite positive short/long seconds including fractions survives decode/Models/store/reopen unchanged; invalid known values reject before publication,with no dispatch-policy change.
+**Root change**: Expose typed permanent OAuth lifetime and restore legacy credentials.
+**Closure predicate**: SDK and credential store distinguish Unknown, finite At, and NonExpiring. Permanent OpenRouter login and refresh preserve typed lifetime, normal finite/unknown behavior remains, product v2 survives reload, and legacy OpenRouter sentinel maps only with empty refresh.
 **Dependencies**: []
-**Verification union**: Same4 public scenarios PASS; add direct typed long-only,{},integer,subsecond,null/wrongshape,NaN/infinity/nonpositive,atomic unchanged revision/file,actualbuiltin projection/Models info and dispatch noninterference controls. Full prompt_cache_metadata,model_wire_metadata,catalog_operations,catalog_lifecycle PASS.
+**Verification union**: Repeat the exact SDK/product candidate union, public examples, durable record and actual package checks after the approved edits.
+**Contract rehearsal**: Observed 688 passing tests in ten unfiltered SDK/product targets, zero failed/ignored/filtered. [d5-red/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/oauth/d5-red/receipt.json>) (`1df6fa28b9a7ebdce7daed64845df5877558db5b67d13441fafdf2cc86820968`). [d5-red-v2/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/oauth/red-control/d5-red-v2/receipt.json>) (`206f1df1643d250a3d12f75ac1e724399f288147734a0899f54df18c508a62f0`). [d5-verified/receipt.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/oauth/d5-verified/receipt.json>) (`adb4e4fe73210bfe9d73cbb930ee847f24335b2cca7b15f8033641cdad5de885`). Exact runtime/test paths in [oauth/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/oauth/trial-delta.json>) (`36fc4ac5890966045a56be338976df256a7299a2d1f855f1886f3f0b78f8711a`). Published caller and paired documentation migration in [metadata-trials-8a36672b/docs-candidate.md](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/metadata-trials-8a36672b/docs-candidate.md>) (`efcc4ceccd49df54d8b85918ffe82647880e6be3ba680246aedd96608cab2be1`).
 
-#### Fix B_CACHE.1: Preserve prompt-cache duration metadata
+#### Fix B_EXPIRY.1: Expose typed permanent OAuth lifetime and restore legacy credentials
 
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-019; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C019, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Implement exact ready-model-oauth/design.md C019: PromptCacheDurations {short:Option<f64>,long:Option<f64>}, ModelInfo.prompt_cache:Option<_>, root export and InvalidPromptCache tier error. Read top-level promptCache before compat earlyreturn, emit top-level existing source field, preserve{}; reject wrong shape/null/string/nonpositive/nonfinite known tiers. Existing17 builtin records use common codec; no catalog rewrite or policy/config. Paired SDK docs and Unreleased Added.
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-020
+- **Assigned portion**: C020 whole finding
+- **Decision**: Carry the bounded repair forward under this batch predicate.
 - **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/catalog/wire.rs`, `crates/opi-ai/src/lib.rs`, `crates/opi-ai/src/model_info.rs`, `crates/opi-ai/tests/prompt_cache_metadata.rs`
+- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/auth.rs`, `crates/opi-ai/src/auth/oauth/chatgpt.rs`, `crates/opi-ai/src/auth/oauth/copilot.rs`, `crates/opi-ai/src/auth/oauth/kimi_coding.rs`, `crates/opi-ai/src/auth/oauth/meta.rs`, `crates/opi-ai/src/auth/oauth/mod.rs`, `crates/opi-ai/src/auth/oauth/openrouter.rs`, `crates/opi-ai/src/auth/oauth/radius.rs`, `crates/opi-ai/src/auth/oauth/xai.rs`, `crates/opi-ai/src/auth/store_oauth.rs`, `crates/opi-ai/src/credential.rs`, `crates/opi-ai/src/lib.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-ai/tests/builtin_auth_ownership.rs`, `crates/opi-ai/tests/oauth_flows.rs`, `crates/opi-ai/tests/oauth_store_integration.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-coding-agent/README.md`, `crates/opi-coding-agent/README.zh.md`, `crates/opi-coding-agent/src/credential_store.rs`, `crates/opi-coding-agent/tests/credential_store.rs`, `crates/opi-coding-agent/tests/doctor_cli.rs`, `crates/opi-coding-agent/tests/github_copilot_provider.rs`, `crates/opi-coding-agent/tests/list_models.rs`, `crates/opi-coding-agent/tests/oauth_auth.rs`
 - **Change kind**: behavioral
-- **Change**: Carry source promptCache lifetime metadata through the existing complete model and common source/store codec.
-- **Closure predicate**: Absent object/tier remains unknown,explicit empty stays empty,each finite positive short/long seconds including fractions survives decode/Models/store/reopen unchanged; invalid known values reject before publication,with no dispatch-policy change.
-- **Red-before**: local-red-v2/ready_prompt_cache:1PASS/3FAIL; absent control passes,fraction0.125/3600.5 andshort17.25 disappear after public store roundtrip,invalidshort0 silently accepted/erased.
-- **Green-after**: Same4 public scenarios PASS; add direct typed long-only,{},integer,subsecond,null/wrongshape,NaN/infinity/nonpositive,atomic unchanged revision/file,actualbuiltin projection/Models info and dispatch noninterference controls. Full prompt_cache_metadata,model_wire_metadata,catalog_operations,catalog_lifecycle PASS. Observed:not-run.
+- **Change**: Represent OAuth lifetime as Unknown, finite At, or NonExpiring and migrate only the admitted legacy durable representation.
+- **Closure predicate**: SDK and credential store distinguish Unknown, finite At, and NonExpiring. Permanent OpenRouter login and refresh preserve typed lifetime, normal finite/unknown behavior remains, product v2 survives reload, and legacy OpenRouter sentinel maps only with empty refresh.
+- **Red-before**: Loopback public login produced 9999; corrected marked raw keychain v2 baseline produced UnknownEnvelope. Original unmarked setup failure is excluded from the decoder evidence.
+- **Green-after**: Repeat the exact SDK/product candidate union, public examples, durable record and actual package checks after the approved edits. Observed: not-run.
 
-### Batch B_EXPIRY: Typed permanent OAuth lifetime
+### Batch B_NATIVE: Prepare the six native host/toolchain CI rows
 
-**Root change**: Replace overloaded OAuth optional timestamp with explicit Unknown/ExpiresAt/NonExpiring through flow,credential,resolver and protected durable envelope.
-**Closure predicate**: OpenRouter actual login/store/reopen/resolver is explicitly non-expiring with no invented timestamp or refresh; Unknown refreshes and finite4min/6min retain one5min window; strict v2 writes and provider-bound legacy v1 reads preserve exact lifetime and secrets.
-**Dependencies**: []
-**Verification union**: Same loopbackscenario migrates only public projection to expiry enum; assert NonExpiring,emptyrefresh,no-refresh,Unknown/4min/6min controls. Add SDKstore/reopen+productv2+legacy strict/invalid/provider-bound/nonemptyrefresh/no-rewrite+Zeroize tests. Run oauth_expiry and every modified named SDK/product test target; full workspace union PASS.
+**Root change**: Prepare the six native host/toolchain CI rows.
+**Closure predicate**: Linux, macOS and Windows each run stable and exact 1.97.0 from the verified checkpoint, with locked dependency preparation, offline checks and native source/material receipts.
+**Dependencies**: ["B_BUDGET", "B_CACHE", "B_EXPIRY", "PXY_HTTP", "PXY_HTTP_OWNERS", "PXY_WS", "PXY_AWS", "PXY_ADC_SOURCE", "B_ADC_REDIRECT", "B_ADC_CONNECT", "B_EXPORT", "B_SDK", "B_RECEIPT", "B_SCHEMA"]
+**Verification union**: After explicit approved apply and local checks, publish only the exact verified checkpoint to the reserved codex/phase20-remediation-ci branch, bind each host/toolchain checkout, and retain all original proof before closure.
+**Contract rehearsal**: 88 pure tests and six local command-plan dry runs passed. Each row has 13 verification and 7 dependency-preparation stages. [delivery-plan-6e6e8141/pure-package-native-final.log](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/pure-package-native-final.log>) (`4822a4ccc0a0be400a815bb4a6224cd6957b8f6e27577d6622b017e7685c8b04`). [delivery-plan-6e6e8141/six-native-plans.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/six-native-plans.json>) (`fc6d029e3436d509778e31761820837746e877826219e5c3149c1c1aa18e9377`). Exact route files in [delivery-plan-6e6e8141/trial-delta.json](<D:/Luiz/Odradek/opi-remediation-evidence/phase20/delivery-plan-6e6e8141/trial-delta.json>) (`a0e7c8bbaee1a4348ae9842368d2ad5a0bc7233b2dc5b94207f83bff414a9190`).
 
-#### Fix B_EXPIRY.1: Typed permanent OAuth lifetime
+#### Fix B_NATIVE.1: Prepare the six native host/toolchain CI rows
 
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-020; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C020, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Implement exact C020 design below: OAuthExpiry enum,replace both expires_at fields with expiry,no parallelfield; finiteflows preserve arithmetic,postACK rejects onlyactuallyexpiredfinite; remove publicOpenRouter9999 helper. Product OAuthv2 strict taggedexpiry writes; retain existing required v1reader,onlyprovideropenrouter+emptyrefresh+253402300799 mapsNonExpiring,other validtimestampsfinite,absentUnknown,no readrewrite. Strict unknown/tag/extra/invalid errors and existingZeroize. APIkeyformats/AWS/ADC/deferred expiry untouched. Update every28-file actual caller inventory as classified; protectedprovider_collection OAuthliterals now clean. Paired SDK/product docs and completeUnreleased consistency.
-- **Verification status**: Confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-ai/src/auth.rs`, `crates/opi-ai/src/auth/oauth/chatgpt.rs`, `crates/opi-ai/src/auth/oauth/copilot.rs`, `crates/opi-ai/src/auth/oauth/kimi_coding.rs`, `crates/opi-ai/src/auth/oauth/meta.rs`, `crates/opi-ai/src/auth/oauth/mod.rs`, `crates/opi-ai/src/auth/oauth/openrouter.rs`, `crates/opi-ai/src/auth/oauth/radius.rs`, `crates/opi-ai/src/auth/oauth/xai.rs`, `crates/opi-ai/src/auth/store_oauth.rs`, `crates/opi-ai/src/credential.rs`, `crates/opi-ai/src/lib.rs`, `crates/opi-ai/tests/auth_contracts.rs`, `crates/opi-ai/tests/builtin_auth_ownership.rs`, `crates/opi-ai/tests/oauth_expiry.rs`, `crates/opi-ai/tests/oauth_flows.rs`, `crates/opi-ai/tests/oauth_store_integration.rs`, `crates/opi-ai/tests/provider_collection.rs`, `crates/opi-coding-agent/README.md`, `crates/opi-coding-agent/README.zh.md`, `crates/opi-coding-agent/src/credential_store.rs`, `crates/opi-coding-agent/tests/credential_store.rs`, `crates/opi-coding-agent/tests/doctor_cli.rs`, `crates/opi-coding-agent/tests/github_copilot_provider.rs`, `crates/opi-coding-agent/tests/interactive_auth.rs`, `crates/opi-coding-agent/tests/list_models.rs`, `crates/opi-coding-agent/tests/oauth_auth.rs`
+- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
+- **Assigned portion**: Only this batch predicate for C018, P007. Complete each compound finding through its full ordered batch list.
+- **Decision**: Carry the bounded repair forward under this batch predicate.
+- **Verification status**: Partially confirmed
+- **File(s)**: `.github/workflows/phase20-remediation-native.yml`, `scripts/pi-sdk-conformance/run_phase20_native.py`, `scripts/pi-sdk-conformance/test_run_phase20_native.py`
 - **Change kind**: behavioral
-- **Change**: Replace overloaded OAuth optional timestamp with explicit Unknown/ExpiresAt/NonExpiring through flow,credential,resolver and protected durable envelope.
-- **Closure predicate**: OpenRouter actual login/store/reopen/resolver is explicitly non-expiring with no invented timestamp or refresh; Unknown refreshes and finite4min/6min retain one5min window; strict v2 writes and provider-bound legacy v1 reads preserve exact lifetime and secrets.
-- **Red-before**: local-red-v2/ready_oauth_expiry:2PASS/1FAIL; actual loopbackOpenRouterlogin and identityrefresh0network controls pass,public permanent lifetime exposes Some(year9999).
-- **Green-after**: Same loopbackscenario migrates only public projection to expiry enum; assert NonExpiring,emptyrefresh,no-refresh,Unknown/4min/6min controls. Add SDKstore/reopen+productv2+legacy strict/invalid/provider-bound/nonemptyrefresh/no-rewrite+Zeroize tests. Run oauth_expiry and every modified named SDK/product test target; full workspace union PASS. Observed:not-run.
-
-### Batch B_SDK: Actual assembled external SDK consumer
-
-**Root change**: Add one actual extracted-.crate public SDK consumer family to existing package_slice.
-**Closure predicate**: All18 fixed public targets execute their full nonempty exact case inventories in all6 named independent consumer profiles with0failed/ignored/filtered,public API only,actual package/source/lock/feature/native identities and retained originals.
-**Dependencies**: ["PXY_HTTP", "PXY_WS", "PXY_AWS", "PXY_ADC", "B_ADC_REDIRECT", "B_BUDGET", "B_RECEIPT", "B_SCHEMA", "B_EXE_RECEIPTS", "B_CACHE", "B_EXPIRY"]
-**Verification union**: python scripts/pi-sdk-conformance/package_slice.py --family sdk --offline, fresh scratch and the persistent direct-owner target for the local repaired worktree; exact six profiles pass check_sdk_evidence with actual complete18target lists==runs, all source/fixture/lock/graph/native/binary proofs and original package VCS metadata. B_EXPORT separately verifies the committed export/cache admission. New detailed case manifest must execute actualselected-context positive,modelmap,publicactions,customclassifier checks. Full new/modified Rust and Python test targets PASS.
-
-#### Fix B_SDK.1: Actual assembled external SDK consumer
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-017; phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C017, C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Implement E02 exact consumer-sdk.design.toml and sdk-evidence-contract.json;18targets are target checks,not18Rust cases. Reuse17 packaged public test sources and recursive test-only support/TLSfixtures,never production #[path]/include. One new narrow target provides typed custom classifier/nativeoptions/preauth,selected AuthContext through actual BuiltinOverrides zero beforepoll+realcall positive,up-before-down modelmap vectors,and runnable outside list/login/actions memoryACK/no cwdsecretwrite. Canonical newtarget under crates/opi-ai/tests is packaged and copied; template contains the manifest,not a duplicate test implementation. Only opi-ai amongOpi deps; Cargo-generated independentlock with selected exactversions,ordinary/schema-default/http-gzip/crypto-ring/ws-default/ws-c-zlib graphs. Never copy source-including internal tests as external proof; preserve deferred/replay/WS fixture owners. Validate every target source/fixture/binary/fullcasecount.
-- **Verification status**: Confirmed
-- **File(s)**: `crates/opi-ai/tests/sdk_custom_classifier.rs`, `scripts/pi-sdk-conformance/consumer-sdk/Cargo.lock`, `scripts/pi-sdk-conformance/consumer-sdk/Cargo.toml`, `scripts/pi-sdk-conformance/package_slice.py`, `scripts/pi-sdk-conformance/test_package_slice.py`
-- **Change kind**: test-only
-- **Change**: Add one actual extracted-.crate public SDK consumer family to existing package_slice.
-- **Closure predicate**: All18 fixed public targets execute their full nonempty exact case inventories in all6 named independent consumer profiles with0failed/ignored/filtered,public API only,actual package/source/lock/feature/native identities and retained originals.
-- **Red-before**: N/A: current external_sdk is a workspace test and no actual package consumer selects the assembled matrix; static missing selection is confirmed,not a reproduced SDK runtimefailure.
-- **Green-after**: Run the actual local SDK package family through the direct-owner route in the verification union, with the original package VCS metadata. Verify the complete six-profile execution evidence and the independent B_EXPORT archive admission proof. Observed:not-run.
-
-### Batch B_HTTP_PACKAGE: External parser acceptance corpus
-
-**Root change**: Add existing packaged http_acceptance target to the outside HTTP family.
-**Closure predicate**: Actual extracted-package ordinary and gzip-union consumers execute both current6checks and full parser/redirect/CONNECT boundary corpus with exactcounts,typed cause/phase/partial/send outcomes and retained executable/material proof.
-**Dependencies**: ["B_EXE_RECEIPTS", "PXY_HTTP", "B_ADC_REDIRECT"]
-**Verification union**: Run actual HTTP package family ordinary+gzip union fullcase inventories,0failed/ignored/filtered, retained originals, selectedlibrary/consumergraph/fixture/nativeproof; run package_slice guard tests and workspace http_acceptance.
-
-#### Fix B_HTTP_PACKAGE.1: External parser acceptance corpus
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: E05: copy only packaged http_acceptance.rs and recursively required test-only TLSfixtures,as a declared outside test target against public dependency. Retain current6 HTTP checks and reuse B-1/B/B+ bytewise/coalesced/trailer/extensions/CL-TE/EOF/partial/HTTPS-CONNECT corpus; no new parserfixture,internal source include or parserbehavior edit. Ordinary and reqwestgzip callerunion each execute fullcorpus.
-- **Verification status**: Partially confirmed
-- **File(s)**: `scripts/pi-sdk-conformance/consumer-http/Cargo.toml`, `scripts/pi-sdk-conformance/package_slice.py`, `scripts/pi-sdk-conformance/test_package_slice.py`
-- **Change kind**: test-only
-- **Change**: Add existing packaged http_acceptance target to the outside HTTP family.
-- **Closure predicate**: Actual extracted-package ordinary and gzip-union consumers execute both current6checks and full parser/redirect/CONNECT boundary corpus with exactcounts,typed cause/phase/partial/send outcomes and retained executable/material proof.
-- **Red-before**: N/A: existing6 bounded outsideHTTP checks omit currentparseracceptance corpus; source-selected missing externalexecution path is the test-only gap.
-- **Green-after**: Run actual HTTP package family ordinary+gzip union fullcase inventories,0failed/ignored/filtered, retained originals, selectedlibrary/consumergraph/fixture/nativeproof; run package_slice guard tests and workspace http_acceptance. Observed:not-run.
-
-### Batch B_NATIVE: Six owning-host CI verification jobs
-
-**Root change**: Install the reviewed native CI acceptance route and collect its original six-host/toolchain proof sets.
-**Closure predicate**: Reserved-branch push runs native ubuntu/macos/windows×stable/exact1.97.0; each job completes the fixed offline workspace/package/SDK/native-material union and retained original artifacts with exactsource+host+toolchain identities. No cross-build is labeled native.
-**Dependencies**: ["B_SDK", "B_HTTP_PACKAGE"]
-**Verification union**: 20 runner/proposal checks and 6 dry runs; verify the source-only checkpoint index and commit before the authorized push. Validate all six actual native jobs and downloaded original proof against that checkpoint SHA. Each job completes 41 ordered commands as reviewed, including full SDK six profiles, bounded families, workspace gates and exact locked material/source/native/unit identities. Inspect job exits, executed counts and artifact bytes.
-
-#### Fix B_NATIVE.1: Six owning-host CI verification jobs
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Install only reviewed proposal bytes bound below,adjust selected runner interfaces to completed E01/E02 without widening authority. Pure20tests+6dryruns alreadyPASS; those do not count native execution. Source deps warm/fetch exact selected graphs and independentlocks before strictlyoffline proofs. Native provenance records sourcearchives/build.rs/toolchain/CC/CMake/flags/output/fingerprint/staticarchive/link; AWS-LC and C-zlib distinct; retain originalbinaries/nativefiles/artifactrestorationmaps. After separately approvedapply and localchecks, user already authorizes checkpointcommit+push only approvedfixes/CIacceptance to OdradekAI/opi codex/phase20-remediation-ci then download six artifacts. No main/merge/tag/release/liveprovider. Failclosed if runner/sdk template missing.
-- **Verification status**: Partially confirmed
-- **File(s)**: `.github/workflows/phase20-native.yml`, `scripts/phase20-native/native_matrix.py`, `scripts/phase20-native/test_native_matrix.py`
-- **Change kind**: test-only
-- **Change**: Install the reviewed native CI acceptance route and collect its original six-host/toolchain proof sets.
-- **Closure predicate**: Reserved-branch push runs native ubuntu/macos/windows×stable/exact1.97.0; each job completes the fixed offline workspace/package/SDK/native-material union and retained original artifacts with exactsource+host+toolchain identities. No cross-build is labeled native.
-- **Red-before**: N/A: this installs test/CI verification code for current mandatory missing native evidence; all future native greens are not-run. No compiler/setup failure is a productred.
-- **Green-after**: Run the verification union, retaining the checked checkpoint index and commit receipts and binding every actual CI run and artifact to the verified checkpoint SHA. Observed:not-run.
-
-### Batch B_QUOTA: Align Chinese below-cost retry wording
-
-**Root change**: Synchronize the existing Chinese Bedrock quota sentence with the precise English source.
-**Closure predicate**: Both languages explicitly refuse every capacity below the required retry cost5or10,including zero; no retry implementation or ledger state changes.
-**Dependencies**: []
-**Verification union**: python scripts/opi-doc-check.py and git diff --check PASS; inspect exactpairedclause; preserveEnglishruntimepolicy and ledgerbytes. Record futureowning-source handoff without falsely declaring Phaseexit.
-
-#### Fix B_QUOTA.1: Align Chinese below-cost retry wording
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-021
-- **Assigned portion**: C021: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: Edit only the Chinese clause at current line334 to include capacity below requiredcost,matchingEnglish. This is precision-only,not new productmeaning. Registered-source bytes will change: remediation does not update canonicalsourcepins or frozen snapshot; future owning opi-implement drift admission remains required then. No current P0/P2/P4 obligation is fabricated before that edit.
-- **Verification status**: Confirmed
-- **File(s)**: `docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md`
-- **Change kind**: documentation
-- **Change**: Synchronize the existing Chinese Bedrock quota sentence with the precise English source.
-- **Closure predicate**: Both languages explicitly refuse every capacity below the required retry cost5or10,including zero; no retry implementation or ledger state changes.
-- **Red-before**: N/A: current English rejects capacity below requiredcost but Chinese names only zero; static paired-wording mismatch,not runtime defect.
-- **Green-after**: python scripts/opi-doc-check.py and git diff --check PASS; inspect exactpairedclause; preserveEnglishruntimepolicy and ledgerbytes. Record futureowning-source handoff without falsely declaring Phaseexit. Observed:not-run.
-
-### Batch B_FINAL_DOCS: Factual bilingual delivery handoff
-
-**Root change**: Update only current delivery manuals with actual final proof and complete test dispositions.
-**Closure predicate**: Paired SDK/product/delivery documents describe resulting current contracts and bind actual package/native/MSRV/case/material receipts with limits; no inventory,guardmock,historicalsnapshot or remediation result claims PhasePASS.
-**Dependencies**: ["B_NATIVE", "B_QUOTA"]
-**Verification union**: Docchecker, diffcheck, README source-embed check and final affected gates PASS. If packaged README bytes or other build inputs change, bind the previous checkpoint, prove the next source-only checkpoint and publish it on the same authorized branch. Rerun the six native/package sets against its exact SHA and collect the original receipts externally without editing the manuals again. Manuals link stable external proof paths and immutable runtime inputs.
-
-#### Fix B_FINAL_DOCS.1: Factual bilingual delivery handoff
-
-- **Finding source(s)**: phase20-codex-gpt61-b3f1810-20261103t142820z / 4cec97af8ef6bb773c630ee251728f31212e12fdc1bf9631f10b2dc3084bc0f6 / P20-AUD-018; phase20-pi-glm53-44374ec-20261103t160703z / f8c06b50b3c51c95ac5b1309e72a8b31d06c34785ad588ed4e42bff19d914990 / P20-AUD-007
-- **Assigned portion**: C018, P007: only this root's named portion; compound source closure requires all assigned predicates and the exact criterion join.
-- **Decision**: E12: use actual proof manifests/commands/counts and exact immutable buildsourceheads; separate boundedreuse/newnative/fullSDK predicates and honest currentignoredprivilegedfixture. Record add/update/delete/retain for everytestchange. Preserve original rawproofs and accepted AUTH006 exception. ResearchREADME/upstreamtracking have no.zh counterpart; update canonicalsinglefiles only. Read completeUnreleased before consistent additions,never releasedsections. No registered acceptance/spec/ledger writes here; precision-only B_QUOTA handled separately. F1a stays independentfuturePhaseexit,not circularprecondition andnot declaredrun. Final package-doc input changes trigger affectedfresh package/native verification below.
-- **Verification status**: Partially confirmed
-- **File(s)**: `CHANGELOG.md`, `crates/opi-ai/README.md`, `crates/opi-ai/README.zh.md`, `crates/opi-coding-agent/README.md`, `crates/opi-coding-agent/README.zh.md`, `docs/research/pi-ai-opi-ai-alignment/README.md`, `docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.md`, `docs/research/pi-ai-opi-ai-alignment/phase20-delivery-evidence.zh.md`, `docs/research/pi-ai-opi-ai-alignment/upstream-tracking.md`
-- **Change kind**: documentation
-- **Change**: Update only current delivery manuals with actual final proof and complete test dispositions.
-- **Closure predicate**: Paired SDK/product/delivery documents describe resulting current contracts and bind actual package/native/MSRV/case/material receipts with limits; no inventory,guardmock,historicalsnapshot or remediation result claims PhasePASS.
-- **Red-before**: N/A: factual documentation/handoff repair follows actual proof; no behavioral productionedit in this batch.
-- **Green-after**: Run the verification union and bind any required rerun to the verified documentation checkpoint. Validate final applicability before writing the fixed result. Observed:not-run.
+- **Change**: Add the six stable/MSRV host rows and native source/material receipt collection to the reserved checkpoint CI route.
+- **Closure predicate**: Linux, macOS and Windows each run stable and exact 1.97.0 from the verified checkpoint, with locked dependency preparation, offline checks and native source/material receipts.
+- **Red-before**: Current source lacks the executable six-row remediation route for the assembled SDK package and native/material closure.
+- **Green-after**: After explicit approved apply and local checks, publish only the exact verified checkpoint to the reserved codex/phase20-remediation-ci branch, bind each host/toolchain checkout, and retain all original proof before closure. Observed: not-run.
 
 ## Final Verification
 
-Execute each step -> verify its exact predicate and preserve receipts before dependent work. Use main persistent Cargo cache owner, quickselectedtargetcheck and coordinatedwriterlease; inspect actualcompilerselectedsource/unit,freshness andretainpriorbinaries beforeoverwrites. Never cargo clean, cachedelete,per-sessiontarget or markerownershiprewrite. Before shipping fixedCIcode, complete local checks and keep tasksources distinct from carried-inpaths.
-
-1. Every created/modified Rust test binary/filter and Python test file -> verify actually executes,record exactcase inventories and add/update/delete/retain. Run the same22public baseline scenarios with selectedAPImigrationadapters where needed, preserve red+green sourcehashes and assertions. Fullaffectedtargets supersede subsetonlyproof.
-2. Deduplicated workspace gates after all runtime/caller changes -> verify `cargo fmt --check --all`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --all-targets`, `cargo test --workspace --doc`, `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS=-D warnings`, plus `python scripts/opi-doc-check.py`, `git diff --check`. No paid/livecredential tests. The known ignoredprivilegedcase is reported separately,not countedacceptance.
-3. Actual extracted-package README3,Schema73(defaultsoff/callerdefault),HTTP6+fullparser(ordinary/gzip),crypto6(ordinary/ring),WS10+separateprivatecorpus(ordinary/default/Czlib),SDK18targets×6profiles -> verify exactcasecounts,artifact/extractedsources,independentconsumerlock/graph,cfg/feature/sourcechecksum,library+consumerunit/executable and retained originals. No workspace external_sdk or sourceinclude substitutes.
-4. Finite A/L criterion selectors and E08/09/10/11 materials -> verify each exact original predicate,source-bound assertion,input graph and observedcount; authenticationmanagement/refresh/ACK/unknown/barriers,customAPI/context/telemetry/image/classifier/deferred,callback/order/usage/partial/error/cancel and realprofile/transport/parser/schema controls retain their own assertions. AWSLC source/nativearchive/output/link andCzlib distinct. Existingcatalogmaterialcheck reproduces42provider artifactmanifest; actualpackage loader+tampers run separately.
-5. Verified CI checkpoints -> verify actual Linux/macOS/Windows × stable/1.97.0 complete offline package/SDK/native/workspace union, exact checkpoint/host/toolchain/source/artifact identities and original downloaded bytes. Repeat against a later verified source-only checkpoint only if B_FINAL_DOCS changes packaged documentation or other build inputs.
-6. Source closure -> verify all assigned `closure_batches` and their conjunctions, the 165-row criterion join, final input applicability, and the unchanged live audit index. Bind the final tested input to the latest checkpoint and verify the full cumulative source delta with the validated result. No Phase conformance, ledger update or F1a execution is inferred.
-
-All plan-stage green_after.observed values remain `not-run`. Changes to code/dependency/authority beyond named causal roots, changed index/plan inputs, unavailable requiredrunner or failedpredicates stop closure honestly. Future known greens are assignedchecks,not waived obligations.
+After all decisions are resolved, join each of the 165 linked source records to its actual required criterion evidence and affected test cases. Each caller-visible batch needs the isolated rehearsal and exact path reconciliation before a ready seal. After explicit apply, prove the approved source state with the execution protocol, including the actual package/native provenance and workspace union required by the admitted plan.
 
 ## Exclusions
 
-| Source / Finding | Disposition | Refuted claim / retained observation | Remaining obligation |
-|---|---|---|---|
-| C001 / P20-AUD-001 | Refuted | BuiltinResolver::select overlays credential.env through scoped_context before candidate-key lookup (auth/builtin.rs:209–221); empty scoped entries return Some(empty) and mask ambient before filtering (69–73). The original wrong-account proposition fails; candidate order and explicit-key precedence remain source-owned. Fresh current-source exact-binary proof: opi-ai/builtin_auth_ownership 9 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C002 / P20-AUD-002 | Refuted | HttpClientBuilder creates the shared HTTP and websocket clients with referer(false) (http.rs:382–402); ReqwestAdcTransport constructs both selected clients with that builder (auth/adc/native.rs:350–379). The original automatic-Referer proposition fails. Existing explicit caller headers remain caller-owned. Fresh current-source exact-binary proof: opi-ai/adc_owner_regressions 22 passed; opi-ai/http_acceptance 21 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C003 / P20-AUD-003 | Refuted | Image HTTP failures now derive display message from ProviderErrorSummary::from_http_response instead of the response body (api/openrouter_images.rs:319–334). Cloudflare envelope messages use from_untrusted and run states use redacted() (api/cloudflare.rs:188–215). Public result fields still exist, but the original raw-provider-text path is absent. Fresh current-source exact-binary proof: opi-ai/openrouter_fixtures 55 passed; opi-ai/classifier_contract 84 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C004 / P20-AUD-004 | Refuted | provider_auth_failure recursively unwraps StreamFailure before matching all three credential variants (harness.rs:111–125). Prepared failures may retain StreamFailure and projection facts; that surviving wrapper is no longer evidence of a missed remediation classifier. Fresh current-source exact-binary proof: opi-coding-agent/opi_coding_agent 234 passed, 1 default ignored/not executed; opi-agent/continuation_contract 15 passed; opi-coding-agent/json_mode 36 passed; opi-coding-agent/session_runtime 64 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C005 / P20-AUD-005 | Refuted | ChatStream compares Done.reason with message.stop_reason before accepting a success terminal; disagreement produces one typed CallFailure with the message, then releases the inner stream (stream.rs:853–873). The claimed Ok(Error) path fails that guard. Fresh current-source exact-binary proof: opi-ai/stream_events 29 passed; opi-ai/external_sdk 11 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C006 / P20-AUD-006 | Refuted | AcquisitionCore::note_failure rejects a hint greater than a nonzero max_retry_delay_ms before admission (retry.rs:601–609); only admitted hints reach retry_delay_ms. The helper still has a defensive min, which is unreachable for an over-cap admitted hint. Explicit zero continues to disable the hint bound. Fresh current-source exact-binary proof: opi-ai/provider_collection 111 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C007 / P20-AUD-007 | Refuted | classify_whole_call_retry invokes is_context_overflow before the transient pattern (retry.rs:1026–1031). A token-count string containing 500 cannot override a recognized overflow. Fresh current-source exact-binary proof: opi-ai/whole_call_retry 21 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C008 / P20-AUD-008 | Refuted | The shared compiler now computes numeric Claude combined=min(base+budget,model cap), clamps to context available and then clamps budget to final ceiling minus1024 (models.rs:4000–4016). The original omission of the addition is absent for Anthropic and numeric Claude Bedrock routes. Fresh current-source exact-binary proof: opi-ai/anthropic_fixtures 153 passed; opi-ai/context_budget 14 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C009 / P20-AUD-009 | Refuted | AnthropicMessagesCompat now has typed empty-signature/tool-cache/long-cache/mid-conversation-effort/affinity/fallback fields and source defaults (model_info.rs:349–412). catalog/wire.rs decodes and stores these fields (182–219,623–659,983–1018), and anthropic.rs consumes them in replay/cache/effort/beta/headers/fallback/cost paths. The six-flag/no-production-caller proposition fails. Unknown fields still do not confer active behavior. Fresh current-source exact-binary proof: opi-ai/anthropic_fixtures 153 passed; opi-ai/model_wire_metadata 24 passed; opi-ai/catalog_operations 27 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C011 / P20-AUD-011 | Refuted | ClassifierDeclarations<T> is a minimal Vec collection with numeric canonical-index prefix and ordinary-key insertion tail, stable replacement and remove/reinsert semantics (classifier.rs:43–94); questions and choice criteria use it. The BTreeMap source-order-loss premise is absent. Fresh current-source exact-binary proof: opi-ai/classifier_contract 84 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C012 / P20-AUD-012 | Refuted | Models::new and from_registry initialize separate InMemoryCredentialStore values (models.rs:632,685). The old None-store predicate no longer holds. Explicit injected stores retain their authority. Fresh current-source exact-binary proof: opi-ai/external_sdk 11 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C013 / P20-AUD-013 | Refuted | openrouter_images.rs:174–178 derives [image,text] whenever Text is present and [image] otherwise. It does not copy output ordering, duplicates or omission. The accepted custom Text-only counterexample now follows the source rule. Fresh current-source exact-binary proof: opi-ai/openrouter_fixtures 55 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C014 / P20-AUD-014 | Refuted | The adapter parses the fully acquired response into result before notifying onResponse, then changes only stop_reason/error fields on observer error or cancellation (openrouter_images.rs:383–411). Output/responseId/usage/cost and unknownness survive; acquisition cannot restart after this handoff. Fresh current-source exact-binary proof: opi-ai/openrouter_fixtures 55 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C015 / P20-AUD-015 | Refuted | The null coercion number branch additionally accepts n.as_f64()==Some(0.0) (schema/normalize.rs:610–612), so Float zero reaches Null. Nonzero values still require final validation. Fresh current-source exact-binary proof: opi-ai/schema_public 28 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| C016 / P20-AUD-016 | Refuted | Mistral/OpenRouter compat fixtures now distinguish capability false/true and per-tool None/Prefer/Require, and Chat enrichment expects explicit affinity to survive Disabled retention (request_enrichment.rs:435–438). The source suite no longer contains the cited stale expectations. Fresh current-source exact-binary proof: opi-ai/mistral_fixtures 54 passed; opi-ai/openrouter_fixtures 55 passed; opi-ai/request_enrichment 45 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| P001 / P20-AUD-001 | Refuted | redirect_response now advertises connection: close while the scripted server closes each leg (http_acceptance.rs:382–385). This removes the cited keep-alive pool mismatch; twenty-hop acceptance and twenty-one-hop refusal still require actual execution. Fresh current-source exact-binary proof: opi-ai/http_acceptance 21 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| P002 / P20-AUD-002 | Refuted | Current fixture loops exercise strict capability and per-tool preference rather than forcing true on an unannotated tool. Independent pinned Pi raw openai-completions.ts:1507–1515 uses strict??false and current shared adapter defaults false. Fresh current-source exact-binary proof: opi-ai/mistral_fixtures 54 passed; opi-ai/openrouter_fixtures 55 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| P003 / P20-AUD-003 | Refuted | The current Chat fixture explicitly expects session-disabled affinity headers (request_enrichment.rs:435–438). Independent raw Pi openai-completions.ts:778–788 makes Chat affinity depend on nonempty session and configured send flag; cache key alone is retention-gated (347–348). This conclusion does not change the distinct user-selected Responses policy. Fresh current-source exact-binary proof: opi-ai/request_enrichment 45 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| P004 / P20-AUD-004 | Refuted | The prepared error wrapper persists to retain projection facts, while harness.rs:111–125 traverses it before matching credential variants. That is direct counter-evidence to the original consumer-classification failure. Agent acceptance must likewise inspect the typed cause rather than demand wrapper removal. Fresh current-source exact-binary proof: opi-coding-agent/opi_coding_agent 234 passed, 1 default ignored/not executed; opi-agent/continuation_contract 15 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| P005 / P20-AUD-005 | Refuted | function_tool_value now defaults resolved strict intent to false and clones original schema when false (mistral.rs:446–474); the comment states the same. Independently read Pi mistral-conversations.ts:777–787 also uses strict??false. Fresh current-source exact-binary proof: opi-ai/mistral_fixtures 54 passed. All linked raw logs/binaries and build compiler-artifact source bindings were independently hashed; exact execution checker re-runs matched. Applicability at dcd01d9 is separately verified against exact source/runner/resource inputs; reused execution head remains2078. This refutes only the stated bounded claim and does not rewrite linked original audit states. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-| P006 / P20-AUD-006 | Refuted | Current owning opi-implement plan canonical projection: all16 normalized root registered-source hashes match; initializer Reinit step1 refuses NO DRIFT. ledger-schema explicitly says frozen Phase snapshots are historical and NOT re-synced. The original both-ledgers reconciliation premise is refuted; old snapshot hash remains history. No ledger/hash/graph edit or new P0/P2/P4 confirmation is indicated. Owner admission and projection receipts below exclude historical task/exit conclusions. | none for bounded claim; originalstates remain unchanged,fullcompoundproof assigned separately |
-
-Test impact: **add** source-qualified proxy/ADCredirect,budget,reclamation,cache,expiry and narrow outsideconsumer controls; **update** exactAPIcaller/durablefixture/schemawrongexpectation/runnerguard/bilingualcontracts; **retain** all existing source-correct replay/deferred/WS/security/native/property fixtures and authorizedfixturecleanup; **delete** none. Newfixedworkflowartifact has noChinese counterpart; product/deliverymanualpairs are updatedtogether.
+The 22 `Refuted` records above retain the original severities and their bounded counter-evidence. P006 excludes a snapshot hash rewrite under the owner contract. C021 records the independently corrected registered-source wording and the remaining live-pin reconciliation. This draft records planning evidence and the known repair paths. Apply verification and the Phase exit verdict require their owning workflows.
