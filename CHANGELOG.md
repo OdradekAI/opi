@@ -606,6 +606,10 @@
 
 ### Fixed
 
+- tooling: documentation checks retain structural and source-derived validation
+  without locking prose wording or retired phase names. CLI safety and workflow
+  guards move to their owning Rust tests; CI now runs the checker's regression suite.
+
 - `opi-ai`: custom Radius gateways start with an empty model catalog; only an
   omitted gateway or the exact built-in `BASE_URL` selects the bundled baseline.
   Caller-supplied models remain usable, and acknowledged empty stored catalogs

@@ -23,6 +23,29 @@ fn read_repo_file(relative: &str) -> String {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
 }
 
+/// Limited source tripwires, not proof of interactive behavior or the complete
+/// startup call graph. A change to these guards needs direct behavior coverage
+/// before retiring the corresponding source constraint.
+#[test]
+fn standard_cli_keeps_explicit_trust_and_safe_operations_boundaries() {
+    let operations = read_repo_file("crates/opi-coding-agent/src/tool/operations.rs");
+    assert!(
+        operations.contains("#![forbid(unsafe_code)]"),
+        "tool operations must retain their safe-Rust boundary"
+    );
+    let interactive = read_repo_file("crates/opi-coding-agent/src/interactive.rs");
+    assert!(
+        !interactive.contains("\"/trust\""),
+        "the standard CLI must not add a built-in trust mutation command"
+    );
+    let main = read_repo_file("crates/opi-coding-agent/src/main.rs");
+    assert!(main.contains("ProjectTrustResolverRegistry::new()"));
+    assert!(
+        !main.contains("registry.register("),
+        "the standard CLI must not register a native trust resolver"
+    );
+}
+
 /// The normal-edge resolve graph of `opi-coding-agent` links NEITHER the
 /// standalone `opi-sandbox` crate NOR the native-policy crates `landlock` and
 /// `seccompiler`. This is the mechanical proof that the Opi binary owns no

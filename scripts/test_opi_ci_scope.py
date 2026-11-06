@@ -127,20 +127,22 @@ class ScopeTests(unittest.TestCase):
                                       cwd=root, env=env, capture_output=True, text=True, timeout=10)
 
             git("init")
-            (root / "README.md").write_text("fixture\n")
+            # Keep whitespace fixtures identical on Windows and POSIX; CRLF
+            # would itself fail git diff --check with core.autocrlf=false.
+            (root / "README.md").write_text("fixture\n", newline="\n")
             initial = commit()
-            (root / "README.md").write_text("updated\n")
+            (root / "README.md").write_text("updated\n", newline="\n")
             docs = commit()
             result = scope(initial, docs)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout), dict(rust=False, windows=False, macos=False))
-            (root / "windows.rs").write_text("// fixture\n")
+            (root / "windows.rs").write_text("// fixture\n", newline="\n")
             product = commit()
             for base in (docs, "0" * 40):
                 result = scope(base, product)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual(json.loads(result.stdout), dict(rust=True, windows=True, macos=False))
-            (root / "README.md").write_text("invalid  \n")
+            (root / "README.md").write_text("invalid  \n", newline="\n")
             invalid = commit()
             result = scope(product, invalid)
             self.assertEqual(result.returncode, 2)

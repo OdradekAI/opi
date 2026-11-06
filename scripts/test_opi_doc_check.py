@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import subprocess
 import sys
 import tempfile
@@ -14,531 +16,6 @@ SPEC = importlib.util.spec_from_file_location("opi_doc_check", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 doc_check = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(doc_check)
-
-
-MINIMUM_CHANGE_TRACE_REQUIRED = {
-    ".claude/skills/opi-implement/SKILL.md": (
-        "**Minimum-change trace rule:**",
-        "`reuse_search`",
-        "`surface_necessity`",
-        "`simplification_ceiling`",
-        "`legacy-unrecorded`",
-        "`production_consumers`",
-        "`nonproduction_consumers`",
-        "`net_deletion`",
-        "`residual_glue`",
-        "simplification_trigger=",
-        "validate-plan.py",
-    ),
-    ".claude/skills/opi-implement/references/initializer.md": (
-        "#### Minimum-change trace",
-        '`field = "reuse_search"`',
-        '`field = "placement"`',
-        '`field = "surface_necessity"`',
-        '`field = "simplification_ceiling"`',
-        "`revisit_when`",
-        "transitive `depends_on` closure",
-        "REFUSE `confirm-all`",
-        "`production_consumers=`",
-        "`nonproduction_consumers=`",
-        "`net_deletion=`",
-        "`residual_glue=`",
-        "simplification_trigger=",
-        "validate-plan.py",
-    ),
-    ".claude/skills/opi-implement/references/ledger-schema.md": (
-        '`field = "reuse_search"`',
-        "`searched=`",
-        "`reused=`",
-        "`gap=`",
-        '`field = "placement"`',
-        "`cannot_fit_fully=`",
-        '`field = "surface_necessity"`',
-        "`public_api=`",
-        "`config=`",
-        "`state=`",
-        "`dependency_edge=`",
-        '`field = "simplification_ceiling"`',
-        "`ceiling=`",
-        "`revisit_when=`",
-        "`production_consumers=`",
-        "`nonproduction_consumers=`",
-        "`net_deletion=`",
-        "`residual_glue=`",
-        "simplification_trigger=",
-        "validate-plan.py",
-    ),
-    ".claude/skills/opi-implement/references/verify-engine.md": (
-        "### Minimum-change trace overlay",
-        "`reuse_search`",
-        "`placement`",
-        "`surface_necessity`",
-        "`simplification_ceiling`",
-        "`revisit_when`",
-        "`GRAPH_REVISION_REQUIRED`",
-        "`RESEARCH_REQUIRED`",
-        "`DESIGN_DECISION_REQUIRED`",
-        "`production_consumers`",
-        "`nonproduction_consumers`",
-        "`net_deletion`",
-        "`residual_glue`",
-        "`simplification_trigger`",
-        "validate-plan.py",
-    ),
-    ".claude/skills/opi-implement/scripts/plan.workflow.js": (
-        '"reuse_search"',
-        '"placement"',
-        '"surface_necessity"',
-        '"simplification_ceiling"',
-        "revisit_when",
-        "transitive depends_on closure",
-        "require production_consumers",
-        "nonproduction_consumers",
-        "net_deletion",
-        "residual_glue",
-        "simplification_trigger",
-        "max_parallel_agents",
-    ),
-}
-
-
-ASSURANCE_WORKFLOW_REQUIRED = {
-    ".claude/skills/opi-audit/SKILL.md": (
-        "`audit-set-contract.md` owns the index",
-        "latest committed",
-        "references/audit-proof-obligations.md",
-        "validate_assurance_artifact.py rotation",
-        "validate_assurance_artifact.py audit-set",
-        "audit.<reviewer-id>.<model-id>",
-        "audit_head",
-        "`audit_run_id`",
-        "reviewer_model_id",
-        "model_identity_source",
-        "audit.index.json",
-        "assurance_set.py",
-        "member directory",
-        "merge-base --is-ancestor",
-        "git archive",
-        "Do not use a Git worktree",
-        "AUDIT-INCOMPLETE",
-        "Every sealed requirement has current evidence or an explicit limitation",
-        "Every durable or public seam is traced",
-        "Every Blocker or Major finding includes current refutation evidence",
-        "Exposure before installation invalidates",
-        "Only after `complete` succeeds",
-        "append-history",
-        "HISTORY-SUPPLEMENT-INCOMPLETE",
-        "evidence_root=<redacted-raw-directory>",
-        "Before implementation inspection",
-        "references/test-execution-check.md",
-    ),
-    ".claude/skills/opi-audit/references/audit-proof-obligations.md": (
-        "anti-vacuity",
-        "Blocker/Major refutation",
-        "Minimum-change conformance",
-        "`reuse_search`",
-        "`surface_necessity`",
-        "`simplification_ceiling`",
-        "`production_consumers`",
-        "`nonproduction_consumers`",
-        "`net_deletion`",
-        "`residual_glue`",
-        "Raw-proof preflight",
-        "Validation/consumer interpretation",
-        "Limits before work",
-        "Bounded isolated probes",
-        "actual passed/failed/ignored/filtered counts",
-        "test-execution-check.md",
-    ),
-    ".claude/skills/opi-audit/references/test-execution-check.md": (
-        "check_test_execution.py",
-        "--ignored-list-output",
-        "--expected-count",
-        "--selection",
-        "original process exits",
-        "not authenticate logs",
-    ),
-    ".claude/skills/opi-audit/references/finding-template.md": (
-        "audit.<reviewer-id>.<model-id>.meta.json",
-        "audit.<reviewer-id>.<model-id>.requirements.jsonl",
-        "audit.<reviewer-id>.<model-id>.findings.jsonl",
-        "audit.<reviewer-id>.<model-id>.md",
-        "**Audit run ID**",
-        "**Audit head**",
-        "**Reviewer ID**",
-        "**Model ID**",
-        "**Reviewer model ID**",
-        "**Model identity source**",
-        "## Minimum-change Conformance",
-        "AUDIT-INCOMPLETE",
-        "Post-audit historical reference — advisory",
-        "HISTORY-SUPPLEMENT-INCOMPLETE",
-    ),
-    ".claude/skills/opi-audit/evals/evals.json": (
-        '"skill_name": "opi-audit"',
-        "latest-committed-spec",
-        "not-assessable",
-        "AUDIT-INCOMPLETE",
-        "audit.codex.gpt56",
-        "history/<audit-run-id>",
-        "check_test_execution.py",
-        "evidence_root=<redacted-raw-directory>",
-        "limits before work",
-        "zero executed tests",
-    ),
-    ".claude/skills/opi-remediate/SKILL.md": (
-        "mode=plan phase=<N>",
-        "mode=apply phase=<N> plan_sha256=<64 lowercase hex>",
-        "Validate the complete indexed active audit set",
-        "audit.index.json",
-        "strict union",
-        "index SHA-256",
-        "audit_run_id",
-        "findings_sha256",
-        "`plan_sha256`",
-        "DRAFT-UNRESOLVED",
-        "READY-FOR-APPLY",
-        "closure batch",
-        "red-before",
-        "git archive",
-        "do not use a Git worktree",
-        "remediation.plan.dispositions.jsonl",
-        "remediation.result.dispositions.jsonl",
-        "Plan-only references",
-        "references/cross-reference-matrix.md",
-        "references/remediation-plan-template.md",
-        "../_shared/references/change-scope-and-check-selection.md",
-        "Apply-only reference",
-        "references/execution-protocol.md",
-        "validate_assurance_artifact.py plan",
-    ),
-    ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
-        "Current-set verification",
-        "strict union",
-        "(path, sha256, citation)",
-        "highest source severity",
-        "one falsifiable closure predicate",
-        "Coverage",
-        "do not load history to",
-        "Advisory history and raw proofs",
-        "at `remediation_head`",
-        "without `lineage`, `prior_occurrences` or `prior_disposition`",
-    ),
-    ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
-        "remediation.plan.md",
-        "**Audit index SHA-256**",
-        "**Remediation head**",
-        "## Unresolved Decisions",
-        "**Closure predicate**:",
-        "**Red-before**:",
-        "**Green-after**:",
-    ),
-    ".claude/skills/opi-remediate/references/execution-protocol.md": (
-        "plan_sha256",
-        "validate_assurance_artifact.py apply",
-        "--plan-sha256",
-        "plan-only commit rule",
-        "Bounded verification-blocking incidental repair",
-        "changes no public API",
-        "remediation.result.md",
-        "**Audit index SHA-256**",
-        "**Changed paths**",
-        "Materialization handoff",
-    ),
-    ".claude/skills/opi-remediate/evals/evals.json": (
-        '"skill_name": "opi-remediate"',
-        "two distinct (audit_run_id, id) source keys",
-        "Audit index SHA-256",
-        "narrative-only",
-        "incidental-repair",
-        "uncommitted",
-    ),
-    ".claude/skills/_shared/references/audit-set-contract.md": (
-        "audit.index.json",
-        "audit.<reviewer-id>.<model-id>",
-        "audit_head",
-        '"reviewer_id"',
-        '"model_id"',
-        "model_identity_source",
-        "assurance_set.py",
-        "AUDIT-INCOMPLETE",
-        "history/<audit-run-id>",
-        "committed ancestor",
-        "merge-base --is-ancestor",
-        "migrate",
-        "rotation",
-        "audit-set",
-        "latest-committed-spec",
-        "Historical exposure before installation invalidates",
-        "Post-audit historical reference",
-        "opi-audit-history/1",
-        "append-history",
-        "--expected-index-sha256",
-        "An identical installed comparison is a no-op",
-        "no-history",
-        "HISTORY-SUPPLEMENT-INCOMPLETE",
-        "independently verify bytes/digests",
-    ),
-    ".claude/skills/_shared/references/finding-contract.md": (
-        "(audit_run_id, id)",
-        "audit.<reviewer-id>.<model-id>.findings.jsonl",
-        "source_model` equals `reviewer_model_id",
-        "conformance_effect",
-        "requirement_ids",
-    ),
-    ".claude/skills/_shared/references/remediation-disposition-contract.md": (
-        "strict union",
-        "Audit index SHA-256",
-        "findings_sha256",
-        "plan_sha256",
-        "bounded incidental repair",
-        "Changed paths",
-        "materialized",
-        "`within_causal_surface` are `true`",
-        "protected `changes_*` fields",
-        "committed source evidence baseline",
-        "committed ancestor",
-        "Every intervening commit",
-        "merge-parent diff",
-        "plan-only commits",
-        "validate_assurance_artifact.py apply",
-    ),
-    ".claude/skills/opi-audit/agents/openai.yaml": (
-        "$opi-audit phase=<N>",
-        "reviewer=<reviewer-id>",
-        "model=<model-id>",
-        "do not select a model",
-    ),
-    ".claude/skills/opi-remediate/agents/openai.yaml": (
-        "$opi-remediate mode=plan phase=<N>",
-        "audit.index.json",
-        "strict union",
-    ),
-}
-
-ASSURANCE_WORKFLOW_FORBIDDEN_REQUIRED = {
-    ".claude/skills/opi-audit/SKILL.md": (
-        "audit.<model>.<head7>",
-        "`audit.meta.json`",
-        "`audit.findings.jsonl`",
-        "majority vote",
-        "audit_generation_id",
-        "--generation-id",
-        "--expected-index",
-        "publish",
-        "compare-and-swap",
-    ),
-    ".claude/skills/opi-audit/references/finding-template.md": (
-        "audit.<model>.<head7>",
-        "`audit.meta.json`",
-        "`audit.findings.jsonl`",
-        "**Audit generation ID**",
-        "publish",
-    ),
-    ".claude/skills/_shared/references/audit-set-contract.md": (
-        "`audit.meta.json`",
-        "`audit.requirements.jsonl`",
-        "`audit.findings.jsonl`",
-        "`audit.md`",
-        "majority vote",
-        "audit_generation_id",
-        "history/<audit-generation-id>",
-        "--generation-id",
-        "--expected-index",
-        "publication requires every member complete",
-    ),
-    ".claude/skills/_shared/references/finding-contract.md": (
-        "fixed Phase `audit.md`",
-        "/assurance/audit.findings.jsonl",
-    ),
-    ".claude/skills/_shared/references/remediation-disposition-contract.md": (
-        "`Audit run ID`",
-        "`Findings SHA-256`",
-    ),
-    ".claude/skills/opi-remediate/SKILL.md": (
-        "sources=<path",
-        "compare_finding_lineage.py",
-        "remediation.<head7>",
-        "consume only `audit.meta.json`",
-        "**Audit run ID**",
-        "**Findings SHA-256**",
-        "majority vote",
-    ),
-    ".claude/skills/opi-remediate/references/cross-reference-matrix.md": (
-        "recurrent-same-defect",
-        "carried-forward-deferred",
-    ),
-    ".claude/skills/opi-remediate/references/remediation-plan-template.md": (
-        "**Audit run ID**",
-        "**Findings SHA-256**",
-        "**Audit generation ID**",
-    ),
-    ".claude/skills/opi-remediate/references/execution-protocol.md": (
-        "**Audit run ID**",
-        "**Findings SHA-256**",
-        "**Audit generation ID**",
-        "current committed HEAD equals the full",
-    ),
-    ".claude/skills/opi-audit/agents/openai.yaml": (
-        "immutable normalized findings",
-    ),
-    ".claude/skills/opi-remediate/agents/openai.yaml": (
-        "sources=<",
-        "immutable findings",
-        "remediation.<head7>",
-        "round=",
-    ),
-}
-
-REMEDIATION_PLAN_ONLY_REFERENCES = (
-    "../_shared/references/change-scope-and-check-selection.md",
-    "references/cross-reference-matrix.md",
-    "references/remediation-plan-template.md",
-)
-
-REMEDIATION_APPLY_ONLY_REFERENCES = (
-    "references/execution-protocol.md",
-)
-
-
-EVAL_BEHAVIOR_BASELINE_REQUIRED = {
-    ".claude/skills/opi-eval/SKILL.md": (
-        "sole deterministic acceptance baseline",
-        "`provider-fidelity`",
-        "`runtime-fidelity`",
-        "`case_id@revision + provider:model + OS/arch + run_mode + effective_tools`",
-        "`incomparable`",
-        "`record-only`",
-        "`evaluator_model`",
-        "`independence`",
-        "Do not create a behavior-baseline manifest",
-    ),
-    ".claude/skills/opi-eval/references/test-cases.md": (
-        "`provider-fidelity`",
-        "`runtime-fidelity`",
-        "`candy@1`",
-        "`tool_chain@1`",
-        "`context_retention@1`",
-        "`criterion/scenario reference`",
-        "`fidelity justification`",
-    ),
-    ".claude/skills/opi-eval/references/evaluator-prompt.md": (
-        "fidelity signal, not deterministic acceptance evidence",
-        "same comparison identity",
-        "`incomparable`",
-        "`record-only`",
-        "do not calculate a delta",
-        "must not affect the overall verdict",
-    ),
-    ".claude/skills/opi-eval/references/report-template.md": (
-        "**Case class**",
-        "**Case revision**",
-        "**Criterion/scenario**",
-        "**Comparison identity**",
-        "**Comparison status**",
-        "`record-only`",
-    ),
-    "docs/eval/README.md": (
-        "not deterministic acceptance evidence",
-        "`case_id`",
-        "`case_class`",
-        "`case_revision`",
-        "`criterion_source`",
-        "`comparison_identity`",
-        "`comparison_status`",
-        "`evaluator_model`",
-        "`independence`",
-    ),
-}
-
-
-OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED = {
-    ".claude/skills/opi-document/SKILL.md": (
-        "scope=<full | targeted | version-bump>   # default: full",
-        "# Scope semantics",
-        "references/readme-audit.md",
-        "references/prose-contract.md",
-        "human-facing prose",
-        "complete proposition",
-        "semantic judgment",
-        "targeted scope",
-    ),
-    ".claude/skills/opi-document/references/readme-audit.md": (
-        "# Full README audit",
-        "`git ls-files`",
-        "## Evidence routing",
-        "## Coverage matrix",
-        "Every included README",
-    ),
-    ".claude/skills/opi-document/references/prose-contract.md": (
-        "# Prose contract",
-        "## Scope and exclusions",
-        "## Preserve the complete proposition",
-        "## Owner-first editing",
-        "`keep`",
-        "`add`",
-        "`trim`",
-        "`restore`",
-        "`restructure`",
-        "`defer`",
-        "`docs/snapshots/`",
-        "Mechanical checks do not prove semantic quality",
-        "model-visible",
-    ),
-    ".claude/skills/opi-document/references/documentation-checks.md": (
-        "Semantic prose quality",
-        "`references/prose-contract.md`",
-        "semantic judgment",
-    ),
-    ".claude/skills/README.md": (
-        "every maintained current-product README",
-    ),
-    ".claude/skills/README.zh.md": (
-        "审计每份受维护的当前产品 README",
-    ),
-}
-
-
-CHANGE_SCOPE_CHECK_SELECTION_REQUIRED = {
-    ".claude/skills/_shared/references/change-scope-and-check-selection.md": (
-        "# Change scope and check selection",
-        "`verified_base=<explicit live base ref>`",
-        "`head=<ref>`",
-        "`git merge-base <verified-base> <head>`",
-        "`git diff --name-status --find-renames <merge-base>..<head>`",
-        "`git diff --cached --name-status`",
-        "`git diff --name-status`",
-        "`git ls-files --others --exclude-standard`",
-        "record `committed`, `staged`, `unstaged`, and `untracked` separately",
-        "`check-selection-only`",
-        "does not bound audit coverage",
-        "does not define task ownership",
-        "does not define release manifest",
-        "Do not rerun unchanged evidence",
-        "worktree-only",
-        "Workflow, checker, or script behavior",
-    ),
-    "AGENTS.md": (
-        ".agents/skills/_shared/references/change-scope-and-check-selection.md",
-        "ordinary non-skill work",
-        "`check-selection-only`",
-    ),
-    ".claude/skills/opi-document/SKILL.md": (
-        "_shared/references/change-scope-and-check-selection.md",
-        "candidate discovery only",
-        "documentation authority",
-    ),
-    ".claude/skills/opi-remediate/SKILL.md": (
-        "_shared/references/change-scope-and-check-selection.md",
-        "normalized findings and derived layers",
-        "verification union",
-    ),
-    ".claude/skills/opi-slim-tests/SKILL.md": (
-        "_shared/references/change-scope-and-check-selection.md",
-        "Cargo metadata and complete test bodies",
-        "post-change focused gates",
-    ),
-}
 
 
 class SkillContractTests(unittest.TestCase):
@@ -569,45 +46,6 @@ class SkillContractTests(unittest.TestCase):
         self.write_index(".claude/skills/README.md", names)
         self.write_index(".claude/skills/README.zh.md", names)
 
-    def write_minimum_change_trace_docs(self) -> None:
-        for rel, tokens in MINIMUM_CHANGE_TRACE_REQUIRED.items():
-            self.write(rel, "\n".join(tokens) + "\n")
-
-    def write_assurance_workflow_docs(self) -> None:
-        for rel, tokens in ASSURANCE_WORKFLOW_REQUIRED.items():
-            if rel != ".claude/skills/opi-remediate/SKILL.md":
-                self.write(rel, "\n".join(tokens) + "\n")
-                continue
-
-            branch_tokens = set(
-                REMEDIATION_PLAN_ONLY_REFERENCES
-                + REMEDIATION_APPLY_ONLY_REFERENCES
-                + ("Plan-only references", "Apply-only reference")
-            )
-            common = [token for token in tokens if token not in branch_tokens]
-            self.write(
-                rel,
-                "\n".join(
-                    common
-                    + ["## `mode=plan`", "Plan-only references"]
-                    + list(REMEDIATION_PLAN_ONLY_REFERENCES)
-                    + ["## `mode=apply`", "Apply-only reference"]
-                    + list(REMEDIATION_APPLY_ONLY_REFERENCES)
-                )
-                + "\n",
-            )
-
-    def write_eval_behavior_baseline_docs(self) -> None:
-        for rel, tokens in EVAL_BEHAVIOR_BASELINE_REQUIRED.items():
-            self.write(rel, "\n".join(tokens) + "\n")
-
-    def write_opi_document_prose_contract_docs(self) -> None:
-        for rel, tokens in OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED.items():
-            self.write(rel, "\n".join(tokens) + "\n")
-
-    def write_change_scope_check_selection_docs(self) -> None:
-        for rel, tokens in CHANGE_SCOPE_CHECK_SELECTION_REQUIRED.items():
-            self.write(rel, "\n".join(tokens) + "\n")
 
     def write_skill(
         self,
@@ -638,285 +76,6 @@ class SkillContractTests(unittest.TestCase):
             f"  allow_implicit_invocation: {allow_implicit_invocation}\n",
         )
 
-    def test_minimum_change_trace_contract_passes(self) -> None:
-        self.write_minimum_change_trace_docs()
-
-        checker = getattr(doc_check, "check_minimum_change_trace_contract", None)
-        self.assertIsNotNone(checker, "minimum-change trace checker must exist")
-        checker()
-
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_minimum_change_trace_contract_requires_every_token(self) -> None:
-        checker = getattr(doc_check, "check_minimum_change_trace_contract", None)
-        self.assertIsNotNone(checker, "minimum-change trace checker must exist")
-
-        for rel, tokens in MINIMUM_CHANGE_TRACE_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_minimum_change_trace_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token) + "\n",
-                    )
-
-                    checker()
-
-                    self.assertIn(
-                        f"{rel}: minimum-change trace contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def test_assurance_workflow_contract_passes(self) -> None:
-        self.write_assurance_workflow_docs()
-
-        checker = getattr(
-            doc_check,
-            "check_assurance_workflow_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "assurance workflow checker must exist")
-        checker()
-
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_assurance_workflow_contract_requires_every_token(self) -> None:
-        checker = getattr(
-            doc_check,
-            "check_assurance_workflow_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "assurance workflow checker must exist")
-
-        for rel, tokens in ASSURANCE_WORKFLOW_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_assurance_workflow_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token) + "\n",
-                    )
-
-                    checker()
-
-                    self.assertIn(
-                        f"{rel}: assurance workflow contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def test_assurance_workflow_contract_rejects_legacy_tokens(self) -> None:
-        checker = getattr(
-            doc_check,
-            "check_assurance_workflow_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "assurance workflow checker must exist")
-
-        for rel, tokens in ASSURANCE_WORKFLOW_FORBIDDEN_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_assurance_workflow_docs()
-                    path = self.root / rel
-                    path.write_text(
-                        path.read_text(encoding="utf-8") + token + "\n",
-                        encoding="utf-8",
-                        newline="\n",
-                    )
-
-                    checker()
-
-                    self.assertIn(
-                        f"{rel}: assurance workflow contract "
-                        f"contains forbidden legacy tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def test_remediation_reference_scope_rejects_branch_reference_in_common(self) -> None:
-        checker = getattr(doc_check, "check_remediation_reference_scope", None)
-        self.assertIsNotNone(checker, "remediation reference-scope checker must exist")
-
-        for token in (
-            *REMEDIATION_PLAN_ONLY_REFERENCES,
-            *REMEDIATION_APPLY_ONLY_REFERENCES,
-        ):
-            with self.subTest(token=token):
-                doc_check.ERRORS = []
-                self.write_assurance_workflow_docs()
-                rel = ".claude/skills/opi-remediate/SKILL.md"
-                text = (self.root / rel).read_text(encoding="utf-8")
-                self.write(rel, f"{token}\n{text}")
-
-                checker()
-
-                self.assertIn(
-                    f"{rel}: branch-only reference appears before its branch {[token]!r}",
-                    doc_check.ERRORS,
-                )
-
-    def test_eval_behavior_baseline_contract_passes(self) -> None:
-        self.write_eval_behavior_baseline_docs()
-
-        checker = getattr(
-            doc_check,
-            "check_eval_behavior_baseline_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "eval behavior-baseline checker must exist")
-        checker()
-
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_eval_behavior_baseline_contract_requires_every_token(self) -> None:
-        checker = getattr(
-            doc_check,
-            "check_eval_behavior_baseline_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "eval behavior-baseline checker must exist")
-
-        for rel, tokens in EVAL_BEHAVIOR_BASELINE_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_eval_behavior_baseline_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token) + "\n",
-                    )
-
-                    checker()
-
-                    self.assertIn(
-                        f"{rel}: eval behavior-baseline contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def test_opi_document_prose_contract_passes(self) -> None:
-        self.write_opi_document_prose_contract_docs()
-        checker = getattr(
-            doc_check,
-            "check_opi_document_prose_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "Opi document prose checker must exist")
-        checker()
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_opi_document_prose_contract_requires_every_token(self) -> None:
-        checker = getattr(
-            doc_check,
-            "check_opi_document_prose_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "Opi document prose checker must exist")
-        for rel, tokens in OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_opi_document_prose_contract_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token)
-                        + "\n",
-                    )
-                    checker()
-                    self.assertIn(
-                        f"{rel}: Opi document prose contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def test_change_scope_check_selection_contract_passes(self) -> None:
-        self.write_change_scope_check_selection_docs()
-        checker = getattr(
-            doc_check,
-            "check_change_scope_check_selection_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "change-scope checker must exist")
-        checker()
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_change_scope_check_selection_contract_requires_every_token(
-        self,
-    ) -> None:
-        checker = getattr(
-            doc_check,
-            "check_change_scope_check_selection_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "change-scope checker must exist")
-        for rel, tokens in CHANGE_SCOPE_CHECK_SELECTION_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_change_scope_check_selection_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token)
-                        + "\n",
-                    )
-                    checker()
-                    self.assertIn(
-                        f"{rel}: change-scope and check-selection contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def write_clean_opi_eval_active_naming_surface(self) -> None:
-        self.write("crates/opi-eval/src/lib.rs", "//! Active eval contract.\n")
-        self.write(".github/workflows/ci.yml", "name: CI\n")
-
-    def test_opi_eval_workflow_is_not_a_product_gate(self) -> None:
-        self.write_clean_opi_eval_active_naming_surface()
-        self.write(".github/workflows/opi-eval-native-smoke.yml", "name: eval\n")
-        doc_check.check_opi_eval_active_naming()
-        self.assertTrue(any("development-only" in error for error in doc_check.ERRORS))
-
-    def test_opi_eval_active_naming_surface_passes(self) -> None:
-        self.write_clean_opi_eval_active_naming_surface()
-
-        checker = getattr(doc_check, "check_opi_eval_active_naming", None)
-        self.assertIsNotNone(checker, "opi-eval active naming checker must exist")
-        checker()
-
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_opi_eval_active_naming_rejects_project_phase_in_content(self) -> None:
-        self.write_clean_opi_eval_active_naming_surface()
-        legacy = "phase" + str(18)
-        self.write("crates/opi-eval/src/legacy.rs", f"const SCHEMA: &str = \"{legacy}-run/1\";\n")
-
-        checker = getattr(doc_check, "check_opi_eval_active_naming", None)
-        self.assertIsNotNone(checker, "opi-eval active naming checker must exist")
-        checker()
-
-        self.assertIn(
-            "crates/opi-eval/src/legacy.rs:1: active opi-eval content "
-            "contains project-phase naming",
-            doc_check.ERRORS,
-        )
-
-    def test_opi_eval_active_naming_rejects_project_phase_in_path(self) -> None:
-        self.write_clean_opi_eval_active_naming_surface()
-        legacy = "phase" + str(18)
-        rel = f"crates/opi-eval/tests/{legacy}_contract.rs"
-        self.write(rel, "// legacy path\n")
-
-        checker = getattr(doc_check, "check_opi_eval_active_naming", None)
-        self.assertIsNotNone(checker, "opi-eval active naming checker must exist")
-        checker()
-
-        self.assertIn(
-            f"{rel}: active opi-eval path contains project-phase naming",
-            doc_check.ERRORS,
-        )
 
     def test_matching_skill_contract_passes(self) -> None:
         self.write_skill()
@@ -1030,6 +189,17 @@ class SkillContractTests(unittest.TestCase):
             doc_check.ERRORS,
         )
 
+    def test_skill_and_shared_reference_links_are_checked(self) -> None:
+        self.write_skill()
+        self.write_indexes(("opi-example",))
+        for rel in (".claude/skills/opi-example/references/guide.md", ".claude/skills/_shared/references/guide.md"):
+            self.write(rel, "[Required source](missing.md)\n")
+        paths = doc_check.check_skill_contracts()
+        for rel in paths:
+            doc_check.check_local_links(rel)
+        self.assertEqual(2, len(doc_check.ERRORS), doc_check.ERRORS)
+        self.assertTrue(all("broken local link: missing.md" in error for error in doc_check.ERRORS))
+
 
 class ContextLifecycleTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -1114,36 +284,144 @@ sys.exit(module.main())
         self.assertIn("docs/engineering/README.md: broken local link: missing-current-contract.md", result.stderr)
 
 
-class CurrentProductContractTests(unittest.TestCase):
-    def test_tool_authorization_boundary_is_required_in_both_readmes(self):
-        self.addCleanup(doc_check.ERRORS.clear)
-        original_read = doc_check.read
-        boundaries = {
-            "README.md": "not an operating-system sandbox",
-            "README.zh.md": "不是操作系统 sandbox",
-        }
-        for missing in (None, *boundaries):
-            with self.subTest(missing=missing):
+class DocumentFactsTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        for name, value in (("ROOT", self.root), ("ERRORS", [])):
+            patcher = patch.object(doc_check, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.write("Cargo.toml", '[workspace.package]\nversion = "1.2.3"\n')
+        self.write("crates/example/Cargo.toml", '[package]\nname = "example"\nversion.workspace = true\n')
+        self.docs = ["README.md", "README.zh.md", "crates/example/README.md", "crates/example/README.zh.md"]
+        for rel in self.docs:
+            self.write(rel, "Package / 包：`1.2.3`.\n")
+        for rel in self.docs[:2]:
+            self.write(rel, self.read(rel) + "`NDJSON_SCHEMA_VERSION = 2`\n`SDK_SCHEMA_VERSION = 3`\n")
+        self.write("crates/opi-coding-agent/src/runner.rs", "pub const NDJSON_SCHEMA_VERSION: u32 = 2;\n")
+        self.write("crates/opi-agent/src/sdk.rs", "pub const SDK_SCHEMA_VERSION: u32 = 3;\n")
+        self.write("AGENTS.md", "Inspect the evidence; finish the agreed work.\n")
+        self.write("CLAUDE.md", self.read("AGENTS.md"))
+
+    def write(self, rel: str, content: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def read(self, rel: str) -> str:
+        return (self.root / rel).read_text(encoding="utf-8")
+
+    def test_version_values_do_not_require_fixed_sentences(self) -> None:
+        doc_check.check_current_contracts(self.docs)
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_each_readme_requires_the_current_version(self) -> None:
+        for rel in self.docs:
+            with self.subTest(rel=rel):
+                original = self.read(rel)
+                self.write(rel, original.replace("1.2.3", "1.2.30"))
+                doc_check.check_current_contracts(self.docs)
+                self.assertTrue(any(error.startswith(f"{rel}:") and "version" in error for error in doc_check.ERRORS))
+                doc_check.ERRORS.clear()
+                self.write(rel, original)
+
+    def test_schema_value_mismatch_is_rejected_even_with_matching_prefix(self) -> None:
+        for rel in self.docs[:2]:
+            for name, value in (("NDJSON_SCHEMA_VERSION", 2), ("SDK_SCHEMA_VERSION", 3)):
+                with self.subTest(rel=rel, name=name):
+                    original = self.read(rel)
+                    self.write(rel, original.replace(f"{name} = {value}", f"{name} = {value}0"))
+                    doc_check.check_current_contracts(self.docs)
+                    self.assertTrue(any(error.startswith(f"{rel}:") and name in error for error in doc_check.ERRORS))
+                    doc_check.ERRORS.clear()
+                    self.write(rel, original)
+
+    def test_schema_assignment_allows_whitespace_changes(self) -> None:
+        for rel in self.docs[:2]:
+            self.write(rel, self.read(rel).replace(" = ", "=\t"))
+        doc_check.check_current_contracts(self.docs)
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_schema_assignments_accept_sentence_punctuation(self) -> None:
+        for rel in self.docs[:2]:
+            for name, value in (("NDJSON_SCHEMA_VERSION", 2), ("SDK_SCHEMA_VERSION", 3)):
+                self.write(rel, self.read(rel).replace(f"`{name} = {value}`", f"{name} = {value}."))
+        doc_check.check_current_contracts(self.docs)
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_schema_assignments_reject_numeric_and_identifier_suffixes(self) -> None:
+        original = self.read("README.md")
+        for invalid in ("2.5", "2_extra", "2suffix"):
+            with self.subTest(invalid=invalid):
+                self.write("README.md", original.replace("NDJSON_SCHEMA_VERSION = 2", f"NDJSON_SCHEMA_VERSION = {invalid}"))
+                doc_check.check_current_contracts(self.docs)
+                self.assertTrue(any("README.md:" in error and "NDJSON_SCHEMA_VERSION" in error for error in doc_check.ERRORS))
                 doc_check.ERRORS.clear()
 
-                def read(rel):
-                    text = original_read(rel)
-                    if rel == missing:
-                        return text.replace(boundaries[rel], "tool authorization")
-                    return text
+    def test_conflicting_schema_assignments_are_rejected(self) -> None:
+        self.write("README.md", self.read("README.md") + "`NDJSON_SCHEMA_VERSION = 20`\n")
+        doc_check.check_current_contracts(self.docs)
+        self.assertTrue(any("README.md:" in error and "NDJSON_SCHEMA_VERSION" in error for error in doc_check.ERRORS))
 
-                with patch.object(doc_check, "read", side_effect=read):
-                    doc_check.check_current_contracts([])
-                errors = [
-                    error
-                    for error in doc_check.ERRORS
-                    if "tool authorization boundary" in error
-                ]
-                if missing is None:
-                    self.assertEqual(errors, [])
-                else:
-                    self.assertEqual(len(errors), 1)
-                    self.assertTrue(errors[0].startswith(f"{missing}:"))
+    def test_missing_schema_assignment_is_rejected(self) -> None:
+        self.write("README.md", "Package: `1.2.3`; `SDK_SCHEMA_VERSION = 3`.\n")
+        doc_check.check_current_contracts(self.docs)
+        self.assertTrue(any("README.md:" in error and "NDJSON_SCHEMA_VERSION" in error for error in doc_check.ERRORS))
+
+    def test_missing_source_constant_is_rejected(self) -> None:
+        self.write("crates/opi-agent/src/sdk.rs", "// No schema declaration.\n")
+        doc_check.check_current_contracts(self.docs)
+        self.assertTrue(any("cannot resolve SDK_SCHEMA_VERSION" in error for error in doc_check.ERRORS))
+
+    def test_workspace_version_does_not_leak_from_another_toml_table(self) -> None:
+        self.write("Cargo.toml", '[workspace.package]\nedition = "2024"\n[workspace.metadata]\nversion = "9.9.9"\n')
+        self.assertEqual("", doc_check.workspace_version())
+        self.assertTrue(any("workspace.package" in error for error in doc_check.ERRORS))
+
+    def test_invalid_manifest_is_reported_without_a_traceback(self) -> None:
+        self.write("crates/example/Cargo.toml", "[package\n")
+        self.assertEqual([], doc_check.crate_packages())
+        self.assertTrue(any("crates/example/Cargo.toml:" in error and "TOML" in error for error in doc_check.ERRORS))
+
+    def test_counterparts_include_new_crates_and_reject_missing_translation(self) -> None:
+        self.assertEqual(set(self.docs), set(doc_check.check_counterparts()))
+        self.assertEqual([], doc_check.ERRORS)
+        (self.root / "crates/example/README.zh.md").unlink()
+        doc_check.check_counterparts()
+        self.assertIn("missing file: crates/example/README.zh.md", doc_check.ERRORS)
+
+    def test_empty_and_non_utf8_documents_are_rejected(self) -> None:
+        self.write("README.md", " \n")
+        (self.root / "README.zh.md").write_bytes(b"\xff")
+        doc_check.check_counterparts()
+        self.assertIn("empty document: README.md", doc_check.ERRORS)
+        self.assertTrue(any(error.startswith("not UTF-8: README.zh.md:") for error in doc_check.ERRORS))
+
+    def test_root_guidance_content_must_match(self) -> None:
+        doc_check.check_root_guidance_lockstep()
+        self.assertEqual([], doc_check.ERRORS)
+        self.write("CLAUDE.md", "A different instruction.\n")
+        doc_check.check_root_guidance_lockstep()
+        self.assertTrue(any("AGENTS.md and CLAUDE.md diverge" in error for error in doc_check.ERRORS))
+
+    def test_materialized_root_alias_warns_without_rejecting_checkout(self) -> None:
+        self.write("CLAUDE.md", "AGENTS.md\n")
+        warning = io.StringIO()
+        with contextlib.redirect_stderr(warning):
+            doc_check.check_root_guidance_lockstep()
+        self.assertEqual([], doc_check.ERRORS)
+        self.assertIn("materialized symlink", warning.getvalue())
+
+    def test_main_accepts_free_prose_without_workflow_or_runtime_snippets(self) -> None:
+        for rel in doc_check.CURRENT_CONTEXT_DOCS:
+            self.write(rel, "# Current documentation\n")
+        for rel in (".claude/skills/README.md", ".claude/skills/README.zh.md"):
+            self.write(rel, "# Skills\n")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            result = doc_check.main()
+        self.assertEqual(0, result, "\n".join(doc_check.ERRORS))
 
 
 class LocalLinkExemptionTest(unittest.TestCase):

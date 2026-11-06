@@ -23,12 +23,47 @@ Owning source, tests, schemas and READMEs describe current interfaces.
   needs neither an ADR nor a placement ceremony. Use [context alignment](../agents/context.md)
   when an existing decision conflicts with the requested change.
 
-## Rust and dependencies
+## Rust interfaces and ownership
 
-- Prefer safe Rust, explicit ownership, enums, typed errors, bounded concurrency
-  and fail-closed boundary validation. Isolate and justify unavoidable `unsafe`.
-  Use `thiserror` in libraries, `anyhow` in binaries/tests, trait objects at
-  proven crate seams and generics internally where concrete types are known.
+- Use enums, newtypes and controlled construction when they encode meaningful
+  states or invariants. Validate external inputs and fail closed at trust
+  boundaries. Internal code may rely only on invariants enforced by every
+  construction/deserialization path. Keep fields private when mutation could
+  invalidate those guarantees.
+- Expose typed errors where callers need to classify or recover from failures;
+  preserve causes and useful context. Follow existing error conventions,
+  including `thiserror`, before adding a dependency. Application/reporting
+  boundaries may erase error types when only a report is needed; `anyhow` is an
+  option, not a requirement for every binary or test. Represent expected input/I/O
+  failures with `Result` or the owning typed outcome; reserve panics for violated
+  programming invariants.
+- Start with concrete types. Use generics for needed static variation and
+  trait objects for runtime heterogeneity or an established behavior boundary.
+  Choose borrowing, ownership transfer or shared ownership from actual lifetimes
+  and sharing needs. Cloning is appropriate when it simplifies ownership at an
+  acceptable cost; measure before adding performance-driven complexity.
+- Prefer safe Rust. Isolate necessary `unsafe` behind a small boundary, justify
+  its use, and document why its safety conditions hold, including lifetime and
+  aliasing requirements. Safe APIs must preserve those conditions for all
+  permitted callers.
+- Document affected public contracts with useful examples and their error,
+  panic and safety behavior. Helpers should clarify intent, contain invariants
+  or hide complexity; call count alone does not determine their value.
+
+## Async and resource lifecycle
+
+- Identify who owns each spawned task/resource, observes completion, requests
+  cancellation and performs cleanup. Define partial effects at cancellation
+  points and bounds/backpressure for concurrent work and queues. Sending a
+  cancellation request does not prove completion; join or reap owned work as
+  required by its contract before reporting a terminal result.
+- Keep synchronous lock guards out of `.await` points. Short, low-contention
+  data access may use a synchronous mutex; asynchronous I/O state may need an
+  async mutex or an owning task with message passing. Keep blocking or long
+  CPU-bound work off async executor workers using the appropriate runtime boundary.
+
+## Dependencies and compatibility
+
 - Internal dependencies use root `[workspace.dependencies]` and
   `{ workspace = true }`; publishable paths also need versions. Keep lockstep
   versioning and workspace-owned metadata in root manifests.
@@ -36,11 +71,31 @@ Owning source, tests, schemas and READMEs describe current interfaces.
   proc macros as code. Check APIs against the exact locked version. Generate
   `Cargo.lock` with Cargo and review unexpected transitive changes. Explain
   portability, authority and supply-chain effects before broadening defaults.
+- Resolve dependency/API mismatches without dropping required behavior or
+  suppressing diagnostics wholesale. Any lint exception needs a narrow scope
+  and a reason tied to the affected code.
 - Scoped 0.x breaks update Unreleased, callers, schemas, fixtures, tests and
   existing bilingual docs together. Add compatibility only for a real owning
   contract; revisit this policy before 1.0.
 - Preserve user-owned authority: a model decision cannot grant permission,
   silently widen policy or turn credential availability into execution consent.
+
+## Reference standards
+
+Use these references for an unresolved question or an affected contract; read
+only the relevant sections and reuse still-current context. They inform design
+and review. Applying them requires the project's actual consumers, constraints
+and accepted decisions; they do not authorize new dependencies, broad rewrites
+or compatibility changes by themselves.
+
+| When | Reference and focus |
+|---|---|
+| Designing or reviewing a public Rust API | [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html): naming, standard traits, type safety, errors, documentation and evolution |
+| Introducing or changing an unsafe/FFI boundary | [Rust Reference](https://doc.rust-lang.org/reference/unsafe-keyword.html): safety conditions and proof obligations |
+| Changing async state or shutdown | Tokio's [shared state](https://tokio.rs/tokio/tutorial/shared-state) and [graceful shutdown](https://tokio.rs/tokio/topics/shutdown): locks, task ownership, cancellation and completion |
+| Changing public APIs, features, MSRV or platform support | [Cargo SemVer Compatibility](https://doc.rust-lang.org/cargo/reference/semver.html), interpreted with this project's 0.x policy |
+| Choosing or overriding lints | [Clippy](https://doc.rust-lang.org/clippy/usage.html): select applicable checks and justify exceptions; do not enable all restriction lints |
+| Seeking additional library/application design guidance | [Microsoft Pragmatic Rust Guidelines](https://microsoft.github.io/rust-guidelines/): evaluate individual recommendations; crate splitting, allocators and error representations remain project decisions |
 
 ## Verification
 

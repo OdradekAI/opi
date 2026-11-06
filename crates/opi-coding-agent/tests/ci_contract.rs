@@ -37,6 +37,35 @@ fn commands(job: &Mapping) -> String {
 }
 
 #[test]
+fn documentation_gate_runs_its_own_regression_suite() {
+    let ci = workflow(include_str!("../../../.github/workflows/ci.yml"));
+    let run = commands(job(&ci, "scope"));
+    assert!(run.contains("python3 scripts/opi-doc-check.py"));
+    assert!(run.contains("python3 scripts/test_opi_doc_check.py"));
+}
+
+#[test]
+fn development_eval_workflows_are_not_actions_entrypoints() {
+    let workflows =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../.github/workflows");
+    for entry in std::fs::read_dir(workflows).expect("workflow directory exists") {
+        let path = entry.expect("workflow entry").path();
+        let name = path
+            .file_name()
+            .expect("workflow filename")
+            .to_string_lossy();
+        assert!(
+            !(name.starts_with("opi-eval")
+                && matches!(
+                    path.extension().and_then(|value| value.to_str()),
+                    Some("yml" | "yaml")
+                )),
+            "development-only eval workflow must remain outside Actions: {name}"
+        );
+    }
+}
+
+#[test]
 fn routine_product_checks_are_linux_only_and_exclude_eval() {
     let ci = workflow(include_str!("../../../.github/workflows/ci.yml"));
     for name in ["product", "msrv"] {

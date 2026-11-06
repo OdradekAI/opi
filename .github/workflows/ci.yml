@@ -34,6 +34,7 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: python3 scripts/opi-ci-scope.py scope --base "$BASE_SHA" --head "$HEAD_SHA" --output "$GITHUB_OUTPUT"
       - run: python3 scripts/opi-doc-check.py
+      - run: python3 scripts/test_opi_doc_check.py
       - run: python3 scripts/test_opi_ci_scope.py
       - run: python3 .agents/skills/opi-implement/scripts/test_opi_impl_smoke.py
 

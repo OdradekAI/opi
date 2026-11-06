@@ -8,6 +8,10 @@
 应要求该结果，而不是把每个可选矩阵 job 永久设为必需。仓库规则的调整是独立的
 维护者操作；修改 YAML 不会同步修改远端分支保护。
 
+范围检查 job 执行 `scripts/opi-doc-check.py` 及其 Python 回归测试，并运行范围
+选择器和 smoke wrapper 的测试。文档检查覆盖文件、本地链接、元数据和由源码
+确定的数值；文字含义和运行时行为仍由对应的审查与测试验证。
+
 范围选择器比较精确 Git 提交，重命名前后的路径均参与判断；无法读取历史时
 拒绝放行。只有 Markdown/license/ignore 或开发 eval 的改动不会启动 Rust
 产品构建。其他改动执行 Linux 产品 clippy、测试、feature-gated execution

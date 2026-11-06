@@ -9,6 +9,11 @@ result. Branch protection should require that result instead of permanently
 requiring every optional matrix job. Changing repository rules is a separate
 maintainer operation; editing YAML does not update remote branch protection.
 
+The scope job runs `scripts/opi-doc-check.py` and its Python regression suite,
+plus the scope-selector and smoke-wrapper tests. Documentation checks cover
+files, local links, metadata and source-derived values; prose meaning and
+runtime behavior require their owning review/tests.
+
 The scope selector compares exact Git commits, includes both sides of renames,
 and fails closed when history cannot be read. Markdown/license/ignore-only
 changes and development-only eval changes do not start Rust product builds.
