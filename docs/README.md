@@ -29,9 +29,8 @@ against current sources before adopting a recommendation.
 Current docs change with the owning code/decision. Completed briefs remain
 history; their durable conclusions move to the glossary, relevant ADR or owning
 product documentation. No global roadmap or second implementation ledger is
-created by this layout. See [ADR-0002](adr/0002-task-scoped-context.md) for the
-migration trade-off.
+created by this layout.
 
 Agent-facing engineering/context/tracker/glossary files use one English canonical
-copy to avoid another synchronization surface. This map and governance ADR have
-Chinese counterparts; existing bilingual product documents remain bilingual.
+copy to avoid another synchronization surface. This map has a Chinese counterpart;
+existing bilingual product documents remain bilingual.
