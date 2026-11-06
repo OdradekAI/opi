@@ -51,7 +51,7 @@ case "$mode" in
     echo "Checking format..."
     cargo fmt --check --all 2>&1 || { echo "FAIL: cargo fmt --check"; exit 1; }
     echo "Checking clippy (production lib/bin targets)..."
-    cargo clippy --workspace --lib --bins -- -D warnings 2>&1 || {
+    cargo clippy --workspace --exclude opi-eval --lib --bins -- -D warnings 2>&1 || {
       echo "FAIL: clippy (production targets)"; exit 1;
     }
     ;;
@@ -62,13 +62,13 @@ case "$mode" in
     echo "Checking format..."
     cargo fmt --check --all 2>&1 || { echo "FAIL: cargo fmt --check"; exit 1; }
     echo "Checking clippy (all targets)..."
-    cargo clippy --workspace --all-targets -- -D warnings 2>&1 || { echo "FAIL: clippy"; exit 1; }
+    cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings 2>&1 || { echo "FAIL: clippy"; exit 1; }
     echo "Running workspace tests..."
-    cargo test --workspace --all-targets 2>&1 || { echo "FAIL: cargo test"; exit 1; }
+    cargo test --workspace --exclude opi-eval --all-targets 2>&1 || { echo "FAIL: cargo test"; exit 1; }
     echo "Running doc tests..."
-    cargo test --workspace --doc 2>&1 || { echo "FAIL: cargo test --doc"; exit 1; }
+    cargo test --workspace --exclude opi-eval --doc 2>&1 || { echo "FAIL: cargo test --doc"; exit 1; }
     echo "Checking rustdoc..."
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps 2>&1 || { echo "FAIL: rustdoc"; exit 1; }
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --exclude opi-eval --no-deps 2>&1 || { echo "FAIL: rustdoc"; exit 1; }
     ;;
 
   scoped)

@@ -7,270 +7,198 @@ disable-model-invocation: true
 
 # Opi Release
 
-Release all publishable workspace crates at one lockstep semver, then publish
-the corresponding GitHub release. Invoke explicitly with a target version.
+Publish every publishable workspace crate at one semver, then finalize its
+GitHub release. Invoke explicitly with a version without the `v` prefix.
+`opi-eval` is an unpublished development calibration tool, not a release gate.
 
-## Inputs
+## Inputs and authority
 
-- `<version>`: required semver without the `v` prefix.
-- `--fix`: permits only the pre-flight formatter/linter fixes described below.
-  It does not permit a commit before Phase 5.
-- `--skip-cross`: source/crate release with no locally built cross-platform
-  binaries. It does not weaken crate or documentation checks.
+- `<version>`: required target semver.
+- `--fix`: permits only formatter and narrowly applicable clippy repairs during
+  preflight. Leave them uncommitted and stop for their own reviewed delivery;
+  this option does not bypass candidate CI.
+- `--skip-cross`: source/crate-only release, with no attached binary assets.
+  The current automatic tag workflow builds binaries: this option therefore
+  stops before a tag push unless an explicitly reviewed workflow strategy
+  supports it. It does not silently disable CI.
 
-Use host-native shell commands with the same safety semantics. Complete
-authorized preparation through a reviewable release diff; pause at the public
-and irreversible gates below or an unresolved release failure.
+Default to CI-built assets; use local cross-build only when explicitly
+requested. Read [CI and platform policy](../../../docs/ci.md) when selecting
+verification. Ordinary patches need Linux product CI plus affected-platform
+smoke. New `0.N` series (after 1.0, a new major), major milestones, or changes
+with unbounded cross-platform impact need full Linux/Windows/macOS regression.
+Version size never exempts a platform-specific fix from that platform's proof.
 
-## Boundaries
+Local preparation is authorized and reversible, not side-effect free. Keep an
+exact task-owned changed-file manifest and preserve unrelated work. The two
+fresh confirmations are: public Git/Actions/draft operations, then irreversible
+crates.io publication. No broad staging, force-push, history rewriting, automatic
+revert, workspace-wide `cargo clean`, or cache deletion.
 
-| Phase | Boundary |
-|---|---|
-| 1 | Read-only unless `--fix` was supplied; fixes remain uncommitted. |
-| 2-4 | Reversible local preparation with an exact changed-file manifest. |
-| 5 | Public: release commit and tag are pushed. Requires fresh confirmation. |
-| 6 | Irreversible: crates.io versions cannot be deleted. Requires fresh confirmation. |
-| 7 | The GitHub draft becomes public; crate publication remains irreversible. |
+## Entry: fresh release or recovery
 
-Never describe Phases 1-4 collectively as side-effect free. Never use
-`git reset --hard`, `git checkout --`, `git clean`, force-push, broad staging,
-or automatic workspace-wide `cargo clean`.
+Inspect `.opi-release-state.json` before preflight. For a matching incomplete
+release, read [recovery](references/recovery.md), reconcile remote facts, and
+continue at the first unfinished transition rather than reapplying fresh-entry
+requirements. A different version, changed candidate or conflicting remote
+identity stops for a decision.
 
-## Resume state
+The ignored file is temporary recovery state, not a progress ledger. Write it
+atomically after each verified external transition. Record version, phase,
+base/candidate commit, exact changed paths, asset strategy, selected platform
+suite/run URLs, tag/draft identity, verified published/pending crates, and final
+GitHub publication state. A lost checkpoint is reconciled from remote truth;
+the state file alone never proves success. Do not change `.opi-impl-state.json`.
 
-Before Phase 1, inspect `.opi-release-state.json`. If it matches the requested
-version, validate every recorded remote fact before resuming. Write
-state atomically after each public or irreversible transition:
+Record elapsed preparation, build/test, packaging, registry waiting, consumer
+verification and human waiting separately. Report unmeasured time as unknown.
 
-```json
-{
-  "version": "0.0.0",
-  "release_commit": null,
-  "tag_pushed": false,
-  "draft_url": null,
-  "published": [],
-  "pending": [],
-  "github_published": false
-}
-```
+## 1. Preflight -> verify the baseline and release plan
 
-Do not infer success from the state file alone. Query GitHub/crates.io and stop
-on disagreement.
+Before local Cargo work, read the shared
+[Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md),
+inspect the selected persistent target once and coordinate writers. Preserve
+versioned release artifacts and failure evidence; maintenance is separate.
 
-## Phase 1: pre-flight
+For a fresh release:
 
-Before local Cargo builds, read the shared
-[Cargo cache lifecycle](../_shared/references/cargo-cache-lifecycle.md) for
-quick selected-target inspection and coordinated observation. Preserve release
-artifacts and failure evidence through finalization; cache maintenance remains
-a separate explicit action and never substitutes for release evidence.
+1. Require clean `main`; compare `HEAD` with the actual remote `refs/heads/main`,
+   not merely a possibly stale tracking ref. Neither local nor remote target
+   tag may exist. Do not switch branches or discard changes.
+2. Confirm license, root README, lockfile, changelog and publishable manifests.
+3. Query `ci.yml` for this exact baseline SHA and inspect its selected checks,
+   including the stable `required` gate. Missing, pending or failed required
+   checks block entry. Record URLs and conclusions, not only a green badge.
+4. Check package metadata/content, publish flags, internal dependency versions,
+   secret-shaped tracked files, MSRV, registry authentication, crate ownership
+   and target-version availability. `cargo audit` is required only if declared
+   by repository policy; otherwise report its optional status.
 
-Run from a clean `main` whose `HEAD` exists on `origin/main` and whose required
-CI checks for that exact SHA succeeded.
+Use existing applicable CI for format, clippy, tests, doctests and rustdoc.
+Run only missing checks locally. Do not run the same five gates again simply
+because this is a release. `--fix` repairs invalidate affected proof and stop
+before release; do not commit those repairs here.
 
-Required gates:
+## 2. Prepare -> verify one final local delta
 
-1. Confirm `LICENSE`, `README.md`, `Cargo.lock`, `CHANGELOG.md`, and every
-   publishable manifest exist.
-2. Confirm `git status --porcelain` is empty, the current branch is `main`,
-   local `HEAD` equals `origin/main`, and neither local nor remote `v<version>`
-   exists.
-3. Query required check runs for the exact `HEAD`; pending, missing, or failed
-   checks block release.
-4. Treat the exact-SHA required CI checks as the evidence for format, all-target
-   clippy, workspace tests, doctests, and rustdoc. Record their job URLs and
-   conclusions; do not repeat the same five gates locally. If repository CI no
-   longer covers one of them, run only the missing gate locally and record why.
+Read the complete Unreleased section before editing it. Update the workspace
+version, publishable internal dependency version fields, and Cargo-generated
+lockfile; review unexpected transitive changes. Refresh documented versions
+using the shared [version-document procedure](../_shared/references/version-documents.md).
+This bounded preparation does not invoke `opi-document`; broader semantic
+README work requires its own explicit scope.
 
-5. Check package metadata, publish flags, internal dependency version fields,
-   package contents, tracked secret-shaped files, MSRV, registry auth, crate
-   ownership, and whether the target version already exists.
-6. Run `cargo run -p opi-coding-agent -- --version` and verify the current
-   version before the bump.
-7. Treat `cargo audit` as required only when the repository/release policy
-   declares it installed; otherwise report the missing optional check.
+Promote curated Unreleased content to `## <version> - YYYY-MM-DD`, retaining an
+empty Unreleased heading for future work. Commits since the previous tag only
+help identify omissions; they do not replace curated notes. Keep released
+sections immutable. Historical detail compression is separate, explicitly
+reviewed documentation maintenance, not an automatic release operation.
+Generate transient release notes and include every intentionally tracked path
+in the manifest. Check affected English/Chinese counterparts together.
 
-With `--fix`, run only `cargo fmt --all` and the narrowly applicable clippy fix.
-Record the resulting paths, run `git diff --check`, and repeat only affected
-local gates. Because the clean exact-SHA CI evidence no longer covers a dirty
-fix, stop before release and require the resulting commit's required CI to pass.
-Do not stage or commit the fixes.
+Run the documentation checker and `git diff --check` once after these final
+edits. Run only affected checks again if their inputs change. No standalone
+workspace build or full local test rerun is required by a mechanical bump.
 
-Report PASS/FAIL/WARN with evidence. Any required failure stops the workflow.
-
-## Phase 2: version and packaging preparation
-
-### Version and document ownership
-
-`opi-release` owns the mechanical workspace version mutation: update
-`workspace.package.version`, every publishable internal dependency's exact
-version field, and the resulting `Cargo.lock` changes. Show and record those
-paths, then invoke:
-
-```text
-opi-document scope=version-bump version=<version>
-```
-
-`opi-document` owns documented version surfaces and localized counterparts; it
-does not edit Cargo manifests or the version itself. Record its exact changed
-paths in the same release manifest, show the combined diff, then run
-`cargo check --workspace`.
-
-### One dependency graph
+## 3. Package plan -> verify the graph and pending obligations
 
 Read `cargo metadata --format-version 1 --no-deps`, select publishable workspace
-members, build internal path-dependency edges, and topologically sort them.
-Reuse this graph in both dry-run and live publication; do not maintain a second
-hand-written order.
+members, and topologically sort internal path dependencies. Use this one graph
+for dry-run, live publication and final version checks; do not keep a second
+hand-written order. Exclude `publish = false` members.
 
-Run `cargo publish --dry-run --allow-dirty -p <crate>` in computed order.
-Before the new internal versions exist on crates.io, a dependent crate may fail
-only because that exact internal version is unavailable; classify that as an
-expected ordering constraint. Any metadata, package-content, or unrelated
-dependency failure blocks release.
+Run `cargo publish --dry-run --allow-dirty --locked -p <crate>` in graph order.
+Only an unavailable exact new internal version may defer a dependent dry-run.
+Record it as **not yet verified**, not PASS; metadata, content, or unrelated
+resolution failures block. Recheck each deferred package once its dependencies
+are visible, before publishing that package.
 
-On failure, retain and show the recorded preparation diff. Do not silently
-revert it; ask whether to fix forward or revert only the known files.
+For default CI assets, plan the supported Opi archives and native sandbox
+archives from `release.yml`. Full regression and binary distribution are
+separate: a patch may still build all advertised assets without repeating full
+three-platform regression. Release builds and extracted-artifact smoke prove
+the shipped bytes; debug CI does not replace them. Additional full release-profile
+tests are needed only for an identified profile-sensitive behavior.
 
-## Phase 3: changelog and release notes
+For explicitly requested local assets, first establish a single upload owner.
+The automatic tag uploader must not race a local uploader. If that cannot be
+established within the reviewed strategy, stop before pushing the tag.
+Keep local assets under `release-artifacts/v<version>/`; package only expected
+files, inspect foreign file formats, extract/native-smoke archives, reject
+missing/duplicate/unexpected assets and generate/verify `SHA256SUMS.txt` over
+the exact archive set.
 
-Promote the existing `## Unreleased` content into
-`## <version> - YYYY-MM-DD`. The changelog uses plain headings and carries
-no link reference definitions. Use commits since the previous tag only to
-detect omissions or category mistakes, not to overwrite curated changelog
-text.
+## 4. Public boundary -> verify the actual release candidate
 
-Detail retention window: full release detail is kept only for the three most
-recent released major series (for 0.x, the three most recent `0.N` series —
-while releasing 0.8.x: 0.8.x, 0.7.x, 0.6.x). When a release pushes a fourth
-series out of the window, compress that oldest series in the same release
-edit into a single per-series summary: one `## <series>.x` heading naming
-the covered versions and date span, followed by a few lines summarizing the
-series' scope. Retention compression is the only permitted modification of
-already released sections; never edit released detail otherwise.
-
-Keep the repository's allowed headings and Conventional Commit mapping. Create
-an untracked/transient release-notes file from the finalized version section.
-Add `CHANGELOG.md` and any intentionally tracked note to the exact release
-manifest.
-
-Run `opi-document scope=targeted` if changelog edits create or invalidate a
-declared documentation claim; otherwise record why no additional doc surface
-was affected.
-
-## Phase 4: build and artifact evidence
-
-Use the requested build strategy; if none was supplied, ask the user to select:
-
-1. CI-driven builds (recommended): local native smoke only; `release.yml`
-   builds supported `opi` and `opi-sandbox` archives.
-2. Local cross-build: build only targets supported by the host/toolchain.
-3. `--skip-cross`: no binary release artifacts.
-
-Before Phase 5, verify that the tag-triggered workflow honors the selected
-asset strategy. If automatic binary uploads conflict with `--skip-cross`, stop
-before pushing for an explicit strategy or CI decision; do not silently disable
-CI or remove assets.
-
-Always run a release build and release tests appropriate to the selected
-strategy. For every locally produced archive:
-
-- package only expected binaries/files;
-- extract into a temporary directory;
-- run the native binary's `--version` when executable on the host;
-- inspect foreign binaries using a file-format tool;
-- reject missing, duplicate, or unexpectedly large assets;
-- generate `SHA256SUMS.txt` over the exact archive set and verify it locally.
-
-Keep artifacts under `release-artifacts/v<version>/`. Build failures retain
-narrow evidence for diagnosis. Do not automatically run workspace-wide
-`cargo clean`.
-
-## Phase 5: public Git boundary
-
-Show the full release diff, exact staging manifest, target commit, tag, and
-planned GitHub assets. Warn that the commit/tag push is public, then require
-explicit confirmation.
+Show the complete diff, exact staging manifest, parent commit, proposed tag,
+asset plan, selected platform suite and planned Actions/draft operations.
+Explain the public boundary and require fresh confirmation.
 
 After confirmation:
 
-1. Stage each reviewed tracked path explicitly. Never use `git add -A`,
-   `git add .`, globs, or command substitution over `git diff`.
-2. Run `git diff --cached --name-only` and `git diff --cached --check`; verify
-   the staged set equals the manifest.
-3. Commit `chore: release v<version>` and create annotated tag `v<version>`.
-4. Push `main` and the tag without force.
-5. Create a draft GitHub release from the transient notes.
-6. For local artifacts, upload the archives and their `SHA256SUMS.txt` together.
-   For CI-driven builds, initially upload notes only.
-7. Record and atomically checkpoint the release commit, tag, and draft URL.
+1. Stage reviewed paths explicitly. Verify cached names equal the manifest and
+   `git diff --cached --check` passes. Commit `chore: release v<version>`.
+2. Record the candidate SHA, push `main` without force and checkpoint.
+3. Wait for this candidate's required `ci.yml` checks. The baseline's CI is not
+   candidate evidence. Do not push the tag or publish crates while this fails.
+4. Reuse exact-candidate platform results where applicable; otherwise dispatch
+   `platform-verify.yml` at that full SHA for the selected missing platforms and
+   suite. A large iteration needs full regression on all three; successful
+   final-candidate Linux product CI supplies Linux coverage, so normally dispatch
+   only Windows/macOS with `suite=full`. An affected-platform patch needs at
+   least its smoke. Inspect actual selected coverage;
+   unselected platforms are not a passing result. Record URLs and checkpoint.
+5. Create annotated tag `v<version>`, push it without force and checkpoint.
+6. Create the GitHub draft from the final notes and checkpoint. The tag uploader
+   waits a bounded interval for that draft; if creation was interrupted, retain
+   build artifacts and recover rather than substituting a public release.
+7. Wait for the tag-triggered build and mandatory sandbox evidence audit.
+   Download the exact assets and checksum file, verify every checksum and
+   confirm the declared asset set. Reuse CI extracted-artifact smoke only when
+   the downloaded bytes match its recorded evidence; otherwise extract/smoke
+   on a native host. Checkpoint verified asset identities. A missing required
+   target or failed audit blocks.
 
-For CI-driven builds, wait for the tag-triggered `release.yml`. It must build
-the declared targets, run the release evidence audit, generate
-`SHA256SUMS.txt`, and upload archives plus checksums to the draft. A missing
-asset, failed required target, or failed audit blocks Phase 6.
+`release.yml` is the default upload owner. It serializes runs for the tag,
+requires a draft and does not clobber existing assets. Replacing an asset is a
+separate reviewed operation; do not overwrite bytes after verification.
 
-## Phase 6: crates.io publication
+## 5. Irreversible boundary -> verify each published crate
 
-Show the validated dependency batches, already-published set, and the warning
-that crates cannot be deleted. Require explicit confirmation immediately before
-the first `cargo publish`.
+Show graph batches, verified/deferred dry-runs, already-published versions and
+remaining crates. Warn that crates.io versions cannot be deleted and require
+fresh confirmation immediately before the first live `cargo publish`.
 
-Publish one computed batch at a time. Independent crates within a batch may run
-in parallel only if output and result attribution remain unambiguous. Verify
-each version through the registry before advancing, allowing bounded index
-propagation waits.
+Publish graph batches with `--locked`; independent crates may run concurrently
+only with unambiguous results. Verify each version through the registry before
+advancing and checkpoint each verified crate. Allow bounded index propagation
+waits. Re-run deferred dry-runs after dependency visibility and before that
+package's publication.
 
-Retry automatically at most three times only for transient network/5xx/index
-propagation failures. Authentication, validation, version conflict, missing
-dependency, or uncertain partial success requires a user decision.
+Automatically retry at most three times for transient network/5xx/propagation
+failures. Authentication, validation, version conflict, missing dependency or
+uncertain partial success requires reconciliation and a user decision.
+Yank-and-abort requires separate explicit confirmation and never deletes bytes.
 
-After every verified crate, atomically update `.opi-release-state.json`. On a
-mid-release stop, offer retry, bounded wait, resume later, or yank-and-abort.
-Yanking is itself destructive and requires explicit confirmation; it does not
-delete the published version.
+## 6. Finalize -> verify registry consumers and publish the draft
 
-## Phase 7: finalize and verify
+Reconfirm candidate/tag identity, expected registry versions and the asset
+identities verified above; download/reverify again only if assets changed or
+proof is incomplete. Source-only strategies must claim and attach no binaries.
 
-Before publishing the draft, verify binary artifacts when the selected strategy
-produces them (`--skip-cross` instead verifies that no binary assets are
-claimed or attached):
+Install the published `opi-coding-agent` and `opi-sandbox` into isolated Cargo
+roots with the exact version and `--locked`. Verify `opi --version` and the
+sandbox's documented CLI/doctor posture. Registry existence alone is not
+consumer build proof. Report docs.rs as eventual/non-blocking unless policy
+says otherwise.
 
-1. Download the GitHub release assets into a fresh temporary directory.
-2. Verify every downloaded archive using the downloaded `SHA256SUMS.txt`.
-3. Extract and smoke the host-native `opi` binary; audit the declared
-   `opi-sandbox` platform assets.
+Publish the draft only after consumer and remote checks pass. Checkpoint
+completion, then remove the temporary state and notes; keep non-empty artifacts
+by default. Report candidate/tag, GitHub/crate URLs, build strategy, actual
+platform/suite coverage, required/optional target outcomes, checksum and consumer
+results, measured stage times and state-file disposition. Command exit zero
+alone is not completion.
 
-For every strategy:
-
-4. Verify every publishable crate in the computed dependency graph at `<version>`.
-5. Install `opi-coding-agent --version <version>` into an isolated cargo root
-   and verify `opi --version`.
-6. Report docs.rs state as eventual/non-blocking unless repository policy says
-   otherwise.
-
-Publish the draft only after these checks pass. Mark the resume state complete,
-report the final verified release, then remove `.opi-release-state.json` and
-the transient release-notes file. The resume state exists only for an
-incomplete release; a completed release is recoverable from public registries
-and Git history. Retain non-empty release artifacts by default. Disk-cache
-deletion is a separate user decision with an explicit, resolved target path.
-
-## Failure recovery
-
-- Before Phase 5: stop with the exact local diff and evidence. Fix forward or
-  revert only after the user chooses the known paths.
-- After Phase 5 but before Phase 6: retry draft/asset operations when safe. To
-  abandon, delete the draft/tag only after confirmation and revert the public
-  release commit; never rewrite history.
-- During Phase 6: preserve the verified published set. Resume from registry
-  truth, not memory. Published versions can only be yanked.
-- After Phase 7: amend the GitHub release through a new auditable action; never
-  mutate crates.io contents in place.
-
-## Completion report
-
-Report the release commit/tag, GitHub URL, all published crate URLs/versions, artifact
-count, checksum verification, selected build strategy, any tier-2 omissions,
-and the final state-file disposition. A release is not complete merely because
-the commands exited zero; remote versions and downloaded assets must agree.
+On any failure, retain the exact diff, original proof and verified remote set.
+Use [recovery](references/recovery.md); never restart already published work or
+silently widen authority.

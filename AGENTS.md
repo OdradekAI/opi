@@ -115,10 +115,16 @@ unresolved evidence gaps.
   behavior tests and integration/snapshot/conformance checks at changed public
   seams. Run every created/modified test binary or filter. Avoid tests that
   restate implementation/prose; doc contracts belong in the doc checker.
-- Cross-crate runtime, Phase exit, CI/release: applicable workspace gates are
-  `cargo fmt --check --all`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace --all-targets`, `cargo test --workspace --doc`, and
-  `cargo doc --workspace --no-deps` with `RUSTDOCFLAGS="-D warnings"`.
+- Cross-crate product runtime, Phase exit and CI/release use applicable product
+  gates: `cargo fmt --check --all`,
+  `cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings`,
+  `cargo test --workspace --exclude opi-eval --all-targets`,
+  `cargo test --workspace --exclude opi-eval --doc`, and
+  `cargo doc --workspace --exclude opi-eval --no-deps` with
+  `RUSTDOCFLAGS="-D warnings"`. `opi-eval` is current development-only calibration;
+  changed eval logic gets scoped local checks, not automatic product CI or a
+  release gate. Select native platform evidence under [CI policy](docs/ci.md);
+  reuse applicable proof rather than repeating unchanged gates.
 - Use `opi_ai::test_support::MockProvider`, local fixtures and isolated temp
   directories; serialize environment mutations. Tests must not require paid
   providers/live credentials or activate live calls because credentials exist.

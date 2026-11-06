@@ -14,6 +14,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
@@ -265,6 +269,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
@@ -282,8 +288,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+          # Tag builds may finish while the authorized caller creates the draft.
+          # Never upload to an already-public release or replace verified bytes.
+          found=0
+          for attempt in $(seq 1 12); do
+            if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+              test "$draft" = true || { echo "Refusing upload to a public release"; exit 1; }
+              found=1
+              break
+            fi
+            sleep 5
+          done
+          test "$found" = 1 || { echo "Draft missing; retain build artifacts and recover"; exit 1; }
           cd artifacts
-          gh release upload "${RELEASE_TAG}" \
-            opi-* \
-            SHA256SUMS.txt \
-            --clobber
+          gh release upload "$RELEASE_TAG" opi-* SHA256SUMS.txt

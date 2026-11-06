@@ -6,7 +6,7 @@
   "trigger": "workflow_dispatch",
   "admission": "digest",
   "workflow": {
-   "path": ".github/workflows/opi-eval-external-lock-materialization.yml",
+   "path": "crates/opi-eval/development/workflow-contracts/opi-eval-external-lock-materialization.yml",
    "sha256": "d784a8c52031786ada45903c5236be439b44c977196e7007446f0b89d061b1f3"
   },
   "producers": [

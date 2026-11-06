@@ -18,7 +18,12 @@ Reading or maintaining a skill does not invoke its workflow.
 - Unsure: explicitly invoke `opi-workflow` for one recommendation.
 
 Ordinary scoped maintenance can use AGENTS.md directly. The lifecycle is not a
-checklist to run for every edit.
+checklist to run for every edit. [CI/platform policy](../../docs/ci.md) owns
+Linux product defaults and optional native evidence; reuse applicable checks
+across skills rather than rerunning them by workflow name. Current `opi-eval`
+is development-only calibration, not automatic product CI or release admission.
+Release and document share a bounded version-document procedure, not an implicit
+invocation of another user-only skill.
 
 ## Lifecycle and return loops
 

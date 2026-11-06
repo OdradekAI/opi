@@ -45,7 +45,7 @@ switch ($mode) {
     cargo fmt --check --all
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo fmt --check"; exit 1 }
     Write-Host "Checking clippy (production lib/bin targets)..."
-    cargo clippy --workspace --lib --bins '--' -D warnings
+    cargo clippy --workspace --exclude opi-eval --lib --bins '--' -D warnings
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: clippy (production targets)"; exit 1 }
   }
 
@@ -57,17 +57,17 @@ switch ($mode) {
     cargo fmt --check --all
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo fmt --check"; exit 1 }
     Write-Host "Checking clippy (all targets)..."
-    cargo clippy --workspace --all-targets '--' -D warnings
+    cargo clippy --workspace --exclude opi-eval --all-targets '--' -D warnings
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: clippy"; exit 1 }
     Write-Host "Running workspace tests..."
-    cargo test --workspace --all-targets
+    cargo test --workspace --exclude opi-eval --all-targets
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo test"; exit 1 }
     Write-Host "Running doc tests..."
-    cargo test --workspace --doc
+    cargo test --workspace --exclude opi-eval --doc
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: cargo test --doc"; exit 1 }
     Write-Host "Checking rustdoc..."
     $env:RUSTDOCFLAGS = "-D warnings"
-    cargo doc --workspace --no-deps
+    cargo doc --workspace --exclude opi-eval --no-deps
     Remove-Item Env:RUSTDOCFLAGS
     if ($LASTEXITCODE -ne 0) { Write-Error "FAIL: rustdoc"; exit 1 }
   }

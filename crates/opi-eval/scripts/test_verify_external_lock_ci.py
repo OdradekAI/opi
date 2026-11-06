@@ -332,7 +332,7 @@ class AcceptsCommittedContract(unittest.TestCase):
                 "--root",
                 str(REPO_ROOT),
                 "--workflow",
-                str(REPO_ROOT / WORKFLOW_PATH),
+                str(REPO_ROOT / json.loads((REPO_ROOT / STATIC_LOCK).read_text())["authority"]["workflow"]["path"]),
                 "--script",
                 str(REPO_ROOT / MATERIALIZER),
             ],

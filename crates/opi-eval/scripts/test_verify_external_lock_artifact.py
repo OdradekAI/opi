@@ -25,7 +25,7 @@ SCRIPT = Path(__file__).with_name("verify-external-lock-artifact.py")
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 STATIC_LOCK = "crates/opi-eval/external-locks/static/linux-x86_64.json"
-WORKFLOW_PATH = ".github/workflows/opi-eval-external-lock-materialization.yml"
+WORKFLOW_PATH = json.loads((REPO_ROOT / STATIC_LOCK).read_text(encoding="utf-8"))["authority"]["workflow"]["path"]
 MATERIALIZER = "crates/opi-eval/scripts/materialize-external-locks.sh"
 CI_VERIFIER = "crates/opi-eval/scripts/verify-external-lock-ci.py"
 AGENT_BUILDER = "crates/opi-eval/scripts/build-agent-artifacts.sh"

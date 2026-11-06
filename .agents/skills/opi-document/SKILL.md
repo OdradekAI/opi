@@ -36,7 +36,9 @@ worktree, the current branch diff, or the most recent implementation change.
   documentation authority; the diff does not expand the requested scope or
   authorize a repository-wide rewrite.
 - `scope=version-bump`: update version-bearing documentation only after
-  `opi-release` has changed the workspace version; `version` is required.
+  `opi-release` has changed the workspace version; `version` is required. Use
+  the shared [version-document procedure](../_shared/references/version-documents.md).
+  Release may reuse that bounded procedure without invoking this user-only skill.
 
 ## 1. Establish the documentation delta
 

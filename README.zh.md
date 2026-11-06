@@ -254,13 +254,14 @@ adapter。外部 adapter 一旦被选中，任何 adapter 或协议失败都会 
 | [`opi-coding-agent`](crates/opi-coding-agent) | `opi` CLI、内置工具、package/config/session 装配和 `CodingHarness` |
 | [`opi-protocol`](crates/opi-protocol) | 版本化 `command-execution-jsonl-v1` 协议类型、schema、codec 和 fixture |
 | [`opi-sandbox`](crates/opi-sandbox) | 独立命令限制 SDK/CLI 和协议后端 |
-| [`opi-eval`](crates/opi-eval) | 未发布的 Independent Companion，用于 Agent 中立的跨 Agent 评测 |
+| [`opi-eval`](crates/opi-eval) | 未发布的开发校准工具，用于 Agent 中立的跨 Agent 评测 |
 
 `opi-eval` 是未发布的 Independent Companion：作为 Agent 中立的 workspace 成员
 用于 Agent 中立的跨 Agent 评测，不依赖任何 Opi crate，也没有任何 Opi 产品
 链接、注册或激活它。它不在 `opi` 中注册 provider、tool、package、command、
 extension、启动 hook 或默认捕获路径，普通 `opi` 运行时行为不因它的存在而
-改变。
+改变。它当前仅用于开发校准，排除在产品 CI 和发布门槛之外；修改该工具时
+执行其本地专项测试。
 
 面向机器的表面仍是不稳定 0.x 契约：
 
@@ -277,12 +278,15 @@ extension、启动 hook 或默认捕获路径，普通 `opi` 运行时行为不�
 Workspace 使用 Rust edition 2024，并要求 Rust 1.97 或更高版本。
 
 ```sh
-cargo build
+cargo build -p opi-coding-agent
 cargo run -p opi-coding-agent -- --help
-cargo test --workspace --all-targets
+cargo test --workspace --exclude opi-eval --all-targets
 cargo fmt --check --all
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings
 ```
+
+这些是开发命令示例，不是每次改动都要重跑的清单。[CI/平台策略](docs/ci.zh.md)
+说明 Linux 默认检查、可选 Windows/macOS smoke 和大迭代的完整三平台回归。
 
 修改仓库前请阅读 [AGENTS.md](AGENTS.md)，其中包含权威来源索引、架构边界、测试
 策略和 Git 安全规则。持久技术方向见

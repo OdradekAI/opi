@@ -11,9 +11,12 @@ controls. It resolves and freezes those inputs before any Agent starts,
 records each trial in a sealed evidence bundle, and derives scores only from
 evidence that still verifies.
 
-The crate is an unpublished, Agent-neutral workspace companion: it is not
-part of the `opi` runtime, depends on no Opi crate, and nothing in `opi`
-links, registers, or activates it.
+The crate is an unpublished, Agent-neutral development companion used to
+calibrate evaluation logic and development workflows. It is not part of the
+`opi` runtime, depends on no Opi crate, and nothing in `opi` links, registers,
+or activates it. Product CI and releases do not run or gate on eval. Run its
+scoped offline tests locally when changing this tool; real trials still need
+the evaluation workflow's authorization and budget.
 
 ## Relationship to the `opi-eval` skill
 
@@ -450,15 +453,16 @@ remote base URLs require the explicit `[execution].mode = "live"`.
   the task's base revision; an empty nop patch still collects and grades
   zero).
 
-The manually dispatched
-[external-lock materialization workflow](../../.github/workflows/opi-eval-external-lock-materialization.yml)
-follows the same delegation rule: it builds the candidate Companion, seeds
-the declared cache, delegates the diagnostic preparation and the explicit
-`oracle-witness` conformance to the shared local CLI, and publishes
-`opi-eval-materialization-receipt/2` only after both succeed. The
-[native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml)
-is the regression caller over that same shared preparation; CI keeps no
-independent transform or admission rule.
+There are no active eval GitHub workflows. The byte-preserved
+[development workflow contracts](development/workflow-contracts/README.md)
+retain the former external-lock and native-smoke producer definitions for
+offline contract tests and historical evidence interpretation, not dispatch.
+Local `doctor`, `prepare`, conformance and operator commands remain the
+development entrypoints. The materializer's `prepare --cache --plan` mode
+remains local acquisition; its historical GitHub receipt mode is not a new
+local receipt authority. Verify old external receipts with their matching
+historical checkout and lock; native receipts also require the original Git
+objects. A current lock does not retroactively rebind old evidence.
 
 ## Local acceptance and offline verification
 
@@ -689,7 +693,7 @@ flag reference.
 | Hermetic inputs | [`tests/fixtures/`](tests/fixtures) |
 | Assembled run behavior | [`tests/assembled_run.rs`](tests/assembled_run.rs) |
 | Regrade/report lifecycle | [`tests/end_to_end_report.rs`](tests/end_to_end_report.rs) |
-| Native material and fidelity checks | [`scripts/`](scripts), [native-smoke workflow](../../.github/workflows/opi-eval-native-smoke.yml) |
+| Native material and fidelity checks | [`scripts/`](scripts), [frozen producer contracts](development/workflow-contracts/README.md) |
 
 Use local fixtures and deterministic providers in tests. Tests must not
 call a paid provider or become live merely because credentials exist in

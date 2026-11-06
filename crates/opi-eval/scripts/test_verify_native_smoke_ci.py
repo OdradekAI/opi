@@ -29,7 +29,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 VERIFIER = Path(__file__).with_name("verify-native-smoke-ci.py")
-WORKFLOW = REPO_ROOT / ".github/workflows/opi-eval-native-smoke.yml"
+WORKFLOW = REPO_ROOT / "crates/opi-eval/development/workflow-contracts/opi-eval-native-smoke.yml"
 PRODUCER = REPO_ROOT / "crates/opi-eval/scripts/native-smoke.sh"
 BUILDER = REPO_ROOT / "crates/opi-eval/scripts/build-agent-artifacts.sh"
 PROVIDER = REPO_ROOT / "crates/opi-eval/scripts/scripted-provider.py"

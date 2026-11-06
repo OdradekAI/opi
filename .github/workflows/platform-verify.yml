@@ -1,0 +1,118 @@
+name: Platform verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact 40-character commit SHA to verify
+        required: true
+        type: string
+      linux:
+        description: Verify Linux
+        type: boolean
+        default: true
+      windows:
+        description: Verify Windows
+        type: boolean
+        default: false
+      macos:
+        description: Verify macOS
+        type: boolean
+        default: false
+      suite:
+        description: Native smoke or complete product regression
+        type: choice
+        options: [smoke, full]
+        default: smoke
+  workflow_call:
+    inputs:
+      ref:
+        required: true
+        type: string
+      linux:
+        type: boolean
+        default: true
+      windows:
+        type: boolean
+        default: false
+      macos:
+        type: boolean
+        default: false
+      suite:
+        type: string
+        default: smoke
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+      - id: select
+        env:
+          REF: ${{ inputs.ref }}
+          LINUX: ${{ inputs.linux }}
+          WINDOWS: ${{ inputs.windows }}
+          MACOS: ${{ inputs.macos }}
+          SUITE: ${{ inputs.suite }}
+        run: |
+          set -euo pipefail
+          test "$SUITE" = smoke || test "$SUITE" = full
+          test "$(git rev-parse HEAD)" = "$REF"
+          python3 scripts/opi-ci-scope.py matrix --ref "$REF" --linux "$LINUX" --windows "$WINDOWS" --macos "$MACOS" --output "$GITHUB_OUTPUT"
+
+  execution_acceptance:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+      - name: Verify native PowerShell development wrappers
+        if: runner.os == 'Windows'
+        run: python .agents/skills/opi-implement/scripts/test_opi_impl_smoke.py
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: product-${{ matrix.os }}-${{ inputs.suite }}
+      - name: Full product regression
+        if: inputs.suite == 'full'
+        run: cargo test --workspace --exclude opi-eval --all-targets --locked
+      - name: Native platform smoke
+        if: inputs.suite == 'smoke'
+        shell: bash
+        run: |
+          cargo test -p opi-sandbox --lib --locked
+          cargo test -p opi-ai --test auth_process_lifecycle --locked
+          cargo test -p opi-coding-agent --lib native_keyring --locked
+          cargo test -p opi-coding-agent --test cross_mode_runtime --test runtime_failure_recovery --locked
+      - name: Build execution backend mock
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_backend_mock --no-run --locked
+      - name: Run execution product acceptance
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_product --locked
+      - name: Run execution protocol host acceptance
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_protocol_host --locked
+      - name: Run execution runtime acceptance
+        run: cargo test -p opi-coding-agent --features execution-backend-test-fixture --test execution_runtime --locked
+      - name: Record coverage
+        shell: bash
+        env:
+          REF: ${{ inputs.ref }}
+          SUITE: ${{ inputs.suite }}
+          PLATFORM: ${{ matrix.os }}
+        run: |
+          printf 'Verified commit: `%s`\n\nPlatform: `%s`\n\nSuite: `%s`\n\nUnselected platforms are not verified by this run.\n' "$REF" "$PLATFORM" "$SUITE" >> "$GITHUB_STEP_SUMMARY"

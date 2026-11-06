@@ -14,12 +14,17 @@ Gate: `.agents/skills/opi-implement/scripts/opi-impl-smoke.sh full` (or `.ps1 fu
 on Windows). It is the single authoritative Phase-exit order and runs each gate
 exactly once in this
 order: `python scripts/opi-doc-check.py`, `cargo fmt --check --all`,
-`cargo clippy --workspace --all-targets -- -D warnings`,
-`cargo test --workspace --all-targets`, `cargo test --workspace --doc`, then
-`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps`. Cross-platform
+`cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings`,
+`cargo test --workspace --exclude opi-eval --all-targets`,
+`cargo test --workspace --exclude opi-eval --doc`, then
+`RUSTDOCFLAGS="-D warnings" cargo doc --workspace --exclude opi-eval --no-deps`. Cross-platform
 parity, the exact order, and exactly-once occurrence are pinned by
 `python .agents/skills/opi-implement/scripts/test_opi_impl_smoke.py`. There is no
-preceding `cargo build --workspace` and no D.3 rerun.
+preceding `cargo build --workspace` and no D.3 rerun. These are product gates;
+`opi-eval` calibration changes use its scoped local gate. Select additional
+native evidence under [CI/platform policy](../../../../docs/ci.md), not an
+automatic full three-platform rerun for every task. Reuse applicable existing
+execution proof while preserving independent review and Phase ownership.
 
 ## `documentation` Tier
 

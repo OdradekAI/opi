@@ -179,7 +179,7 @@ def incidental_record(*, changed_path: str) -> dict[str, object]:
         "record_kind": "incidental-repair",
         "id": "I1",
         "trigger_batch": "B1",
-        "blocking_check": "cargo test --workspace --all-targets",
+        "blocking_check": "cargo test --workspace --exclude opi-eval --all-targets",
         "scope_rationale": "The collision blocks the approved B1 workspace gate.",
         "guardrails": {
             "required_for_green": True,
@@ -191,12 +191,12 @@ def incidental_record(*, changed_path: str) -> dict[str, object]:
         },
         "changed_paths": [changed_path],
         "red_before": {
-            "command": "cargo test --workspace --all-targets",
+            "command": "cargo test --workspace --exclude opi-eval --all-targets",
             "expected": "FAIL",
             "observed": "FAIL: helper name collision",
         },
         "green_after": {
-            "command": "cargo test --workspace --all-targets",
+            "command": "cargo test --workspace --exclude opi-eval --all-targets",
             "expected": "PASS",
             "observed": "PASS",
         },

@@ -61,6 +61,15 @@ Choose the union of checks required by every changed surface:
 | Cross-crate runtime behavior | applicable workspace gates |
 | Publication or packaging | artifact/package smoke plus the explicitly invoked `opi-release` workflow |
 
+Product workspace gates exclude the unpublished development-calibration
+`opi-eval` crate. Changes to that tool still require its own scoped local checks;
+its benchmarks and hosted producer workflows are not product CI/release gates.
+Use [CI/platform policy](../../../../docs/ci.md) for Linux defaults, optional
+native smoke and full major-iteration regression. A version number never waives
+affected-platform proof. Existing raw execution facts may be reused after
+source/build/toolchain/feature/target applicability checks; independent reviews
+still establish their own conclusions. This adds no verification ledger.
+
 Escalate when one change crosses rows; do not downgrade a protocol or
 model-visible change because most edited files are prose.
 Do not rerun unchanged evidence against the same relevant state. Record the

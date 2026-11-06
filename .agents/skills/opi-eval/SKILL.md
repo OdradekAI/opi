@@ -13,6 +13,11 @@ privacy, reports and cleanup. Opi source fixes follow the
 [user-confirmed repair branch](#user-confirmed-source-repairs). Only
 `opi-implement` owns `.opi-impl-state.json` and Phase exit.
 
+This is development calibration, not ordinary product CI or release admission.
+The unpublished crate has no active GitHub producer workflows; retained frozen
+producer definitions serve offline/historical verification only. Keep local
+calibration and its scoped checks separate from product gates.
+
 ## Inputs and routing
 
 The normal benchmark entry is one of these actions:
@@ -311,8 +316,9 @@ scope is already authorized.
 
 ## Fidelity authority
 
-For the explicit fidelity branch, public-seam Rust tests and CI remain the
-sole deterministic acceptance baseline. `provider-fidelity` canaries are
+For the explicit fidelity branch, local public-seam Rust checks and applicable
+product CI remain the sole deterministic acceptance baseline. Eval-tool checks stay
+local, not a new product/release gate. `provider-fidelity` canaries are
 signals; `runtime-fidelity` cases require a registered criterion and a stated
 fidelity gap. Do not create a behavior-baseline manifest or generate cases from
 the implementation ledger. Compare only

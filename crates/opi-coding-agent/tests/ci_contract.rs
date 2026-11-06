@@ -1,46 +1,108 @@
-//! CI selects the same offline runtime acceptance on Linux, macOS and Windows.
+//! Product CI routing and optional native-platform verification contracts.
 
 // opi-runtime-acceptance
+
+use serde_yaml::{Mapping, Value};
+
+fn workflow(source: &str) -> Mapping {
+    serde_yaml::from_str::<Value>(source)
+        .expect("workflow YAML parses")
+        .as_mapping()
+        .expect("workflow is a mapping")
+        .clone()
+}
+
+fn field<'a>(mapping: &'a Mapping, key: &str) -> &'a Value {
+    mapping
+        .get(Value::String(key.to_owned()))
+        .unwrap_or_else(|| panic!("missing {key}"))
+}
+
+fn mapping(value: &Value) -> &Mapping {
+    value.as_mapping().expect("mapping")
+}
+
+fn job<'a>(workflow: &'a Mapping, name: &str) -> &'a Mapping {
+    mapping(field(mapping(field(workflow, "jobs")), name))
+}
+
+fn commands(job: &Mapping) -> String {
+    field(job, "steps")
+        .as_sequence()
+        .expect("steps")
+        .iter()
+        .filter_map(|step| step.get("run").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 #[test]
-fn phase17_ci_matrix_selects_same_acceptance_on_three_platforms() {
-    let ci = include_str!("../../../.github/workflows/ci.yml");
-    let start = ci
-        .find("  phase17_acceptance:")
-        .expect("the phase17_acceptance job exists");
-    let rest = &ci[start..];
-    // The job block runs until the next sibling job key: a line indented by
-    // exactly two spaces (deeper indentation belongs to this job's body).
-    let mut block_lines: Vec<&str> = Vec::new();
-    for (i, line) in rest.lines().enumerate() {
-        if i > 0
-            && ((line.starts_with("  ") && !line.starts_with("   "))
-                || (!line.starts_with(' ') && !line.is_empty()))
-        {
-            break;
+fn routine_product_checks_are_linux_only_and_exclude_eval() {
+    let ci = workflow(include_str!("../../../.github/workflows/ci.yml"));
+    for name in ["product", "msrv"] {
+        let selected = job(&ci, name);
+        assert_eq!(field(selected, "runs-on").as_str(), Some("ubuntu-latest"));
+        assert_eq!(
+            field(selected, "if").as_str(),
+            Some("needs.scope.outputs.rust == 'true'")
+        );
+        for line in commands(selected).lines() {
+            if line.contains("--workspace") {
+                assert!(line.contains("--exclude opi-eval"), "{line}");
+            }
         }
-        block_lines.push(line);
     }
-    let block = block_lines.join("\n");
-    for os in ["ubuntu-latest", "macos-latest", "windows-latest"] {
-        assert!(
-            block.contains(os),
-            "the phase17 acceptance matrix includes {os}"
-        );
+    let jobs = mapping(field(&ci, "jobs"));
+    for redundant in ["phase17_acceptance", "sandbox_package", "target_check"] {
+        assert!(!jobs.contains_key(Value::String(redundant.to_owned())));
     }
-    for target in [
-        "--test cross_mode_runtime",
-        "--test runtime_failure_recovery",
-        "--test architecture_guards",
-        "--test test_hermeticity",
-        "--test ci_contract",
-    ] {
-        assert!(
-            block.contains(target),
-            "the phase17 acceptance job selects {target} on every matrix OS"
-        );
+}
+
+#[test]
+fn required_gate_checks_selected_results_even_after_failure_or_skip() {
+    let ci = workflow(include_str!("../../../.github/workflows/ci.yml"));
+    let required = job(&ci, "required");
+    assert_eq!(field(required, "if").as_str(), Some("always()"));
+    let needs = field(required, "needs").as_sequence().expect("needs");
+    for name in ["scope", "product", "msrv", "platforms"] {
+        assert!(needs.iter().any(|value| value.as_str() == Some(name)));
     }
-    assert!(
-        !block.contains("if: matrix.os") && !block.contains("if: runner"),
-        "the phase17 acceptance job has no OS-conditional gating"
+    let run = commands(required);
+    for result in ["SCOPE", "PRODUCT", "MSRV", "PLATFORMS"] {
+        assert!(run.contains(&format!("test \"${result}\" = success")));
+    }
+}
+
+#[test]
+fn automatic_platform_smoke_is_bound_to_the_current_candidate() {
+    let ci = workflow(include_str!("../../../.github/workflows/ci.yml"));
+    let platforms = job(&ci, "platforms");
+    assert_eq!(
+        field(platforms, "uses").as_str(),
+        Some("./.github/workflows/platform-verify.yml")
     );
+    let inputs = mapping(field(platforms, "with"));
+    assert_eq!(field(inputs, "ref").as_str(), Some("${{ github.sha }}"));
+    assert_eq!(field(inputs, "linux").as_bool(), Some(false));
+    assert_eq!(field(inputs, "suite").as_str(), Some("smoke"));
+}
+
+#[test]
+fn native_verification_exposes_platform_selection_and_has_no_eval_gate() {
+    let platforms = workflow(include_str!(
+        "../../../.github/workflows/platform-verify.yml"
+    ));
+    let events = mapping(field(&platforms, "on"));
+    for event in ["workflow_dispatch", "workflow_call"] {
+        let inputs = mapping(field(mapping(field(events, event)), "inputs"));
+        for name in ["ref", "linux", "windows", "macos", "suite"] {
+            field(inputs, name);
+        }
+    }
+    let acceptance = job(&platforms, "execution_acceptance");
+    let run = commands(acceptance);
+    assert!(run.contains("--workspace --exclude opi-eval --all-targets --locked"));
+    assert!(run.contains("--test auth_process_lifecycle"));
+    assert!(run.contains("--test execution_protocol_host"));
+    assert!(!run.contains("cargo test -p opi-eval"));
 }

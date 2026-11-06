@@ -1,33 +1,10 @@
-//! Phase 16 task 16.15.2 — native opi-sandbox CI/release topology guard
-//! (SC16-12b / design `### Repository gates` + `### Native platform contract`).
+//! Native platform and release-delivery configuration guards.
 //!
-//! Asserts the repository CI/release wiring matches the shipped contract:
-//!   - `ci.yml` runs an opi-sandbox package job on Linux + macOS that builds the
-//!     archive, packages it, and invokes the standalone smoke against the
-//!     EXTRACTED binary (provenance: `extracted/bin/opi-sandbox`, never a bare
-//!     workspace `target/` binary);
-//!   - `ci.yml` no longer carries the stale Phase 15 `sandbox_product` job (it
-//!     ran `sandbox_strict`/`sandbox_linux_backend`, which task 16.16.1 deletes
-//!     from the core crate — keeping it would leave a dangling reference);
-//!   - `ci.yml` retains `target_check` as the six-target opi-coding-agent
-//!     compile gate — intentionally retained because it references no sandbox
-//!     tests, only cross-target compilation, and preserves PR-time cross-arch
-//!     compile coverage;
-//!   - `release.yml` builds opi-sandbox archives for Linux + macOS only — NO
-//!     Windows opi-sandbox artifact — while the ordinary six-target Opi build
-//!     matrix is preserved unchanged;
-//!   - the two superseded standalone sandbox workflows are gone (their coverage
-//!     folded into `ci.yml`'s opi-sandbox job).
-//!
-//! All four supported opi-sandbox archive triples are built and smoked on
-//! matching native runners. The 16.15.1 packager detects the HOST triple and
-//! refuses to label a cross-built archive as native.
-//!
-//! These are config-contract guards over the workflow YAML (the artifact under
-//! test). Execution acceptance is parsed as YAML nodes; the remaining topology
-//! guards are structurally sliced by top-level job key. The packager's own
-//! layout/lock/extraction contract is pinned independently by
-//! `opi_sandbox_packaging.rs` (16.15.1) and is not duplicated.
+//! Selected native runners execute the feature-gated process-host acceptance.
+//! Release builds cover six Opi targets and four native opi-sandbox archives;
+//! the complete sandbox evidence audit remains mandatory before asset upload.
+//! Packaging layout and extraction behavior belong to `opi_sandbox_packaging`.
+//! These guards inspect actual YAML nodes rather than comments or decoy text.
 
 #![forbid(unsafe_code)]
 
@@ -86,6 +63,7 @@ fn validate_cargo_test_command(
     let mut feature_seen = false;
     let mut test_target_seen = false;
     let mut no_run = false;
+    let mut locked = false;
     let mut index = 2;
     while index < tokens.len() {
         match tokens[index] {
@@ -106,6 +84,10 @@ fn validate_cargo_test_command(
             }
             "--no-run" if expect_no_run && !no_run => {
                 no_run = true;
+                index += 1;
+            }
+            "--locked" if !locked => {
+                locked = true;
                 index += 1;
             }
             token => {
@@ -156,30 +138,9 @@ fn validate_execution_acceptance_ci(yaml: &str) -> Result<(), String> {
         yaml_field(job, "strategy", "jobs.execution_acceptance")?,
         "jobs.execution_acceptance.strategy",
     )?;
-    let matrix = yaml_mapping(
-        yaml_field(strategy, "matrix", "jobs.execution_acceptance.strategy")?,
-        "jobs.execution_acceptance.strategy.matrix",
-    )?;
-    if yaml_has_key(matrix, "exclude") {
-        return Err("jobs.execution_acceptance matrix exclude is forbidden".to_owned());
-    }
-    let os = yaml_field(matrix, "os", "jobs.execution_acceptance.strategy.matrix")?
-        .as_sequence()
-        .ok_or_else(|| "jobs.execution_acceptance matrix.os must be a sequence".to_owned())?;
-    let actual_os = os
-        .iter()
-        .enumerate()
-        .map(|(index, value)| {
-            value.as_str().ok_or_else(|| {
-                format!("jobs.execution_acceptance matrix.os[{index}] must be a string")
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let expected_os = ["ubuntu-latest", "macos-latest", "windows-latest"];
-    if actual_os.as_slice() != expected_os {
-        return Err(format!(
-            "jobs.execution_acceptance matrix.os must equal {expected_os:?}, got {actual_os:?}"
-        ));
+    let matrix = yaml_field(strategy, "matrix", "jobs.execution_acceptance.strategy")?;
+    if matrix.as_str() != Some("${{ fromJSON(needs.select.outputs.matrix) }}") {
+        return Err("jobs.execution_acceptance matrix must use the selected platform matrix; static exclusions are forbidden".to_owned());
     }
 
     let runs_on = yaml_field(job, "runs-on", "jobs.execution_acceptance")?
@@ -506,18 +467,14 @@ fn named_step_block(job: &str, step_name: &str) -> String {
     block
 }
 
-const CI: &str = ".github/workflows/ci.yml";
+const PLATFORMS: &str = ".github/workflows/platform-verify.yml";
 const RELEASE: &str = ".github/workflows/release.yml";
 
 const VALID_SEMANTIC_EXECUTION_ACCEPTANCE: &str = r#"
 jobs:
   execution_acceptance:
     strategy:
-      matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - name: Build execution backend mock
@@ -583,7 +540,7 @@ const SIX_OPI_ARTIFACTS: &[&str] = &[
     "opi-windows-arm64",
 ];
 
-// The six triples the `target_check` compile gate must still cover.
+// Foreign-target compilation belongs to release builds, not every PR.
 const SIX_TARGET_TRIPLES: &[&str] = &[
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
@@ -594,76 +551,16 @@ const SIX_TARGET_TRIPLES: &[&str] = &[
 ];
 
 #[test]
-fn ci_defines_opi_sandbox_package_job_with_extracted_smoke() {
-    let ci = read_repo_file(CI);
-    let job = job_block(&ci, "sandbox_package");
-    // Builds the standalone opi-sandbox binary (release). Three independent
-    // tokens so the assertion survives flag reordering.
-    assert_present(
-        "ci.sandbox_package",
-        &job,
-        &["cargo build", "-p opi-sandbox", "--bin opi-sandbox"],
-    );
-    // Packages via the host-neutral packager.
-    assert_present("ci.sandbox_package", &job, &["package-opi-sandbox.sh"]);
-    let verify = named_step_block(&job, "Verify native archive");
-    assert_present(
-        "ci.sandbox_package.verify",
-        &verify,
-        &["package-opi-sandbox.sh", "--verify"],
-    );
-    // Smokes the EXTRACTED binary — the provenance marker that distinguishes a
-    // release archive from a workspace-only binary.
-    assert_present(
-        "ci.sandbox_package",
-        &job,
-        &["opi-sandbox-smoke.sh", "extracted/bin/opi-sandbox"],
-    );
-}
-
-#[test]
-fn ci_opi_sandbox_package_job_runs_linux_and_macos_only() {
-    let ci = read_repo_file(CI);
-    let job = job_block(&ci, "sandbox_package");
-    assert_present(
-        "ci.sandbox_package",
-        &job,
-        &["ubuntu-latest", "macos-latest"],
-    );
-    // No Windows runner in the opi-sandbox slice (Windows has no native
-    // opi-sandbox confinement — 16.14.2 unsupported posture).
-    assert_absent("ci.sandbox_package", &job, &["windows-latest"]);
-}
-
-#[test]
-fn ci_no_longer_has_stale_phase15_sandbox_product_job() {
-    let ci = read_repo_file(CI);
-    // The whole Phase 15 sandbox_product job (and its scoped sandbox_strict /
-    // sandbox_linux_backend acceptance) is removed; its tests are deleted by
-    // 16.16.1, so keeping the job would dangle.
-    assert_absent("ci", &ci, &["sandbox_product:"]);
-}
-
-#[test]
-fn ci_retains_target_check_six_target_compile_gate() {
-    let ci = read_repo_file(CI);
-    let job = job_block(&ci, "target_check");
-    for triple in SIX_TARGET_TRIPLES {
-        assert_present("ci.target_check", &job, &[*triple]);
-    }
-}
-
-#[test]
-fn ci_runs_feature_gated_execution_acceptance_after_building_mock() {
-    let ci = read_repo_file(CI);
-    validate_execution_acceptance_ci(&ci)
+fn selected_platforms_run_feature_gated_acceptance_after_building_mock() {
+    let platforms = read_repo_file(PLATFORMS);
+    validate_execution_acceptance_ci(&platforms)
         .unwrap_or_else(|error| panic!("invalid execution_acceptance topology: {error}"));
 }
 
 #[test]
 fn execution_acceptance_validator_accepts_semantic_yaml_variants() {
     validate_execution_acceptance_ci(VALID_SEMANTIC_EXECUTION_ACCEPTANCE)
-        .expect("block OS list, multiline commands, and reordered flags are valid");
+        .expect("selected matrix, multiline commands, and reordered flags are valid");
 }
 
 #[test]
@@ -709,25 +606,14 @@ fn execution_acceptance_validator_rejects_job_level_if_with_spaced_colon() {
 }
 
 #[test]
-fn execution_acceptance_validator_rejects_block_matrix_exclude() {
+fn execution_acceptance_validator_rejects_static_matrix_exclusions() {
     let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
-        "    runs-on: ${{ matrix.os }}",
-        "        exclude:\n          - os: macos-latest\n    runs-on: ${{ matrix.os }}",
+        "      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}",
+        "      matrix: { os: [ubuntu-latest], exclude: [{ os: windows-latest }] }",
         1,
     );
     assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
-    assert_execution_acceptance_error(&mutated, "matrix exclude");
-}
-
-#[test]
-fn execution_acceptance_validator_rejects_flow_matrix_exclude() {
-    let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
-        "      matrix:\n        os:\n          - ubuntu-latest\n          - macos-latest\n          - windows-latest",
-        "      matrix: { os: [ubuntu-latest, macos-latest, windows-latest], exclude: [{ os: windows-latest }] }",
-        1,
-    );
-    assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
-    assert_execution_acceptance_error(&mutated, "matrix exclude");
+    assert_execution_acceptance_error(&mutated, "matrix");
 }
 
 #[test]
@@ -742,14 +628,14 @@ fn execution_acceptance_validator_rejects_step_level_if() {
 }
 
 #[test]
-fn execution_acceptance_validator_rejects_extra_matrix_os() {
+fn execution_acceptance_validator_rejects_bypassing_selected_matrix() {
     let mutated = VALID_SEMANTIC_EXECUTION_ACCEPTANCE.replacen(
-        "          - windows-latest",
-        "          - windows-latest\n          - freebsd-latest",
+        "${{ fromJSON(needs.select.outputs.matrix) }}",
+        "${{ fromJSON(inputs.matrix) }}",
         1,
     );
     assert_ne!(mutated, VALID_SEMANTIC_EXECUTION_ACCEPTANCE);
-    assert_execution_acceptance_error(&mutated, "matrix.os");
+    assert_execution_acceptance_error(&mutated, "matrix");
 }
 
 #[test]
@@ -835,6 +721,9 @@ fn release_preserves_six_target_opi_build_matrix() {
     let build = job_block(&release, "build");
     for artifact in SIX_OPI_ARTIFACTS {
         assert_present("release.build", &build, &[*artifact]);
+    }
+    for triple in SIX_TARGET_TRIPLES {
+        assert_present("release.build", &build, &[*triple]);
     }
 }
 
@@ -1160,10 +1049,8 @@ fn unix_smoke_names_every_complete_native_acceptance_sentinel() {
 
 #[test]
 fn superseded_standalone_sandbox_workflows_are_removed() {
-    // sandbox-macos.yml (Phase 15; triggered on sandbox_strict.rs and ran
-    // --test sandbox_strict, which 16.16.1 deletes) and sandbox-macos-phase16.yml
-    // (the 16.14.1 focused verifier) are both removed once ci.yml carries the
-    // opi-sandbox matrix.
+    // Selected platform verification and the audited release pipeline own
+    // native sandbox coverage, without competing standalone workflows.
     for stale in [
         ".github/workflows/sandbox-macos.yml",
         ".github/workflows/sandbox-macos-phase16.yml",
@@ -1175,8 +1062,4 @@ fn superseded_standalone_sandbox_workflows_are_removed() {
             path.display()
         );
     }
-    // ci.yml's opi-sandbox job carries the macOS coverage they provided.
-    let ci = read_repo_file(CI);
-    let job = job_block(&ci, "sandbox_package");
-    assert_present("ci.sandbox_package", &job, &["macos-latest"]);
 }

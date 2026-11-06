@@ -9,8 +9,10 @@ harness（当前为 Opi 与固定版本的 pi coding-agent）。它在任何 Age
 解析并冻结这些输入，把每次试验记录到密封证据 bundle 中，并且只从仍然通过
 验证的证据推导分数。
 
-本 crate 是未发布的、Agent 中立的 workspace companion：它不属于 `opi`
-运行时，不依赖任何 Opi crate，`opi` 也不链接、注册或激活它。
+本 crate 是未发布、Agent 中立的开发辅助 companion，仅用于在开发流程中校准
+评测逻辑与工作流。它不属于 `opi` 运行时，不依赖任何 Opi crate，`opi` 也不
+链接、注册或激活它。产品 CI 和发布不运行 eval，也不以其结果为门槛。修改
+此工具时在本地执行专项离线测试；真实试验仍需评测工作流的授权与预算。
 
 ## 与 `opi-eval` 技能的关系
 
@@ -378,13 +380,13 @@ cargo run -p opi-eval -- regrade \
   verifier 恰好评分任务 base revision 之外的已提交补丁；空 nop 补丁仍收集
   并评分为零）。
 
-手动分发的
-[external-lock 物化工作流](../../.github/workflows/opi-eval-external-lock-materialization.yml)
-遵循同一委托规则：构建候选 Companion、种子化声明缓存，将诊断准备与显式
-`oracle-witness` 一致性委托给共享本地 CLI，并在两者都成功后发布
-`opi-eval-materialization-receipt/2`。
-[native-smoke 工作流](../../.github/workflows/opi-eval-native-smoke.yml)
-是同一共享准备之上的回归调用者；CI 不保留独立的转换或准入规则。
+不再提供活动 eval GitHub 工作流。原 external-lock 与 native-smoke producer
+定义逐字节保存在[开发工作流契约](development/workflow-contracts/README.zh.md)，
+仅供离线契约测试和历史证据解释，不用于 dispatch。本地 `doctor`、`prepare`、
+conformance 和 operator 命令仍是开发入口。materializer 的
+`prepare --cache --plan` 模式仍负责本地获取；其历史 GitHub receipt 模式不
+构成新的本地 receipt 权威。旧 external receipt 应使用匹配的历史 checkout
+和 lock 验证；native receipt 还需要原始 Git 对象。当前 lock 不会重新绑定旧证据。
 
 ## 本地验收与离线验证
 
@@ -584,7 +586,7 @@ oracle-witness`；错误的 `nop-witness` 评分为零），绝不是 `run` 静�
 | Hermetic 输入 | [`tests/fixtures/`](tests/fixtures) |
 | 组装运行行为 | [`tests/assembled_run.rs`](tests/assembled_run.rs) |
 | Regrade/报告生命周期 | [`tests/end_to_end_report.rs`](tests/end_to_end_report.rs) |
-| 原生 material 与保真度检查 | [`scripts/`](scripts)、[native-smoke 工作流](../../.github/workflows/opi-eval-native-smoke.yml) |
+| 原生 material 与保真度检查 | [`scripts/`](scripts)、[冻结 producer 契约](development/workflow-contracts/README.zh.md) |
 
 在测试中使用本地 fixture 与确定性 provider。测试不得调用付费 provider，
 也不得仅因环境中存在凭据而变 live。Unix 端到端套件是上述 fixture 工作流的

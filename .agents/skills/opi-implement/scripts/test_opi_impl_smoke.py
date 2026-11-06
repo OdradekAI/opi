@@ -6,10 +6,10 @@ smoke wrappers' ``full`` mode on every host:
 
     python scripts/opi-doc-check.py
     cargo fmt --check --all
-    cargo clippy --workspace --all-targets -- -D warnings
-    cargo test --workspace --all-targets
-    cargo test --workspace --doc
-    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+    cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings
+    cargo test --workspace --exclude opi-eval --all-targets
+    cargo test --workspace --exclude opi-eval --doc
+    RUSTDOCFLAGS="-D warnings" cargo doc --workspace --exclude opi-eval --no-deps
 
 The order is a documented source contract (the registered Phase 18 design's
 "Phase exit additionally requires the repository gates below in order"), so
@@ -56,14 +56,14 @@ GATE_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
     ("doc_check", re.compile(r"^python\s+scripts/opi-doc-check\.py$")),
     ("fmt", re.compile(r"^cargo fmt --check --all$")),
     ("clippy_all_targets", re.compile(
-        r"^cargo clippy --workspace --all-targets -- -D warnings$")),
-    ("test_all_targets", re.compile(r"^cargo test --workspace --all-targets$")),
-    ("test_doc", re.compile(r"^cargo test --workspace --doc$")),
-    ("rustdoc", re.compile(r"^cargo doc --workspace --no-deps$")),
+        r"^cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings$")),
+    ("test_all_targets", re.compile(r"^cargo test --workspace --exclude opi-eval --all-targets$")),
+    ("test_doc", re.compile(r"^cargo test --workspace --exclude opi-eval --doc$")),
+    ("rustdoc", re.compile(r"^cargo doc --workspace --exclude opi-eval --no-deps$")),
 ]
 
 # bash sets RUSTDOCFLAGS inline on the rustdoc invocation.
-SH_RUSTDOC_INLINE = 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps'
+SH_RUSTDOC_INLINE = 'RUSTDOCFLAGS="-D warnings" cargo doc --workspace --exclude opi-eval --no-deps'
 # PowerShell exports RUSTDOCFLAGS on its own line directly above the command.
 PS1_RUSTDOC_ENV = '$env:RUSTDOCFLAGS = "-D warnings"'
 
@@ -133,7 +133,7 @@ class SmokeWrapperOrder(unittest.TestCase):
         ps1_lines = [line.strip() for line in full_branch_ps1().splitlines()]
         self.assertIn(PS1_RUSTDOC_ENV, ps1_lines)
         index = ps1_lines.index(PS1_RUSTDOC_ENV)
-        self.assertEqual(ps1_lines[index + 1], "cargo doc --workspace --no-deps")
+        self.assertEqual(ps1_lines[index + 1], "cargo doc --workspace --exclude opi-eval --no-deps")
 
     def test_boot_and_scoped_modes_survive(self) -> None:
         sh = read_source(SH)
@@ -297,7 +297,7 @@ class SmokeWrapperCachePaths(unittest.TestCase):
                     calls = [json.loads(line) for line in log.read_text(encoding="utf-8-sig").splitlines()]
                     builds = [call for call in calls if call[1] == "run"]
                     self.assertEqual(builds, [[str(CACHE_TOOL), "run", "--target", target,
-                                              "--", "clippy", "--workspace", "--lib", "--bins", "--", "-D", "warnings"]])
+                                              "--", "clippy", "--workspace", "--exclude", "opi-eval", "--lib", "--bins", "--", "-D", "warnings"]])
                     self.assertEqual(calls[-1][1:3], ["lease", "end"])
 
     @unittest.skipIf(os.name == "nt", "run bash checks on a POSIX host")
@@ -337,7 +337,7 @@ class SmokeWrapperCachePaths(unittest.TestCase):
                     calls = [line.split("\t") for line in log.read_text(encoding="utf-8").splitlines()]
                     self.assertEqual([call for call in calls if call[1] == "run"],
                                      [[str(CACHE_TOOL), "run", "--target", target, "--", "clippy",
-                                       "--workspace", "--lib", "--bins", "--", "-D", "warnings"]])
+                                       "--workspace", "--exclude", "opi-eval", "--lib", "--bins", "--", "-D", "warnings"]])
                     self.assertEqual(calls[-1][1:3], ["lease", "end"])
 
 

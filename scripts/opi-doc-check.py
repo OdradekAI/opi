@@ -14,8 +14,6 @@ ROOT = Path(__file__).resolve().parent.parent
 ERRORS: list[str] = []
 OPI_EVAL_ACTIVE_NAMING_ROOTS = (
     "crates/opi-eval",
-    ".github/workflows/opi-eval-external-lock-materialization.yml",
-    ".github/workflows/opi-eval-native-smoke.yml",
     ".github/workflows/ci.yml",
 )
 OPI_EVAL_PROJECT_PHASE_RE = re.compile(r"(?:phase[-_ ]?18|p18[-_])", re.IGNORECASE)
@@ -687,6 +685,8 @@ def check_change_scope_check_selection_contract() -> None:
 
 
 def check_opi_eval_active_naming() -> None:
+    for path in (ROOT / ".github" / "workflows").glob("opi-eval*.y*ml"):
+        ERRORS.append(f"{path.relative_to(ROOT)}: eval calibration is development-only, not an active product workflow")
     for root_rel in OPI_EVAL_ACTIVE_NAMING_ROOTS:
         root = ROOT / root_rel
         if not root.exists():

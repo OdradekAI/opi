@@ -930,15 +930,13 @@ class SkillContractTests(unittest.TestCase):
 
     def write_clean_opi_eval_active_naming_surface(self) -> None:
         self.write("crates/opi-eval/src/lib.rs", "//! Active eval contract.\n")
-        self.write(
-            ".github/workflows/opi-eval-external-lock-materialization.yml",
-            "name: opi-eval external-lock materialization\n",
-        )
-        self.write(
-            ".github/workflows/opi-eval-native-smoke.yml",
-            "name: opi-eval Linux native smoke\n",
-        )
         self.write(".github/workflows/ci.yml", "name: CI\n")
+
+    def test_opi_eval_workflow_is_not_a_product_gate(self) -> None:
+        self.write_clean_opi_eval_active_naming_surface()
+        self.write(".github/workflows/opi-eval-native-smoke.yml", "name: eval\n")
+        doc_check.check_opi_eval_active_naming()
+        self.assertTrue(any("development-only" in error for error in doc_check.ERRORS))
 
     def test_opi_eval_active_naming_surface_passes(self) -> None:
         self.write_clean_opi_eval_active_naming_surface()
