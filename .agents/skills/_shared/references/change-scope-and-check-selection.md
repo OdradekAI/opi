@@ -80,7 +80,9 @@ by subsequent changes.
 
 This reference does not bound audit coverage, does not define task ownership,
 does not admit or revise product scope, does not select remediation finding
-sources, and does not define release manifest contents. The owning workflow,
-registered specification, task graph, finding set, or release contract retains
-those authorities. This reference creates no state file, cache, ledger, or
-parallel source of progress truth.
+sources, and does not define release manifest contents. The user-agreed task/iteration,
+relevant accepted decisions, or explicitly selected workflow/finding/release
+contract retains those authorities. New work needs no global spec or Phase
+admission; see [context alignment](../../../../docs/agents/context.md). Legacy
+registered sources apply only inside their selected historical workflow. This
+reference creates no state file, cache, ledger, or parallel source of progress truth.

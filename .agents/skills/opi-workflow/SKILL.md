@@ -1,72 +1,61 @@
 ---
 name: opi-workflow
-description: Recommend the next Opi workflow for an explicitly requested routing decision.
+description: Recommend one next action for current Opi work or an explicitly selected legacy workflow.
 disable-model-invocation: true
 ---
 
 # Opi Workflow Router
 
-Return one next action, its owning source and any unmet entry gate. Read only
-the selected skill before making claims about its behavior. Routing does not
-invoke that skill, edit files or create another delivery ledger.
-
-## Design direction
-
-Inward evidence compares a supplied pi snapshot with Opi; outward evidence
-researches external work, maps current Opi counterparts, and evaluates transfer
-against pi design independently of Opi planning conclusions. Human shaping turns
-evidence into reviewed requirements. `opi-implement` alone owns the implementation
-ledger and delivery state machine.
+Return one next action, its owning source and any real unmet condition. Read
+only the selected skill before making claims about it. Routing does not invoke
+that skill, edit files or create another delivery ledger.
 
 ## Routes
 
 | Requested outcome | Next action |
 |---|---|
-| Compare Opi with pi's design or implementation, including gap-closing advice and acceptance | `opi-realign` with the supplied snapshot path |
-| Investigate external research, frameworks, or future directions for evidence-based lessons to current Opi | `opi-research` |
-| Resolve unsettled product meaning | Human-led shaping; optional adapters below |
-| Admit a reviewed, registered source and task graph | `opi-implement plan` |
-| Execute an admitted task | `opi-implement` |
-| Diagnose a hard bug or regression | Evidence-led diagnosis, then the owning repair/delivery route |
-| Audit a completed Phase | `opi-audit` |
-| Verify and optionally fix normalized findings | `opi-remediate` |
-| Run native benchmarks or fidelity cases; repair confirmed eval findings | `opi-eval` |
-| Audit/synchronize product documentation | `opi-document` |
+| Build a clear feature or repair ordinary code | Follow [task-scoped context](../../../docs/agents/context.md); inspect, implement and verify |
+| Resolve bounded product ambiguity | Clarify with the user; record meaningful terms/decisions at their owner |
+| Map a large unresolved multi-session decision space | Requested Matt `wayfinder`, using the adapter below |
+| Compare Opi with pi, including gap-closing advice and acceptance | `opi-realign` with the supplied snapshot path |
+| Research external designs and current Opi counterparts | `opi-research` |
+| Diagnose a hard bug or regression | Evidence-led diagnosis, then the user-agreed repair |
+| Resume a specific legacy Phase ledger/graph | Read the legacy boundary, then `opi-implement` only if that contract is intended |
+| Audit a legacy Phase | Legacy boundary, then `opi-audit` |
+| Repair findings from a legacy indexed audit set | Legacy boundary, then `opi-remediate` |
+| Run native benchmarks/fidelity cases or repair confirmed eval findings | `opi-eval` |
+| Audit/synchronize documentation | `opi-document` |
 | Publish a verified release | `opi-release` |
 | Reduce redundant integration-test binaries | `opi-slim-tests` |
 
-A bounded ordinary edit can proceed under AGENTS.md when no specialized
-workflow or product-admission gate applies. Do not add lifecycle steps merely
-to complete the diagram. Direct explicit invocation of any Opi skill is valid.
+New features do not need global spec revision, Phase registration or
+`opi-implement plan`. A clear user request may be sufficient; multi-session work
+uses a focused brief with acceptance and unresolved decisions. Do not route a
+new task through a retired Phase merely because a ledger exists.
 
 ## Matt adapter contract
 
-Use these optional shaping adapters only when installed and requested:
+For requested Matt flows, read [tracker configuration](../../../docs/agents/issue-tracker.md)
+and [domain configuration](../../../docs/agents/domain.md). They select
+`docs/iterations/`, `docs/GLOSSARY.md` and `docs/adr/`, including the explicit
+translation of Matt's root-glossary and `.scratch/` planning defaults.
 
-- `wayfinder`: a broad, multi-session decision space.
-- `grill-with-docs`: bounded ambiguity.
-- `to-spec`: materialize settled decisions into a non-normative candidate.
-- `diagnosing-bugs`: evidence-led diagnosis, without authorizing delivery.
+Check availability and read the actual skill before recommending it. `ask-matt`
+is a router; `wayfinder` resolves decisions; `grill-with-docs` sharpens bounded
+ambiguity; `to-spec` captures settled scope. Their outputs do not automatically
+approve implementation. Do not invoke setup just because the default root
+files are absent; this project intentionally keeps them in `docs/`.
+If an installed tool cannot honor the adapter, report the mismatch rather than
+creating duplicate contexts. Missing optional tools do not block conversation.
 
-Before recommending tracker-backed `wayfinder` or `to-spec`, check
-`docs/agents/issue-tracker.md`. If absent, identify the missing adapter and
-offer explicit `setup-matt-pocock-skills` only if available. Human-led shaping
-can proceed in the current conversation without installing a tracker or skill.
-Never claim an unavailable command works or silently substitute another package.
+## Boundaries
 
-Bind domain modeling to `docs/CONTEXT.md` and ADRs to `docs/adr/`.
-Tracker artifacts remain evidence until human review materializes and registers
-a normative source. Optional adapters cannot bypass that admission.
-
-## Phase boundaries
-
-- Evidence does not authorize product decisions or implementation.
-- Plan admission checks readiness; missing meaning returns to human shaping.
-- Audit diagnoses without fixes. Eval repairs use only its
-  [user-confirmed source-repair branch](../opi-eval/SKILL.md#user-confirmed-source-repairs).
-- Documentation does not authorize release. Source repair, live trial budgets,
-  graph approval, commit permission and irreversible publication are distinct
-  gates owned by their respective skills.
-- Preserve existing authorization for the same scope/object; stop only at an
-  unmet gate, changed approval binding or material ambiguity. Explain the exact
-  source of a blocking rule and the concrete next action.
+- [Legacy Phase procedures](../_shared/references/legacy-phase-workflows.md)
+  retain their selected-source, ledger, review and digest gates only for explicit
+  legacy work. Missing historical inputs do not block a new independent task.
+- Research supplies evidence, not permission. Confirm material product meaning
+  with the user and record the result in the selected task/decision.
+- Eval source repair, paid trials, commits and irreversible publication are
+  separate authorizations. Documentation does not authorize release.
+- Preserve existing authorization for the same scope/object. Explain the exact
+  conflict and concrete next action instead of adding lifecycle ceremonies.

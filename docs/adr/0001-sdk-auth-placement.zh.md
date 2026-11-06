@@ -1,9 +1,9 @@
 # ADR-0001：SDK 认证机制归属（opi-ai 与 Reference Product）
 
 - **状态：** 已接受 —— 2026-10-17 由 Phase 20 任务 20.1（DEL-01）记录。
-- **性质：** 本 ADR 记录的是注册 Phase 20 交付来源（[spec-draft.zh.md](../research/pi-ai-opi-ai-alignment/spec-draft.zh.md)）中已选定的归属。它不引入要求、不改变运行时行为、不标记任何验收条件已满足。
+- **性质：** 本 ADR 记录的是注册 Phase 20 交付来源（`docs/research/pi-ai-opi-ai-alignment/spec-draft.zh.md`，已从当前工作区退役）中已选定的归属。它不引入要求、不改变运行时行为、不标记任何验收条件已满足。
 - **被闸门任务：** 20.18（惰性 AuthContext、默认来源与管理结果）、20.22（store 拥有的变更 ACK／rotation／barrier 与宿主桥）、20.23+（逐 flow 的 SDK OAuth 迁移，先 Anthropic，后其余家族）。
-- **权威：** [opi-spec.zh.md](../opi-spec.zh.md) §8.2 “产品与独立性别录” —— 跨层移动需要 ADR，归属案例需记录所有权、依赖、消费者、接口、符合性、权限、失败行为、生命周期、删除测试与迁移。
+- **历史权威：** 下方 Git 版本中的 `opi-spec.zh.md` §8.2 “产品与独立性别录” —— 跨层移动需要 ADR，归属案例需记录所有权、依赖、消费者、接口、符合性、权限、失败行为、生命周期、删除测试与迁移。
 
 ## 背景
 
@@ -40,6 +40,6 @@
 
 - 注册来源：`spec-draft.zh.md`（归属案例；AIR-023/046/051/063；OAuth/rotation 附件）、`acceptance-matrix.md`（V-09/39/43/55；R-02/R-03）、`pi-1.3.0-sdk-contracts.md` §5（九个 flow、store 事务）。
 - 历史一手证据：`sdk-auth-provider-migration.md`（OA-01–06、BP-01–04；Pi 1.0.0 窗口，以当前来源限定）。
-- 父规范：[opi-spec.zh.md](../opi-spec.zh.md) §4、§8.1–8.2；[opi-spec.md](../opi-spec.md)。
+- 父规范：`docs/opi-spec.zh.md` §4、§8.1–8.2 及 `docs/opi-spec.md`，由 Git 版本 `dcbd92f38e119b93f17a8b31a584afc18cb89bc2` 保留。使用 `git show <commit>:<path>` 读取，不依赖工作区链接。
 - 当前消费者：`crates/opi-ai/src/auth.rs`；`crates/opi-coding-agent/src/oauth.rs`、`src/credential_store.rs`、`src/interactive_auth.rs`、`src/provider_factory.rs`、`src/harness.rs`。
 - 交付输入基线：`phase20-delivery-inputs.zh.md`。英文对应页：[0001-sdk-auth-placement.md](0001-sdk-auth-placement.md)。

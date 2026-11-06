@@ -11,7 +11,8 @@ eligible saved results. Use the identified native Companion CLI for trials,
 grading, seals and offline reconstruction. This skill owns operator scope, execution, evidence
 privacy, reports and cleanup. Opi source fixes follow the
 [user-confirmed repair branch](#user-confirmed-source-repairs). Only
-`opi-implement` owns `.opi-impl-state.json` and Phase exit.
+`opi-implement` owns legacy `.opi-impl-state.json` and Phase exit; new repairs
+use [task-scoped context](../../../docs/agents/context.md), not global spec admission.
 
 This is development calibration, not ordinary product CI or release admission.
 The unpublished crate has no active GitHub producer workflows; retained frozen
@@ -289,9 +290,10 @@ the user explicitly confirms that repair scope, proceed directly; a separate
 existing clear approval for the same scope; ask again only for a material scope
 expansion. Authorization to run trials alone does not authorize source fixes.
 
-1. Reproduce offline where possible and define observable success. Keep the
-   repair within the normative specification; direction changes require
-   human-led revision.
+1. Reproduce offline where possible and define observable success against the
+   user-confirmed repair scope and current contracts. Resolve conflicts with
+   relevant decisions through [context alignment](../../../docs/agents/context.md);
+   the retired global spec does not constrain new repairs.
 2. Make the minimum approved runtime, product or Companion repair with affected
    regression tests and documentation. Use
    [change-scope and check selection](../_shared/references/change-scope-and-check-selection.md)
@@ -303,7 +305,9 @@ expansion. Authorization to run trials alone does not authorize source fixes.
    affected material identities; it cannot retroactively repair/regrade a result.
 4. Hand off approval, reproduction, changed scope, test impact, exact checks and
    gaps. Preserve candidate/regression evidence before cleaning repair scratch.
-   Audit admission, ledger updates and Phase exit retain their existing owners.
+   For explicitly selected legacy work, audit admission, ledger updates and
+   Phase exit retain their existing owners; no legacy-state update is required
+   for an ordinary confirmed repair.
 5. Return to Step 2 for a new evaluation. Repair approval covers no additional
    paid trials, new credential use, commits or publication. Reuse authorization
    only for its exact frozen scope; offline regression success is not a new

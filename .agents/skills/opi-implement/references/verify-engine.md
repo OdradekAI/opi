@@ -103,7 +103,7 @@ The plan review has two non-collapsible axes.
 |---|---|
 | P-D1 Pi lineage and Rust divergence | The source preserves pi's design direction or records why a Rust-native divergence is intentional. |
 | P-D2 Plugin-first placement | Optional/non-pi capability defaults to plugin/package; `reuse_search` names what was inspected and `placement` proves any core change is the smallest missing extension seam. |
-| P-D3 Domain and interface clarity | Terms agree with `docs/CONTEXT.md`; modules expose deep interfaces at explicit seams. |
+| P-D3 Domain and interface clarity | Terms agree with `docs/GLOSSARY.md`; modules expose deep interfaces at explicit seams. |
 | P-D4 Acceptance/test seam | User-visible behavior, its registered scenario source, production call sites, and the highest practical public behavioral test seam are explicit. |
 | P-D5 Source completeness | Problem, solution, out-of-scope, success, exit, evidence provenance, `surface_necessity`, and any `simplification_ceiling` are present without contradictions or silent assumptions. |
 

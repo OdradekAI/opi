@@ -170,7 +170,7 @@ const lensResults = await reviewParallel(LENSES.map((lens) => () =>
     'Read the registered source design at ' + sourcePath + ' in full.\n' +
     'Review phase ' + activePhase + ' using axis ' + lens.axis + ' and lens ' + lens.key + '.\n' +
     'Charter: ' + lens.charter + '\n' +
-    'Read docs/CONTEXT.md and the applicable AGENTS.md/CLAUDE.md rules.\n' +
+    'Read docs/GLOSSARY.md and the applicable AGENTS.md/CLAUDE.md rules.\n' +
     'Never edit the source or draft. Never invent product scope. Emit one finding per falsifiable problem.\n' +
     'Use RESEARCH_REQUIRED only for missing facts/evidence, DESIGN_DECISION_REQUIRED only for an unsettled product/architecture/domain/seam decision, and GRAPH_REVISION_REQUIRED only when the reviewed source is sufficient but the task graph is defective.\n' +
     'Set blocking=false for observations that do not prevent source or graph admission. Cite an exact source heading for every finding and verify it exists.\n' +

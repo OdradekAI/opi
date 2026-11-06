@@ -308,10 +308,11 @@ These are development command examples, not a checklist to repeat for every
 edit. [CI/platform policy](docs/ci.md) describes Linux defaults, optional
 Windows/macOS smoke and full three-platform regression for major iterations.
 
-Read [AGENTS.md](AGENTS.md) before changing the repository. It contains the
-source-of-truth map, architecture boundaries, testing policy, and Git safety
-rules. The durable technical direction is in
-[docs/opi-spec.md](docs/opi-spec.md). Bug reports and feature discussions belong
+Read [AGENTS.md](AGENTS.md) before changing the repository. It routes coding,
+verification, context alignment and Git safety guidance. The
+[documentation map](docs/README.md) links engineering rules, domain language,
+architectural decisions and task-scoped iteration briefs. Bug reports and
+feature discussions belong
 in [GitHub Issues](https://github.com/OdradekAI/opi/issues).
 
 ## License

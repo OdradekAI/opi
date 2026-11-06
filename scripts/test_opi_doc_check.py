@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -450,28 +452,6 @@ EVAL_BEHAVIOR_BASELINE_REQUIRED = {
 }
 
 
-OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED = {
-    "docs/opi-spec.md": (
-        "resolved execution",
-        "benchmark integrity",
-        "model-visible content",
-        "exact immutable package artifact digest",
-        "ordinary-context/no-memory baseline",
-        "Proactive or scheduled Agent behavior",
-        "Multi-Agent orchestration",
-    ),
-    "docs/opi-spec.zh.md": (
-        "已解析执行",
-        "基准完整性",
-        "模型可见内容",
-        "精确的不可变 package artifact digest",
-        "普通上下文/无记忆基线",
-        "主动式或定时 Agent 行为",
-        "多 Agent 编排",
-    ),
-}
-
-
 OPI_DOCUMENT_PROSE_CONTRACT_REQUIRED = {
     ".claude/skills/opi-document/SKILL.md": (
         "scope=<full | targeted | version-bump>   # default: full",
@@ -619,10 +599,6 @@ class SkillContractTests(unittest.TestCase):
 
     def write_eval_behavior_baseline_docs(self) -> None:
         for rel, tokens in EVAL_BEHAVIOR_BASELINE_REQUIRED.items():
-            self.write(rel, "\n".join(tokens) + "\n")
-
-    def write_opi_spec_evidence_refinement_docs(self) -> None:
-        for rel, tokens in OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED.items():
             self.write(rel, "\n".join(tokens) + "\n")
 
     def write_opi_document_prose_contract_docs(self) -> None:
@@ -817,41 +793,6 @@ class SkillContractTests(unittest.TestCase):
 
                     self.assertIn(
                         f"{rel}: eval behavior-baseline contract "
-                        f"missing semantic tokens {[token]!r}",
-                        doc_check.ERRORS,
-                    )
-
-    def test_opi_spec_evidence_refinement_contract_passes(self) -> None:
-        self.write_opi_spec_evidence_refinement_docs()
-        checker = getattr(
-            doc_check,
-            "check_opi_spec_evidence_refinement_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "Opi spec evidence checker must exist")
-        checker()
-        self.assertEqual([], doc_check.ERRORS)
-
-    def test_opi_spec_evidence_refinement_requires_every_token(self) -> None:
-        checker = getattr(
-            doc_check,
-            "check_opi_spec_evidence_refinement_contract",
-            None,
-        )
-        self.assertIsNotNone(checker, "Opi spec evidence checker must exist")
-        for rel, tokens in OPI_SPEC_EVIDENCE_REFINEMENT_REQUIRED.items():
-            for token in tokens:
-                with self.subTest(rel=rel, token=token):
-                    doc_check.ERRORS = []
-                    self.write_opi_spec_evidence_refinement_docs()
-                    self.write(
-                        rel,
-                        "\n".join(item for item in tokens if item != token)
-                        + "\n",
-                    )
-                    checker()
-                    self.assertIn(
-                        f"{rel}: Opi spec evidence refinement contract "
                         f"missing semantic tokens {[token]!r}",
                         doc_check.ERRORS,
                     )
@@ -1090,6 +1031,89 @@ class SkillContractTests(unittest.TestCase):
         )
 
 
+class ContextLifecycleTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.root_patch = patch.object(doc_check, "ROOT", self.root)
+        self.errors_patch = patch.object(doc_check, "ERRORS", [])
+        self.root_patch.start()
+        self.errors_patch.start()
+        self.addCleanup(self.root_patch.stop)
+        self.addCleanup(self.errors_patch.stop)
+        for rel in doc_check.CURRENT_CONTEXT_DOCS:
+            self.write(rel, "# Current context\n")
+
+    def write(self, rel: str, content: str) -> None:
+        path = self.root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+
+    def test_current_context_passes_without_retired_documents(self) -> None:
+        for rel in ("docs/CONTEXT.md", "docs/opi-spec.md", "docs/opi-spec.zh.md"):
+            self.assertFalse((self.root / rel).exists())
+        doc_check.check_context_docs()
+        self.assertEqual([], doc_check.ERRORS)
+
+    def test_current_entry_documents_are_required(self) -> None:
+        for rel in doc_check.CURRENT_CONTEXT_DOCS:
+            with self.subTest(rel=rel):
+                doc_check.ERRORS.clear()
+                (self.root / rel).unlink()
+                doc_check.check_context_docs()
+                self.assertIn(f"missing file: {rel}", doc_check.ERRORS)
+                self.write(rel, "# Current context\n")
+
+    def test_new_documents_in_each_context_area_have_links_checked(self) -> None:
+        for root in doc_check.CONTEXT_ROOTS:
+            with self.subTest(root=root):
+                doc_check.ERRORS.clear()
+                rel = f"{root}/example/decision.md"
+                self.write(rel, "[Required source](missing.md)\n")
+                doc_check.check_context_docs()
+                self.assertIn(f"{rel}: broken local link: missing.md", doc_check.ERRORS)
+                self.write(rel, "# Decision\n")
+
+    def test_current_link_to_removed_glossary_is_rejected(self) -> None:
+        self.write("docs/agents/domain.md", "[Glossary](../CONTEXT.md)\n")
+        doc_check.check_context_docs()
+        self.assertEqual(
+            ["docs/agents/domain.md: broken local link: ../CONTEXT.md"],
+            doc_check.ERRORS,
+        )
+
+    def test_duplicate_root_glossary_is_rejected(self) -> None:
+        for rel in ("GLOSSARY.md", "GLOSSARY-MAP.md"):
+            with self.subTest(rel=rel):
+                doc_check.ERRORS.clear()
+                self.write(rel, "# Duplicate default-path vocabulary\n")
+                doc_check.check_context_docs()
+                self.assertIn(f"{rel}: duplicate domain entry; use docs/GLOSSARY.md", doc_check.ERRORS)
+                (self.root / rel).unlink()
+
+
+class ContextCliTests(unittest.TestCase):
+    def test_main_returns_failure_for_broken_current_context_link(self) -> None:
+        # Run the real CLI aggregation without mutating this shared checkout.
+        script = rf"""
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("doc_check", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original = module.read
+module.read = lambda rel: original(rel) + (
+    "\n[Broken](missing-current-contract.md)\n"
+    if rel == "docs/engineering/README.md" else ""
+)
+sys.exit(module.main())
+"""
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("docs/engineering/README.md: broken local link: missing-current-contract.md", result.stderr)
+
+
 class CurrentProductContractTests(unittest.TestCase):
     def test_tool_authorization_boundary_is_required_in_both_readmes(self):
         self.addCleanup(doc_check.ERRORS.clear)
@@ -1123,20 +1147,21 @@ class CurrentProductContractTests(unittest.TestCase):
 
 
 class LocalLinkExemptionTest(unittest.TestCase):
-    def test_repo_evidence_cache_links_are_exempt(self):
-        """Links into the gitignored `.repo/` evidence cache must not be
-        reported broken: the cache is non-normative local material and is
-        absent from a fresh checkout by design."""
-        doc_check.ERRORS.clear()
-        for spec in ("docs/opi-spec.md", "docs/opi-spec.zh.md"):
-            doc_check.check_local_links(spec)
-        repo_link_errors = [e for e in doc_check.ERRORS if ".repo" in e]
-        self.assertEqual(
-            [],
-            repo_link_errors,
-            "links into the .repo evidence cache must be exempt from "
-            "existence checks",
-        )
+    def test_only_repo_evidence_cache_links_are_exempt(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "docs").mkdir()
+            (root / "docs/example.md").write_text(
+                "[Cached evidence](../.repo/pi/evidence.md)\n"
+                "[Current contract](missing.md)\n",
+                encoding="utf-8",
+            )
+            with patch.object(doc_check, "ROOT", root), patch.object(doc_check, "ERRORS", []):
+                doc_check.check_local_links("docs/example.md")
+                self.assertEqual(
+                    ["docs/example.md: broken local link: missing.md"],
+                    doc_check.ERRORS,
+                )
 
 
 if __name__ == "__main__":

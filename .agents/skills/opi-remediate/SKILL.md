@@ -1,10 +1,19 @@
 ---
 name: opi-remediate
 disable-model-invocation: true
-description: Plan or apply finding closure against exact Opi audit-set and plan digests.
+description: Plan or apply legacy Phase finding closure against exact audit-set and plan digests.
 ---
 
 # Opi Remediate
+
+## Legacy entry boundary
+
+Before task selection, source loading or mutation, read the
+[legacy Phase boundary](../_shared/references/legacy-phase-workflows.md).
+The procedures below apply only to explicitly selected legacy work, not new
+feature admission. Confirm source applicability before automatic drift handling;
+documentation cleanup alone does not authorize ledger reconciliation. For new work,
+use [task-scoped context](../../../docs/agents/context.md) instead.
 
 Close the current live audit set with reviewable evidence. Planning and applying
 are separate branches; apply requires the exact `audit.index.json` and approved

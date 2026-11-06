@@ -288,9 +288,9 @@ cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings
 这些是开发命令示例，不是每次改动都要重跑的清单。[CI/平台策略](docs/ci.zh.md)
 说明 Linux 默认检查、可选 Windows/macOS smoke 和大迭代的完整三平台回归。
 
-修改仓库前请阅读 [AGENTS.md](AGENTS.md)，其中包含权威来源索引、架构边界、测试
-策略和 Git 安全规则。持久技术方向见
-[docs/opi-spec.zh.md](docs/opi-spec.zh.md)。Bug 报告与功能讨论请提交到
+修改仓库前请阅读 [AGENTS.md](AGENTS.md)，按需查阅编码、验证、上下文对齐与 Git 安全规则。
+[文档导航](docs/README.zh.md) 指向工程指导、领域术语、架构决策和任务级迭代简报。
+Bug 报告与功能讨论请提交到
 [GitHub Issues](https://github.com/OdradekAI/opi/issues)。
 
 ## 许可证

@@ -79,9 +79,11 @@ Update each English file and its `*.zh.md` counterpart together. Preserve
 identifiers, CLI flags, provider IDs, schema constants, file paths, and version
 numbers exactly. Translate explanations, not code vocabulary.
 
-If `docs/opi-spec.md` changes, also update `docs/opi-spec.zh.md` and route the
-live `.opi-impl-state.json` hash through the guarded `opi-implement` plan/reinit
-flow. Never hand-edit the canonical ledger or rewrite phase snapshots.
+For context/governance changes, follow [task-scoped context](../../../docs/agents/context.md)
+and update the current owning documents. Ordinary documentation maintenance
+does not invoke plan/reinit or modify implementation state. Explicit Phase
+source work follows the [workflow boundary](../_shared/references/legacy-phase-workflows.md);
+never hand-edit the canonical ledger or rewrite Phase snapshots.
 
 ## 4. Report semantic coverage
 
@@ -112,8 +114,8 @@ Run extra verification only when the edited surface requires it:
   `RUSTDOCFLAGS="-D warnings" cargo doc -p <crate> --no-deps`.
 - Generated reference changed: run its generator/check mode.
 - CLI output changed: run the owning focused CLI snapshot/subprocess test.
-- Normative spec changed: run the live spec-ledger guard after guarded
-  reconciliation.
+- Explicit legacy Phase source change: apply its selected workflow guards only
+  after source applicability and reconciliation have been agreed.
 
 Do not run the workspace test suite for a prose-only edit.
 

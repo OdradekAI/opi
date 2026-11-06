@@ -111,7 +111,7 @@ candidate graph can replace the canonical ledger. Verify that:
 - Rust-native divergence has a recorded rationale where relevant;
 - a new capability explains its core, extension-seam, or plugin/package
   placement;
-- changed domain terms agree with `docs/CONTEXT.md`;
+- changed domain terms agree with `docs/GLOSSARY.md`;
 - public acceptance and test seams are explicit enough to plan.
 
 Source admission does not edit the source. Return one of these stop verdicts

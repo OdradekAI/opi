@@ -1,10 +1,19 @@
 ---
 name: opi-audit
 disable-model-invocation: true
-description: Independently audit one committed Phase, then append a bounded historical reference.
+description: Independently audit an explicitly selected legacy Phase, then append a bounded historical reference.
 ---
 
 # Opi Audit
+
+## Legacy entry boundary
+
+Before task selection, source loading or mutation, read the
+[legacy Phase boundary](../_shared/references/legacy-phase-workflows.md).
+The procedures below apply only to explicitly selected legacy work, not new
+feature admission. Confirm source applicability before automatic drift handling;
+documentation cleanup alone does not authorize ledger reconciliation. For new work,
+use [task-scoped context](../../../docs/agents/context.md) instead.
 
 Audit one registered Phase without changing production code. The Phase selects
 scope; the latest committed normative sources select expected behavior. Install

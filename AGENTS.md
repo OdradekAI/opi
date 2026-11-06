@@ -1,163 +1,101 @@
 # AGENTS.md
 
-`opi` is a Rust AI Agent toolkit with a terminal-first Reference Product,
-informed by [pi](https://github.com/earendil-works/pi), not a port or compatibility
-layer.
+`opi` is a Rust AI Agent toolkit with a terminal-first product. Learn from
+[pi](https://github.com/earendil-works/pi) and other projects; choose designs
+against current evidence and the user's goal, not a permanently pinned upstream.
 
-## Authority and context
+## Context and decisions
 
-Load the source needed for the current decision; expand when evidence reveals
-a dependency. Reuse context already read unless it changed.
+Load only the sources needed for this task; follow dependencies when evidence
+requires it. Reuse context already read unless it changed.
 
-| Decision | Source of truth |
+| When | Read |
 |---|---|
-| Scope, architecture, admission, priority | `docs/opi-spec.md` |
-| Domain language and authority boundaries | `docs/CONTEXT.md` |
-| Current product/protocol behavior | Source, schemas, fixtures, generated help, crate docs, READMEs |
-| Topology, versions, edition, MSRV, dependencies | Cargo manifests |
-| Release history and unreleased changes | `CHANGELOG.md` |
-| Progress and delivery history | `.opi-impl-state.json`, `docs/snapshots/` |
-| Non-normative evidence | `docs/realign/`, `.repo/pi-0.84.1`, `docs/research/` |
+| Writing or restructuring code | [Engineering](docs/engineering/README.md), relevant implementation and tests |
+| Starting a feature, resuming work, or resolving conflicting meaning | [Iteration alignment](docs/agents/context.md); the selected task/iteration only |
+| Naming or changing a domain concept | [Glossary](docs/GLOSSARY.md); [domain rules](docs/agents/domain.md) |
+| Changing a consequential architectural decision | [ADR index](docs/adr/README.md), then the relevant decision |
+| Finding current usage, topology, versions or dependencies | Owning README, source, schemas, fixtures, generated help and Cargo manifests |
+| Navigating documentation | [Documentation map](docs/README.md) |
 
-Consult the spec for scope or architecture decisions. If work contradicts a
-normative clause, cite it and ask whether the user intends to revise the spec.
-Evidence and arbitrary `docs/superpowers/specs/` files do not authorize delivery.
+The user's agreed task and acceptance define desired change; source and tests
+establish current behavior, not permission to preserve a bug or break a contract.
+If a relevant decision, document and code disagree, identify the conflict and
+ask when the choice changes scope, compatibility, authority or irreversible
+outcomes. Continue independent work. Record the resolution in its owning doc.
 
-Update English/Chinese counterparts together or explain why unnecessary.
-Edit only `AGENTS.md`; `CLAUDE.md` aliases it. The doc checker warns on a
-symlinkless clone's text pointer and rejects real content drift.
+Upstream comparisons record the actual revision/path in that comparison or
+iteration. Global guidance defines engineering practice, not a version target.
 
 ## Working contract
 
-- Answer questions directly. Carry action requests through authorized edits,
-  verification and a concrete handoff. Resolve routine choices; ask when missing
-  information materially changes scope, correctness, authority or irreversible
-  outcomes, while continuing independent work.
-- Define observable completion. For multi-step work, use
-  `step -> verify: <check>`. Scoped local edits and isolated offline checks
-  need no repeated approval. Fix change-caused failures and rerun affected
-  checks until complete or a concrete blocker remains.
-- Make the smallest coherent change; preserve local style and unrelated work.
-  Remove only code made unused by this change. Ask before removing intentional
-  behavior. Prefer simpler solutions over speculative abstraction, configuration,
-  compatibility or adjacent refactoring.
-- Inspect relevant contracts and implementation before editing; read full files
-  when interactions require it, not before every edit. Batch independent reads.
-  Delegate independent work with bounded scope, file ownership and an evidence
-  handoff; keep dependent edits sequential.
-- Comments/rustdoc describe current contracts, timing, ownership and failure
-  behavior. Put task/Phase/review history in snapshots, ADRs, changelog or Git.
+- Carry action requests through edits, verification and a concrete handoff.
+  For multi-step work use `step -> verify: <check>`; routine local choices and
+  isolated offline checks need no repeated approval.
+- Inspect the relevant contracts and callers before editing. Prefer deep
+  modules, small interfaces, explicit ownership, and local reasoning. Search
+  for reuse; avoid speculative traits, crates, flags and compatibility layers.
+- Improve structure within the task's causal scope. Explain a consequential
+  move or new dependency; propose unrelated improvements separately. Remove
+  only code made unused by this change; ask before removing intentional behavior.
+- Assume a shared worktree. Preserve unrelated staged, unstaged and untracked
+  work. Delegate independent work with bounded ownership and an evidence handoff;
+  keep dependent edits sequential and one writer per worktree.
+- Update affected contracts with the code, not in a later documentation phase.
+  Keep current facts in their owning source, resolved terms in the glossary,
+  trade-offs in ADRs, temporary work in the iteration. Prune superseded claims.
+  Update existing English/Chinese counterparts together or explain why unnecessary.
+- Comments/rustdoc describe current contracts, timing, ownership and failures.
+  Put implementation notes in the iteration, changelog or Git.
 
-## Design and Rust
+## Skills
 
-- Keep Agent Core small and deep, with mechanism below policy. Optional Opi
-  workflows belong in the Extension Ecosystem; Agent-neutral capabilities begin
-  as Independent Companions with Agent-neutral contracts.
-- Dependencies point inward. A public seam needs intrinsic state-machine value
-  or two real adapters/consumers with shared conformance. No speculative traits,
-  crates, flags or config keys.
-- Prefer safe Rust, explicit ownership, enums, typed errors, bounded concurrency
-  and fail-closed boundary validation. Justify and isolate unavoidable `unsafe`.
-  Use `thiserror` in libraries, `anyhow` in binaries/tests, trait objects at crate
-  boundaries and generics internally when concrete types are known.
-- Internal dependencies use root `[workspace.dependencies]` and
-  `{ workspace = true }`; publishable paths also need versions. Keep lockstep
-  versioning and workspace-owned metadata in root manifests.
-- Review manifests, features, lockfile, `build.rs`, native/proc-macro dependencies
-  as code. Verify APIs against the exact locked version. Generate `Cargo.lock`
-  with Cargo and review unexpected transitive changes. Explain portability,
-  authority and supply-chain impact before broadening default features, build
-  scripts, native code or proc macros.
-- Deliberately scoped 0.x breaking changes require an Unreleased entry and
-  synchronized callers, schemas, fixtures, tests and docs. Add compatibility only
-  when the owning contract requires it; revisit this policy before 1.0.
-
-## Workspace layout
-
-The doc checker validates this graph against Cargo manifests:
-
-```text
-opi-ai       (no internal deps)       - provider-neutral LLM API
-opi-tui      (no internal deps)       - terminal UI components
-opi-eval     (no internal deps)       - unpublished Independent Companion eval toolkit
-opi-agent    -> opi-ai                - product-neutral Agent runtime
-opi-protocol (no internal deps)       - command-execution protocol
-opi-sandbox  -> opi-protocol          - standalone restriction SDK/CLI
-opi-coding-agent -> opi-ai, opi-agent, opi-protocol, opi-tui - opi binary and coding harness
-```
-
-## Skills and workflow
-
-For workflow selection/maintenance, use [the skill manual](.agents/skills/README.md)
+All `opi-*` skills require explicit invocation; inspecting one is not invoking
+it. For routing or skill maintenance, read [the manual](.agents/skills/README.md)
 ([中文](.agents/skills/README.zh.md)). Edit canonical `.agents/skills/` files;
-`.claude/skills` aliases them. All `opi-*` skills require explicit invocation;
-use `opi-workflow` only when asked for routing. Load the selected `SKILL.md` and
-references for its active mode. Inspecting a skill is not invoking it.
+`.claude/skills` aliases them. Each explicitly selected workflow owns its
+artifacts and gates; consult its `SKILL.md` before modifying workflow state.
 
-`opi-implement plan` owns implementation admission; user-confirmed eval repairs
-use [the scoped exception](.agents/skills/opi-eval/SKILL.md#user-confirmed-source-repairs).
-Only `opi-implement` writes `.opi-impl-state.json`. Preserve each workflow's
-gates and artifact ownership; no competing ledger or progress in the spec.
-Documentation/skill maintenance alone does not start product implementation.
+For requested Matt flows, read [tracker configuration](docs/agents/issue-tracker.md)
+and [domain configuration](docs/agents/domain.md). Use `wayfinder` for large
+unresolved decision spaces, not every feature. No skill is required just to
+clarify a question with the user.
 
 ## Verification
 
 For ordinary non-skill work, use
 [change scope and check selection](.agents/skills/_shared/references/change-scope-and-check-selection.md)
-to inventory changes and select the verification union. Its authority is
-`check-selection-only`; active workflows retain admission and tier gates.
-After required checks pass, broaden/repeat only for new changes, failures or
-unresolved evidence gaps.
+(`check-selection-only`) and [engineering checks](docs/engineering/README.md#verification).
+Run the union required by touched surfaces, including every created/modified
+test. Fix change-caused failures and rerun affected checks; broaden only for
+new changes, failures or unresolved evidence gaps.
 
-- Docs/skills/metadata only: `python scripts/opi-doc-check.py` and
-  `git diff --check`. Run the doc check after changing this guidance.
-- Runtime: reproduce bugs, exercise invalid inputs for validation, use focused
-  behavior tests and integration/snapshot/conformance checks at changed public
-  seams. Run every created/modified test binary or filter. Avoid tests that
-  restate implementation/prose; doc contracts belong in the doc checker.
-- Cross-crate product runtime, Phase exit and CI/release use applicable product
-  gates: `cargo fmt --check --all`,
-  `cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings`,
-  `cargo test --workspace --exclude opi-eval --all-targets`,
-  `cargo test --workspace --exclude opi-eval --doc`, and
-  `cargo doc --workspace --exclude opi-eval --no-deps` with
-  `RUSTDOCFLAGS="-D warnings"`. `opi-eval` is current development-only calibration;
-  changed eval logic gets scoped local checks, not automatic product CI or a
-  release gate. Select native platform evidence under [CI policy](docs/ci.md);
-  reuse applicable proof rather than repeating unchanged gates.
-- Use `opi_ai::test_support::MockProvider`, local fixtures and isolated temp
-  directories; serialize environment mutations. Tests must not require paid
-  providers/live credentials or activate live calls because credentials exist.
-- Keep incremental compilation and the external Cargo cache workflow. Inspect
-  the selected target before builds under the shared
-  [Cargo cache lifecycle](.agents/skills/_shared/references/cargo-cache-lifecycle.md);
-  it also owns explicit maintenance. No `cargo clean`, per-session targets or
-  cache deletion as workflow cleanup.
+Docs/skills/metadata: `python scripts/opi-doc-check.py` and `git diff --check`.
+Checker/script changes also need their focused tests and a negative path.
+Before Cargo builds or cache maintenance, read the shared
+[Cargo cache lifecycle](.agents/skills/_shared/references/cargo-cache-lifecycle.md).
+Keep incremental compilation and external shared caches; no `cargo clean`,
+per-session targets or cache deletion as workflow cleanup.
 
 ## Git and release safety
 
-Assume a shared worktree; preserve unrelated staged, unstaged and untracked
-changes. Create/publish branches, commits, pushes, PRs or releases only on an
-explicit user request. Default branch prefix: `codex/`.
-
-For authorized commits: check `git status` before staging and committing; stage
-task-owned paths explicitly; use Conventional Commits and applicable
+Create/publish branches, commits, pushes, PRs or releases only on explicit user
+request. Default branch prefix: `codex/`. Before staging/committing, check status
+and stage task-owned paths explicitly. Use Conventional Commits and applicable
 `fixes #N`/`closes #N`; exclude credentials, `.env` and Co-Authored-By trailers.
 Never use `git add -A`, `git add .`, bypass hooks or rewrite shared history.
 Forbidden: `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`,
-`git commit --no-verify`, `git push --force`. If a rebase conflicts in a file
-you did not modify, abort and ask.
-
-Review PRs with `gh pr view`, `gh pr diff`, `gh api` or `git show`; do not pull
-or change branches/worktrees unless explicitly requested.
+`git commit --no-verify`, `git push --force`. Abort and ask on rebase conflicts
+in files you did not modify. Review PRs with `gh pr view`, `gh pr diff`, `gh api`
+or `git show`; do not pull or change branches/worktrees without permission.
 
 Read the complete Unreleased section before editing it; add user-visible changes
 there, reuse subsections and leave released sections immutable. Release requires
 explicit `opi-release <version>`; public rollback uses a revert and tag deletion.
+Edit only `AGENTS.md`; `CLAUDE.md` aliases it.
 
 ## Handoff
 
 Lead with results, exact checks/outcomes and remaining gaps. Record test impact
 as `add`, `update`, `delete`, `retain` or `none`. For review feedback, state
-agreement/disagreement with governing evidence. Keep prose concise and technical;
-no fluff or emojis in commits, issues, PR comments or code.
+agreement/disagreement with evidence. Keep prose concise and technical.

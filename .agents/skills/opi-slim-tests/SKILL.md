@@ -13,9 +13,10 @@ suite directory do not create another binary.
 Complete a verified working-tree diff and evidence map. Follow repository Git
 safety; this skill never stages or commits automatically.
 
-When an `opi-implement` live ledger or Phase snapshot is available, seed the
-candidate inventory from non-null `slim_candidate` entries. A candidate is a
-search hint, not deletion authority; classify its full body again.
+Start from the requested scope and current test targets. Only when the user
+explicitly selects a legacy Phase may its `slim_candidate` entries seed search
+hints. Do not load a ledger merely because it exists; historical candidates
+are not deletion authority. Classify each current full body again.
 
 ## 1. Establish the baseline
 
@@ -72,7 +73,7 @@ never concatenate files mechanically.
 
 Preserve unless explicitly migrated with equivalent proof:
 
-- the live spec-ledger CRLF-normalized SHA-256 contract;
+- the CRLF-normalized SHA-256 contract when maintaining legacy ledger tooling;
 - public protocol/schema behavior tests;
 - current safety/security and persistence invariants;
 - platform-only process/sandbox behavior;

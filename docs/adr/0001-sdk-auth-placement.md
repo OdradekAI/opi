@@ -1,9 +1,9 @@
 # ADR-0001: SDK authentication mechanism placement (opi-ai vs Reference Product)
 
 - **Status:** Accepted — recorded 2026-10-17 by Phase 20 task 20.1 (DEL-01).
-- **Nature:** This ADR records a placement already selected by the registered Phase 20 delivery source ([spec-draft.md](../research/pi-ai-opi-ai-alignment/spec-draft.md)). It introduces no requirement, changes no runtime behavior, and marks no acceptance criterion met.
+- **Nature:** This ADR records a placement already selected by the registered Phase 20 delivery source (`docs/research/pi-ai-opi-ai-alignment/spec-draft.md`, retired from this checkout). It introduces no requirement, changes no runtime behavior, and marks no acceptance criterion met.
 - **Gated tasks:** 20.18 (lazy AuthContext, default sources and management outcomes), 20.22 (store-owned mutation ACK, rotation, barrier and host bridge), 20.23+ (per-flow SDK OAuth migration, Anthropic first, then the remaining families).
-- **Authority:** [opi-spec.md §8.2 “Product and independence admission”](../opi-spec.md) — cross-layer movement requires an ADR, and the placement case records ownership, dependencies, consumers, interface, conformance, authority, failure behavior, lifecycle, deletion test and migration.
+- **Historical authority:** `opi-spec.md` §8.2 “Product and independence admission” at the Git revision below — cross-layer movement requires an ADR, and the placement case records ownership, dependencies, consumers, interface, conformance, authority, failure behavior, lifecycle, deletion test and migration.
 
 ## Context
 
@@ -40,6 +40,6 @@ The former Phase 20 research bundle was retired from this checkout; the labels b
 
 - Registered source: `spec-draft.md` (placement case; AIR-023/046/051/063; OAuth/rotation annex), `acceptance-matrix.md` (V-09/39/43/55; R-02/R-03), `pi-1.3.0-sdk-contracts.md` §5 (nine flows, store transactions).
 - Historical first-hand evidence: `sdk-auth-provider-migration.md` (OA-01–06, BP-01–04; Pi 1.0.0 window, qualified by the current sources).
-- Parent specification: [opi-spec.md](../opi-spec.md) §4, §8.1–8.2; [opi-spec.zh.md](../opi-spec.zh.md).
+- Parent specification: `docs/opi-spec.md` §4, §8.1–8.2 and `docs/opi-spec.zh.md`, retained in Git at `dcbd92f38e119b93f17a8b31a584afc18cb89bc2`. Read with `git show <commit>:<path>`, not a working-tree link.
 - Current consumers: `crates/opi-ai/src/auth.rs`; `crates/opi-coding-agent/src/oauth.rs`, `src/credential_store.rs`, `src/interactive_auth.rs`, `src/provider_factory.rs`, `src/harness.rs`.
 - Delivery-input baseline: `phase20-delivery-inputs.md`. Chinese counterpart: [0001-sdk-auth-placement.zh.md](0001-sdk-auth-placement.zh.md).

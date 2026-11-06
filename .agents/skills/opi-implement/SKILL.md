@@ -1,10 +1,19 @@
 ---
 name: opi-implement
 disable-model-invocation: true
-description: Admit and execute the canonical Opi implementation ledger one reviewed task at a time.
+description: Maintain an explicitly selected legacy Opi Phase ledger and execute its reviewed tasks.
 ---
 
 # opi-implement
+
+## Legacy entry boundary
+
+Before task selection, source loading or mutation, read the
+[legacy Phase boundary](../_shared/references/legacy-phase-workflows.md).
+The procedures below apply only to explicitly selected legacy work, not new
+feature admission. Confirm source applicability before automatic drift handling;
+documentation cleanup alone does not authorize ledger reconciliation. For new work,
+use [task-scoped context](../../../docs/agents/context.md) instead.
 
 Admit a reviewed task graph or execute one admitted task through verification
 and a canonical ledger checkpoint. Invoke explicitly. Code tasks use TDD;

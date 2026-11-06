@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Workflow"
-  short_description: "Route work through the opi lifecycle"
-  default_prompt: "Use $opi-workflow to recommend the next action and identify any unmet entry gate for this request."
+  short_description: "Route current tasks and explicit legacy work"
+  default_prompt: "Use $opi-workflow to recommend the next action and distinguish current task alignment from explicitly selected legacy Phase gates."
 policy:
   allow_implicit_invocation: false
