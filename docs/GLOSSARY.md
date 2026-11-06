@@ -64,6 +64,14 @@ _Avoid_: Capability
 The policy-enforcing selector resolving an invocation to an allowed adapter.
 _Avoid_: model router, backend fallback
 
+## Model interaction
+
+**Model Request**:
+One logical model operation from its defined start through its terminal outcome.
+Its execution and observation have separate lifetimes: ending observation does
+not itself cancel or complete the operation.
+_Avoid_: stream iterator, telemetry span
+
 ## Command execution
 
 **Execution Backend**:

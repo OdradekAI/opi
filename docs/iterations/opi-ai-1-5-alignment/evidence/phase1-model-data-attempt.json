@@ -1,0 +1,7 @@
+{
+  "url": "https://pi.dev/api/models/revisions/sha256-f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e?types=chat,image,classifier",
+  "expected_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+  "attempted_at_utc": "2026-11-06T17:03:44.735824+00:00",
+  "verified": false,
+  "error": "<urlopen error [WinError 10054] \u8fdc\u7a0b\u4e3b\u673a\u5f3a\u8feb\u5173\u95ed\u4e86\u4e00\u4e2a\u73b0\u6709\u7684\u8fde\u63a5\u3002>"
+}
