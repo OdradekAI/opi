@@ -248,6 +248,7 @@ adapter。外部 adapter 一旦被选中，任何 adapter 或协议失败都会 
 
 | Crate | 用途 |
 | --- | --- |
+| [`opi-telemetry`](crates/opi-telemetry) | 后端中立的 context、span、metrics 和 schema，以及可选 tracing 适配 |
 | [`opi-ai`](crates/opi-ai) | Provider 无关模型 API、流式处理、用量、重试、凭据和模型注册表 |
 | [`opi-agent`](crates/opi-agent) | 产品无关 Agent 主循环、工具、hook、队列、会话、压缩、SDK 和 extension |
 | [`opi-tui`](crates/opi-tui) | Ratatui 组件、对话与 diff 渲染、选择器、主题和终端图片 |

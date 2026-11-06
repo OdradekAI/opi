@@ -1,0 +1,23 @@
+[package]
+name = "opi-telemetry"
+description = "Explicit, backend-neutral telemetry contexts, spans and metrics"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+tracing = ["dep:tracing", "dep:tracing-core"]
+
+[dependencies]
+serde = { workspace = true }
+tracing = { workspace = true, optional = true }
+tracing-core = { workspace = true, optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+futures-util = { workspace = true }

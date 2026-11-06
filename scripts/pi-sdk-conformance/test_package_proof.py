@@ -38,6 +38,63 @@ class PackageProofTests(unittest.TestCase):
         proof.validate_paths(self.repo, self.root / "scratch", self.target)
         self.assertFalse((self.root / "scratch").exists())
 
+    def candidate_fixture(self):
+        prefix = "opi-telemetry-0.8.3"
+        archive = self.root / f"{prefix}.crate"
+        with tarfile.open(archive, "w:gz") as out:
+            for name, data in {"Cargo.toml": b'[package]\nname="opi-telemetry"\nversion="0.8.3"\n',
+                               "src/lib.rs": b'pub fn candidate() {}\n'}.items():
+                member = tarfile.TarInfo(f"{prefix}/{name}")
+                member.size = len(data)
+                out.addfile(member, io.BytesIO(data))
+        package = proof.unpack_package(archive, self.root / "package", prefix)
+        candidate = proof.CandidateTelemetry(archive, package, self.root / "candidate-telemetry.toml")
+        metadata = {"packages": [{"name": "opi-telemetry", "version": "0.8.3", "source": None,
+                                  "id": "candidate", "manifest_path": str(package / "Cargo.toml")}]}
+        return candidate, metadata
+
+    def test_candidate_is_exact_archive_and_config_is_inserted_before_cargo_arguments(self):
+        candidate, metadata = self.candidate_fixture()
+        self.assertEqual(candidate.verify_graph(metadata), "candidate")
+        self.assertEqual(candidate.command(["cargo", "test", "--", "--nocapture"]),
+                         ["cargo", "--config", str(candidate.config), "test", "--", "--nocapture"])
+        self.assertEqual(candidate.command(["consumer.exe"]), ["consumer.exe"])
+        for replacement in [[], [dict(metadata["packages"][0], source="registry+unexpected")],
+                            [dict(metadata["packages"][0], manifest_path=str(self.repo / "Cargo.toml"))],
+                            [dict(metadata["packages"][0], version="0.0.0")]]:
+            with self.subTest(replacement=replacement), self.assertRaisesRegex(ValueError, "exact packaged"):
+                candidate.verify_graph({"packages": replacement})
+
+    def test_candidate_rejects_source_and_config_tampering_without_repair(self):
+        candidate, metadata = self.candidate_fixture()
+        source = candidate.package / "src/lib.rs"
+        original = source.read_bytes()
+        source.write_bytes(b"different source")
+        with self.assertRaisesRegex(ValueError, "package bytes changed"):
+            candidate.verify_graph(metadata)
+        source.write_bytes(original)
+        candidate.config.write_text("[patch.crates-io]\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "config changed"):
+            candidate.command(["cargo", "check"])
+        self.assertEqual(candidate.config.read_text(encoding="utf-8"), "[patch.crates-io]\n")
+
+    def test_package_sdk_stages_both_candidates_before_external_resolution(self):
+        candidate, _ = self.candidate_fixture()
+        (self.repo / "Cargo.toml").write_text('[workspace.package]\nversion="0.8.3"\n', encoding="utf-8")
+        scratch = self.root / "new-proof"
+        scratch.mkdir()
+        commands = []
+        def run(name, command, cwd):
+            commands.append(command)
+        with patch.object(proof, "REPO", self.repo), \
+                patch.object(proof.shutil, "copyfile"), \
+                patch.object(proof, "unpack_package", return_value=candidate.package), \
+                patch.object(proof, "CandidateTelemetry", return_value=candidate), \
+                patch.object(Path, "read_bytes", return_value=b"archive"):
+            proof.package_sdk(run, scratch, self.target)
+        self.assertEqual(commands[0][2:6], ["-p", "opi-telemetry", "-p", "opi-ai"])
+        self.assertIn("--offline", commands[0])
+
     def test_existing_scratch_is_refused_without_deletion(self):
         scratch = self.root / "scratch"
         scratch.mkdir()

@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -196,12 +197,7 @@ impl Peer {
             while !worker_stop.load(Ordering::SeqCst) {
                 match listener.accept() {
                     Ok((mut socket, _)) => {
-                        socket
-                            .set_read_timeout(Some(Duration::from_secs(10)))
-                            .unwrap();
-                        socket
-                            .set_write_timeout(Some(Duration::from_secs(10)))
-                            .unwrap();
+                        prepare_socket(&socket);
                         match read_request(&mut socket) {
                             Ok(request) => {
                                 let ordinal = {
@@ -271,6 +267,38 @@ impl Drop for Peer {
             worker.join().expect("controlled peer thread");
         }
     }
+}
+
+fn prepare_socket(socket: &TcpStream) {
+    // Windows accepted sockets can inherit the listener's nonblocking mode.
+    // This peer reads a complete request synchronously under explicit timeouts.
+    socket.set_nonblocking(false).unwrap();
+    socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    socket.set_write_timeout(Some(Duration::from_secs(10))).unwrap();
+}
+
+#[test]
+fn controlled_peer_waits_for_bytes_after_accept() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut accepted, _) = listener.accept().unwrap();
+    // Reproduce the mode inherited from a nonblocking listener on Windows.
+    accepted.set_nonblocking(true).unwrap();
+    prepare_socket(&accepted);
+    let (started_tx, started_rx) = std::sync::mpsc::channel();
+    let (result_tx, result_rx) = std::sync::mpsc::channel();
+    let worker = thread::spawn(move || {
+        started_tx.send(()).unwrap();
+        result_tx.send(read_request(&mut accepted)).unwrap();
+    });
+    started_rx.recv().unwrap();
+    assert!(matches!(result_rx.recv_timeout(Duration::from_millis(100)),
+        Err(std::sync::mpsc::RecvTimeoutError::Timeout)), "accepted peer must wait for request bytes");
+    client.write_all(b"POST /delayed HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}").unwrap();
+    let request = result_rx.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+    worker.join().unwrap();
+    assert_eq!(request["target"], "/delayed");
+    assert_eq!(request["body"], json!({}));
 }
 
 fn read_request(socket: &mut TcpStream) -> std::io::Result<Value> {
@@ -554,7 +582,10 @@ def main() -> int:
                         help="new workspace-external scratch directory")
     parser.add_argument("--target-dir", default=os.environ.get("CARGO_TARGET_DIR"),
                         help="existing marked workspace cache (or CARGO_TARGET_DIR)")
+    parser.add_argument("--evidence-output", help="write a new evidence record without replacing historical evidence")
     args = parser.parse_args()
+    if args.evidence_output and Path(args.evidence_output).exists():
+        parser.error("--evidence-output already exists; choose a new evidence file")
     if not args.offline:
         parser.error("--offline is required; this proof never resolves from the network")
     if not args.target_dir:
@@ -585,8 +616,12 @@ def main() -> int:
         "verdict": "FAIL",
     }
 
+    candidate = None
+
     def run(name: str, command: list[str], cwd: Path,
             environment: dict[str, str] | None = None) -> str:
+        if candidate is not None:
+            command = candidate.command(command)
         started = time.monotonic()
         result = subprocess.run(
             command, cwd=cwd, env=env if environment is None else environment,
@@ -603,6 +638,8 @@ def main() -> int:
         })
         if result.returncode:
             raise ValueError(f"{name} failed with exit {result.returncode}; see scratch logs")
+        if candidate is not None and command[0] == "cargo" and "metadata" in command:
+            candidate.verify_graph(json.loads(result.stdout))
         return result.stdout
 
     lease = [sys.executable, str(REPO / "scripts/opi-cargo-cache.py"), "lease"]
@@ -612,19 +649,7 @@ def main() -> int:
         evidence["cargo"] = run("cargo-version", ["cargo", "-vV"], REPO)
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
-        version = tomllib.loads(
-            (REPO / "Cargo.toml").read_text(encoding="utf-8")
-        )["workspace"]["package"]["version"]
-        prefix = f"opi-ai-{version}"
-        run("package", ["cargo", "package", "-p", "opi-ai", "--allow-dirty", "--no-verify",
-                        "--offline", "--locked"], REPO)
-        archive = scratch / f"{prefix}.crate"
-        archive.write_bytes((target / "package" / archive.name).read_bytes())
-        evidence["package"] = {
-            "file": archive.name,
-            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-        }
-        package = shared.unpack_package(archive, scratch / "package", prefix)
+        package, evidence["package"], candidate = shared.package_sdk(run, scratch, target)
 
         examples, manuals = check_packaged_sources(REPO, package)
         evidence["packaged_examples"] = examples
@@ -656,12 +681,16 @@ def main() -> int:
         for forbidden in ("opi-agent", "opi-coding-agent", "opi-protocol", "opi-tui"):
             if forbidden in root_names:
                 raise ValueError(f"consumer graph must not contain {forbidden}")
-        run("consumer-check", ["cargo", "check", "--offline", "--locked", "--bins"], consumer)
         metadata = json.loads(run("consumer-metadata", ["cargo", "metadata", "--offline", "--locked",
                                                        "--format-version", "1"], consumer))
         sdk = [item for item in metadata["packages"] if item["name"] == "opi-ai"]
         if len(sdk) != 1 or Path(sdk[0]["manifest_path"]).resolve() != package / "Cargo.toml":
             raise ValueError("consumer must execute the actual extracted opi-ai package")
+        run("consumer-check", ["cargo", "check", "--offline", "--locked", "--bins"], consumer)
+        peer_output = run("consumer-peer-test", ["cargo", "test", "--offline", "--locked", "--bin", "consumer-readme",
+                                                 "controlled_peer_waits_for_bytes_after_accept", "--", "--exact"], consumer)
+        if not re.search(r"test result: ok\. 1 passed; 0 failed; 0 ignored;", peer_output):
+            raise ValueError("controlled peer regression did not execute exactly one passing test")
         evidence["consumer_dependencies"] = sorted(root_names)
         execution_env, evidence["execution_environment"] = execution_environment(env)
         evidence["execution"] = parse_execution(run(
@@ -680,10 +709,11 @@ def main() -> int:
                 evidence["verdict"] = "FAIL"
                 evidence["lease_end_error"] = str(exc)
                 print(f"readme example lease release failed: {exc}", file=sys.stderr)
-        out = HARNESS / "evidence" / "readme-examples-proof.json"
+        out = Path(args.evidence_output).resolve() if args.evidence_output else HARNESS / "evidence" / "readme-examples-proof.json"
         serialized = json.dumps(evidence, indent=2) + "\n"
         (scratch / "evidence.json").write_text(serialized, encoding="utf-8", newline="\n")
-        out.write_text(serialized, encoding="utf-8", newline="\n")
+        with out.open("x" if args.evidence_output else "w", encoding="utf-8", newline="\n") as output:
+            output.write(serialized)
         print(f"evidence: {out}")
         if "lease_end_error" in evidence:
             return 1

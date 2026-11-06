@@ -1407,10 +1407,12 @@ native `Ok(None)` 恢复内置回退，除非该 provider 注册的显式 source
 SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.dev／默认启动
 抓取策略。本地内存凭据存储与目录持久化相互独立。
 
-## Telemetry 载体：冻结 parent Span 与 Dispatch（任务 20.54，DEL-12）
+## Telemetry：显式上下文与可选 tracing
 
-`telemetry` 提供进程本地 `TelemetryContext` 载体——P20-TELEMETRY 共享决策
-owner；closure test 位于 `tests/telemetry_carrier.rs`。
+`opi-ai::telemetry` 从独立的 [opi-telemetry](../opi-telemetry/README.zh.md)
+重导出 `TelemetryContext` 与 `Instrumented`。中立 crate 提供 span、metrics、schema
+描述及记录器。AI 当前使用 tracing 作用域适配；自动 AI request span 与用量 metrics
+尚未接入。载体回归测试位于 `tests/telemetry_carrier.rs`。
 
 - **`TelemetryContext::from_span(span)`** 通过 `Span::with_subscriber` 冻结 parent
   `tracing::Span` 与其自身 `Dispatch` 的配对。即使创建或 poll 时另有当前
@@ -1422,9 +1424,8 @@ owner；closure test 位于 `tests/telemetry_carrier.rs`。
   inner future，零 `unsafe`）：每次 poll 与 drop（含未 poll 的 drop）运行同
   一 scoped 段。无 enter guard 跨 await；每次外层 poll 恰好 poll 一次内层；
   `Pending` 与输出保真。
-- **`noop()`** 在 no-op dispatcher 下运行同样段落：业务仍恰好执行一次，段内
-  观测被显式静默而不泄漏到 ambient dispatch。包装段外的独立宿主日志仍使用自身
-  subscriber。
+- **`noop()`** 恰好执行业务一次，保留宿主 ambient tracing，包括作用域内、poll
+  和 Drop。它只关闭中立遥测记录，不安装 disabled dispatcher。
 
 `Request::telemetry_context: Option<TelemetryContext>` 显式将该配对带入真实 Codex
 producer，覆盖其异步回调与 SSE 回退。省略时不隐式捕获 ambient 上下文。载体不序列化、

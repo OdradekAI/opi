@@ -27,8 +27,9 @@ Families:
   build provenance are recorded in the evidence file.
 
 This is a bounded package proof, not the final SDK distribution acceptance
-(task 20.57). There is no registry publication, live model call, patch,
-registry server, source replacement or build-time generator. The scratch is
+(task 20.57). There is no registry publication, live model call, registry server, source replacement
+or build-time generator. Only the packaged telemetry candidate is patched
+into resolution; workspace source is never patched. The scratch is
 never deleted or reused by this command.
 """
 
@@ -221,6 +222,9 @@ def check_family_graph(
     if len(sdk) != 1 or Path(sdk[0]["manifest_path"]).resolve() != package / "Cargo.toml":
         raise ValueError("consumer must compile the extracted opi-ai package")
     allowed_local = {sdk[0]["id"], metadata["resolve"].get("root")}
+    candidate_id = shared.candidate_local_id(metadata, package)
+    if candidate_id is not None:
+        allowed_local.add(candidate_id)
     for entry in packages:
         if entry.get("source") is None and entry.get("id") not in allowed_local:
             raise ValueError(f"unreviewed local dependency: {entry['name']}")
@@ -648,7 +652,11 @@ def main() -> int:
         evidence["public_codec_status"] = family["public_codec_status"]
         evidence["public_codec_exercised"] = True
 
+    candidate = None
+
     def run(name: str, command: list[str], cwd: Path) -> str:
+        if candidate is not None:
+            command = candidate.command(command)
         started = time.monotonic()
         result = subprocess.run(
             command, cwd=cwd, env=env, capture_output=True, text=True,
@@ -662,6 +670,8 @@ def main() -> int:
         })
         if result.returncode:
             raise ValueError(f"{name} failed with exit {result.returncode}; see scratch logs")
+        if candidate is not None and command[0] == "cargo" and "metadata" in command:
+            candidate.verify_graph(json.loads(result.stdout))
         return result.stdout
 
     lease = [sys.executable, str(REPO / "scripts/opi-cargo-cache.py"), "lease"]
@@ -671,19 +681,7 @@ def main() -> int:
         evidence["cargo"] = run("cargo-version", ["cargo", "-vV"], REPO)
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
-        version = tomllib.loads(
-            (REPO / "Cargo.toml").read_text(encoding="utf-8")
-        )["workspace"]["package"]["version"]
-        prefix = f"opi-ai-{version}"
-        run("package", ["cargo", "package", "-p", "opi-ai", "--allow-dirty", "--no-verify",
-                        "--offline", "--locked"], REPO)
-        archive = scratch / f"{prefix}.crate"
-        archive.write_bytes((target / "package" / archive.name).read_bytes())
-        evidence["package"] = {
-            "file": archive.name,
-            "sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
-        }
-        package = shared.unpack_package(archive, scratch / "package", prefix)
+        package, evidence["package"], candidate = shared.package_sdk(run, scratch, target)
         if args.family == "ws":
             evidence["ws_package_files"] = check_ws_package(package)
         consumer = scratch / "consumer"

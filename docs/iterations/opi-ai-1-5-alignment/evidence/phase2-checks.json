@@ -1,0 +1,3953 @@
+{
+  "slice": "IMPL-02-TELEMETRY-FOUNDATION",
+  "base_commit": "dbb5954b68a096ec6c9b7aed67eb11e7a9ac1081",
+  "host": "Windows x86_64-pc-windows-msvc; Rust/Cargo 1.99.1",
+  "affected_contract_verdict": "PASS",
+  "workspace_gate_verdict": "FAIL",
+  "release_or_strict_pi_equivalence_verdict": "NOT-RUN",
+  "counts_policy": "Per-command counts include overlaps; reruns, configurations and artifacts must not be summed as unique coverage.",
+  "checks": [
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-telemetry",
+        "--all-features",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 13.76,
+      "id": "neutral-initial",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\neutral-initial.log",
+      "raw_log_sha256": "3e596c8c1ee9b5b7f0e85809de18749d339a9a377edecf25442b0851d3f3bdf4",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-telemetry",
+        "--all-features",
+        "--all-targets",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 101,
+      "seconds": 5.63,
+      "id": "neutral-clippy",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\neutral-clippy.log",
+      "raw_log_sha256": "9c8829a6958ac6b3a84d6ada92027ccf0397db957af0ea289704621c6699326c",
+      "verdict": "FAIL",
+      "failure_excerpt": "    Checking futures-core v0.3.32\n    Checking slab v0.4.12\n    Checking serde_json v1.0.149\n    Checking tracing v0.1.44\n    Checking serde v1.0.228\n    Checking futures-util v0.3.32\n    Checking opi-telemetry v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-telemetry)\nerror: use of deprecated method `std::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency\n  --> crates\\opi-telemetry\\src\\tracing.rs:61:26\n   |\n61 |         let id = NEXT_ID.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))\n   |                          ^^^^^^^^^^^^\n   |\n   = note: `-D deprecated` implied by `-D warnings`\n   = help: to override `-D warnings` add `#[allow(deprecated)]`\nhelp: replace the use of the deprecated method\n   |\n61 -         let id = NEXT_ID.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))\n61 +         let id = NEXT_ID.try_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))\n   |\n\nerror: could not compile `opi-telemetry` (lib) due to 1 previous error\nwarning: build failed, waiting for other jobs to finish...",
+      "interpretation": "Initial deprecated AtomicU64 fetch_update diagnostic; replaced by compatible CAS loop, workspace Clippy later passed."
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-telemetry",
+        "--all-features",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 7.17,
+      "id": "neutral-verified",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\neutral-verified.log",
+      "raw_log_sha256": "a2a2356200eb16ab3246872ce02df391e14954d1b9532612a6d70a7cae9d5c58",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 12,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-telemetry",
+        "--no-default-features",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 157.53,
+      "id": "neutral-minimal",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\neutral-minimal.log",
+      "raw_log_sha256": "8c6f560673b1ea79014e34e71da4f3c5559485f06f0d53deae6e102f14f8aa33",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 8,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--test",
+        "telemetry_carrier",
+        "--test",
+        "telemetry_operations",
+        "--test",
+        "codex_telemetry",
+        "--test",
+        "platform_delivery",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 54.04,
+      "id": "ai-telemetry",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\ai-telemetry.log",
+      "raw_log_sha256": "1176937c5ce26893b6868c5c49cf2fbebd0fa09b6e44bd0be70f9abd7efbd07d",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 32,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--all-targets",
+        "--offline",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "seconds": 32.58,
+      "id": "workspace-clippy",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\workspace-clippy.log",
+      "raw_log_sha256": "64d5af76e3f87b0005611bf280b752d009d45c682ae74fa222105dd29176838c",
+      "verdict": "PASS"
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--doc",
+        "--offline"
+      ],
+      "exit_code": 0,
+      "seconds": 25.07,
+      "id": "workspace-doctests",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\workspace-doctests.log",
+      "raw_log_sha256": "ad3b4620db6a19129c515be34a8e83ef1c5bb19c830f45dc0627932792cf29dd",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 11,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "doc",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--no-deps",
+        "--offline"
+      ],
+      "exit_code": 2,
+      "seconds": 0.12,
+      "id": "workspace-rustdoc",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\workspace-rustdoc.log",
+      "raw_log_sha256": "b65b096c30ba84ac676b4f27947ebb1dc075e7d8713ca0d132a5bf0ace283544",
+      "verdict": "FAIL",
+      "failure_excerpt": "Cargo cache: run supports Cargo build/check/clippy/test arguments",
+      "interpretation": "Cache run subcommand does not accept doc; rejected before build. Correct lease-managed cargo doc passed separately."
+    },
+    {
+      "command": [
+        "cargo",
+        "doc",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--no-deps",
+        "--offline"
+      ],
+      "RUSTDOCFLAGS": "-D warnings",
+      "exit_code": 0,
+      "seconds": 84.98,
+      "id": "workspace-rustdoc-final",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\workspace-rustdoc-final.log",
+      "raw_log_sha256": "2777648830b8741bfe30afa5d1676852f6e569cf7332e64631164e61852dbc1e",
+      "verdict": "PASS"
+    },
+    {
+      "command": [
+        "cargo",
+        "doc",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--no-deps",
+        "--offline"
+      ],
+      "RUSTDOCFLAGS": "-D warnings",
+      "exit_code": 0,
+      "seconds": 69.44,
+      "id": "workspace-rustdoc-current",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\workspace-rustdoc-current.log",
+      "raw_log_sha256": "fba51b5807c4fda8def8b8cfe9b24c4bdabe567b0c9bedf29778f947f906a8e7",
+      "verdict": "PASS"
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--all-targets",
+        "--offline"
+      ],
+      "exit_code": 101,
+      "seconds": 564.57,
+      "id": "workspace-tests",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\workspace-tests.log",
+      "raw_log_sha256": "035eeeff3ed0171eeaf95cdd341254ad629320cd1d83ea9cec20af82d2a1b368",
+      "verdict": "FAIL",
+      "rust_summary": {
+        "passed": 3201,
+        "failed": 1,
+        "ignored": 1
+      },
+      "failure_excerpt": "test unchanged_instance_self_recursion_is_a_typed_failure ... ok\ntest ref_targets_merge_evaluated_facts_on_success ... ok\ntest unevaluated_properties_only_merges_successful_any_of_arms ... ok\ntest unevaluated_properties_tracks_all_of_successes ... ok\ntest refs_index_into_arrays_by_numeric_pointer ... ok\ntest unknown_type_names_are_true_leaves ... ok\ntest unique_items_uses_hash_equality ... ok\ntest unevaluated_items_merges_successful_arms ... ok\ntest unresolved_refs_are_invalid_not_errors ... ok\ntest valid_engine_rejects_malformed_instance_without_errors ... ok\ntest unsized_items_respect_prefix_offset ... ok\ntest visited_applicators_propagate_uri_errors_and_unvisited_branches_do_not ... ok\ntest recursive_schema_walks_productive_instance_recursion ... ok\ntest deep_compile_error_releases_owned_schema ... ok\ntest deep_schemas_do_not_exhaust_the_rust_stack ... ok\ntest deep_local_ref_search ... ok\ntest frozen_differential_corpus_matches_expected_outcomes ... ok\n\nfailures:\n\n---- encoded_pointer_targets_preserve_selected_resource_identity stdout ----\n\nthread 'encoded_pointer_targets_preserve_selected_resource_identity' (54112) panicked at crates\\opi-ai\\tests\\schema_engine.rs:427:13:\nassertion `left == right` failed: instance {\"left\":\"left\",\"right\":\"right\"}\n  left: Ok(false)\n right: Ok(true)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    encoded_pointer_targets_preserve_selected_resource_identity\n\ntest result: FAILED. 72 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.77s\n\nerror: test failed, to rerun pass `-p opi-ai --test schema_engine`",
+      "interpretation": "Original full command failed at schema_engine; successful compilation does not mean tests passed."
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--manifest-path",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-baseline\\Cargo.toml",
+        "-p",
+        "opi-ai",
+        "--test",
+        "schema_engine",
+        "encoded_pointer_targets_preserve_selected_resource_identity",
+        "--offline",
+        "--",
+        "--exact"
+      ],
+      "exit_code": 101,
+      "seconds": 60.87,
+      "id": "baseline-schema",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\baseline-schema.log",
+      "raw_log_sha256": "73b4e6f1a94103606f854998a6c450106a77eda83f0f5d3e0689cf4c7d394838",
+      "verdict": "FAIL",
+      "rust_summary": {
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      },
+      "failure_excerpt": "    Blocking waiting for file lock on build directory\n   Compiling opi-ai v0.8.3 (C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-baseline\\crates\\opi-ai)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 54.64s\n     Running tests\\schema_engine.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\schema_engine-0597bc18253cc26f.exe)\n\nrunning 1 test\ntest encoded_pointer_targets_preserve_selected_resource_identity ... FAILED\n\nfailures:\n\n---- encoded_pointer_targets_preserve_selected_resource_identity stdout ----\n\nthread 'encoded_pointer_targets_preserve_selected_resource_identity' (68504) panicked at crates\\opi-ai\\tests\\schema_engine.rs:427:13:\nassertion `left == right` failed: instance {\"left\":\"left\",\"right\":\"right\"}\n  left: Ok(false)\n right: Ok(true)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    encoded_pointer_targets_preserve_selected_resource_identity\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.00s\n\nerror: test failed, to rerun pass `-p opi-ai --test schema_engine`"
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--no-fail-fast",
+        "--offline",
+        "--test",
+        "schema_public",
+        "--test",
+        "service_tier_cost",
+        "--test",
+        "stream_events",
+        "--test",
+        "telemetry_carrier",
+        "--test",
+        "telemetry_operations",
+        "--test",
+        "test_support_tests",
+        "--test",
+        "tls_contract",
+        "--test",
+        "tool_result_no_leak",
+        "--test",
+        "tool_result_wire",
+        "--test",
+        "transcript_contract",
+        "--test",
+        "usage_cost",
+        "--test",
+        "vertex_fixtures",
+        "--test",
+        "whole_call_retry",
+        "--test",
+        "ws_upgrade"
+      ],
+      "exit_code": 101,
+      "seconds": 365.54,
+      "id": "remaining-ai",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\remaining-ai.log",
+      "raw_log_sha256": "7ebeca9a1dcefdaf8353f1cde8edab29df26af793cfb9e407529cf4a6a94a769",
+      "verdict": "FAIL",
+      "rust_summary": {
+        "passed": 324,
+        "failed": 1,
+        "ignored": 0
+      },
+      "failure_excerpt": "test classification_flags_source_transient_families ... ok\ntest frozen_target_wire::without_a_policy_no_recovery_happens_on_the_wire ... ok\ntest quota_transport::cancelling_pending_429_body_aborts_without_retry_or_raw_text ... ok\ntest quota_transport::quota_detail_does_not_change_acquisition_budget_or_payload_freeze ... ok\ntest quota_transport::transient_429_keeps_explicit_whole_call_retry ... ok\ntest quota_transport::unrelated_quota_text_does_not_override_status_classification ... ok\ntest frozen_target_wire::helper_retries_with_new_logical_calls_against_a_frozen_target ... ok\ntest quota_transport::quota_429_veto_reaches_whole_call_retry_through_real_adapters ... ok\n\ntest result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.95s\n\n     Running tests\\ws_upgrade.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\ws_upgrade-44ecbb55d4dff19a.exe)\n\nrunning 16 tests\ntest fresh_nonce_and_mask_use_platform_entropy ... ok\ntest accept_token_matches_rfc6455_known_vector ... ok\ntest upgrade_rejects_non_101_status_without_following ... ok\ntest upgrade_rejects_mismatched_accept_value ... ok\ntest default_redirect_policy_still_uses_the_dedicated_upgrade_client ... ok\ntest upgrade_rejects_connection_header_without_upgrade_token ... ok\ntest upgrade_sends_the_strict_handshake_request ... ok\ntest upgrade_rejects_unoffered_subprotocol ... ok\ntest upgrade_accepts_token_wise_connection_lists ... ok\ntest upgrade_rejects_extensions_that_were_never_offered ... ok\ntest upgrade_rejects_invalid_singleton_response_headers_without_resending ... ok\ntest wss_upgrade_preserves_trust_rejection_before_http ... ok\ntest upgrade_rejects_missing_and_duplicated_accept ... ok\ntest upgrade_validates_pmd_negotiation_strictly ... ok\ntest upgrade_transfers_all_directional_pmd_parameters ... ok\ntest wss_upgrade_uses_h1_with_default_alpn_and_frozen_mtls ... ok\n\ntest result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.31s\n\nerror: 1 target failed:\n    `-p opi-ai --test vertex_fixtures`",
+      "interpretation": "Remaining AI targets completed; one Vertex failure. Isolated passes do not replace this result."
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\vertex_fixtures-ecdec4dc48997aa3.exe",
+        "--exact",
+        "adc_external::external_executable_streams_bearer",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "exe_sha256": "cab2ef7693958f10b392a7f0762c21a11da81facfec9b579f3c13c1bb12d0621",
+      "id": "vertex-isolated",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\vertex-isolated.log",
+      "raw_log_sha256": "209203793b96bac48c6cf57ca2e8c9aed217d4f0637c06f36bf74605b48e4663",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--manifest-path",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-baseline\\Cargo.toml",
+        "-p",
+        "opi-ai",
+        "--test",
+        "vertex_fixtures",
+        "adc_external::external_executable_streams_bearer",
+        "--offline",
+        "-j",
+        "2",
+        "--",
+        "--exact"
+      ],
+      "exit_code": 0,
+      "seconds": 32.74,
+      "id": "baseline-vertex",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\baseline-vertex.log",
+      "raw_log_sha256": "6fda63d19a203201bc7217baadfec62b2c5a235339eefa125aacb0611545a2a0",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      }
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--exclude",
+        "opi-agent",
+        "--exclude",
+        "opi-ai",
+        "--all-targets",
+        "--no-fail-fast",
+        "--offline"
+      ],
+      "exit_code": 101,
+      "seconds": 402.57,
+      "id": "remaining-workspace",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\remaining-workspace.log",
+      "raw_log_sha256": "2a74f7204c9a39d707f54c8738f8c3821f3fd4ff5200d911bf2f7b8bc3538eac",
+      "verdict": "FAIL",
+      "failure_excerpt": "    Blocking waiting for file lock on build directory\n   Compiling tokio-rustls v0.26.4\n   Compiling hyper-rustls v0.27.9\n   Compiling reqwest v0.12.28\n   Compiling opi-ai v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-ai)\n   Compiling jsonschema v0.28.3\n   Compiling opi-protocol v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-protocol)\n   Compiling opi-agent v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-agent)\n   Compiling opi-coding-agent v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent)\nerror: could not compile `opi-coding-agent` (lib test)\n\nCaused by:\n  process didn't exit successfully: `C:\\Users\\Luiz\\.rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin\\rustc.exe --crate-name opi_coding_agent --edition=2024 crates\\opi-coding-agent\\src\\lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --emit=dep-info,link -C embed-bitcode=no -C debuginfo=2 --test --check-cfg cfg(docsrs,test) --check-cfg \"cfg(feature, values(\\\"execution-backend-test-fixture\\\"))\" -C metadata=3850a5b7f09ad845 -C extra-filename=-925c5f66cbab1729 --out-dir E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps -C incremental=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\incremental -L dependency=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps --extern base64=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libbase64-1f9f5300156d97b2.rlib --extern cap_std=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libcap_std-e6ac273cc1719b34.rlib --extern clap=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libclap-3ee1f52b0218389b.rlib --extern clap_complete=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libclap_complete-3cc370cab4fcd58d.rlib --extern crossterm=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libcrossterm-f2aed698abe9b163.rlib --extern dotenvy=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libdotenvy-4f9824f039e248ad.rlib --extern fs4=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libfs4-f8d47e212d25eaef.rlib --extern futures_util=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libfutures_util-ed16df0e461e9948.rlib --extern globset=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libglobset-f6077de03d06f7f1.rlib --extern hex=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libhex-345a20f4b8011376.rlib --extern ignore=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libignore-4389818178c37ac9.rlib --extern insta=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libinsta-5ce226306be5821b.rlib --extern keyring_core=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libkeyring_core-dc2df4960caeca43.rlib --extern opi_agent=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libopi_agent-87c300250a37d981.rlib --extern opi_ai=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libopi_ai-5a3e3329e47b959c.rlib --extern opi_protocol=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libopi_protocol-f832ac1838c13844.rlib --extern opi_tui=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libopi_tui-6be2d1d167de287f.rlib --extern rand=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\librand-07187af680512a04.rlib --extern ratatui=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libratatui-bf00df534c0c0021.rlib --extern regex=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libregex-8e205d6ef0d6828b.rlib --extern reqwest=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libreqwest-485a51970d726f99.rlib --extern schemars=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libschemars-bdf38fd3fdbce5b3.rlib --extern secrecy=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libsecrecy-cd855173832e8acd.rlib --extern semver=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libsemver-53c671642f83055f.rlib --extern serde=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libserde-140a186d6d12c7a8.rlib --extern serde_json=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libserde_json-c367eceb7379123f.rlib --extern sha2=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libsha2-531034b2f14c183c.rlib --extern tempfile=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libtempfile-07031600065d5413.rlib --extern thiserror=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libthiserror-9c9f1d2dce3b52fd.rlib --extern time=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libtime-6aadb82b2be8fb5f.rlib --extern tokio=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libtokio-57a819c5e01a41fa.rlib --extern tokio_util=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libtokio_util-69f0e99b8bc255e7.rlib --extern toml=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libtoml-1d3ad5a04ac4a011.rlib --extern tracing=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libtracing-f608dfe6e0467302.rlib --extern windows_native_keyring_store=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libwindows_native_keyring_store-3622b95ccb3089ad.rlib --extern windows_sys=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libwindows_sys-16dcd0a52ecf0418.rlib --extern wiremock=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libwiremock-c92bc3729a5aa1e5.rlib --extern serde_yaml=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libyaml_serde-ad4b6b0de424e02d.rlib --extern zeroize=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\libzeroize-106bcb82188f45dd.rlib -L native=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\build\\aws-lc-sys-67dcf9723aa65dad\\out -L native=E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\build\\ring-7574a4c94db18143\\out -L native=C:\\Users\\Luiz\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.52.6\\lib -L native=C:\\Users\\Luiz\\.cargo\\registry\\src\\index.crates.io-1949cf8c6b5b557f\\windows_x86_64_msvc-0.53.1\\lib` (exit code: 0xffffffff)",
+      "interpretation": "Owned compiler processes were stopped after prolonged compilation; interrupted attempt remains FAIL. Bounded Cargo rerun completed separately."
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--exclude",
+        "opi-agent",
+        "--exclude",
+        "opi-ai",
+        "--all-targets",
+        "--no-fail-fast",
+        "--offline",
+        "-j",
+        "4"
+      ],
+      "exit_code": 101,
+      "seconds": 445.94,
+      "id": "remaining-workspace-bounded",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\remaining-workspace-bounded.log",
+      "raw_log_sha256": "72dcaa961bd82ee495b9013e73368e0b4f9f9db5cfacadb496aa08d2e3be7877",
+      "verdict": "FAIL",
+      "rust_summary": {
+        "passed": 2840,
+        "failed": 1,
+        "ignored": 4
+      },
+      "failure_excerpt": "test theme_monokai_exists ... ok\ntest shell_accepts_theme ... ok\ntest shell_default_vs_monokai_produces_different_colors ... ok\ntest theme_monokai_shell_80x24 ... ok\ntest theme_default_shell_120x40 ... ok\ntest theme_default_shell_80x24 ... ok\ntest theme_monokai_shell_120x40 ... ok\n\ntest result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s\n\n     Running tests\\tui_snapshots.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\tui_snapshots-08cf53f2dd1a61b4.exe)\n\nrunning 17 tests\ntest input_editor_with_text ... ok\ntest input_editor_empty ... ok\ntest status_bar_idle ... ok\ntest status_bar_thinking_with_tokens ... ok\ntest status_bar_tool_executing ... ok\ntest message_list_empty ... ok\ntest tool_call_running ... ok\ntest tool_call_error ... ok\ntest shell_idle_with_messages_80x24 ... ok\ntest status_bar_awaiting_permission_80x24 ... ok\ntest message_list_with_messages_120x40 ... ok\ntest message_list_with_messages_80x24 ... ok\ntest shell_with_conversation_120x40 ... ok\ntest shell_idle_empty_80x24 ... ok\ntest tool_call_success ... ok\ntest status_bar_awaiting_permission_120x40 ... ok\ntest shell_thinking_with_tool_80x24 ... ok\n\ntest result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s\n\nerror: 1 target failed:\n    `-p opi-coding-agent --test spec_ledger`",
+      "interpretation": "All remaining product packages completed under Cargo; only spec_ledger failed. 2840 passes, 1 failure, 4 ignored; no counts combined with overlapping native execution."
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--manifest-path",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-readme-final\\consumer\\Cargo.toml",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-readme-final\\candidate-telemetry.toml",
+        "--bin",
+        "consumer-readme",
+        "controlled_peer_waits_for_bytes_after_accept",
+        "--offline",
+        "--",
+        "--exact"
+      ],
+      "exit_code": 101,
+      "seconds": 40.48,
+      "id": "peer-red",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\peer-red.log",
+      "raw_log_sha256": "eea37f693c5217edb74054c114952eb593e8a56350cea384dea9e6b8b6989e40",
+      "verdict": "FAIL",
+      "rust_summary": {
+        "passed": 0,
+        "failed": 1,
+        "ignored": 0
+      },
+      "failure_excerpt": "   Compiling aws-lc-sys v0.46.0\n   Compiling aws-lc-rs v1.18.2\n   Compiling rustls v0.23.40\n   Compiling rustls-webpki v0.103.15\n   Compiling tokio-rustls v0.26.6\n   Compiling hyper-rustls v0.27.10\n   Compiling reqwest v0.12.28\n   Compiling opi-ai v0.8.3 (C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-readme-final\\package\\opi-ai-0.8.3)\n   Compiling consumer-readme v0.0.0 (C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-readme-final\\consumer)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.62s\n     Running unittests src\\main.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\consumer_readme-c93b6e82173bbc0d.exe)\n\nrunning 1 test\ntest controlled_peer_waits_for_bytes_after_accept ... FAILED\n\nfailures:\n\n---- controlled_peer_waits_for_bytes_after_accept stdout ----\n\nthread 'controlled_peer_waits_for_bytes_after_accept' (71732) panicked at src\\main.rs:166:5:\naccepted peer must wait for request bytes\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\n\nfailures:\n    controlled_peer_waits_for_bytes_after_accept\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\nerror: test failed, to rerun pass `--bin consumer-readme`",
+      "interpretation": "Expected failure of the delayed-request regression without explicit blocking accepted sockets, in an external scratch consumer."
+    },
+    {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--manifest-path",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-readme-final\\consumer\\Cargo.toml",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-readme-final\\candidate-telemetry.toml",
+        "--bin",
+        "consumer-readme",
+        "controlled_peer_waits_for_bytes_after_accept",
+        "--offline",
+        "--",
+        "--exact"
+      ],
+      "exit_code": 0,
+      "seconds": 22.75,
+      "id": "peer-green",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\peer-green.log",
+      "raw_log_sha256": "1fa179bb1ad894c7fc6478ec6c00af85c7e3af2fe48230d11ff80f89578274f4",
+      "verdict": "PASS",
+      "rust_summary": {
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0
+      },
+      "interpretation": "Same regression passes with explicit blocking accepted sockets; full actual-package proof separately rerun."
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance",
+        "-p",
+        "test_package*.py"
+      ],
+      "exit_code": 0,
+      "seconds": 2.87,
+      "id": "python-package-final",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\python-package-final.log",
+      "raw_log_sha256": "c87bbb954a8b8c21bbb5fce4c9c8e0bb478a76253ded591fbb1b7bacf16106ed",
+      "verdict": "PASS",
+      "python_tests": 73
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance",
+        "-p",
+        "test_run_readme_examples.py"
+      ],
+      "exit_code": 0,
+      "seconds": 1.71,
+      "id": "python-readme-final",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\python-readme-final.log",
+      "raw_log_sha256": "0991ae1b049d7e5cbe17edd4bcfe6e10b5e5e0320dcfc5a822305b0a1f644e08",
+      "verdict": "PASS",
+      "python_tests": 13
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 1,
+      "seconds": 0.33,
+      "id": "docs-before-evidence",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\docs-before-evidence.log",
+      "raw_log_sha256": "67ea0440f7dc321676f8b6e15d29fdc3d8b7bd51260d78e36223fe28545bb6b5",
+      "verdict": "FAIL",
+      "failure_excerpt": "FAIL: docs/iterations/opi-ai-1-5-alignment/phase2.md: broken local link: evidence/phase2-checks.json",
+      "interpretation": "Report link checked before its new evidence file was written. File now exists; final documentation check passes."
+    },
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 3.98,
+      "id": "fmt-final",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\fmt-final.log",
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verdict": "PASS"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "seconds": 0.29,
+      "id": "docs-final",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\docs-final.log",
+      "raw_log_sha256": "058e14f4a41df91dec666fc9b4c8ab4df93998813c6c00245f71e34b50f92d32",
+      "verdict": "PASS"
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "seconds": 0.11,
+      "id": "diff-final",
+      "raw_log": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\diff-final.log",
+      "raw_log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "verdict": "PASS"
+    }
+  ],
+  "frozen_index_unchanged_except_appended_implementation_slices": true,
+  "external_locked_packages_unchanged": true,
+  "baseline_schema_source_archive_sha256": "37574d6b847ca0f678d0a04d8fa942b6cd352410b317585ba95c1d8d9a250e21",
+  "baseline_spec_ledger_inspection": {
+    "base_commit": "dbb5954b68a096ec6c9b7aed67eb11e7a9ac1081",
+    "test_path": "crates/opi-coding-agent/tests/spec_ledger.rs",
+    "test_unchanged_from_base": true,
+    "baseline_spec_tree_entry": "",
+    "current_spec_exists": false,
+    "observation": "pre-existing test requires a file absent from base Git tree and current worktree; current native and Cargo executions both fail before hashing; no baseline execution claimed",
+    "current_failure_log_sha256": "4ae19fb9892c579c140fbe1583f9834d14ac3f5c84d56ed6e3b1b9c572be3088"
+  },
+  "supplementary_native_run": {
+    "complete": true,
+    "targets": 150,
+    "record": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase2-checks\\remaining-native.json",
+    "record_sha256": "0c9318bee866b271652382138af4055ad150c2a5e3a27702843f148f4796ccec",
+    "source_build_log_sha256": "035eeeff3ed0171eeaf95cdd341254ad629320cd1d83ea9cec20af82d2a1b368",
+    "failed_targets": [
+      {
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\adapter_host_mock-e5dd1d4ac98bcc9c.exe",
+          "--test-threads=4"
+        ],
+        "cwd": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent",
+        "artifact_sha256": "6f01549568940e034c8c51f804b90cb30f3bbfd58e83545b4bfe050a3c298219",
+        "package_id": "path+file:///D:/Luiz/Odradek/opi/crates/opi-coding-agent#0.8.3",
+        "features": [],
+        "profile": {
+          "opt_level": "0",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": true
+        },
+        "exit_code": 1,
+        "summary": [],
+        "seconds": 0.25,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\execution_backend_mock-a25622fc949b87b5.exe",
+          "--test-threads=4"
+        ],
+        "cwd": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent",
+        "artifact_sha256": "a15562ecc58caff61e811810a55053c9e53638f11e790fec7f2ce437bd05ee3b",
+        "package_id": "path+file:///D:/Luiz/Odradek/opi/crates/opi-coding-agent#0.8.3",
+        "features": [],
+        "profile": {
+          "opt_level": "0",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": true
+        },
+        "exit_code": 1,
+        "summary": [],
+        "seconds": 0.32,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\package_adapter_example-3fb10a76cf469c92.exe",
+          "--test-threads=4"
+        ],
+        "cwd": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent",
+        "artifact_sha256": "7c99f5029a5c36e1e260444f7a2681b8b6b41e12753e6a1cd384967a2747627e",
+        "package_id": "path+file:///D:/Luiz/Odradek/opi/crates/opi-coding-agent#0.8.3",
+        "features": [],
+        "profile": {
+          "opt_level": "0",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": true
+        },
+        "exit_code": 1,
+        "summary": [],
+        "seconds": 0.23,
+        "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\spec_ledger-548d5b1b96207cbe.exe",
+          "--test-threads=4"
+        ],
+        "cwd": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent",
+        "artifact_sha256": "e697dc53bad25910b3e59a599b41e8fb6567473ef3fddc27974a38795eb0df65",
+        "package_id": "path+file:///D:/Luiz/Odradek/opi/crates/opi-coding-agent#0.8.3",
+        "features": [],
+        "profile": {
+          "opt_level": "0",
+          "debuginfo": 2,
+          "debug_assertions": true,
+          "overflow_checks": true,
+          "test": true
+        },
+        "exit_code": 101,
+        "summary": [
+          [
+            "FAILED",
+            "0",
+            "1",
+            "0"
+          ]
+        ],
+        "seconds": 0.29,
+        "log_sha256": "4ae19fb9892c579c140fbe1583f9834d14ac3f5c84d56ed6e3b1b9c572be3088"
+      }
+    ],
+    "interpretation": "Three harness=false helpers received inappropriate --test-threads arguments: runner error, not a product regression. Formal Cargo rerun executed them correctly. spec_ledger failure is real and also occurs under Cargo. Counts overlap the Cargo rerun."
+  },
+  "readme_peer_replay": {
+    "purpose": "replay fixed real packaged consumer after prior intermittent Windows peer failure",
+    "executable_sha256": "4a05a61f2d7b4ad3feb605950f9213b55b2493b0dbb302c075d8eacf1ea11751",
+    "runs": [
+      {
+        "run": 0,
+        "exit_code": 0,
+        "stdout_sha256": "54b7ed4ec995fa6aedff5b0a281fc1687c96d89a71c24f48db6c3c7c178a8dd1",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2456",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2458",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2460",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2460",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 1,
+        "exit_code": 0,
+        "stdout_sha256": "85f125a9d549ef05e22fba9f9ed47cfc8f7d17f4a96fdef91e400ce48c997813",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2463",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2465",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2467",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2467",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 2,
+        "exit_code": 0,
+        "stdout_sha256": "ab027b59e4887f359cbbafcb8a75d2b98185b0c55a77c34632d84457108f23d3",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2470",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2472",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2474",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2474",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 3,
+        "exit_code": 0,
+        "stdout_sha256": "69d0afc2909ce450f3f3c73dec727b251af9ab51c567ddd8d665b4cdcef01e92",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2477",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2479",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2481",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2481",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 4,
+        "exit_code": 0,
+        "stdout_sha256": "42810fb241831553248244d7157d84bc6e4311b044b2942b2d2a13836d7c8976",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2484",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2486",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2488",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2488",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 5,
+        "exit_code": 0,
+        "stdout_sha256": "56bf41f978e9be0e42e691483e15e8b6ffeedd02cd0a9842f878f58c02d4c036",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2491",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2493",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2495",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2495",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 6,
+        "exit_code": 0,
+        "stdout_sha256": "f8629055a15e4504ff7d9e5c8c2e3531779c9e0c3911961e6a2d38974980058e",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2498",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2500",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2502",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2502",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 7,
+        "exit_code": 0,
+        "stdout_sha256": "3135db9d77e8f705e5d18955d5ec137913fe27d86b615118cba691243d1b66d7",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2505",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2507",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2509",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2509",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 8,
+        "exit_code": 0,
+        "stdout_sha256": "a825f84753d04a4f7d1674039e4b0624f5a0fa90a1428c9b7a4cc0bea3e46f2f",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:2512",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:6997",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:6999",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:6999",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "run": 9,
+        "exit_code": 0,
+        "stdout_sha256": "45b21d3981cdb6da137a32331ebb0700d44bf26b4dab11bb4ff49c30ec62c37d",
+        "stderr_sha256": "d071475561de8c834757b6359435a23cfe06bacc125862d3c4c80678a0541e98",
+        "report": {
+          "schema": "opi-readme-execution/1",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:7002",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:7004",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "unpolled": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:7006",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:7006",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "verdict": "PASS"
+  },
+  "packages": [
+    {
+      "file": "phase2-readme-package-accepted.json",
+      "sha256": "352ae0bc3ff33ccd946bc0c5e59a6eb020c3867b7aceec42d59e525ef8a6bd29",
+      "verdict": "PASS",
+      "role": "retained previous attempt"
+    },
+    {
+      "file": "phase2-readme-package-current.json",
+      "sha256": "a3e7c001294f07531c9db40197e45900a7cd5f3074b9b8dbdf56857e1b18b930",
+      "verdict": "PASS",
+      "role": "current candidate"
+    },
+    {
+      "file": "phase2-readme-package-final.json",
+      "sha256": "13557e7a7edd07f5fd8b2a376b5d1df97e7246d32fd55865d30b13e0a1390c21",
+      "verdict": "FAIL",
+      "role": "retained previous attempt"
+    },
+    {
+      "file": "phase2-readme-package-verified.json",
+      "sha256": "7c90dafec223e502a624552282ce717c5c96124f48107bc5f0d7ccca97efee19",
+      "verdict": "PASS",
+      "role": "retained previous attempt"
+    },
+    {
+      "file": "phase2-readme-package.json",
+      "sha256": "56ce10c5d6a69135298c924669926ab9db97a4327d966a963ebd2dd7d5c6dbca",
+      "verdict": "PASS",
+      "role": "retained previous attempt"
+    },
+    {
+      "file": "phase2-telemetry-package-current.json",
+      "sha256": "96682bb813531cebf23a1895b0c9d7a3a839f9fccaf4e7dc953e7ec4903fde84",
+      "verdict": "PASS",
+      "role": "current candidate"
+    },
+    {
+      "file": "phase2-telemetry-package.json",
+      "sha256": "d8a10a5498e51883e403e1026e84a9ee5d29f38a1858e688843fd3e77ee77664",
+      "verdict": "PASS",
+      "role": "retained previous attempt"
+    }
+  ],
+  "affected_file_sha256": {
+    "CHANGELOG.md": "ced723ddc0d5333630ef23785d8eb4e4ed52612b3da5d371d410d88db44343d2",
+    "Cargo.lock": "05339feaa5503b2e01c51f5e16dc5062628a9c3d1fbbc9a2b3bfb9c08f674ce7",
+    "Cargo.toml": "57b00ba33d30dde782c43e9faae26e73770d5e0ead404cbf95d98940f8ce8dbd",
+    "README.md": "63597745190902238d808f6bb1a8004cda6dc5f634e048b399c7abf0410f3788",
+    "README.zh.md": "496b9aa3c24e3484e3a685f10d5e109dfd99ac53c58f409fe635727e9bc14b93",
+    "crates/opi-ai/Cargo.toml": "535e6b0954d65b481862951290f83dcb5d9b7444a2e2e680197c90b9bbbaea44",
+    "crates/opi-ai/README.md": "458d004b360ec0182077ad565fbf9f211b6be9a7840e9b3ebce855806ae105ec",
+    "crates/opi-ai/README.zh.md": "7f495df45acaf09a73a70a1e77fff1caadd38399d3fbe8e521c3d1c9c915beba",
+    "crates/opi-ai/src/telemetry.rs": "543f3b37f218f902fb7447f0eda7b924b7c8bec2ab59d4a1231381e0570f8877",
+    "crates/opi-ai/tests/platform_delivery.rs": "750b2b16c0c2d97e32171b58e5c3dd7913d0368eb018c2a441297d5b2b7f063b",
+    "crates/opi-ai/tests/telemetry_carrier.rs": "b46f4f85f3b7ae8b862c652862ca6cfbd16094248878edbc184110ce8d1723a3",
+    "crates/opi-ai/tests/telemetry_operations.rs": "c74c543c1ae70882a5f6eacd007ccb325c24b4ce24a6a748114e6a892aa0970e",
+    "crates/opi-telemetry/Cargo.toml": "2bce94982f0a30767e4141538026ed9c06272318785784f0c7a40b58b41f8018",
+    "crates/opi-telemetry/LICENSE": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48",
+    "crates/opi-telemetry/README.md": "03a2363d006a3afdcebc55afe60db1316859875d2b85d57594e40bd6d8acf9e4",
+    "crates/opi-telemetry/README.zh.md": "80b35bb0963ba18f5c15fdf3e39b99584243bf2167db130fc4456914c515df5a",
+    "crates/opi-telemetry/examples/record_request.rs": "3a7dac72ff0498e5292edcb28bddbe83ffe49bb195dfa2c9f23dcc3626f30a8b",
+    "crates/opi-telemetry/src/backend.rs": "7b85f239a656f7d82fb06a12221b956d8c744a80c590ccd1bff83cd26fe37861",
+    "crates/opi-telemetry/src/context.rs": "00ee0c4cff3fb8a971c0e2ba64955871ba7178570ddb9d6202097b7a1c9d7ace",
+    "crates/opi-telemetry/src/lib.rs": "4ca90cc68dbfe7fc01ff1071fba72a36fda04c165a05f8bf4ae31647630b52ba",
+    "crates/opi-telemetry/src/memory.rs": "72093d6ef684b1ad444bb818bcaabf2a7619d9eb6fec8f2ea39eeae24aa29f3b",
+    "crates/opi-telemetry/src/metrics.rs": "d22d4607bfc6a9a00b5e13f878a8b68af3115ac81bf96d7cc8590efad7f40b26",
+    "crates/opi-telemetry/src/noop.rs": "9d9beb8f57cd8b0a385b3ef6db6c3fa7f3d98142487ba06c6db983cf81a30f7c",
+    "crates/opi-telemetry/src/schema.rs": "2b6eac2b45df4b58bf66894d3ebe3fd627c315d43a016b473200486258823aec",
+    "crates/opi-telemetry/src/tracing.rs": "6bc139aee78cbb80b116a171f85b2acfc08045798baa48eaa90773e62c7155ba",
+    "crates/opi-telemetry/tests/contracts.rs": "7a7aed623fcafbd969f3544e842fda9366a68e071d2b8666391ca45587028816",
+    "crates/opi-telemetry/tests/failures.rs": "d04fe955980932c4ad7ada409b98d35b85dae2d9303b896f02094b274d8ef2fd",
+    "crates/opi-telemetry/tests/support/mod.rs": "94f542f886aa30dbd39afa52b78d4ccc1fbcfb90b6e2fe478f08c0dfc7248615",
+    "crates/opi-telemetry/tests/tracing_adapter.rs": "aad9f6924dad9b0650de5cbd834f40045554809731b41e55e03c735a1560e902",
+    "scripts/pi-sdk-conformance/README.md": "0caeb866631274eb2f70ba14a1931bbe5de9fc057e51624cc89e6f2337405758",
+    "scripts/pi-sdk-conformance/package_slice.py": "e4003a74993718123149b456b10295bf8f01aa98cc19fb564fe58941ac8d6fd2",
+    "scripts/pi-sdk-conformance/run_early_package_proof.py": "b4542292acc929c4824fac24516ec9142dd0db1749fd8984fd5dfd56f41e5dd6",
+    "scripts/pi-sdk-conformance/run_readme_examples.py": "6e9c7d2e4a5e83401c09767945583b602c4dc5b579925c1ee409a412b4e302c8",
+    "scripts/pi-sdk-conformance/test_package_proof.py": "d3dbb53a01b17c3564fbe5e0a94cbe4c9a06af5c537524d476a2e1879171be7d",
+    "scripts/pi-sdk-conformance/test_package_slice.py": "a9c842d3a8e166e33d95203998f67ef671d21050f81724709ba105275a138278",
+    "scripts/pi-sdk-conformance/test_run_readme_examples.py": "e129493bb53afa41a3094c8d8f28887cee0898e26a982b9803ec9920de673cd5"
+  },
+  "applicability": "After contract/Clippy checks, the only production source edit was a rustdoc clarification on instrument Drop; current rustdoc and current packaged consumers compiled that source. Runtime code is unchanged. Documentation and iteration records were then finalized.",
+  "not_run": [
+    "declared MSRV 1.97",
+    "native Linux/macOS",
+    "live providers",
+    "full TS/Rust telemetry differential",
+    "full feature matrix",
+    "six-gate milestone"
+  ],
+  "precommit_format_normalization": {
+    "reason": "staged diff check covers new files previously absent from ordinary unstaged diff check",
+    "files": [
+      {
+        "path": "crates/opi-telemetry/Cargo.toml",
+        "before_sha256": "9556e9462e26310f2cde07afd8ffb9cc6567f13f33609eb6f1f9d89e45b3efb0",
+        "after_sha256": "2bce94982f0a30767e4141538026ed9c06272318785784f0c7a40b58b41f8018",
+        "semantic_content_unchanged": true
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase2-telemetry-package.json",
+        "before_sha256": "5b63485124c71b0e932b58602846bcf0841bb3610041acd48893a7b7db929430",
+        "after_sha256": "d8a10a5498e51883e403e1026e84a9ee5d29f38a1858e688843fd3e77ee77664",
+        "semantic_content_unchanged": true
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase2-telemetry-package-current.json",
+        "before_sha256": "2110a20714a3a0c57ab1d98589d88e8b05792f86aa839e6ff10cca38f2b1ef85",
+        "after_sha256": "96682bb813531cebf23a1895b0c9d7a3a839f9fccaf4e7dc953e7ec4903fde84",
+        "semantic_content_unchanged": true
+      }
+    ],
+    "applicability": "Only CRLF normalization and a final blank line were removed; parsed TOML/JSON values match exactly. Packaged archives and their hashes remain unchanged; the packaged Cargo.toml.orig retains the original final blank line. No runtime or dependency changes and no test rerun required."
+  }
+}

@@ -9,16 +9,22 @@ fixtures and evidence files in this directory.
 The harness retains bounded dependency, conformance and package evidence for
 the current tasks. Full strict/grammar projection, conformance and final SDK
 distribution acceptance remain with tasks 20.11, 20.34 and 20.57 respectively.
-There is no registry publication or live model call.
+There is no registry publication or live model call. The README runner accepts
+`--evidence-output <new-file>` to preserve historical records; it refuses an
+existing explicit output before creating scratch or starting Cargo.
 
 ## Layout
 
-- `run_early_package_proof.py` packages `opi-ai` with Cargo, safely extracts the
-  artifact into a new external scratch, resolves an ordinary consumer offline,
+- `run_early_package_proof.py` packages `opi-ai` and `opi-telemetry` with Cargo, safely extracts the
+  artifacts into a new external scratch, resolves an ordinary consumer offline,
   validates its dependency identities/features and runs both feature profiles.
 - `consumer/` is the consumer template. Only its SDK path is substituted, with
   the extracted package directory. Backend dependencies use crates.io. There
-  is no patch, registry server, source replacement or build-time generator.
+  is no workspace-source patch, registry server, source replacement or build-time
+  generator. One explicit Cargo config patch resolves the unpublished telemetry
+  dependency from its exact extracted candidate artifact. Archive hashes, source
+  bytes and resolved dependency identity are checked; unrelated local packages
+  and alternate registry sources remain rejected.
 - `current-profile.json` explicitly overrides two frozen URL results for the
   accepted raw/percent-encoded Beria Erfe domain difference. It does not change
   the historical Node observations or treat other differences as accepted.
@@ -129,6 +135,10 @@ python -B -m unittest discover -s scripts/pi-sdk-conformance -p "test_package*.p
 ```
 
 ## Battery
+
+The README consumer peer explicitly uses blocking accepted sockets with read/write
+timeouts. A delayed-request regression runs before the three onboarding flows;
+this also covers Windows inheritance from the nonblocking listener.
 
 All 43 original leaf cases now exercise public Schema operations: 14 ECMA
 Number-to-string boundary conversions and 29 URL accept/reject decisions. The

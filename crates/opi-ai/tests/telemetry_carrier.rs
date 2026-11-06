@@ -244,11 +244,11 @@ async fn producer_task_propagates_frozen_context() {
 
 // ---------------------------------------------------------------------------
 // Noop: business work runs exactly once, output preserved, observation
-// shadowed by a disabled scoped dispatcher, caller context untouched.
+// ambient host tracing preserved, caller context untouched.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn noop_in_scope_runs_business_once_and_shadows_observation() {
+fn noop_in_scope_runs_business_once_and_preserves_host_observation() {
     let context = TelemetryContext::noop();
     let calls = Arc::new(AtomicUsize::new(0));
     let probe_calls = calls.clone();
@@ -256,7 +256,7 @@ fn noop_in_scope_runs_business_once_and_shadows_observation() {
     let output = dispatcher::with_default(&ambient, move || {
         context.in_scope(move || {
             probe_calls.fetch_add(1, Ordering::SeqCst);
-            tracing::span!(Level::INFO, "must_not_route").in_scope(|| ());
+            tracing::span!(Level::INFO, "host_probe").in_scope(|| ());
             3
         })
     });
@@ -266,14 +266,11 @@ fn noop_in_scope_runs_business_once_and_shadows_observation() {
         1,
         "business work exactly once"
     );
-    assert!(
-        ambient_recorder.spans.lock().unwrap().is_empty(),
-        "noop scope must shadow ambient observation"
-    );
+    assert_eq!(*ambient_recorder.spans.lock().unwrap(), vec!["host_probe"]);
 }
 
 #[test]
-fn noop_instrument_preserves_output_and_shadows_events() {
+fn noop_instrument_preserves_output_and_host_events() {
     let context = TelemetryContext::noop();
     let (ambient_recorder, ambient) = recorder();
     let polls = Arc::new(AtomicUsize::new(0));
@@ -290,10 +287,7 @@ fn noop_instrument_preserves_output_and_shadows_events() {
         1,
         "business work exactly once"
     );
-    assert!(
-        ambient_recorder.spans.lock().unwrap().is_empty(),
-        "noop scope must shadow ambient observation"
-    );
+    assert_eq!(*ambient_recorder.spans.lock().unwrap(), vec!["poll_probe"]);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,13 +300,20 @@ fn disabled_span_degrades_to_noop() {
     let context = dispatcher::with_default(&ambient, || {
         TelemetryContext::from_span(tracing::Span::none())
     });
-    let output = context.in_scope(|| {
-        tracing::span!(Level::INFO, "must_not_route").in_scope(|| ());
-        9
+    let output = dispatcher::with_default(&ambient, || {
+        context.in_scope(|| {
+            tracing::span!(Level::INFO, "host_probe").in_scope(|| ());
+            9
+        })
     });
     assert_eq!(output, 9);
-    assert!(
-        ambient_recorder.spans.lock().unwrap().is_empty(),
-        "disabled span must behave as noop"
-    );
+    assert_eq!(*ambient_recorder.spans.lock().unwrap(), vec!["host_probe"]);
+}
+
+#[test]
+fn noop_unpolled_drop_preserves_host_tracing() {
+    let (ambient_recorder, ambient) = recorder();
+    let future = TelemetryContext::noop().instrument(Droppy);
+    dispatcher::with_default(&ambient, || drop(future));
+    assert_eq!(*ambient_recorder.spans.lock().unwrap(), vec!["drop_probe"]);
 }

@@ -266,6 +266,7 @@ defense-in-depth for its target process tree, not a complete security boundary.
 
 | Crate | Purpose |
 | --- | --- |
+| [`opi-telemetry`](crates/opi-telemetry) | Backend-neutral contexts, spans, metrics and schemas; optional tracing adapter |
 | [`opi-ai`](crates/opi-ai) | Provider-neutral model API, streaming, usage, retries, credentials, and model registry |
 | [`opi-agent`](crates/opi-agent) | Product-neutral Agent loop, tools, hooks, queues, sessions, compaction, SDK, and extensions |
 | [`opi-tui`](crates/opi-tui) | Ratatui components, transcript and diff rendering, pickers, themes, and terminal images |

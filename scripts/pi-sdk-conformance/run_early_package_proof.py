@@ -22,6 +22,100 @@ HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parents[1]
 
 
+class CandidateTelemetry:
+    """Resolve an unpublished dependency from exact package bytes, never repo source.
+
+    Cargo's package workspace operation stages both candidate archives. Consumers
+    use one explicit config patch to the extracted telemetry artifact; ordinary
+    third-party dependencies retain their registry identities/checksums.
+    """
+
+    def __init__(self, archive: Path, package: Path, config: Path):
+        self.archive = archive
+        self.package = package.resolve()
+        self.config = config
+        self.archive_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+        self.config_text = ('[patch.crates-io]\nopi-telemetry = { path = '
+                            + json.dumps(self.package.as_posix()) + ' }\n')
+        config.write_text(self.config_text, encoding="utf-8", newline="\n")
+        self.verify_files()
+
+    def verify_files(self) -> None:
+        if hashlib.sha256(self.archive.read_bytes()).hexdigest() != self.archive_hash:
+            raise ValueError("candidate telemetry archive changed")
+        if self.config.read_text(encoding="utf-8") != self.config_text:
+            raise ValueError("candidate telemetry config changed")
+        with tarfile.open(self.archive, "r:gz") as archive:
+            for member in archive.getmembers():
+                if not member.isfile():
+                    continue
+                relative = PurePosixPath(member.name).relative_to(self.package.name)
+                # Cargo resolves a new build lock; it cannot rewrite code or manifests.
+                if str(relative) == "Cargo.lock":
+                    continue
+                path = self.package / str(relative)
+                if (not path.resolve().is_relative_to(self.package) or path.is_symlink()
+                        or not path.is_file() or path.read_bytes() != archive.extractfile(member).read()):
+                    raise ValueError(f"candidate telemetry package bytes changed: {relative}")
+
+    def command(self, command: list[str]) -> list[str]:
+        if command and command[0] == "cargo":
+            self.verify_files()
+            return ["cargo", "--config", str(self.config), *command[1:]]
+        return command
+
+    def verify_graph(self, metadata: dict) -> str:
+        self.verify_files()
+        matches = [p for p in metadata["packages"] if p["name"] == "opi-telemetry"]
+        expected = tomllib.loads((self.package / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"]
+        if (len(matches) != 1 or matches[0].get("source") is not None
+                or matches[0]["version"] != expected
+                or Path(matches[0]["manifest_path"]).resolve() != self.package / "Cargo.toml"):
+            raise ValueError("consumer must resolve the exact packaged telemetry candidate")
+        return matches[0]["id"]
+
+
+def package_sdk(run, scratch: Path, target: Path):
+    version = tomllib.loads((REPO / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
+    run("package", ["cargo", "package", "-p", "opi-telemetry", "-p", "opi-ai",
+                    "--allow-dirty", "--no-verify", "--offline", "--locked"], REPO)
+    archives, packages = {}, {}
+    for name in ("opi-telemetry", "opi-ai"):
+        prefix = f"{name}-{version}"
+        archive = scratch / f"{prefix}.crate"
+        shutil.copyfile(target / "package" / archive.name, archive)
+        archives[name] = archive
+        packages[name] = unpack_package(archive, scratch / "package", prefix)
+    candidate = CandidateTelemetry(archives["opi-telemetry"], packages["opi-telemetry"], scratch / "candidate-telemetry.toml")
+    evidence = {"file": archives["opi-ai"].name,
+                "sha256": hashlib.sha256(archives["opi-ai"].read_bytes()).hexdigest(),
+                "dependencies": [{"file": candidate.archive.name, "sha256": candidate.archive_hash,
+                                  "source": "exact extracted candidate artifact; no workspace source patch"}]}
+    return packages["opi-ai"], evidence, candidate
+
+
+def candidate_local_id(metadata: dict, package: Path) -> str | None:
+    """Admit only the named companion artifact, leaving all other guards intact."""
+    matches = [p for p in metadata["packages"] if p["name"] == "opi-telemetry"]
+    if not matches:
+        # Pure graph checks can inspect historical fixtures. Each live runner
+        # independently requires the candidate via CandidateTelemetry.verify_graph.
+        return None
+    if len(matches) != 1:
+        raise ValueError("missing or duplicate candidate telemetry dependency")
+    prefix = f"opi-telemetry-{matches[0]['version']}"
+    candidate_path = package.parent / prefix
+    archive_path = package.parent.parent / f"{prefix}.crate"
+    config_path = package.parent.parent / "candidate-telemetry.toml"
+    # Read existing config; never repair it while checking a dependency graph.
+    candidate = object.__new__(CandidateTelemetry)
+    candidate.archive, candidate.package, candidate.config = archive_path, candidate_path.resolve(), config_path
+    candidate.archive_hash = hashlib.sha256(archive_path.read_bytes()).hexdigest()
+    candidate.config_text = ('[patch.crates-io]\nopi-telemetry = { path = '
+                             + json.dumps(candidate.package.as_posix()) + ' }\n')
+    return candidate.verify_graph(metadata)
+
+
 def validate_paths(repo: Path, scratch: Path, target: Path) -> None:
     if scratch.exists():
         raise ValueError(f"scratch already exists; choose a fresh path: {scratch}")
@@ -125,7 +219,11 @@ def main() -> int:
                                  *sorted((HARNESS / "frozen").glob("*.json"))]
                 }}
 
+    candidate = None
+
     def run(name: str, command: list[str], cwd: Path) -> str:
+        if candidate is not None:
+            command = candidate.command(command)
         started = time.monotonic()
         result = subprocess.run(command, cwd=cwd, env=env, capture_output=True,
                                 text=True, encoding="utf-8", errors="replace", timeout=3600)
@@ -135,6 +233,8 @@ def main() -> int:
                                   "elapsed_seconds": round(time.monotonic() - started, 2)})
         if result.returncode:
             raise ValueError(f"{name} failed with exit {result.returncode}; see scratch logs")
+        if candidate is not None and command[0] == "cargo" and "metadata" in command:
+            candidate.verify_graph(json.loads(result.stdout))
         return result.stdout
 
     lease = [sys.executable, str(REPO / "scripts/opi-cargo-cache.py"), "lease"]
@@ -142,15 +242,7 @@ def main() -> int:
     try:
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
-        version = tomllib.loads((REPO / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
-        prefix = f"opi-ai-{version}"
-        run("package", ["cargo", "package", "-p", "opi-ai", "--allow-dirty", "--no-verify",
-                        "--offline", "--locked"], REPO)
-        archive = scratch / f"{prefix}.crate"
-        shutil.copyfile(target / "package" / archive.name, archive)
-        evidence["package"] = {"file": archive.name,
-                               "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}
-        package = unpack_package(archive, scratch / "package", prefix)
+        package, evidence["package"], candidate = package_sdk(run, scratch, target)
         consumer = scratch / "consumer"
         shutil.copytree(HARNESS / "consumer", consumer)
         shutil.copytree(HARNESS / "frozen", consumer / "frozen")

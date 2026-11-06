@@ -2,6 +2,11 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): `TelemetryContext::noop()` and disabled tracing spans now
+  preserve ambient host tracing inside callbacks, future polls and drops. They
+  no longer install a disabled dispatcher. Business execution and explicitly
+  captured active-span routing are unchanged.
+
 - `opi-ai` (0.x): `ModelInfo::sampling_params` and `Request::sampling_params`
   use `Option<SamplingParams>` to preserve absent versus explicit empty maps.
   Defaults are `None`; `with_sampling_params(map)` stores `Some(map)`, including
@@ -944,6 +949,14 @@
   unchanged.
 ### Added
 
+- `opi-telemetry`: independent backend-neutral span, attribute, event, status,
+  metric and schema contracts, with no-op and in-memory recording. Explicit
+  execution owners settle spans; cloned observation handles do not. The optional
+  tracing adapter retains frozen parent/dispatcher routing. `opi-ai::telemetry`
+  re-exports existing carrier paths; AI instrumentation remains in `opi-ai`.
+  Offline SDK package checks now stage both candidate crates and resolve the
+  dependency from exact extracted package bytes, without workspace source patches.
+
 - workflows: `opi-realign` accepts local pi snapshots without Git or a revision
   argument and assesses complete capability/behavior reproduction independently
   of Opi specifications, plans and prior audits. Reports include conditional
@@ -1022,8 +1035,9 @@
   and callback counts identical to context-free twins; the process-local
   carrier is absent from serialized handles/messages and wire
   bodies/headers, and prompt/secret canaries never appear in any recorded
-  telemetry field. Domain status/exporter/flush/evidence stay host-owned;
-  no telemetry crate or automatic SDK spans are added.
+  telemetry field. Exporter/flush/evidence stay host-owned; this carrier
+  propagation does not add automatic SDK spans. The later neutral telemetry
+  extraction is described above; AI domain instrumentation remains separate.
 - `opi-ai`: deferred-response contracts (task 20.50, DEL-11). Submission
   stays a normal generation returning a pending `StopReason::Deferred`
   message with a source-owned `DeferredHandle` (no credential, pi-shaped
@@ -1387,16 +1401,16 @@
   section installing the frozen dispatch and entering the parent for the
   section only: no enter guard crosses an await, each outer poll polls the
   wrapped future exactly once, `Pending` and the output are preserved. The
-  disabled carrier runs the same sections under a no-op dispatcher:
-  business work still executes exactly once while section observation is
-  explicitly silenced. New direct dependency `tracing-core = "0.1"`
-  (workspace): the locked tree already carried tracing-core 0.1.36 as
-  tracing 0.1.44's dependency, so this only grants direct visibility.
+  disabled carrier runs the same sections without installing a dispatcher:
+  business work still executes exactly once while ambient host tracing remains
+  visible. The carrier now lives in `opi-telemetry`, re-exported through
+  `opi-ai::telemetry`; its optional tracing adapter owns the normal
+  `tracing-core` dependency. The locked tracing versions are unchanged.
   No global subscriber/exporter/sampling, domain span vocabulary or automatic
   SDK root span is installed; nothing is serialized or sent on the wire.
   Optional `Request::telemetry_context` propagates through the real Codex
   producer and callbacks; omission captures no implicit ambient context.
-  Noop observation is scoped and does not disable independent host logging.
+  Noop leaves ambient host tracing unchanged, including inside the scope.
   Full-operation propagation remains owned by task 20.55.
 - `opi-ai`: scripted multi-operation test support on the existing
   MockProvider (task 20.53.8, DEL-11; no second mock driver, public API

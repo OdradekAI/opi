@@ -1630,11 +1630,13 @@ no dynamic catalog source, attaches no persistent `ModelsStore`, and has no
 pi.dev/default startup fetch policy. Its local memory credential store is
 independent of catalog persistence.
 
-## Telemetry Carrier: Frozen Parent Span plus Dispatch (task 20.54, DEL-12)
+## Telemetry: Explicit Context and Optional Tracing
 
-`telemetry` provides the process-local `TelemetryContext` carrier - the
-P20-TELEMETRY shared-decision owner; the closure test lives at
-`tests/telemetry_carrier.rs`.
+`opi-ai::telemetry` re-exports `TelemetryContext` and `Instrumented` from
+[opi-telemetry](../opi-telemetry/README.md). The independent crate provides
+neutral spans, metrics, schema descriptions and a recorder. AI currently uses
+its tracing scope adapter; automatic AI request spans and usage metrics are
+not yet connected. Carrier regression tests live at `tests/telemetry_carrier.rs`.
 
 - **`TelemetryContext::from_span(span)`** freezes the parent
   `tracing::Span` together with its own `Dispatch`, obtained through
@@ -1651,10 +1653,9 @@ P20-TELEMETRY shared-decision owner; the closure test lives at
   including an unpolled drop - run the same scoped section. No enter
   guard crosses an await; each outer poll polls the wrapped future
   exactly once; `Pending` and the output are preserved.
-- **`noop()`** runs the same sections under a no-op dispatcher:
-  business work still executes exactly once while section observation
-  is explicitly silenced instead of leaking to ambient dispatch. Independent
-  host logging outside the wrapped section keeps its own subscriber.
+- **`noop()`** runs business work exactly once and preserves ambient host
+  tracing, including inside the scope, polls and Drop. It disables only
+  neutral telemetry recording; it does not install a disabled dispatcher.
 
 `Request::telemetry_context: Option<TelemetryContext>` explicitly carries this
 pair into the real Codex producer, including its async callbacks and SSE

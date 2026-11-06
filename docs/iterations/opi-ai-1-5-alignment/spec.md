@@ -3,7 +3,7 @@ Status: active
 Owner: user
 Baseline: opi 90f953d5ee288c165dc295bfdfb7cb7a05d7cecd; initial worktree clean; upstream D:/Luiz/Odradek/opi/.pi/pi-1.5.0; SHA256 content manifest 959b3b486f111b53771d37da272c8951064952bd9b18596c5c244935cea45072
 
-日期：2026-11-07。本文件承接已完成的[决策地图](map.md)，作为实施的单一方案入口。active 表示已确认的目标范围仍有效。用户已明确授权先实施第一阶段“固定基准，建立能力、消费者与测试映射”；进展由[实施票](issues/01-baseline-and-mapping.md)维护，产物与证据见[第一阶段报告](phase1.md)。答案细节以各决策票的 Answer 为准，研究报告只提供证据。
+日期：2026-11-07。本文件承接已完成的[决策地图](map.md)，作为实施的单一方案入口。active 表示已确认的目标范围仍有效。第一阶段已完成并提交，证据见[第一阶段报告](phase1.md)。用户随后授权继续推进；第二阶段首个切片[建立中立遥测基础与可选 tracing 适配](issues/02-neutral-telemetry-foundation.md)已完成，结果及全量回归限制见[切片报告](phase2.md)。该票独立维护实施状态；第二阶段其余边界整理尚未完成。答案细节以各决策票的 Answer 为准，研究报告只提供证据。
 
 ## 目标与范围
 
@@ -11,7 +11,7 @@ Baseline: opi 90f953d5ee288c165dc295bfdfb7cb7a05d7cecd; initial worktree clean; 
 
 采用 Rust 原生接口，保持完整能力映射，可观察行为逐项验收；有意差异单独讨论并记录，不能算严格等价通过。目标不仅是聊天，也包括图像、分类、deferred、Faux、认证、目录、工具/schema、transcript、扩展、compat、公开辅助能力及包级工具的对应关系。
 
-本方案定义重构范围、依据和迁移次序。当前任务只实施第一阶段的基准与映射，产品源码、Cargo 配置、产品 README 与测试迁移属于后续阶段。本次没有发布、真实 provider 调用或整个 pi-coding-agent 的实现。opi-agent/opi-coding-agent 中已有消费者要随本次公共接口调整迁移，完整 coding-agent 能力对齐另行安排。
+本方案定义重构范围、依据和迁移次序。基准与映射保持冻结；当前开始按后续阶段迁移产品源码、Cargo 配置、文档与相关测试。第二阶段按可独立验证的切片推进，本次从中立遥测基础开始，纯值/错误及 auth/catalog 分离随后实施。本次没有发布、真实 provider 调用或整个 pi-coding-agent 的实现。opi-agent/opi-coding-agent 中已有消费者要随本次公共接口调整迁移，完整 coding-agent 能力对齐另行安排。
 
 ## 已确认的设计
 

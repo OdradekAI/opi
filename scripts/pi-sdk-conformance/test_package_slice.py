@@ -799,7 +799,7 @@ class WsPackageBoundaryTests(unittest.TestCase):
                                              "USERPROFILE": str(Path(self.temp.name) / "home")},
                                 clear=True), \
                 mock.patch.object(subprocess, "run", side_effect=fake_process), \
-                mock.patch.object(package_slice.shared, "unpack_package", return_value=self.package), \
+                mock.patch.object(package_slice.shared, "package_sdk", return_value=(self.package, {}, None)), \
                 mock.patch.object(package_slice, "run_packaged_ws_checks", side_effect=private_checks), \
                 redirect_stdout(io.StringIO()):
             self.assertEqual(package_slice.main(), 1)

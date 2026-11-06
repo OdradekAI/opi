@@ -524,7 +524,7 @@ async fn default_and_noop_contexts_run_business_once_without_sdk_observation() {
     assert!(a_recording.lock().unwrap().events.is_empty());
 
     // Explicit noop: business runs exactly once with identical output, the
-    // adapter's own markers are silenced, and no ambient root is adopted.
+    // adapter's own host tracing remains visible. No SDK span is added.
     let message = await_under_ambient(
         &a_dispatch,
         models.complete_simple(
@@ -541,9 +541,20 @@ async fn default_and_noop_contexts_run_business_once_without_sdk_observation() {
         *observed.telemetry_present.lock().unwrap(),
         vec![false, true]
     );
-    assert!(
-        a_recording.lock().unwrap().spans.is_empty(),
-        "noop markers must be shadowed, not routed to any ambient dispatch"
+    assert_eq!(
+        a_recording
+            .lock()
+            .unwrap()
+            .spans
+            .iter()
+            .map(|(name, _)| *name)
+            .collect::<Vec<_>>(),
+        vec![
+            "chat_poll_marker",
+            "chat_poll_marker",
+            "chat_poll_marker",
+            "chat_drop_marker"
+        ]
     );
     assert_no_canaries(&a_recording);
 }
@@ -862,7 +873,42 @@ fn noop_pending_stream_restores_ambient_and_preserves_business() {
         restored_parents.extend([ambient_id; 5]);
     }
     assert_eq!(outcomes, vec!["marker response", "marker response"]);
-    assert_ambient_restored(&b_recording, &restored_parents);
+    let state = b_recording.lock().unwrap();
+    let restored: Vec<_> = state
+        .spans
+        .iter()
+        .filter(|(name, _)| *name == "ambient_restore_marker")
+        .map(|(_, parent)| *parent)
+        .collect();
+    assert_eq!(
+        restored,
+        restored_parents
+            .iter()
+            .copied()
+            .map(Some)
+            .collect::<Vec<_>>()
+    );
+    let markers: Vec<_> = state
+        .spans
+        .iter()
+        .filter(|(name, _)| *name != "ambient_parent" && *name != "ambient_restore_marker")
+        .collect();
+    assert_eq!(
+        markers.iter().map(|(name, _)| *name).collect::<Vec<_>>(),
+        [
+            "chat_poll_marker",
+            "chat_poll_marker",
+            "chat_poll_marker",
+            "chat_poll_marker",
+            "chat_drop_marker"
+        ]
+    );
+    assert!(
+        markers
+            .iter()
+            .all(|(_, parent)| *parent == restored_parents.last().copied())
+    );
+    assert!(state.entered.values().all(Vec::is_empty));
 }
 
 // ---------------------------------------------------------------------------

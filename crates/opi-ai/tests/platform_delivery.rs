@@ -52,8 +52,10 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// The exact seven-member workspace graph frozen by task 20.58.
+/// Current reviewed graph: the original seven members plus neutral telemetry.
+/// Earlier native-run counts remain historical evidence, not this candidate's proof.
 const FROZEN_MEMBERS: &[&str] = &[
+    "crates/opi-telemetry",
     "crates/opi-ai",
     "crates/opi-agent",
     "crates/opi-coding-agent",
@@ -161,7 +163,6 @@ const FROZEN_UNSAFE_FILES: &[&str] = &[
     "crates/opi-ai/src/auth/aws/process/windows.rs",
     "crates/opi-ai/src/schema/ir.rs",
     "crates/opi-ai/src/schema/refs.rs",
-    "crates/opi-ai/src/telemetry.rs",
     "crates/opi-ai/src/ws/io.rs",
     "crates/opi-ai/src/ws/pmd.rs",
     "crates/opi-coding-agent/src/execution/contribution.rs",
@@ -267,6 +268,7 @@ fn root_workspace_graph_is_frozen() {
     // Internal dependency edges carry both the path and the published
     // version, in lockstep with workspace.package.version.
     for dep in [
+        "opi-telemetry",
         "opi-ai",
         "opi-agent",
         "opi-coding-agent",
@@ -346,6 +348,7 @@ fn lockfile_is_cargo_generated_and_members_are_unique() {
         *counts.entry(name.as_str()).or_insert(0) += 1;
     }
     for member in [
+        "opi-telemetry",
         "opi-ai",
         "opi-agent",
         "opi-coding-agent",
@@ -463,8 +466,8 @@ fn proc_macro_crates_are_transitive_only() {
     assert!(dev.contains("proc-macro2 = { workspace = true }"));
     assert!(dev.contains("syn = { workspace = true }"));
 
-    // The only feature union in the workspace is the coding-agent
-    // execution-backend-test-fixture flag, an empty test-only selector.
+    // The coding-agent fixture remains an empty selector. Telemetry separately
+    // provides an optional tracing adapter; its default build is neutral.
     let coding = read("crates/opi-coding-agent/Cargo.toml");
     assert!(coding.contains("[features]"));
     assert!(coding.contains("execution-backend-test-fixture = []"));

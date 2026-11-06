@@ -10,6 +10,7 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+opi-telemetry = { workspace = true, features = ["tracing"] }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }
@@ -22,7 +23,6 @@ futures-util = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
-tracing-core = { workspace = true }
 hmac = { workspace = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
@@ -51,6 +51,7 @@ flate2 = { workspace = true }
 windows-sys = { workspace = true, features = ["Win32_Security"] }
 
 [dev-dependencies]
+tracing-core = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }
 flate2 = { workspace = true }

@@ -255504,5 +255504,118 @@
       "production_files_changed": false,
       "rust_tests_run": false
     }
-  }
+  },
+  "implementation_slices": [
+    {
+      "id": "IMPL-02-TELEMETRY-FOUNDATION",
+      "issue": "issues/02-neutral-telemetry-foundation.md",
+      "base_commit": "dbb5954b68a096ec6c9b7aed67eb11e7a9ac1081",
+      "contracts": [
+        "CAP-TELEMETRY-CORE",
+        "CAP-TELEMETRY-AI"
+      ],
+      "status": "slice-implemented-affected-contracts-pass-workspace-gate-fails",
+      "baseline_policy": "All original inventories above remain frozen observations of phase 1; this section records subsequent migration, not rewritten baseline evidence.",
+      "symbol_migrations": [
+        {
+          "old": "opi_ai::telemetry::TelemetryContext",
+          "new": "opi_telemetry::TelemetryContext",
+          "compatibility": "old path re-exported; request fields retain the same type"
+        },
+        {
+          "old": "opi_ai::telemetry::Instrumented",
+          "new": "opi_telemetry::Instrumented",
+          "compatibility": "old path re-exported; no logical span settlement on Drop"
+        },
+        {
+          "new": "opi_telemetry::{SpanOwner,TelemetrySpan,Attributes,SpanStatus,Metrics}",
+          "purpose": "synchronous start, unique explicit completion, observation handles and synchronous metrics"
+        },
+        {
+          "new": "opi_telemetry::schema",
+          "purpose": "descriptive metadata only; domain typed instrumentation remains in AI"
+        },
+        {
+          "new": "opi_telemetry::memory::Recorder",
+          "purpose": "detached local snapshots"
+        },
+        {
+          "new": "opi_telemetry::backend",
+          "purpose": "custom backend failure and lifecycle contract"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-telemetry/tests/contracts.rs",
+        "crates/opi-telemetry/tests/failures.rs",
+        "crates/opi-telemetry/tests/tracing_adapter.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/telemetry_carrier.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "crates/opi-ai/tests/codex_telemetry.rs",
+        "crates/opi-ai/tests/platform_delivery.rs"
+      ],
+      "test_updates": [
+        {
+          "old": "noop_in_scope_runs_business_once_and_shadows_observation",
+          "new": "noop_in_scope_runs_business_once_and_preserves_host_observation",
+          "path": "crates/opi-ai/tests/telemetry_carrier.rs",
+          "reason": "approved neutral no-op policy; same exactly-once/result observation, ambient marker now required"
+        },
+        {
+          "old": "noop_instrument_preserves_output_and_shadows_events",
+          "new": "noop_instrument_preserves_output_and_host_events",
+          "path": "crates/opi-ai/tests/telemetry_carrier.rs",
+          "reason": "approved neutral no-op policy; same poll count/output plus visible host marker"
+        },
+        {
+          "old": "disabled_span_degrades_to_noop",
+          "new": "disabled_span_degrades_to_noop",
+          "path": "crates/opi-ai/tests/telemetry_carrier.rs",
+          "reason": "explicit ambient scope makes disabled-span/no-op behavior observable"
+        },
+        {
+          "old": "default_and_noop_contexts_run_business_once_without_sdk_observation",
+          "new": "default_and_noop_contexts_run_business_once_without_sdk_observation",
+          "path": "crates/opi-ai/tests/telemetry_operations.rs",
+          "reason": "adapter-owned host marker sequence visible; business send/poll/result and no automatic SDK span unchanged"
+        },
+        {
+          "old": "noop_pending_stream_restores_ambient_and_preserves_business",
+          "new": "noop_pending_stream_restores_ambient_and_preserves_business",
+          "path": "crates/opi-ai/tests/telemetry_operations.rs",
+          "reason": "preserve Pending, business counts, exact marker sequence and parent restoration"
+        }
+      ],
+      "deleted_tests": [],
+      "risk_updates": [
+        {
+          "id": "MAP-RISK-01",
+          "resolution": "neutral no-op preserves ambient host tracing; source dispatch/poll/drop regressions retained",
+          "status": "implemented-native-contract-verified"
+        }
+      ],
+      "remaining": [
+        "CAP-TELEMETRY-AI schema and instrumentation wiring",
+        "full JS callback/promise/panic mapping and TS/Rust differential",
+        "execution vs consumption and eager-start migration",
+        "propagation/links only if actual mapped consumers require them",
+        "Store/query/render outside agreed scope"
+      ],
+      "evidence": [
+        "evidence/phase2-checks.json",
+        "evidence/phase2-telemetry-package-current.json",
+        "evidence/phase2-readme-package-current.json",
+        "phase2.md"
+      ],
+      "workspace_gate": {
+        "status": "FAIL",
+        "observations": [
+          "schema_engine selected-resource failure reproduced on unmodified base source",
+          "spec_ledger requires docs/opi-spec.md already absent from base Git tree",
+          "Vertex executable auth failure once; isolated candidate/base pass; cause unresolved"
+        ]
+      }
+    }
+  ]
 }

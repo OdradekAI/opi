@@ -178,6 +178,19 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2, result.stderr)
         self.assertIn("--offline is required", result.stderr)
 
+    def test_new_evidence_output_cannot_overwrite_history_or_start_work(self):
+        existing = self.root / "historical-evidence.json"
+        existing.write_bytes(b"historical evidence")
+        scratch = self.root / "not-created"
+        result = subprocess.run([sys.executable, str(SCRIPT), "--offline", "--scratch", str(scratch),
+                                 "--target-dir", str(self.root / "missing-target"),
+                                 "--evidence-output", str(existing)], cwd=self.root,
+                                capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("--evidence-output already exists", result.stderr)
+        self.assertEqual(existing.read_bytes(), b"historical evidence")
+        self.assertFalse(scratch.exists())
+
 
 if __name__ == "__main__":
     unittest.main()
