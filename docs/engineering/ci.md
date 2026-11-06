@@ -27,7 +27,7 @@ an unpublished development calibration tool, not product runtime, CI or release
 prerequisite. Its changed logic still needs scoped local offline tests; live
 trials require their own scope, budget and authorization. This CI policy does
 not cancel the long-term independent-evaluation direction in the specification.
-The old eval workflow bytes are [inert development contracts](../crates/opi-eval/development/workflow-contracts/README.md), not Actions entrypoints.
+The old eval workflow bytes are [inert development contracts](../../crates/opi-eval/development/workflow-contracts/README.md), not Actions entrypoints.
 
 ## Choose native evidence separately
 
@@ -81,7 +81,7 @@ boundedly for the draft and never clobbers existing assets. Source-only/local
 asset strategies must resolve the automatic uploader before any tag push.
 Public Git/Actions and irreversible registry publication keep separate gates.
 
-Use the existing [scope/check-selection contract](../.agents/skills/_shared/references/change-scope-and-check-selection.md)
+Use the existing [scope/check-selection contract](../../.agents/skills/_shared/references/change-scope-and-check-selection.md)
 for local work. Reuse executed proof only while source/build inputs, toolchain,
 features, target and command remain applicable. An audit may inspect raw proof
 but does not inherit an implementer's verdict. Changed inputs invalidate only

@@ -48,7 +48,7 @@
 缺少基线不启动真实运行。已确认修复走 [源码修复分支](opi-eval/SKILL.md#user-confirmed-source-repairs)，
 不隐式调用 Phase 计划。证据本身也不使旧任务自动完成。
 
-[检查选择](_shared/references/change-scope-and-check-selection.md) 与 [CI/平台策略](../../docs/ci.zh.md)
+[检查选择](_shared/references/change-scope-and-check-selection.md) 与 [CI/平台策略](../../docs/engineering/ci.zh.md)
 决定适用检查；复用仍有效的证明，不因技能名称不同重跑。开发用 `opi-eval` 不自动成为产品
 CI/发布准入。构建或维护缓存前读 [Cargo 缓存生命周期](_shared/references/cargo-cache-lifecycle.md)。
 release 与 document 复用有界版本文档流程，不隐式调用另一个用户专用技能。

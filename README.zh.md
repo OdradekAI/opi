@@ -285,7 +285,7 @@ cargo fmt --check --all
 cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings
 ```
 
-这些是开发命令示例，不是每次改动都要重跑的清单。[CI/平台策略](docs/ci.zh.md)
+这些是开发命令示例，不是每次改动都要重跑的清单。[CI/平台策略](docs/engineering/ci.zh.md)
 说明 Linux 默认检查、可选 Windows/macOS smoke 和大迭代的完整三平台回归。
 
 修改仓库前请阅读 [AGENTS.md](AGENTS.md)，按需查阅编码、验证、上下文对齐与 Git 安全规则。

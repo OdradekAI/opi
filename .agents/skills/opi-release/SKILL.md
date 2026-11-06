@@ -23,7 +23,7 @@ GitHub release. Invoke explicitly with a version without the `v` prefix.
   supports it. It does not silently disable CI.
 
 Default to CI-built assets; use local cross-build only when explicitly
-requested. Read [CI and platform policy](../../../docs/ci.md) when selecting
+requested. Read [CI and platform policy](../../../docs/engineering/ci.md) when selecting
 verification. Ordinary patches need Linux product CI plus affected-platform
 smoke. New `0.N` series (after 1.0, a new major), major milestones, or changes
 with unbounded cross-platform impact need full Linux/Windows/macOS regression.

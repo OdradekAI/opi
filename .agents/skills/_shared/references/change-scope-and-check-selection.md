@@ -64,7 +64,7 @@ Choose the union of checks required by every changed surface:
 Product workspace gates exclude the unpublished development-calibration
 `opi-eval` crate. Changes to that tool still require its own scoped local checks;
 its benchmarks and hosted producer workflows are not product CI/release gates.
-Use [CI/platform policy](../../../../docs/ci.md) for Linux defaults, optional
+Use [CI/platform policy](../../../../docs/engineering/ci.md) for Linux defaults, optional
 native smoke and full major-iteration regression. A version number never waives
 affected-platform proof. Existing raw execution facts may be reused after
 source/build/toolchain/feature/target applicability checks; independent reviews

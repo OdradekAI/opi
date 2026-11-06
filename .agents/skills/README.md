@@ -60,7 +60,7 @@ do not start live runs. A confirmed repair uses the skill's
 implicit Phase-plan invocation. Evidence alone never completes an old task.
 
 [Check selection](_shared/references/change-scope-and-check-selection.md) and
-[CI/platform policy](../../docs/ci.md) select applicable checks. Reuse still-valid
+[CI/platform policy](../../docs/engineering/ci.md) select applicable checks. Reuse still-valid
 proof rather than rerunning it by skill name. Development-only `opi-eval` is
 not automatic product CI/release admission. Before builds or cache maintenance,
 read the [Cargo cache lifecycle](_shared/references/cargo-cache-lifecycle.md).

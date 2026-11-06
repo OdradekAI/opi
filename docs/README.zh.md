@@ -14,7 +14,7 @@
 | 这次迭代要交付什么？ | 用户选定的 [迭代简报](iterations/README.md) 或明确提供的 issue |
 | Matt 技能把 map 和 ticket 写到哪里？ | [本地 tracker 配置](agents/issue-tracker.md) |
 | 产品目前实际如何工作？ | 根目录和 crate README、源码、schema、测试与生成的帮助 |
-| 哪些平台检查需要运行？ | [CI 策略](ci.zh.md) |
+| 哪些平台检查需要运行？ | [CI 策略](engineering/ci.zh.md) |
 
 ## 证据：按需读取
 

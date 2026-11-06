@@ -21,7 +21,7 @@
 产品 Cargo 检查使用 `--workspace --exclude opi-eval`。`opi-eval` 当前是未发布的
 开发校准工具，不是产品运行时、CI 或发布前提。修改其逻辑仍需在本地执行专项
 离线测试；真实试验需要独立范围、预算和授权。本 CI 策略不取消规范中独立评测
-的长期方向。旧 eval 工作流字节保存在[静态开发契约](../crates/opi-eval/development/workflow-contracts/README.zh.md)，
+的长期方向。旧 eval 工作流字节保存在[静态开发契约](../../crates/opi-eval/development/workflow-contracts/README.zh.md)，
 不再作为 Actions 入口。
 
 ## 单独选择原生平台证据
@@ -71,7 +71,7 @@ release 技能等待最终候选的必需 CI，只补缺少的原生证据，再
 必须在推 tag 之前解决自动上传者冲突。公开 Git/Actions 与不可逆 registry
 发布保留两个独立关卡。
 
-本地工作使用现有[范围/检查选择契约](../.agents/skills/_shared/references/change-scope-and-check-selection.md)。
+本地工作使用现有[范围/检查选择契约](../../.agents/skills/_shared/references/change-scope-and-check-selection.md)。
 只有源/构建输入、toolchain、features、target 和命令仍适用时才复用执行证明。
 审计可以检查原始证明，但不继承实现者的结论。输入变化只使受影响证明失效。
 不新增全局验证台账或缓存。

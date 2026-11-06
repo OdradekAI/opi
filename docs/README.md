@@ -15,7 +15,7 @@ follow only the links needed for the decision. This index is not a product spec.
 | What is this iteration trying to deliver? | Its user-selected brief under [iterations](iterations/README.md) or an explicitly supplied issue |
 | Where do Matt flows write maps and tickets? | [Local tracker](agents/issue-tracker.md) |
 | What does the product do now? | Root/crate READMEs, source, schemas, tests and generated help |
-| Which platform checks apply? | [CI policy](ci.md) ([中文](ci.zh.md)) |
+| Which platform checks apply? | [CI policy](engineering/ci.md) ([中文](engineering/ci.zh.md)) |
 
 ## Evidence — load on demand
 

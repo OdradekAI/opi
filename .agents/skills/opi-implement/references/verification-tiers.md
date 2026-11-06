@@ -22,7 +22,7 @@ parity, the exact order, and exactly-once occurrence are pinned by
 `python .agents/skills/opi-implement/scripts/test_opi_impl_smoke.py`. There is no
 preceding `cargo build --workspace` and no D.3 rerun. These are product gates;
 `opi-eval` calibration changes use its scoped local gate. Select additional
-native evidence under [CI/platform policy](../../../../docs/ci.md), not an
+native evidence under [CI/platform policy](../../../../docs/engineering/ci.md), not an
 automatic full three-platform rerun for every task. Reuse applicable existing
 execution proof while preserving independent review and Phase ownership.
 

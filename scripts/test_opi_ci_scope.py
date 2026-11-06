@@ -56,7 +56,7 @@ class ScopeTests(unittest.TestCase):
         self.assertTrue(ci.classify(["scripts/new-check.py"])["rust"])
 
     def test_mixed_change_is_not_hidden_by_eval_or_documentation(self):
-        self.assertTrue(ci.classify(["docs/ci.md", "crates/opi-eval/src/lib.rs", "crates/opi-agent/src/lib.rs"])["rust"])
+        self.assertTrue(ci.classify(["docs/engineering/ci.md", "crates/opi-eval/src/lib.rs", "crates/opi-agent/src/lib.rs"])["rust"])
 
     def test_matrix_is_exactly_the_requested_subset(self):
         for bits in range(1, 8):

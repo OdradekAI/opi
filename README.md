@@ -305,7 +305,7 @@ cargo clippy --workspace --exclude opi-eval --all-targets -- -D warnings
 ```
 
 These are development command examples, not a checklist to repeat for every
-edit. [CI/platform policy](docs/ci.md) describes Linux defaults, optional
+edit. [CI/platform policy](docs/engineering/ci.md) describes Linux defaults, optional
 Windows/macOS smoke and full three-platform regression for major iterations.
 
 Read [AGENTS.md](AGENTS.md) before changing the repository. It routes coding,

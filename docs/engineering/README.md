@@ -112,7 +112,7 @@ rerun when source, toolchain, features, target or material inputs invalidate it.
   integration, snapshot and conformance checks at public/durable seams.
 - Cross-crate product runtime and CI/release: applicable product gates below.
   A local one-crate change uses focused tests and affected-target clippy unless
-  its public impact requires broader proof. [CI policy](../ci.md) owns platform
+  its public impact requires broader proof. [CI policy](ci.md) owns platform
   selection and major-iteration/native evidence, not the task's filename.
 
 ```text
