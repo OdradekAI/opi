@@ -6,7 +6,8 @@ Claude Code 使用 `/opi-workflow`）。阅读或维护技能不等于执行其�
 
 ## 30 秒选择入口
 
-- 需要证据：固定 pi 版本的对齐用 `opi-realign`，外部能力调研用 `opi-research`。
+- 需要证据：pi 快照的完整复刻差异、工程建议和验收标准用 `opi-realign`；
+  外部能力调研用 `opi-research`。
 - 需要产品决策：与用户塑形，评审、落地并登记来源后进入 `opi-implement plan`。
 - 已有准入任务：`opi-implement`。
 - 需要保障或纠正：按下表选择 audit、eval 或 remediation。
@@ -44,7 +45,7 @@ flowchart TD
 | 技能 | 结果 / 归属产物 | 入口或停止边界 |
 |---|---|---|
 | `opi-workflow` | 一个下一步动作 | 只读，不调用其他技能 |
-| `opi-realign` | `docs/realign/` 中固定 pi 修订版的对照 | 包含目标设计视野的证据，不授予产品权限 |
+| `opi-realign` | `docs/realign/` 中绑定快照的能力/行为对照、架构建议与验收标准 | 不以 Opi 规划或规范筛选差异；建议不授权实施 |
 | `opi-research` | `docs/research/` 中的一手资料调研 | 非规范性的能力与归属证据 |
 | `opi-implement` | 准入任务图、交付、正式台账与 Phase 快照 | 登记来源；任务图、任务/台账 commit 与失败关卡 |
 | `opi-audit` | 独立带后缀报告组，随后追加绑定的历史参考 | 先用最新已提交来源完成核心，安装后才作历史参考；不修复生产代码 |
@@ -53,6 +54,14 @@ flowchart TD
 | `opi-document` | 审计并同步产品文档 | 默认审计每份受维护的当前产品 README；targeted/version-bump 范围须显式指定 |
 | `opi-release` | 版本、包、公开 Git 与 crates.io 发布 | 公开 Git 关卡及独立的最后时刻不可逆发布关卡 |
 | `opi-slim-tests` | 验证后的冗余测试二进制缩减 | 行为替代证明；变更保留为未提交 |
+
+## 快照比较
+
+`$opi-realign target=<snapshot-path>` 接受没有 Git 的本地 pi 目录；
+`current=<opi-path>` 和 `scope=<packages-or-surfaces>` 可选。目标由所给快照内容决定，
+不采用其他文档中的版本。每次调用都从源码重新建立证据，不用 `opi-spec`、台账、
+历史审计或先前对话结论豁免差异。报告默认包含能力、调用流程和参数差异的补齐方法、
+工程结构备选方案及可执行验收标准；是否采用、如何重新规划，由用户之后决定。
 
 ## 边界规则
 

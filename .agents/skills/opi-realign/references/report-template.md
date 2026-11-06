@@ -1,89 +1,115 @@
 # Realign report template
 
-Write to `docs/realign/YYYY-MM-DD-opi-vs-pi-<revision>.md`, using a short pi
-commit prefix or immutable tag in the filename.
+Write `docs/realign/YYYY-MM-DD-opi-<opi-id>-vs-pi-<pi-id>-<scope>.md`.
+Use short content identities tied to the recorded manifests, not a version name
+alone. Sanitize the scope token; append a run suffix on collision instead of
+overwriting an existing report. Keep supporting evidence beside the report in
+a correspondingly named directory. These artifacts are not a progress ledger.
 
-Layer A records current objective differences. Layer H separately records
-active target-design evidence found in the pinned pi tree. Layer B (judgment)
-is an appendix produced only when requested. See `audit-framework.md` for the
-taxonomies.
+Write in the user's requested language. State whether a bilingual counterpart
+is supplied or why this invocation's generated evidence is single-language;
+maintained English/Chinese documentation is not edited by the audit.
 
-## Header
+## Header and reading guide
 
-- Title: `opi vs pi <revision> - objective differences`.
-- Measurement date.
-- opi root, version, and exact commit SHA.
-- pi root, version when declared, exact commit SHA, and verified remote URL.
-- Scope and dimension count.
-- Method: both sides read from source; every retained delta adversarially
-  checked; any non-independent verification limitation stated.
-- Framing: `Layer A has no phases, baselines, or roadmap framing; Layer H
-  separately records pinned target-design evidence and maturity.`
+- Measurement date, resolved pi/Opi roots and declared package versions.
+- Content identities and manifest locations, inclusion/exclusion rules,
+  working-tree state, verified Git metadata if available, generated-data and
+  executable identities separately. Unknown upstream provenance is explicit.
+- Requested scope, discovered surfaces, dimension/contract counts and exclusions.
+- Method and executed checks; source-only, self-review and unavailable-material
+  limitations. Historical reports and Opi planning documents are not inputs.
+- Explain A = current facts, H = target design, B = conditional engineering advice.
+  The target is full reproduction in scope, not Opi-spec compliance. Neither a
+  complete survey nor advice authorizes development or proves conformance.
 
-Never leave `latest`, a moving branch name, or only a semantic version as the
-target identity.
+Use the framework's three completion fields: coverage, review coverage and
+reproduction conclusion. Also summarize the independent acceptance gates;
+proposed or unexecuted checks are not passing evidence.
 
-## Body: Layer A
+## Coverage inventory
 
-Start with a short `How to read` block: project columns are cited facts;
-`Difference` is factual; absence names searched paths; Layer H is target intent,
-not shipped behavior or an Opi requirement; judgment appears only in the
-appendix.
+`Contract ID | Dimension(s) | pi surface/entry | Opi mapping | Exposure/consumer |
+Evidence basis | Coverage or exclusion reason`
 
-For each dimension in `dimensions.md` order:
+Expand public methods/operations and meaningful subcriteria, not just dimension
+headings. Include Opi-only observations and explicit empty/absent search scopes.
+State source-derived versus actual installed-package export coverage. Missing
+materials, unidentified surfaces and interrupted batches stay visible.
 
-1. `**opi:**` one or two sentences, followed by key facts with one `file:line`
-   anchor per fact.
-2. `**pi:**` the same shape.
-3. A table with `Item | opi | pi | Difference | Verification outcome`.
+## Layer A: current contracts and differences
 
-Allowed outcomes are `confirmed`, `refuted`, `refined`, and `added`. Refuted
-items are normally omitted from the main table and retained as method notes.
+Group by dimension, cross-referencing shared contract IDs rather than counting
+them twice. Provide a concise overview and the detailed records needed to make
+claims independently understandable:
 
-### Layer A cleanliness gate
+`ID | pi evidence | Opi evidence | Comparison | Observable difference |
+Evidence basis | Review outcome`
 
-Search the objective body for roadmap language such as
-`Phase [0-9]`, `roadmap`, `matrix says`, `should`, `needs to`, and `planned`.
-Remove judgment leaks. A source symbol actually named `Phase` is allowed when
-clearly cited as code.
+For a nontrivial item, add an invocation trace and a parameter/behavior table:
 
-## Layer H: target design horizon
+```text
+caller -> normalization -> auth/policy -> dispatch -> operation -> result/cleanup
+```
 
-Include this section when the pinned pi tree contains active design material
-that describes in-scope behavior beyond current implementation. For a full
-audit, state the searched design paths even when no qualifying artifact exists.
+`Aspect | pi | Opi | Consequence`
 
-Start with the target document's title, location, and self-declared authority.
-For each affected dimension, use:
+Cover applicable defaults/precedence, inputs, callback/event ordering, state,
+errors, concurrency, cancellation/drop and persistence/cleanup. Show how a caller
+can distinguish the implementations even when the feature exists on both sides.
+Reference source anchors, bounded absence searches and executable results
+separately. An unexecuted proposed test belongs in B, not as A's result.
 
-`Item | pi target design | Design authority/status | pi current evidence | Observed maturity | opi current evidence | Objective horizon difference | Verification outcome`
+## Layer H: snapshot-local target design
 
-Use only the maturity statuses and verification outcomes in
-`audit-framework.md`. Cite design authority/status from the artifact itself.
-Every maturity label except `not-assessed` needs current source, test,
-changelog, or explicit absence-search evidence. A `not-assessed` row may use
-`N/A` for current evidence and must state that no Opi parity conclusion follows.
-Layer H may describe build order or future direction because it is isolated
-from Layer A; it must not recommend adoption or assign Opi priority.
+Record searched design paths, including when no qualifying material is found.
+For each item use:
 
-## Appendix A: drift classification (optional)
+`ID | Design claim/anchor | Stated authority/status | Current implementation |
+Observed maturity | Public/product exposure | Opi evidence | Review outcome`
 
-Only when requested, add:
+Use the framework's authority, maturity and review rules. Keep implemented
+experimental code distinct from design-only claims, and library implementation
+distinct from actual CLI adoption. Describe explicit non-goals and open questions
+without manufacturing parity conclusions. Preserve source/design conflicts.
 
-`Dimension | Item | Classification | Evidence note`
+## Layer B: reproduction and engineering advice
 
-Use only the primary statuses and optional sub-flags in `audit-framework.md`.
-Do not add priorities unless the user separately asked for prioritization.
+Included by default unless the user asked for facts alone. Use the conditional
+cards in `acceptance.md`; every card references A/H finding IDs. Include:
 
-## Appendix B: method and verification
+1. Capability/workflow/parameter changes needed for full reproduction.
+2. Architecture assessment of actual responsibility, production/build/test
+   dependencies, interfaces, state and resources, including sound structure to
+   retain and evidence-backed alternatives to improve it.
+3. Acceptance records, negative cases, proof layers, gate conditions, test impact,
+   platform/resource budgets or the measurement needed to define them.
+4. Technical prerequisites and suggested verification order, with uncertainty,
+   migration/rollback costs and safety-versus-equivalence conflicts explicit.
 
-Record the Layer A dimension count and outcome tally, the Layer H maturity and
-outcome tallies, refuted-item notes, unavailable evidence, and every dimension
-or horizon item that lacked an independent verifier.
+Describe hypothetical changes as proposals, not current facts. Do not require
+Opi's current specification to approve a recommendation, waive a target gap
+because it is absent from the roadmap, or turn advice into an approved task.
+Differences retained for safety or Rust usability remain visible in parity
+results. Only user scope, not project intent, narrows the reproduction claim.
+
+## Method, limitations, and refutations
+
+Record coverage denominators; comparison, maturity and review outcome tallies;
+independent/self/unreviewed IDs; refuted claims; unavailable evidence and
+unresolved conflicts. Give actual commands, features, exits and execution counts
+for checks performed, fixture/result identities, and supporting artifact links.
+
+Review the whole report for evidence/advice leaks in its language, not only an
+English keyword list. Check every recommendation's evidence links, claimed
+completion against the inventory, content identities at handoff, and report-path
+collisions. No `pi ahead`/`Opi ahead` quality ranking follows from feature counts.
 
 ## Chat summary
 
-Report the highest-signal current deltas, grouped as `pi ahead` and `opi ahead`,
-then summarize the target-design horizon with maturity labels. State the exact
-pi revision, disclose any single-pass dimensions or horizon items, link the
-report, and route outward opportunities to `opi-research`.
+Lead with concrete capability, invocation-flow, parameter and behavior differences,
+then summarize architecture findings, conditional ways to close gaps, and their
+acceptance criteria. State the actual snapshot identity and design maturity,
+coverage/execution/independence limitations, unresolved questions and report link.
+The user receives a usable engineering assessment without needing historical
+context, a roadmap review, or immediate implementation admission.

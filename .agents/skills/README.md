@@ -7,8 +7,8 @@ Reading or maintaining a skill does not invoke its workflow.
 
 ## Choose an entry in 30 seconds
 
-- Need evidence: `opi-realign` for pinned pi alignment, `opi-research` for
-  external capabilities.
+- Need evidence: `opi-realign` for pi snapshot reproduction gaps, engineering
+  advice and acceptance criteria; `opi-research` for external capabilities.
 - Need a product decision: shape it with the user, then materialize and register
   the reviewed source before `opi-implement plan`.
 - Have an admitted task: `opi-implement`.
@@ -48,7 +48,7 @@ Open the selected `SKILL.md`, then only references required by its active mode.
 | Skill | Outcome / owned artifact | Entry or stop boundary |
 |---|---|---|
 | `opi-workflow` | One next action | Read-only; does not invoke other skills |
-| `opi-realign` | Pinned pi comparison in `docs/realign/` | Evidence, including target-design horizon; no product authority |
+| `opi-realign` | Snapshot-bound capability/behavior comparison, architecture advice and acceptance criteria in `docs/realign/` | Independent of Opi plans/specification; recommendations do not authorize implementation |
 | `opi-research` | Primary-source research in `docs/research/` | Non-normative capability/placement evidence |
 | `opi-implement` | Admitted graph, task delivery, canonical ledger and Phase snapshots | Registered sources; graph, task/ledger commit and failure gates |
 | `opi-audit` | Independent suffixed report group, then a bound historical reference | Latest committed core first; advisory history only after installation; no production fixes |
@@ -57,6 +57,16 @@ Open the selected `SKILL.md`, then only references required by its active mode.
 | `opi-document` | Audit and synchronize product documentation | By default audits every maintained current-product README; targeted/version-bump scope must be explicit |
 | `opi-release` | Version, packages, public Git and crates.io release | Public Git gate and separate last-moment irreversible publication gate |
 | `opi-slim-tests` | Verified reduction of redundant test binaries | Behavioral replacement proof; leaves changes uncommitted |
+
+## Snapshot comparison
+
+`$opi-realign target=<snapshot-path>` accepts a local pi directory without Git;
+`current=<opi-path>` and `scope=<packages-or-surfaces>` are optional. The supplied
+contents determine the target, not a version in another document. Each invocation
+rebuilds evidence from source, without using `opi-spec`, ledgers, prior audits or
+conversation conclusions to excuse differences. Reports include how to close
+capability, call-flow and parameter gaps, structural alternatives and executable
+acceptance criteria by default. The user decides what to adopt and replan later.
 
 ## Boundary rules
 

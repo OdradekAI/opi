@@ -12,15 +12,16 @@ invoke that skill, edit files or create another delivery ledger.
 
 ## Design direction
 
-Inward evidence compares a pinned pi revision with Opi; outward evidence studies
-external capabilities. Human shaping turns evidence into reviewed requirements.
-`opi-implement` alone owns the implementation ledger and delivery state machine.
+Inward evidence compares a supplied pi snapshot with Opi; outward evidence
+studies external capabilities. Human shaping turns evidence into reviewed
+requirements. `opi-implement` alone owns the implementation ledger and delivery
+state machine.
 
 ## Routes
 
 | Requested outcome | Next action |
 |---|---|
-| Compare Opi with pi's design or implementation | `opi-realign` with an exact revision |
+| Compare Opi with pi's design or implementation, including gap-closing advice and acceptance | `opi-realign` with the supplied snapshot path |
 | Investigate an external capability | `opi-research` |
 | Resolve unsettled product meaning | Human-led shaping; optional adapters below |
 | Admit a reviewed, registered source and task graph | `opi-implement plan` |

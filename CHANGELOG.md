@@ -940,6 +940,13 @@
   unchanged.
 ### Added
 
+- workflows: `opi-realign` accepts local pi snapshots without Git or a revision
+  argument and assesses complete capability/behavior reproduction independently
+  of Opi specifications, plans and prior audits. Reports include conditional
+  gap-closing approaches, architecture advice and executable acceptance criteria
+  by default; recommendations remain non-normative and adoption stays with the
+  user.
+
 - workflows: `opi-implement` task completion binds review to the exact candidate,
   source versions, verification logs and proposed commit footers, then checks
   the staged files, committed result and ledger mirror before completion.
