@@ -1,6 +1,6 @@
 interface:
   display_name: "Opi Research"
-  short_description: "Research outward capabilities and Opi placement"
-  default_prompt: "Use $opi-research to investigate an outward capability against primary sources and assess Rust feasibility and Opi placement."
+  short_description: "Compare external work with pi and current Opi"
+  default_prompt: "Use $opi-research to deeply investigate the supplied material, locate current Opi counterparts, compare against pi design, and explain what to learn, retain, watch, or reject with evidence."
 policy:
   allow_implicit_invocation: false
