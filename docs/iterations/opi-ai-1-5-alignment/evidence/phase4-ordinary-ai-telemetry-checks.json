@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "issue": "issues/09-ordinary-chat-ai-telemetry.md",
+  "scope": "ordinary Models ChatCall automatic AI observer wiring",
+  "commands": [
+    {
+      "command": "cargo check -p opi-ai --offline -j4",
+      "status": "passed",
+      "observed": "ordinary Models telemetry wiring compiles"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --test telemetry_operations --offline -j4",
+      "status": "passed",
+      "observed": "5 AI telemetry tests and 12 cross-operation telemetry tests passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --lib --offline -j4 --quiet",
+      "status": "passed",
+      "observed": "369 opi-ai library tests passed"
+    },
+    {
+      "command": "cargo fmt --all --check",
+      "status": "passed",
+      "observed": "workspace formatting is clean"
+    },
+    {
+      "command": "python scripts/opi-doc-check.py; git diff --check",
+      "status": "passed",
+      "observed": "documentation contracts and whitespace checks pass"
+    }
+  ],
+  "limits": [
+    "Only ordinary Models ChatCall is automatic; raw/prepared/non-chat paths remain manual or open.",
+    "No provider-wide observer failure injection, live provider, TS/Rust full differential, cross-platform/MSRV, performance, or six-gate acceptance.",
+    "Full workspace retains the two previously recorded unrelated failures in schema_engine and spec_ledger."
+  ]
+}

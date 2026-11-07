@@ -1,0 +1,286 @@
+use opi_ai::message::ToolCall;
+use opi_ai::models::{ChatModelRecord, SimpleOptions};
+use opi_ai::provider::{EventStream, Provider, Request};
+use opi_ai::stream::{AssistantStreamEvent, StopReason};
+use opi_ai::telemetry::{
+    AI_BLOCK, AI_FIRST_CHUNK, AiRequestAttributes, AiRequestTelemetry, ai_telemetry_schema,
+};
+use opi_ai::test_support::{MockProvider, base_assistant, single_route_collection};
+use opi_ai::transcript::normalize_context;
+use opi_telemetry::memory::Recorder;
+use opi_telemetry::{AttributeValue, SpanStatus};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+#[tokio::test]
+async fn ordinary_models_chat_auto_records_ai_request() {
+    let recorder = Recorder::default();
+    let telemetry_context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let mut message = start.clone();
+    message
+        .content
+        .push(opi_ai::message::AssistantContent::Text {
+            text: "A😀".into(),
+            signature: None,
+        });
+    let provider = MockProvider::new(
+        "probe",
+        vec![vec![
+            AssistantStreamEvent::Start { partial: start },
+            AssistantStreamEvent::TextEnd {
+                content_index: 0,
+                content: "A😀".into(),
+                partial: message.clone(),
+            },
+            AssistantStreamEvent::Done {
+                reason: StopReason::Stop,
+                message,
+            },
+        ]],
+    );
+    let model = provider.models()[0].clone();
+    let models = single_route_collection(Box::new(provider));
+    let request = Request {
+        model: "probe:mock-model".into(),
+        context: normalize_context(Default::default()).expect("empty context normalizes"),
+        projection: Default::default(),
+        transport: Default::default(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: Default::default(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        telemetry_context: Some(telemetry_context),
+        callbacks: Default::default(),
+    };
+
+    let result = models
+        .complete_simple(
+            ChatModelRecord::new("probe", model),
+            request,
+            SimpleOptions::default(),
+        )
+        .await
+        .expect("ordinary chat completes");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("provider"),
+        Some(&AttributeValue::String("probe".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("model"),
+        Some(&AttributeValue::String("mock-model".into()))
+    );
+    assert_eq!(spans[0].events.len(), 2);
+    assert_eq!(spans[0].events[0].name, AI_FIRST_CHUNK);
+    assert_eq!(spans[0].events[1].name, AI_BLOCK);
+    assert_eq!(
+        spans[0].events[1].attributes.get("chars"),
+        Some(&AttributeValue::Number(3.0))
+    );
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+}
+
+#[test]
+fn records_request_events_and_result_after_the_terminal_payload() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut telemetry = AiRequestTelemetry::start(
+        Some(&context),
+        AiRequestAttributes::new("probe", "model", "api").with_pricing(opi_ai::stream::Pricing {
+            input_cost_per_mtok: 1_000_000.0,
+            output_cost_per_mtok: 2_000_000.0,
+            cache_read_cost_per_mtok: 3_000_000.0,
+            cache_write_cost_per_mtok: 4_000_000.0,
+        }),
+    )
+    .expect("telemetry starts")
+    .expect("explicit context enables observation");
+
+    let mut partial = base_assistant();
+    partial.provider = "probe".into();
+    partial.model = "model".into();
+    let events = [
+        AssistantStreamEvent::Start {
+            partial: partial.clone(),
+        },
+        AssistantStreamEvent::TextEnd {
+            content_index: 0,
+            content: "A😀".into(),
+            partial: partial.clone(),
+        },
+        AssistantStreamEvent::ToolCallDelta {
+            content_index: 1,
+            delta: "😀".into(),
+            partial: partial.clone(),
+        },
+        AssistantStreamEvent::ToolCallEnd {
+            content_index: 1,
+            tool_call: ToolCall {
+                id: "call-1".into(),
+                name: "sample".into(),
+                arguments: "{}".into(),
+                arguments_error: None,
+                signature: None,
+            },
+            partial: partial.clone(),
+        },
+    ];
+    for event in &events {
+        telemetry.on_event(event).expect("event observation");
+    }
+
+    partial.stop_reason = StopReason::Stop;
+    partial.response_id = Some("response-1".into());
+    partial.usage = opi_ai::stream::Usage::reported(1, 2, 3, 4, None, None);
+    telemetry
+        .finish(Some(&partial))
+        .expect("result observation");
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(spans[0].status, SpanStatus::Ok);
+    assert!(spans[0].end_sequence.is_some());
+    assert_eq!(spans[0].events.len(), 3);
+    assert_eq!(spans[0].events[0].name, AI_FIRST_CHUNK);
+    assert_eq!(spans[0].events[1].name, AI_BLOCK);
+    assert_eq!(
+        spans[0].events[1].attributes.get("chars"),
+        Some(&AttributeValue::Number(3.0))
+    );
+    assert_eq!(spans[0].events[2].name, AI_BLOCK);
+    assert_eq!(
+        spans[0].events[2].attributes.get("chars"),
+        Some(&AttributeValue::Number(2.0))
+    );
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("cost.total"),
+        Some(&AttributeValue::Number(30.0))
+    );
+
+    let measurements = recorder.measurements();
+    assert_eq!(measurements.len(), 7);
+    assert_eq!(
+        measurements[0].definition.name,
+        "pi.ai.first_chunk.duration"
+    );
+    assert_eq!(measurements[1].definition.name, "pi.ai.request.duration");
+    assert_eq!(
+        measurements
+            .iter()
+            .filter(|measurement| measurement.definition.name == "pi.ai.tokens")
+            .count(),
+        4
+    );
+    assert_eq!(
+        measurements
+            .iter()
+            .find(|measurement| measurement.definition.name == "pi.ai.cost")
+            .map(|measurement| measurement.value),
+        Some(30.0)
+    );
+}
+
+#[test]
+fn pending_poll_does_not_record_token_or_cost_counters() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut telemetry = AiRequestTelemetry::start(
+        Some(&context),
+        AiRequestAttributes::new("probe", "model", "api").as_poll(true),
+    )
+    .expect("telemetry starts")
+    .expect("explicit context enables observation");
+    let mut message = base_assistant();
+    message.stop_reason = StopReason::Deferred;
+    message.usage = opi_ai::stream::Usage::reported(1, 2, 3, 4, None, None);
+    telemetry
+        .finish(Some(&message))
+        .expect("result observation");
+
+    let measurements = recorder.measurements();
+    assert_eq!(measurements.len(), 1);
+    assert_eq!(measurements[0].definition.name, "pi.ai.request.duration");
+}
+
+#[test]
+fn schema_keeps_ai_names_and_aborted_success_status_policy() {
+    let schema = ai_telemetry_schema();
+    assert_eq!(schema.version, 1);
+    assert!(schema.spans.contains_key("pi.ai.request"));
+    assert!(schema.spans.contains_key("pi.ai.poll"));
+    assert!(
+        schema
+            .metrics
+            .as_ref()
+            .unwrap()
+            .contains_key("pi.ai.tokens")
+    );
+    assert_eq!(
+        schema.spans["pi.ai.request"].status.default,
+        opi_telemetry::schema::DefaultStatus::Ok
+    );
+    assert!(
+        schema.spans["pi.ai.request"]
+            .status
+            .error_when
+            .contains("aborted stays ok")
+    );
+}
+
+#[tokio::test]
+async fn chat_result_drains_source_after_terminal_delivery() {
+    let tail_polled = Arc::new(AtomicBool::new(false));
+    let tail_polled_by_source = tail_polled.clone();
+    let mut partial = base_assistant();
+    partial.stop_reason = StopReason::Stop;
+    let terminal = AssistantStreamEvent::Done {
+        reason: StopReason::Stop,
+        message: partial.clone(),
+    };
+    let mut step = 0;
+    let source: EventStream = Box::pin(futures_util::stream::poll_fn(move |_cx| {
+        let item = match step {
+            0 => Some(Ok(AssistantStreamEvent::Start {
+                partial: partial.clone(),
+            })),
+            1 => Some(Ok(terminal.clone())),
+            2 => {
+                tail_polled_by_source.store(true, Ordering::SeqCst);
+                step = 3;
+                return std::task::Poll::Ready(None);
+            }
+            _ => return std::task::Poll::Pending,
+        };
+        step += 1;
+        std::task::Poll::Ready(item)
+    }));
+
+    let result = opi_ai::stream::ChatStream::new(source)
+        .result()
+        .await
+        .expect("terminal result");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+    assert!(tail_polled.load(Ordering::SeqCst));
+}

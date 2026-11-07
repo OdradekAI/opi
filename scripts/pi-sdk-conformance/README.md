@@ -86,8 +86,9 @@ The package step uses `--allow-dirty --no-verify --locked --offline`; the actual
 extracted package is then compiled and exercised by the consumer, without
 relying on the package's own lockfile to constrain downstream resolution.
 The consumer creates its own lockfile offline, then builds with `--locked`.
-Both caller profiles share the same target and lockfile: defaults disabled,
-and caller-enabled `regress/default` feature union. Opi's required `std`,
+Both caller profiles share the same target and lockfile: `defaults-off` disables
+`opi-ai` default features and the caller-enabled profile explicitly enables
+`opi-ai/telemetry-tracing` alongside the `regress/default` feature union. Opi's required `std`,
 `utf16` and `prohibit-unsafe` features remain present in both. The latter graph
 contains the optional `backend-pikevm` feature; the ordinary `Regex` API still
 uses upstream 0.12.0's default executor.

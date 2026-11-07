@@ -15,6 +15,21 @@ config-driven profiles.
 cargo add opi-ai
 ```
 
+The default build enables the `telemetry-tracing` feature, which adds the
+optional `opi-telemetry` tracing carrier. Consumers that only need the
+backend-neutral context, recorder, and AI request types can turn that adapter
+off explicitly:
+
+```toml
+[dependencies]
+opi-ai = { version = "0.8.3", default-features = false }
+```
+
+This is a smaller telemetry capability set, not a no-`tracing` build:
+`opi-ai` still uses the `tracing` crate for its own internal diagnostics. The
+feature only controls the `opi-telemetry` adapter and the
+`TelemetryContext::from_span` integration.
+
 ## Status
 
 Current crate version: `0.8.3`, inherited from the workspace package version.
@@ -330,7 +345,11 @@ waiter receives a typed stream failure with the latest produced partial; source
 panics are resumed by the waiter.
 
 The advanced `ChatStream::new(raw)` collector remains lazy until `.start()`:
-polling drives the raw source and Drop releases it. Ordinary `ChatCall` has no
+polling drives the raw source. After a business terminal, ordinary iteration
+stays at EOF, while `ChatStream::result()` retains the source long enough to
+drain source-owned tail work and then returns the cached outcome. The
+`StartedChatStream` background owner keeps its resource contract and releases
+the source after forwarding the terminal. Ordinary `ChatCall` has no
 consumer-driven execution mode. An already delivered result survives conversion
 to `StartedChatStream`, with no duplicate terminal. No automatic AI spans are
 installed by this execution owner. An omitted/no-op context does not capture the
@@ -1686,8 +1705,15 @@ independent of catalog persistence.
 `opi-ai::telemetry` re-exports `TelemetryContext` and `Instrumented` from
 [opi-telemetry](../opi-telemetry/README.md). The independent crate provides
 neutral spans, metrics, schema descriptions and a recorder. AI currently uses
-its tracing scope adapter; automatic AI request spans and usage metrics are
-not yet connected. Carrier regression tests live at `tests/telemetry_carrier.rs`.
+its tracing scope adapter. The public `AiRequestTelemetry` seam now owns the
+Pi-shaped request/poll names, event schema, UTF-16 block counts, usage/cost
+settlement and aborted/deferred status policy. Ordinary `Models` chat entries
+install this observer automatically when `Request::telemetry_context` is
+`Some`. Raw `ChatStream::new`, prepared provider attempts and non-chat
+operations remain explicit/manual boundaries; this is not a claim that every
+provider execution path is automatically instrumented. Carrier regression
+tests live at `tests/telemetry_carrier.rs`, and the AI seam tests live at
+`tests/ai_telemetry.rs`.
 
 - **`TelemetryContext::from_span(span)`** freezes the parent
   `tracing::Span` together with its own `Dispatch`, obtained through
@@ -1709,8 +1735,13 @@ not yet connected. Carrier regression tests live at `tests/telemetry_carrier.rs`
   neutral telemetry recording; it does not install a disabled dispatcher.
 
 `Request::telemetry_context: Option<TelemetryContext>` explicitly carries this
-pair into the real Codex producer, including its async callbacks and SSE
-fallback. Omission captures no implicit ambient context. No carrier is
+pair into ordinary `Models` chat execution and into the real Codex producer,
+including its async callbacks and SSE fallback. With an explicit context, the
+ordinary chat path creates one `pi.ai.request` observer; if the telemetry
+backend fails, the host `tracing` channel receives a warning and the business
+call keeps its normal typed result. Raw `ChatStream::new` and prepared attempts
+still require the public `AiRequestTelemetry` seam when a host wants equivalent
+observation. Omission captures no implicit ambient context. No carrier is
 serialized or placed on the wire, and no global subscriber, exporter, sampling
 policy or automatic SDK root span is installed. Propagation is closed across
 all SDK operations (task 20.55): the four chat entries (native/simple/direct

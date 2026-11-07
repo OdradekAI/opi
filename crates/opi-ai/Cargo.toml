@@ -9,8 +9,14 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+# Keep the full developer experience as the default, while allowing consumers
+# that do not need the optional tracing carrier to build the AI core without it.
+default = ["telemetry-tracing"]
+telemetry-tracing = ["opi-telemetry/tracing"]
+
 [dependencies]
-opi-telemetry = { workspace = true, features = ["tracing"] }
+opi-telemetry = { workspace = true, default-features = false }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }

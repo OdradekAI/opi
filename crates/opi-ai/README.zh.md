@@ -14,6 +14,19 @@ family、checked multi-wire provider 和配置驱动的 profile 共享。
 cargo add opi-ai
 ```
 
+默认构建开启 `telemetry-tracing` feature，为 `opi-telemetry` 提供可选的
+tracing carrier。只需要中立 context、recorder 和 AI request 类型的消费者可以显式
+关闭这个适配器：
+
+```toml
+[dependencies]
+opi-ai = { version = "0.8.3", default-features = false }
+```
+
+这只是更小的 telemetry 能力集合，并不代表完全没有 `tracing`：`opi-ai` 仍用
+`tracing` crate 记录自身诊断。该 feature 只控制 `opi-telemetry` 的适配器，以及
+`TelemetryContext::from_span` 集成。
+
 ## 当前状态
 
 当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。
@@ -311,11 +324,13 @@ runtime 运行，直至请求完成。
 自身缓冲区仍遵循其取消优先规则。如果 runtime 停止尚未完成的执行，等待者会得到
 保留最新已生成 partial 的 typed stream failure；源 panic 会在等待者中恢复抛出。
 
-高级 `ChatStream::new(raw)` collector 在调用 `.start()` 前仍由 poll 推进，Drop
-释放其持有的原始源；普通 `ChatCall` 不再由消费者驱动执行。已交付结果转换成
-`StartedChatStream` 后仍可读取，不重复交付终态。执行者不会安装自动 AI span。
-省略 context 或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；跨任务
-传播需显式传入 context。
+高级 `ChatStream::new(raw)` collector 在调用 `.start()` 前仍由 poll 推进。
+业务终态后普通迭代保持 EOF，而 `ChatStream::result()` 会保留源句柄，排空
+provider 自己的尾部工作后再返回缓存结果。`StartedChatStream` 后台执行者保留
+既有资源合同：终态交付后释放源。普通 `ChatCall` 不再由消费者驱动执行。已交付
+结果转换成 `StartedChatStream` 后仍可读取，不重复交付终态。执行者不会安装自动
+AI span。省略 context 或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；
+跨任务传播需显式传入 context。
 
 ## Context、工具与续轮
 
@@ -1453,8 +1468,13 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 
 `opi-ai::telemetry` 从独立的 [opi-telemetry](../opi-telemetry/README.zh.md)
 重导出 `TelemetryContext` 与 `Instrumented`。中立 crate 提供 span、metrics、schema
-描述及记录器。AI 当前使用 tracing 作用域适配；自动 AI request span 与用量 metrics
-尚未接入。载体回归测试位于 `tests/telemetry_carrier.rs`。
+描述及记录器。公开的 `AiRequestTelemetry` seam 已负责 Pi 风格的 request/poll
+命名、事件 schema、UTF-16 block 计数、usage/cost 结算及 aborted/deferred 状态
+策略。普通 `Models` chat 入口在 `Request::telemetry_context` 为 `Some` 时会自动
+安装该 observer；raw `ChatStream::new`、prepared provider attempt 及非 chat
+操作仍是显式/手动边界，因此不能宣称每条 provider 执行路径都自动埋点。载体
+回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
+`tests/ai_telemetry.rs`。
 
 - **`TelemetryContext::from_span(span)`** 通过 `Span::with_subscriber` 冻结 parent
   `tracing::Span` 与其自身 `Dispatch` 的配对。即使创建或 poll 时另有当前
@@ -1469,15 +1489,19 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 - **`noop()`** 恰好执行业务一次，保留宿主 ambient tracing，包括作用域内、poll
   和 Drop。它只关闭中立遥测记录，不安装 disabled dispatcher。
 
-`Request::telemetry_context: Option<TelemetryContext>` 显式将该配对带入真实 Codex
-producer，覆盖其异步回调与 SSE 回退。省略时不隐式捕获 ambient 上下文。载体不序列化、
-不上 wire，不安装 global subscriber、exporter、采样政策或自动 SDK root span。
-全部 SDK 操作的传播已闭合（任务 20.55）：四类 chat 入口（native/simple/direct，
-以及含 acquisition retry 与 strict 变体重建的 advanced `prepare_call` 路径）、
-图片生成、分类器调用与 deferred submit/fetch/cancel 均经各自 producer 与 scoped
-poll/drop 段观察到同一冻结配对；default/`noop` 载体保持被动，业务结果不变。
-跨操作组装一致性套件位于 `tests/telemetry_operations.rs`；真实 Codex 路径另由
-`tests/codex_telemetry.rs` 覆盖。
+`Request::telemetry_context: Option<TelemetryContext>` 显式将该配对带入普通
+`Models` chat 执行和真实 Codex producer，覆盖其异步回调与 SSE 回退。显式 context
+会为普通 chat 创建一个 `pi.ai.request` observer；若 telemetry backend 失败，宿主
+`tracing` 会收到 warning，但业务调用仍保留原有 typed 结果。raw `ChatStream::new`
+和 prepared attempt 仍需宿主直接使用公开 `AiRequestTelemetry` seam 才能获得等价
+观测。省略时不隐式捕获 ambient 上下文。载体不序列化、不上 wire，不安装 global
+subscriber、exporter、采样政策或自动 SDK root span。全部 SDK 操作的传播已闭合
+（任务 20.55）：四类 chat 入口（native/simple/direct，以及含 acquisition retry
+与 strict 变体重建的 advanced `prepare_call` 路径）、图片生成、分类器调用与
+deferred submit/fetch/cancel 均经各自 producer 与 scoped poll/drop 段观察到同一
+冻结配对；default/`noop` 载体保持被动，业务结果不变。跨操作组装一致性套件位于
+`tests/telemetry_operations.rs`；真实 Codex 路径另由 `tests/codex_telemetry.rs`
+覆盖。
 
 ## 实例 Resource Generation／Pool 清理／Await 释放（任务 20.17）
 

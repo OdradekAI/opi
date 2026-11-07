@@ -590,8 +590,8 @@ async fn abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent() {
         .filter(|(name, _)| *name == "chat_drop_marker")
         .count();
     assert_eq!(
-        polls, 3,
-        "execution drains all scripted events after consumer Drop"
+        polls, 4,
+        "execution drains all scripted events and source EOF after consumer Drop"
     );
     assert_eq!(
         drops, 1,
@@ -637,7 +637,7 @@ async fn ordinary_chat_keeps_frozen_parent_on_the_execution_task() {
     drop(models);
     let message = started.result().await.unwrap();
     assert_eq!(message_text(&message), "marker response");
-    assert_eq!(business_counts(&observed), [1, 3, 3, 1]);
+    assert_eq!(business_counts(&observed), [1, 4, 3, 1]);
     assert_all_parented(&probe_spans(&recording), parent_id);
     assert_no_canaries(&recording);
 }
@@ -850,9 +850,18 @@ async fn dropped_unpolled_models_call_completes_in_its_frozen_scope() {
     let ambient_id = ambient_parent.id().unwrap().into_u64();
     ambient_section(&b_dispatch, &ambient_parent, || drop(call));
     wait_chat_release(&observed).await;
-    assert_eq!(business_counts(&observed), [1, 3, 3, 1]);
+    assert_eq!(business_counts(&observed), [1, 4, 3, 1]);
     assert_eq!(*observed.telemetry_present.lock().unwrap(), vec![true]);
-    assert_eq!(probe_spans(&a_recording).len(), 4);
+    let spans = probe_spans(&a_recording);
+    assert_eq!(spans.len(), 6);
+    assert_eq!(
+        spans
+            .iter()
+            .filter(|(name, _)| *name == "opi.telemetry.span")
+            .count(),
+        1,
+        "ordinary Models calls install one AI request observer"
+    );
     assert_ambient_restored(&b_recording, &[ambient_id]);
 }
 
@@ -906,8 +915,10 @@ fn noop_pending_stream_restores_ambient_and_preserves_business() {
             }),
             Poll::Ready(None)
         ));
-        assert_eq!(business_counts(&observed), [1, 4, 3, 1]);
-        restored_parents.extend([ambient_id; 5]);
+        assert_eq!(business_counts(&observed), [1, 4, 3, 0]);
+        restored_parents.extend([ambient_id; 6]);
+        ambient_section(&b_dispatch, &ambient_parent, || drop(call));
+        assert_eq!(observed.drops.load(Ordering::SeqCst), 1);
     }
     assert_eq!(outcomes, vec!["marker response", "marker response"]);
     let state = b_recording.lock().unwrap();

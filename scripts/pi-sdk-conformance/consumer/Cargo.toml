@@ -7,12 +7,13 @@ publish = false
 # The runner substitutes the extracted `cargo package` artifact, not the
 # workspace source. All backend dependencies use ordinary crates.io identities.
 [dependencies]
-opi-ai = { path = "@PACKAGE@" }
+opi-ai = { path = "@PACKAGE@", default-features = false }
 url = "=2.5.8"
 regress = { version = "=0.12.0", default-features = false, features = ["std", "utf16", "prohibit-unsafe"] }
 serde_json = "1"
 
 [features]
 caller-default-regress = ["regress/default"]
+caller-default-opi-ai = ["opi-ai/telemetry-tracing"]
 
 [workspace]

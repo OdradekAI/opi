@@ -152,7 +152,16 @@ def check_graph(metadata: dict, package: Path, caller_defaults: bool) -> dict:
     if len(sdk) != 1 or Path(sdk[0]["manifest_path"]).resolve() != package / "Cargo.toml":
         raise ValueError("consumer must compile the extracted opi-ai package")
     features = {node["id"]: node["features"] for node in metadata["resolve"]["nodes"]}
-    result = {}
+    sdk_features = set(features.get(sdk[0]["id"], []))
+    if ("telemetry-tracing" in sdk_features) != caller_defaults:
+        raise ValueError("caller opi-ai default-feature profile was not exercised")
+    result = {
+        "opi_ai": {
+            "version": sdk[0]["version"],
+            "source": sdk[0]["source"],
+            "features": sorted(sdk_features),
+        }
+    }
     for name, version in [("regress", "0.12.0"), ("url", "2.5.8")]:
         matches = [p for p in packages if p["name"] == name]
         if (len(matches) != 1 or matches[0]["version"] != version
@@ -253,7 +262,7 @@ def main() -> int:
                             encoding="utf-8", newline="\n")
         run("consumer-lock", ["cargo", "generate-lockfile", "--offline"], consumer)
         for name, caller_defaults in [("defaults-off", False), ("caller-defaults-on", True)]:
-            flags = ["--features", "caller-default-regress"] if caller_defaults else []
+            flags = ["--features", "caller-default-regress,caller-default-opi-ai"] if caller_defaults else []
             metadata = json.loads(run(f"{name}-metadata", ["cargo", "metadata", "--format-version", "1",
                                                        "--offline", "--locked"] + flags, consumer))
             graph = check_graph(metadata, package, caller_defaults)

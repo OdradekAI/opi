@@ -257059,6 +257059,218 @@
         "Unbounded unread queue budget not calibrated",
         "No Linux/macOS/MSRV/live/full Pi differential/six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-07-AI-TELEMETRY-SOURCE-TAIL",
+      "issue": "issues/07-ai-telemetry-source-tail.md",
+      "base_commit": "3bdcfceab9cdcef5f90bf06883b4ac220158b813",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-TELEMETRY-CORE",
+        "CAP-STREAM",
+        "CAP-EXECUTION",
+        "CAP-PACKAGE"
+      ],
+      "status": "bounded-seam-pass-provider-integration-open",
+      "public_entry_mapping": [
+        {
+          "entries": [
+            "opi_ai::telemetry::AiRequestAttributes",
+            "opi_ai::telemetry::AiRequestTelemetry",
+            "opi_ai::telemetry::ai_telemetry_schema"
+          ],
+          "owner": "opi-ai::telemetry",
+          "scope": "AI request/poll names, event schema, UTF-16 block counts, usage/cost settlement and status policy; neutral backend remains opi-telemetry"
+        },
+        {
+          "entry": "ChatStream::result",
+          "owner": "opi-ai::stream",
+          "scope": "reuse cached business terminal, then drain retained source tail to EOF without redelivering events"
+        },
+        {
+          "entries": [
+            "ProjectionStream",
+            "AttemptStream",
+            "ChatCallDriver"
+          ],
+          "owner": "opi-ai execution/stream internals",
+          "scope": "preserve source ownership for explicit result draining and avoid retry-state mutation while draining"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/src/stream.rs",
+        "crates/opi-ai/tests/telemetry_carrier.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "AI telemetry memory-recorder contracts",
+          "source tail observed after a delivered terminal"
+        ],
+        "update": [
+          "terminal source poll/drop counts now distinguish explicit ChatStream::result from StartedChatStream release",
+          "prepared attempt and ordinary ChatCall result paths include source EOF draining",
+          "README telemetry and stream lifecycle limitations"
+        ],
+        "delete": [],
+        "retain": "Repeated terminal, cancellation, cross-thread context and prepared lifecycle assertions"
+      },
+      "evidence": [
+        "evidence/phase3-ai-telemetry-checks.json",
+        "evidence/phase3-ai-telemetry-observations.json"
+      ],
+      "limits": [
+        "AiRequestTelemetry is not automatically installed in every provider execution path",
+        "No observer-failure, live-provider, TS/Rust full differential, feature, cross-platform, MSRV, performance or six-gate acceptance",
+        "StartedChatStream intentionally releases its source after forwarding terminal; only direct ChatStream::result drains a retained source tail"
+      ]
+    },
+    {
+      "id": "IMPL-08-OPTIONAL-TELEMETRY-FEATURE",
+      "issue": "issues/08-optional-telemetry-feature.md",
+      "base_commit": "3bdcfceab9cdcef5f90bf06883b4ac220158b813",
+      "contracts": [
+        "CAP-TELEMETRY-CORE",
+        "CAP-TELEMETRY-AI",
+        "CAP-PACKAGE"
+      ],
+      "status": "minimal-feature-build-pass-matrix-open",
+      "public_entry_mapping": [
+        {
+          "entry": "opi_ai feature telemetry-tracing",
+          "owner": "opi-ai Cargo feature",
+          "scope": "default enables opi-telemetry/tracing; default-features=false disables only the optional carrier adapter"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/Cargo.toml",
+          "status": "explicit feature-to-dependency mapping"
+        },
+        {
+          "path": "crates/opi-ai/README.md",
+          "status": "default and minimal manifest examples"
+        },
+        {
+          "path": "crates/opi-ai/README.zh.md",
+          "status": "default and minimal manifest examples"
+        }
+      ],
+      "primary_tests": [
+        "cargo check -p opi-ai --offline -j4",
+        "cargo check -p opi-ai --no-default-features --offline -j4",
+        "cargo tree -p opi-ai --no-default-features -e features",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "complementary_tests": [
+        "scripts/pi-sdk-conformance/test_package_proof.py",
+        "scripts/opi-doc-check.py",
+        "git diff --check"
+      ],
+      "test_impact": {
+        "add": [
+          "default feature and no-default-features build checks",
+          "feature-tree evidence"
+        ],
+        "update": [
+          "README installation and telemetry feature contract"
+        ],
+        "delete": [],
+        "retain": "Existing tracing carrier tests under the default feature set"
+      },
+      "evidence": [
+        "evidence/phase4-feature-checks.json",
+        "evidence/phase4-package-feature-checks.json"
+      ],
+      "limits": [
+        "opi-ai still depends directly on tracing for internal diagnostics",
+        "No complete provider/platform/MSRV/feature matrix",
+        "No provider-wide automatic AI instrumentation outside ordinary Models chat, live-provider, or six-gate acceptance"
+      ]
+    },
+    {
+      "id": "IMPL-09-ORDINARY-CHAT-AI-TELEMETRY",
+      "issue": "issues/09-ordinary-chat-ai-telemetry.md",
+      "base_commit": "3bdcfceab9cdcef5f90bf06883b4ac220158b813",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-TELEMETRY-CORE",
+        "CAP-STREAM",
+        "CAP-EXECUTION",
+        "CAP-MODELS-DISPATCH",
+        "CAP-PACKAGE"
+      ],
+      "status": "ordinary-chat-automatic-observer-pass-manual-boundaries-open",
+      "public_entry_mapping": [
+        {
+          "entries": [
+            "Models::stream",
+            "Models::complete",
+            "Models::stream_simple",
+            "Models::complete_simple",
+            "Models::stream_direct",
+            "Models::complete_direct"
+          ],
+          "owner": "models::materialize_chat_call -> stream::ChatStream",
+          "scope": "explicit Request::telemetry_context automatically installs one AiRequestObserver; backend observer failures are logged and disabled without changing business outcomes"
+        },
+        {
+          "entry": "opi_ai::telemetry::AiRequestObserver",
+          "owner": "opi-ai execution adapter",
+          "scope": "internal adapter around the public fallible AiRequestTelemetry seam"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "ordinary ChatCall builds frozen AI attributes and observer"
+        },
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "event, terminal and result settlement drive observer lifecycle"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "memory recorder proves ordinary Models chat request span"
+        },
+        {
+          "path": "crates/opi-ai/tests/telemetry_operations.rs",
+          "status": "tracing carrier proves frozen parent and unpolled execution"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "ordinary Models chat automatic AI request observer integration"
+        ],
+        "update": [
+          "frozen tracing carrier span count includes the ordinary AI observer"
+        ],
+        "delete": [],
+        "retain": "public seam, source-tail, cancellation and manual-boundary contracts"
+      },
+      "evidence": [
+        "evidence/phase4-ordinary-ai-telemetry-checks.json"
+      ],
+      "limits": [
+        "Only ordinary Models ChatCall is automatic; raw/prepared/non-chat paths remain manual or open",
+        "Rust observer backend failures are intentionally logged and isolated; this is not strict Pi error-channel equivalence",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 use futures_core::Stream;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 
 pub use crate::execution::StartedChatStream;
@@ -278,9 +279,11 @@ pub(crate) fn setup_failure_with_detail(
 ///
 /// Iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`:
 /// events are delivered with their immutable event-time partials, and the
-/// first delivered terminal is absorbed — the inner attempt is released, tail
-/// events and repeated terminals are never delivered, and the stream stays at
-/// permanent EOF. Failures surface as exactly one `Err(CallFailure)` carrying
+/// first delivered terminal is absorbed — tail events and repeated terminals
+/// are never delivered, and the stream stays at permanent EOF. The source is
+/// retained behind an absorbed business terminal until [`ChatStream::result`]
+/// drains it, so a provider can finish source-owned work after delivering its
+/// final business payload. Failures surface as exactly one `Err(CallFailure)` carrying
 /// the canonical partial and a typed, redacted cause; a stream that ends
 /// without a terminal yields one typed protocol failure. Cancellation before
 /// any delivery is a setup failure with an `Aborted` stop reason.
@@ -296,6 +299,7 @@ pub struct ChatStream {
     inner: Option<crate::provider::EventStream>,
     partial: Option<crate::message::AssistantMessage>,
     terminal: Option<Result<crate::message::AssistantMessage, CallFailure>>,
+    ai_telemetry: Option<crate::telemetry::AiRequestObserver>,
 }
 
 struct ProjectionStream {
@@ -309,7 +313,23 @@ impl Stream for ProjectionStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         if this.terminal {
-            return Poll::Ready(None);
+            let Some(inner) = this.inner.as_mut() else {
+                return Poll::Ready(None);
+            };
+            // A delivered business terminal does not prove that the source
+            // has settled. Drain and discard source-tail events; the owning
+            // ChatStream calls this path only from `result()` after terminal
+            // delivery has already become permanent EOF to its consumer.
+            loop {
+                match inner.as_mut().poll_next(cx) {
+                    Poll::Ready(Some(_)) => continue,
+                    Poll::Ready(None) => {
+                        this.inner = None;
+                        return Poll::Ready(None);
+                    }
+                    Poll::Pending => return Poll::Pending,
+                }
+            }
         }
         match this
             .inner
@@ -323,7 +343,6 @@ impl Stream for ProjectionStream {
                 this.partial = event.latest_partial().cloned();
                 if event.is_terminal() {
                     this.terminal = true;
-                    this.inner.take();
                 }
                 Poll::Ready(Some(Ok(event)))
             }
@@ -391,7 +410,11 @@ impl ChatStream {
             return StartedChatStream::finished(outcome);
         }
         let progress = self.progress_snapshot();
-        StartedChatStream::spawn(self, Self::result, progress)
+        // The background execution owner keeps its established resource
+        // contract: once it has forwarded the terminal, it releases the
+        // source. Direct `result()` retains the source long enough to drain
+        // provider-owned tail work.
+        StartedChatStream::spawn(self, Self::result_without_tail, progress)
     }
 
     pub(crate) fn progress_snapshot(&self) -> ProducerSnapshot {
@@ -412,6 +435,22 @@ impl ChatStream {
             inner: Some(stream),
             partial: None,
             terminal: None,
+            ai_telemetry: None,
+        }
+    }
+
+    pub(crate) fn new_with_ai_telemetry(
+        stream: crate::provider::EventStream,
+        context: Option<&crate::telemetry::TelemetryContext>,
+        attributes: crate::telemetry::AiRequestAttributes,
+    ) -> Self {
+        Self {
+            inner: Some(stream),
+            partial: None,
+            terminal: None,
+            ai_telemetry: Some(crate::telemetry::AiRequestObserver::start(
+                context, attributes,
+            )),
         }
     }
 
@@ -421,7 +460,10 @@ impl ChatStream {
     /// Equivalent to full iteration for the same event sequence: a terminal
     /// already delivered to an iterator is reused from cache, partial
     /// iteration does not change the outcome, and a stream that ends without
-    /// a terminal produces the one typed protocol failure (AIR-003).
+    /// a terminal produces the one typed protocol failure (AIR-003). After a
+    /// business terminal is cached, this method also drains the retained
+    /// source until EOF so provider-owned settlement work is complete before
+    /// the handle is dropped.
     pub async fn result(self) -> Result<crate::message::AssistantMessage, CallFailure> {
         let mut stream = self;
         while stream.terminal.is_none() {
@@ -432,9 +474,32 @@ impl ChatStream {
                 break;
             }
         }
+        if let Some(inner) = &mut stream.inner {
+            while inner.next().await.is_some() {}
+            stream.inner = None;
+        }
+        stream.finish_ai_telemetry();
         stream
             .terminal
             .expect("chat stream exhaustion always records a terminal")
+    }
+
+    pub(crate) async fn result_without_tail(
+        self,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.terminal
+            .expect("started execution observes a terminal before finalization")
+    }
+
+    fn finish_ai_telemetry(&mut self) {
+        let Some(observer) = &mut self.ai_telemetry else {
+            return;
+        };
+        match self.terminal.as_ref() {
+            Some(Ok(message)) => observer.finish(Some(message)),
+            Some(Err(failure)) => observer.finish(Some(failure.message())),
+            None => {}
+        }
     }
 }
 
@@ -445,6 +510,7 @@ impl Stream for ChatStream {
         let this = self.get_mut();
         if this.terminal.is_some() {
             // The first terminal was delivered; permanent EOF.
+            this.finish_ai_telemetry();
             return Poll::Ready(None);
         }
         let Some(inner) = this.inner.as_mut() else {
@@ -470,6 +536,9 @@ impl Stream for ChatStream {
                 Poll::Ready(Some(Err(failure)))
             }
             Poll::Ready(Some(Ok(event))) => {
+                if let Some(observer) = &mut this.ai_telemetry {
+                    observer.on_event(&event);
+                }
                 if let Some(partial) = event.latest_partial() {
                     this.partial = Some(partial.clone());
                 }
@@ -490,9 +559,10 @@ impl Stream for ChatStream {
                                 CallFailure::from_error_stop_reason(*reason, message.clone()),
                             ),
                         };
-                        // Absorb: release the inner attempt; the terminal event
-                        // itself is delivered exactly once.
-                        this.inner = None;
+                        // Absorb business delivery, but retain the source until
+                        // `result()` drains its tail. A terminal event is not
+                        // proof that the producer's source/result work has
+                        // settled.
                         this.terminal = Some(outcome.clone());
                         Poll::Ready(Some(outcome.map(|_| event)))
                     }
@@ -500,7 +570,8 @@ impl Stream for ChatStream {
                         // Legacy in-band error terminal (historical/mock
                         // producers): convert, retain original facts, absorb.
                         let failure = CallFailure::from_legacy_error_event(message.clone());
-                        this.inner = None;
+                        // Preserve the source for `result()` to drain after
+                        // the legacy terminal has been delivered.
                         this.terminal = Some(Err(failure.clone()));
                         Poll::Ready(Some(Err(failure)))
                     }
@@ -877,7 +948,6 @@ mod cancellation_tests {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
-    use futures_util::StreamExt as _;
     #[tokio::test]
     async fn richer_producer_projection_envelope_retains_usage_and_handoff() {
         let facts = crate::transcript::ProjectionFacts {
@@ -1057,7 +1127,7 @@ mod projection_tests {
         }
     }
     #[tokio::test]
-    async fn projection_terminal_releases_inner_without_another_poll() {
+    async fn projection_terminal_drains_source_tail_before_eof() {
         for kind in 0..3 {
             let polls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let drops = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -1104,18 +1174,27 @@ mod projection_tests {
                     assert_eq!(partial.usage.output_tokens, 7);
                 }
             }
-            assert_eq!(
-                drops.load(std::sync::atomic::Ordering::SeqCst),
-                1,
-                "terminal releases ownership immediately"
-            );
+            if kind == 2 {
+                assert_eq!(
+                    drops.load(std::sync::atomic::Ordering::SeqCst),
+                    0,
+                    "business terminal retains the source for result draining"
+                );
+            } else {
+                assert_eq!(
+                    drops.load(std::sync::atomic::Ordering::SeqCst),
+                    1,
+                    "transport/EOF terminals release the source"
+                );
+            }
             assert!(stream.next().await.is_none());
             assert!(stream.next().await.is_none());
             assert_eq!(
                 polls.load(std::sync::atomic::Ordering::SeqCst),
-                1,
-                "no inner polls after terminal"
+                if kind == 2 { 3 } else { 1 },
+                "business terminal drains the repeated tail and source EOF"
             );
+            assert_eq!(drops.load(std::sync::atomic::Ordering::SeqCst), 1);
         }
     }
 }

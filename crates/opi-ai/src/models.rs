@@ -3546,6 +3546,10 @@ struct AttemptStream {
     credential_terminal: Arc<AtomicBool>,
     acquisition: Arc<crate::retry::AcquisitionCore>,
     released: bool,
+    /// A business terminal was delivered. The acquisition lease is released,
+    /// but the provider source remains available for `ChatStream::result` to
+    /// drain source-owned tail work before the handle is dropped.
+    terminal_seen: bool,
     /// Whether this attempt was ever polled (dispatched). Distinguishes a
     /// lease released before send from a dropped dispatch with unknown
     /// effect.
@@ -3556,9 +3560,6 @@ struct AttemptStream {
 impl AttemptStream {
     fn release(&mut self) {
         if !self.released {
-            // A released attempt must never poll its old producer or mutate
-            // the acquisition state after a subsequent attempt starts.
-            self.inner = Box::pin(stream::empty());
             self.acquisition.release_attempt();
             self.released = true;
         }
@@ -3571,7 +3572,20 @@ impl Stream for AttemptStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         if this.released {
-            return Poll::Ready(None);
+            if !this.terminal_seen {
+                return Poll::Ready(None);
+            }
+            // The lease is already released, so tail polling must not update
+            // retry/admission state. Only `ChatStream::result` reaches this
+            // branch after terminal delivery; consumer iteration remains
+            // permanent EOF at the outer ChatStream seam.
+            loop {
+                match this.inner.as_mut().poll_next(cx) {
+                    Poll::Ready(Some(_)) => continue,
+                    Poll::Ready(None) => return Poll::Ready(None),
+                    Poll::Pending => return Poll::Pending,
+                }
+            }
         }
         if !this.polled {
             if this.cancel.is_cancelled() {
@@ -3620,6 +3634,11 @@ impl Stream for AttemptStream {
             Poll::Pending => false,
         };
         if terminal {
+            let business_terminal = matches!(
+                &item,
+                Poll::Ready(Some(Ok(event))) if event.is_terminal()
+            );
+            this.terminal_seen = business_terminal;
             this.release();
         }
         item
@@ -3793,6 +3812,7 @@ impl PreparedProviderCall {
                 credential_terminal: self.credential_terminal.clone(),
                 acquisition: self.acquisition.clone(),
                 released: false,
+                terminal_seen: false,
                 polled: false,
                 _resource_owner: self.resource_owner.clone(),
             }),
@@ -4990,6 +5010,14 @@ impl ChatCallDriver {
                 break;
             }
         }
+        if let ChatCallState::Active(stream) =
+            std::mem::replace(&mut self.state, ChatCallState::Done)
+        {
+            let outcome = stream.result().await;
+            if self.terminal.is_none() {
+                self.terminal = Some(outcome);
+            }
+        }
         match self.terminal.take() {
             Some(outcome) => outcome,
             None => Err(CallFailure::from_partial(
@@ -5077,6 +5105,23 @@ async fn materialize_chat_call(
 ) -> Result<ChatStream, CallFailure> {
     // Canonical model identity comes from the frozen complete record.
     request.model = binding.record.spec();
+    let telemetry_context = request.telemetry_context.clone();
+    let mut telemetry_attributes = crate::telemetry::AiRequestAttributes::new(
+        binding.record.provider_id(),
+        binding.record.model_id(),
+        match &binding.route {
+            FrozenRoute::ChatApi { api_id, .. } => api_id.as_str().to_owned(),
+            FrozenRoute::Provider { .. } => binding.record.wire_api().as_str().to_owned(),
+        },
+    );
+    if request.thinking.enabled
+        && let Some(reasoning) = request.thinking.level.wire_name()
+    {
+        telemetry_attributes = telemetry_attributes.with_reasoning(reasoning);
+    }
+    if let Some(pricing) = binding.record.info().pricing.as_ref() {
+        telemetry_attributes = telemetry_attributes.with_pricing(pricing.base);
+    }
     let resources = {
         let _registration = binding.registration_gate.lock().unwrap();
         binding
@@ -5204,10 +5249,11 @@ async fn materialize_chat_call(
             )
         }
     };
-    Ok(ChatStream::new(crate::stream::with_projection(
-        event_stream,
-        projection,
-    )))
+    Ok(ChatStream::new_with_ai_telemetry(
+        crate::stream::with_projection(event_stream, projection),
+        telemetry_context.as_ref(),
+        telemetry_attributes,
+    ))
 }
 
 async fn resolve_binding_auth(

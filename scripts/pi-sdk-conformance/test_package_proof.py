@@ -161,7 +161,9 @@ class PackageProofTests(unittest.TestCase):
         features = ["std", "utf16", "prohibit-unsafe"]
         if default:
             features += ["default", "backend-pikevm"]
+        opi_features = ["telemetry-tracing"] if default else []
         return {"packages": packages, "resolve": {"nodes": [
+            {"id": "opi", "features": opi_features},
             {"id": "regress", "features": features}, {"id": "url", "features": ["std"]}
         ]}}, package
 
@@ -171,6 +173,12 @@ class PackageProofTests(unittest.TestCase):
             result = proof.check_graph(metadata, package, default)
             self.assertEqual(result["regress"]["version"], "0.12.0")
             self.assertEqual("backend-pikevm" in result["regress"]["features"], default)
+
+    def test_opi_ai_feature_profile_is_checked_too(self):
+        metadata, package = self.graph(False)
+        metadata["resolve"]["nodes"][0]["features"].append("telemetry-tracing")
+        with self.assertRaisesRegex(ValueError, "opi-ai default-feature"):
+            proof.check_graph(metadata, package, False)
 
     def test_vendor_or_non_registry_backend_is_refused(self):
         for mutation in ["vendor", "path"]:
@@ -186,7 +194,8 @@ class PackageProofTests(unittest.TestCase):
         for mutation in ["feature", "version", "checkout"]:
             metadata, package = self.graph()
             if mutation == "feature":
-                metadata["resolve"]["nodes"][0]["features"].remove("utf16")
+                regress = next(node for node in metadata["resolve"]["nodes"] if node["id"] == "regress")
+                regress["features"].remove("utf16")
             elif mutation == "version":
                 metadata["packages"][2]["version"] = "0.13.0"
             else:

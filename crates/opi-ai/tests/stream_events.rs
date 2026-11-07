@@ -712,7 +712,11 @@ async fn chat_stream_rejects_mismatched_done_reasons_with_one_retained_failure()
                         }
                     }
                     let delivered_failure = delivered_failure.expect("one failure is delivered");
-                    assert_eq!(drops.load(Ordering::SeqCst), 1);
+                    assert_eq!(
+                        drops.load(Ordering::SeqCst),
+                        0,
+                        "the source remains owned until result() drains its tail"
+                    );
                     assert!(stream.next().await.is_none());
                     assert!(stream.next().await.is_none());
                     let cached = stream.result().await;
@@ -727,7 +731,11 @@ async fn chat_stream_rejects_mismatched_done_reasons_with_one_retained_failure()
                     ProviderError::StreamError(summary) if summary.contains("terminal")
                 ));
                 assert_eq!(failure.message(), &expected_message);
-                assert_eq!(polls.load(Ordering::SeqCst), terminal_polls);
+                assert_eq!(
+                    polls.load(Ordering::SeqCst),
+                    terminal_polls + 3,
+                    "result() polls the repeated terminal, tail event, and source EOF"
+                );
                 assert_eq!(drops.load(Ordering::SeqCst), 1);
                 if let Some(first) = &first_outcome {
                     assert_eq!(&failure, first);
