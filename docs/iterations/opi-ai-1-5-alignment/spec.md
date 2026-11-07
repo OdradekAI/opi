@@ -25,7 +25,8 @@ UTF-16 code unit 限制为 500，非 BMP 文本不会因 Rust `char` 计数而�
 token/cost，并将 `toolUse` 与完整 stop vocabulary 对齐。canonical Rust
 `StopReason::as_str()` 的 `tool_use` 仍保留，telemetry 通过独立映射使用 Pi
 词汇。随后修正可选的 `response.id`：provider 没有报告 response id 时保持属性缺失，
-不把它改写为空字符串。
+不把它改写为空字符串。request duration metric 也改为只携带 Pi 定义的
+`provider`、`model`、`stop`，不复用 span 的高基数和 usage 结束属性。
 
 ## 目标与范围
 

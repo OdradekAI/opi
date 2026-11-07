@@ -258152,6 +258152,58 @@
       "limits": [
         "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-24-REQUEST-DURATION-METRIC-ATTRIBUTES",
+      "issue": "issues/24-request-duration-metric-attributes.md",
+      "base_commit": "a555bfc",
+      "contracts": [
+        "CAP-TELEMETRY-AI"
+      ],
+      "status": "request-duration-metric-attributes-bounded",
+      "public_entry_mapping": [
+        {
+          "entry": "AiRequestTelemetry::finish",
+          "owner": "telemetry::AiRequestTelemetry",
+          "scope": "pi.ai.request.duration receives only provider, model and stop"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/telemetry.rs",
+          "status": "uses a dedicated low-cardinality duration attribute map"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "pins the exact request duration attribute set while retaining span fields"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs::records_request_events_and_result_after_the_terminal_payload"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-ai/tests/gemini_fixtures.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/bedrock_fixtures.rs",
+        "crates/opi-ai/tests/mistral_fixtures.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "exact request duration metric attribute set"
+        ],
+        "update": [
+          "duration recording no longer reuses span end attributes"
+        ],
+        "delete": [],
+        "retain": "request span usage/cost/response id and all existing lifecycle coverage"
+      },
+      "evidence": [
+        "evidence/phase4-request-duration-metric-attributes-checks.json"
+      ],
+      "limits": [
+        "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

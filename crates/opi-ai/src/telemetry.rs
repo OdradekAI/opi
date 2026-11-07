@@ -260,9 +260,14 @@ impl AiRequestTelemetry {
                     }),
                 })?;
             }
+            let mut duration_attributes = self.base_attributes();
+            duration_attributes.insert(
+                "stop".into(),
+                string(telemetry_stop_reason(message.stop_reason)),
+            );
             self.request_duration.record(
                 self.started.elapsed().as_secs_f64() * 1_000.0,
-                &end,
+                &duration_attributes,
                 Some(&self.span.context()),
             )?;
             if !self.attributes.poll

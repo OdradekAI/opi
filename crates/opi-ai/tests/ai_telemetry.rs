@@ -846,6 +846,14 @@ fn records_request_events_and_result_after_the_terminal_payload() {
     );
     assert_eq!(measurements[1].definition.name, "pi.ai.request.duration");
     assert_eq!(
+        measurements[1].attributes,
+        std::collections::BTreeMap::from([
+            ("model".into(), AttributeValue::String("model".into())),
+            ("provider".into(), AttributeValue::String("probe".into())),
+            ("stop".into(), AttributeValue::String("stop".into())),
+        ])
+    );
+    assert_eq!(
         measurements
             .iter()
             .filter(|measurement| measurement.definition.name == "pi.ai.tokens")
