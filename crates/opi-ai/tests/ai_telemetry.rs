@@ -879,6 +879,36 @@ fn pending_poll_does_not_record_token_or_cost_counters() {
 }
 
 #[test]
+fn error_status_message_cap_counts_utf16_units() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut telemetry = AiRequestTelemetry::start(
+        Some(&context),
+        AiRequestAttributes::new("probe", "model", "api"),
+    )
+    .expect("telemetry starts")
+    .expect("explicit context enables observation");
+    let mut message = base_assistant();
+    message.stop_reason = StopReason::Error;
+    message.error_message = Some(format!("{}tail", "😀".repeat(251)));
+
+    telemetry
+        .finish(Some(&message))
+        .expect("error result observation");
+
+    let status = recorder.spans()[0].status.clone();
+    assert_eq!(
+        status,
+        SpanStatus::Error {
+            error: Some(opi_telemetry::ErrorStatus {
+                name: "provider_error".into(),
+                message: "😀".repeat(250),
+            }),
+        }
+    );
+}
+
+#[test]
 fn schema_keeps_ai_names_and_aborted_success_status_policy() {
     let schema = ai_telemetry_schema();
     assert_eq!(schema.version, 1);

@@ -257988,6 +257988,55 @@
         "No automatic observer for prepared raw attempts or non-chat operations",
         "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-21-UTF16-ERROR-STATUS-BOUNDARY",
+      "issue": "issues/21-utf16-error-status-boundary.md",
+      "base_commit": "be8a758",
+      "contracts": [
+        "CAP-TELEMETRY-AI"
+      ],
+      "status": "provider-error-status-capped-in-utf16-units",
+      "public_entry_mapping": [
+        {
+          "entry": "AiRequestTelemetry::finish",
+          "owner": "telemetry::owned_slice",
+          "scope": "error status messages use a 500 UTF-16-unit cap before provider_error is recorded"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/telemetry.rs",
+          "status": "owned_slice counts char::len_utf16 and returns an owned Rust String"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "non-BMP regression proves 251 emoji become 250 emoji"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs::error_status_message_cap_counts_utf16_units"
+      ],
+      "complementary_tests": [
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "non-BMP provider_error status cap regression"
+        ],
+        "update": [
+          "owned_slice uses UTF-16 code-unit accounting"
+        ],
+        "delete": [],
+        "retain": "existing error status, cancellation, setup failure and package boundary coverage"
+      },
+      "evidence": [
+        "evidence/phase4-utf16-error-status-boundary-checks.json"
+      ],
+      "limits": [
+        "A JavaScript slice ending on an isolated surrogate cannot be represented byte-for-byte by Rust String",
+        "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

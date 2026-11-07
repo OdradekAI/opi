@@ -431,7 +431,20 @@ fn utf16_len(value: &str) -> usize {
 }
 
 fn owned_slice(value: &str) -> String {
-    value.chars().take(500).collect()
+    // Pi's JavaScript slice cap is measured in UTF-16 code units. Rust cannot
+    // retain an isolated surrogate, so stop before a scalar would cross the
+    // cap rather than manufacturing an invalid string.
+    let mut units = 0;
+    let mut end = 0;
+    for (index, character) in value.char_indices() {
+        let width = character.len_utf16();
+        if units + width > 500 {
+            break;
+        }
+        units += width;
+        end = index + character.len_utf8();
+    }
+    value[..end].to_owned()
 }
 
 /// Return the AI-owned schema metadata consumed by host telemetry adapters.

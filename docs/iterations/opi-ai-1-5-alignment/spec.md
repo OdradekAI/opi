@@ -17,6 +17,11 @@ prepared raw attempt、非 chat 其他路径仍开放；prepared observed helper
 span，setup failure 使用规范 `CallFailure.message()` 结算；后台执行仍保持异步，
 不会把构造时点误写成同步 provider 调用。
 
+随后修正 AI telemetry `provider_error` 状态消息的长度单位：错误文本现在按
+UTF-16 code unit 限制为 500，非 BMP 文本不会因 Rust `char` 计数而超出 Pi 的
+边界；孤立代理对无法由 Rust `String` 表示，已作为明确的 Rust-native 差异单独
+记录。
+
 ## 目标与范围
 
 让第三方 Rust 开发者按 opi-ai 文档，仅依赖 opi-ai 及其声明的库依赖，就能在普通项目中使用与指定 Pi 1.5.0 对应的能力。无需 opi-agent、opi CLI、仓库私有路径或隐式全局初始化；可以保持同一 workspace，不要求独立仓库。
