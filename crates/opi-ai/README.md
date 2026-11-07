@@ -330,6 +330,9 @@ attributes)` for the same observer and result contract. The original
 The observed prepared helper owns one `pi.ai.request` span per attempt. It does
 not aggregate sequential retry attempts into one span; a caller that needs a
 logical whole-call view must own that higher-level aggregation.
+Its frozen `Request::cancel` token follows the same cooperative cancellation
+contract as ordinary chat: the attempt returns typed `ProviderError::Cancelled`
+and its observer settles with `stop=aborted`.
 Scheduling does not
 mean authentication has completed before `start()` returns; keep the runtime
 alive for the request to finish.
@@ -1747,6 +1750,9 @@ completion remains the completion authority.
 Request-token cancellation is verified separately through the provider's
 typed `Cancelled` terminal and settles the same observer without using the
 force-abort handler.
+The prepared `start_attempt_with_telemetry()` helper has the same cancellation
+settlement per attempt; raw `start_attempt()` remains an unobserved
+`EventStream` seam.
 When the observed stream is scheduled with `ChatStream::start()`, its normal
 terminal still finishes the same request observer before `result()` returns;
 an explicit `StartedChatStream::abort()` settles it with `stop=aborted` after

@@ -315,7 +315,9 @@ let outcome = started.result().await;
 视图时，由上层调用方拥有聚合。provider 已持有 raw `EventStream` 时，可以用
 `ChatStream::new_with_telemetry(source, context, attributes)` 接入同一 observer
 与结果合同。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
-runtime 运行，直至请求完成。
+runtime 运行，直至请求完成。该 observed helper 冻结的 `Request::cancel`
+也沿同一协作式取消合同工作：provider 交付类型化
+`ProviderError::Cancelled`，该 attempt 的 observer 以 `stop=aborted` 结算。
 
 需要显式停止执行任务时，可在可变句柄上调用 `call.abort().await` 或
 `started.abort().await`。它会释放
@@ -1507,7 +1509,9 @@ provider 执行路径都自动埋点。载体
 
 普通 chat 的 request-token 协作式取消另由 provider 交付的
 `ProviderError::Cancelled` 终态驱动 observer 结算；它与外层
-`ChatCall::abort()` 的强制取消是两个可观察路径。
+`ChatCall::abort()` 的强制取消是两个可观察路径。prepared 的
+`start_attempt_with_telemetry()` 对每个 attempt 具有相同结算；raw
+`start_attempt()` 仍保留未观测的 `EventStream` seam。
 
 - **`TelemetryContext::from_span(span)`** 通过 `Span::with_subscriber` 冻结 parent
   `tracing::Span` 与其自身 `Dispatch` 的配对。即使创建或 poll 时另有当前

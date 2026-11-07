@@ -257710,6 +257710,68 @@
       ]
     },
     {
+      "id": "IMPL-18-PREPARED-REQUEST-TOKEN-CANCEL-TELEMETRY",
+      "issue": "issues/18-prepared-request-token-cancel-telemetry.md",
+      "base_commit": "59236c9",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION"
+      ],
+      "status": "prepared-observed-request-token-cancel-settlement-pass",
+      "public_entry_mapping": [
+        {
+          "entry": "PreparedProviderCall::start_attempt_with_telemetry -> Request::cancel",
+          "owner": "models::PreparedProviderCall -> stream::ChatStream -> telemetry::AiRequestTelemetry",
+          "scope": "one explicit observed prepared attempt settles its own pi.ai.request observer after provider-cooperative cancellation"
+        },
+        {
+          "entry": "PreparedProviderCall::start_attempt",
+          "owner": "models::PreparedProviderCall",
+          "scope": "raw EventStream retry/admission seam remains unchanged and unobserved"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "start_attempt_with_telemetry wraps the frozen request token and route facts in one observed ChatStream attempt"
+        },
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "standard ChatStream result settlement retains the typed cancellation and finishes the shared observer"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "prepared hanging provider plus background result task proves typed cancellation and one settled stop=aborted span"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "prepared observed attempt request-token cancellation pi.ai.request assertion"
+        ],
+        "update": [
+          "bilingual prepared cooperative-cancellation telemetry documentation"
+        ],
+        "delete": [],
+        "retain": "raw attempt, admission, retry budget, explicit abort, normal completion and caller-owned cross-attempt aggregation coverage"
+      },
+      "evidence": [
+        "evidence/phase4-prepared-request-token-cancel-telemetry-checks.json"
+      ],
+      "limits": [
+        "No raw ChatStream::new or raw start_attempt automatic observer",
+        "No cross-attempt aggregator or image/classifier/deferred-cancel AI span",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
+    },
+    {
       "id": "IMPL-14-PREPARED-CROSS-ATTEMPT-TELEMETRY",
       "issue": "issues/14-prepared-cross-attempt-telemetry.md",
       "base_commit": "e089aa2",

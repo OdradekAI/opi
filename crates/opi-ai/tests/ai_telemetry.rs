@@ -542,6 +542,72 @@ async fn prepared_attempt_observed_helper_records_ai_request() {
 }
 
 #[tokio::test]
+async fn prepared_observed_attempt_request_token_cancel_finishes_request_telemetry() {
+    let recorder = Recorder::default();
+    let telemetry_context = recorder.context();
+    let provider =
+        MockProvider::new_with_errors("probe", vec![MockResponse::HangingUntilCancelled]);
+    let calls = provider.call_log_handle();
+    let models = single_route_collection(Box::new(provider));
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let request = Request {
+        model: "probe:mock-model".into(),
+        context: normalize_context(Default::default()).expect("empty context normalizes"),
+        projection: Default::default(),
+        transport: Default::default(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: cancel.clone(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        telemetry_context: Some(telemetry_context),
+        callbacks: Default::default(),
+    };
+
+    let prepared = models
+        .prepare_call("probe:mock-model", request)
+        .await
+        .expect("prepared call resolves");
+    let observed = prepared
+        .start_attempt_with_telemetry()
+        .expect("observed attempt starts");
+    let result_task = tokio::spawn(observed.result());
+    for _ in 0..100 {
+        if !calls.lock().expect("mock call log lock").is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        !calls.lock().expect("mock call log lock").is_empty(),
+        "prepared observed attempt reached the provider before cooperative cancellation"
+    );
+
+    cancel.cancel();
+    let failure = result_task
+        .await
+        .expect("prepared observed result task joins")
+        .expect_err("request-token cancellation fails the prepared attempt");
+    assert_eq!(failure.message().stop_reason, StopReason::Aborted);
+    assert_eq!(failure.cause(), &ProviderError::Cancelled);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("aborted".into()))
+    );
+    assert!(spans[0].end_sequence.is_some());
+}
+
+#[tokio::test]
 async fn prepared_attempt_observation_is_per_attempt_without_cross_attempt_aggregation() {
     let recorder = Recorder::default();
     let telemetry_context = recorder.context();
