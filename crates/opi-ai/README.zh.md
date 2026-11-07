@@ -336,7 +336,9 @@ provider 自己的尾部工作后再返回缓存结果。`StartedChatStream` 后
 既有资源合同：终态交付后释放源。普通 `ChatCall` 不再由消费者驱动执行。已交付
 结果转换成 `StartedChatStream` 后仍可读取，不重复交付终态。`ChatStream::new(raw)`
 不会安装 observer；provider 自己持有 raw source 时，使用
-`ChatStream::new_with_telemetry(...)` 接入 Pi 风格的 AI telemetry。省略 context
+`ChatStream::new_with_telemetry(...)` 接入 Pi 风格的 AI telemetry。通过
+`ChatStream::start().result()` 调度到后台时，正常终态仍会在返回前完成同一请求
+observer。省略 context
 或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；跨任务传播需显式传入
 context。
 
@@ -1484,7 +1486,8 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 安装该 observer；raw `ChatStream::new`、原始 `PreparedProviderCall::start_attempt`
 入口及非 chat 操作仍是显式/手动边界；调用方持有的 raw stream 可以用
 `ChatStream::new_with_telemetry`，observed `start_attempt_with_telemetry` helper
-也复用这个构造器。因此不能宣称每条
+也复用这个构造器；调度 observed stream 后，正常终态仍会完成同一 request
+observer。因此不能宣称每条
 provider 执行路径都自动埋点。载体
 回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
 `tests/ai_telemetry.rs`。

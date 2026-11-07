@@ -257473,6 +257473,68 @@
         "No automatic raw ChatStream or raw start_attempt observer",
         "No cross-attempt aggregation or image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-13-STARTED-CHATSTREAM-TELEMETRY",
+      "issue": "issues/13-started-chatstream-telemetry-settlement.md",
+      "base_commit": "3c9d7ae",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION"
+      ],
+      "status": "started-observed-normal-terminal-settlement-pass-abort-boundary-open",
+      "public_entry_mapping": [
+        {
+          "entry": "ChatStream::start -> StartedChatStream::result",
+          "owner": "stream::ChatStream -> execution::StartedChatStream",
+          "scope": "normal terminal completes the observer owned by the scheduled ChatStream before returning the business result"
+        },
+        {
+          "entry": "ChatStream::new",
+          "owner": "stream::ChatStream",
+          "scope": "business-only collector remains unchanged because it owns no AI observer"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "result_without_tail finishes the existing observer before returning its cached terminal"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "external integration test proves StartedChatStream normal result retains pi.ai.request settlement"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/phase4-started-chatstream-telemetry.md",
+          "status": "records the ownership and normal-terminal boundary"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "started observed ChatStream normal terminal pi.ai.request assertion"
+        ],
+        "update": [
+          "started telemetry lifecycle documentation"
+        ],
+        "delete": [],
+        "retain": "StartedChatStream execution, explicit abort, raw ChatStream and source-tail contracts"
+      },
+      "evidence": [
+        "evidence/phase4-started-chatstream-telemetry-checks.json"
+      ],
+      "limits": [
+        "No observer completion contract for explicit abort without a business terminal",
+        "No cross-attempt aggregation or automatic raw start_attempt observer",
+        "No image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

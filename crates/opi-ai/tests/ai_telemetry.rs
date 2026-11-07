@@ -150,6 +150,87 @@ async fn public_chat_stream_telemetry_constructor_records_request() {
 }
 
 #[tokio::test]
+async fn started_observed_chat_stream_finishes_request_telemetry() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let mut message = start.clone();
+    message.stop_reason = StopReason::Stop;
+
+    let source: EventStream = Box::pin(stream::iter([
+        Ok(AssistantStreamEvent::Start { partial: start }),
+        Ok(AssistantStreamEvent::Done {
+            reason: StopReason::Stop,
+            message,
+        }),
+    ]));
+    let result = ChatStream::new_with_telemetry(
+        source,
+        Some(&context),
+        AiRequestAttributes::new("probe", "mock-model", "openai-completions"),
+    )
+    .start()
+    .result()
+    .await
+    .expect("started observed ChatStream completes");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+    assert!(spans[0].end_sequence.is_some());
+}
+
+#[tokio::test]
+async fn already_terminal_observed_chat_stream_finishes_before_start() {
+    use futures_util::StreamExt as _;
+
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let mut message = start.clone();
+    message.stop_reason = StopReason::Stop;
+
+    let source: EventStream = Box::pin(stream::iter([
+        Ok(AssistantStreamEvent::Start { partial: start }),
+        Ok(AssistantStreamEvent::Done {
+            reason: StopReason::Stop,
+            message,
+        }),
+    ]));
+    let mut observed = ChatStream::new_with_telemetry(
+        source,
+        Some(&context),
+        AiRequestAttributes::new("probe", "mock-model", "openai-completions"),
+    );
+    assert!(observed.next().await.expect("start event").is_ok());
+    assert!(observed.next().await.expect("terminal event").is_ok());
+
+    let result = observed
+        .start()
+        .result()
+        .await
+        .expect("already-terminal observed ChatStream completes");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+    assert!(spans[0].end_sequence.is_some());
+}
+
+#[tokio::test]
 async fn deferred_fetch_auto_records_ai_poll() {
     let recorder = Recorder::default();
     let telemetry_context = recorder.context();

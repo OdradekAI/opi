@@ -400,13 +400,20 @@ impl ChatStream {
     /// progress. Its Drop does not cancel the source. Existing partial
     /// consumption and a delivered terminal are preserved. See
     /// [`StartedChatStream`] for buffering, cancellation and panic behavior.
+    /// If this stream has an explicit AI telemetry observer, a normal terminal
+    /// finishes that observer before the started handle reports its outcome.
     ///
     /// # Panics
     ///
     /// Panics if an unfinished source is started outside a Tokio runtime. Scheduling does not promise
     /// that the source has already been polled when this method returns.
     pub fn start(mut self) -> StartedChatStream {
-        if let Some(outcome) = self.terminal.take() {
+        if self.terminal.is_some() {
+            self.finish_ai_telemetry();
+            let outcome = self
+                .terminal
+                .take()
+                .expect("terminal presence checked before conversion");
             return StartedChatStream::finished(outcome);
         }
         let progress = self.progress_snapshot();
@@ -493,8 +500,9 @@ impl ChatStream {
     }
 
     pub(crate) async fn result_without_tail(
-        self,
+        mut self,
     ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.finish_ai_telemetry();
         self.terminal
             .expect("started execution observes a terminal before finalization")
     }

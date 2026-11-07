@@ -5,7 +5,8 @@ Baseline: opi 90f953d5ee288c165dc295bfdfb7cb7a05d7cecd; initial worktree clean; 
 
 日期：2026-11-07。本文件承接已完成的[决策地图](map.md)，作为实施的单一方案入口。active 表示已确认的目标范围仍有效。第一阶段已完成并提交，证据见[第一阶段报告](phase1.md)。用户随后授权继续推进；第二阶段首个切片[建立中立遥测基础与可选 tracing 适配](issues/02-neutral-telemetry-foundation.md)已完成，结果及全量回归限制见[切片报告](phase2.md)。随后完成第二个切片[分离纯值、公共错误与认证目录契约](issues/03-values-errors-auth-catalog.md)，结果见[基础边界报告](phase2-foundation.md)。两票完成第二阶段基础整理。第三阶段已完成首个切片[显式启动 chat 请求并分离执行与消费](issues/04-started-chat-execution.md)，见[交付与剩余工作](phase3-started.md)；随后完成[迁移 agent 请求消费与显式中止](issues/05-agent-execution-consumers.md)，状态见[消费者迁移报告](phase3-consumers.md)；接着完成[让普通 chat 入口独立执行](issues/06-default-chat-execution.md)，交付、检查与边界见[默认入口迁移报告](phase3-default.md)；随后完成限定范围的[AI telemetry seam 与 source/result 尾部](issues/07-ai-telemetry-source-tail.md)，见[切片报告](phase3-ai-telemetry.md)；当前又完成第四阶段首个[可选 telemetry tracing feature](issues/08-optional-telemetry-feature.md)，见[feature 报告](phase4-features.md)，以及[普通 Models chat 自动安装 AI observer](issues/09-ordinary-chat-ai-telemetry.md)，见[切片报告](phase4-ordinary-ai-telemetry.md)。普通 Models chat 已自动安装 observer；随后 deferred fetch 的 `ChatStream` 与
 `pi.ai.poll` 自动观测、prepared attempt 的 observed helper，以及供独立 provider
-使用的公开 `ChatStream::new_with_telemetry` 均已落地。无观测的 raw ChatStream、
+使用的公开 `ChatStream::new_with_telemetry` 均已落地；其 `ChatStream::start()` 正常
+后台终态也会完成同一 observer。无观测的 raw ChatStream、
 prepared raw attempt、非 chat 其他路径与跨 attempt 聚合仍开放；完整 provider
 覆盖、feature 矩阵与 Pi 差分仍开放。各票独立维护检查范围，不代表完整能力对齐
 通过。答案细节以各决策票的 Answer 为准，研究报告只提供证据。
