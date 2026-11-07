@@ -3845,6 +3845,46 @@ impl PreparedProviderCall {
             self.route.projection.clone(),
         ))
     }
+
+    /// Start one prepared attempt behind the standard [`ChatStream`] result
+    /// contract.
+    ///
+    /// This is the observed convenience entry for independent consumers. It
+    /// keeps [`start_attempt`](Self::start_attempt) available as the raw
+    /// attempt seam used by retry/admission controllers, while exposing the
+    /// same terminal absorption, source-tail settlement and optional
+    /// `pi.ai.request` observer as ordinary `Models` chat calls. An explicit
+    /// [`Request::telemetry_context`](crate::provider::Request::telemetry_context)
+    /// enables observation; omission keeps the stream business-only.
+    pub fn start_attempt_with_telemetry(&self) -> Result<crate::stream::ChatStream, ModelsError> {
+        let source = self.start_attempt()?;
+        Ok(crate::stream::ChatStream::new_with_ai_telemetry(
+            source,
+            self.request.telemetry_context.as_ref(),
+            self.ai_telemetry_attributes(),
+        ))
+    }
+
+    fn ai_telemetry_attributes(&self) -> crate::telemetry::AiRequestAttributes {
+        let mut attributes = crate::telemetry::AiRequestAttributes::new(
+            self.route.provider_id.clone(),
+            self.route.model_id.clone(),
+            self.route.wire_api.as_str(),
+        );
+        if self.request.thinking.enabled
+            && let Some(reasoning) = self.request.thinking.level.wire_name()
+        {
+            attributes = attributes.with_reasoning(reasoning);
+        }
+        if let Some(pricing) = self
+            .selected_model
+            .as_deref()
+            .and_then(|model| model.pricing.as_ref())
+        {
+            attributes = attributes.with_pricing(pricing.base);
+        }
+        attributes
+    }
 }
 
 /// Drive ordinary and direct calls with the same per-call acquisition owner

@@ -306,7 +306,11 @@ let outcome = started.result().await;
 也可以通过 `StreamExt::next` 迭代 `started`。丢弃句柄或其中的 `result()` future
 只停止消费，执行继续。需要显式取消时，在构造调用前保留 `request.cancel.clone()`。
 高级 prepared attempt 可使用 `ChatStream::new(prepared.start_attempt()?).start()`
-取得相同的执行所有权。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
+取得相同的执行所有权。独立消费者如果需要标准 result 合同和 AI telemetry
+结算，可以使用返回 `ChatStream` 的
+`prepared.start_attempt_with_telemetry()?`；显式传入的 request telemetry context
+会自动安装 observer。原始 `start_attempt()` 仍保留给 retry/admission controller
+使用。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
 runtime 运行，直至请求完成。
 
 需要显式停止执行任务时，可在可变句柄上调用 `call.abort().await` 或
@@ -609,7 +613,7 @@ OpenAI-compatible profile 加入。
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | 类型化自定义 chat adapter 注册，携带精确 API 身份与固定 options 类型；由 handle 创建的 options 携带 API/类型标签，可在具备兼容注册的实例间移植。 |
 | `ToolCall::arguments_error` | 文本 tool 参数的最终解析结果标记（AIR-048）：空输入归一为 `{}`，可修复的非法转义保留字面文本，不完整/非对象最终文本保留自有 raw 并携带该错误，绝不以 partial-prefix 成功执行；缺少该字段的历史记录仍可反序列化。 |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时冻结输入并在 Tokio 调度执行的普通消费句柄。 |
-| `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
+| `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API；`start_attempt_with_telemetry` 提供标准 `ChatStream` result/observer seam。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 九种 SDK OAuth 家族的 boxed-future 契约、只读 flow 元数据、逐家请求身份转换与注入的登录 UX。 |
 | `AuthResolver` / `ResolvedAuth` | 由 driver 按调用解析的鉴权契约；attempt 开始前会冻结一次准备结果。 |
@@ -645,7 +649,9 @@ GitHub Copilot 把一个静态 catalog 路由到 Anthropic Messages、OpenAI Com
 collection 在 `prepare_call` 中、任何 attempt 之前只解析一次 `AuthResolver`，并返回
 `PreparedProviderCall`。其 `route()` 只暴露 `PreparedRoute`，`auth_provenance()` 暴露
 非 secret provenance，每次 `start_attempt()` 都复用已冻结的 route、request、鉴权和
-cancellation token。attempt 必须串行：重叠 stream 返回
+cancellation token。`start_attempt_with_telemetry()` 会把一个 attempt 包装为
+`ChatStream` 并结算显式 AI observer；需要自己管理 retry admission 和 stream
+归一化时继续使用原始入口。attempt 必须串行：重叠 stream 返回
 `ModelsError::AttemptAlreadyActive`，取消返回 `CallCancelled`，先前 attempt 若报告
 credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭。凭据缺失与撤销分别成为显式且不可重试的
 `ProviderError::CredentialNeeded` 和 `ProviderError::CredentialRevoked`。
@@ -1471,8 +1477,10 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 描述及记录器。公开的 `AiRequestTelemetry` seam 已负责 Pi 风格的 request/poll
 命名、事件 schema、UTF-16 block 计数、usage/cost 结算及 aborted/deferred 状态
 策略。普通 `Models` chat 入口在 `Request::telemetry_context` 为 `Some` 时会自动
-安装该 observer；raw `ChatStream::new`、prepared provider attempt 及非 chat
-操作仍是显式/手动边界，因此不能宣称每条 provider 执行路径都自动埋点。载体
+安装该 observer；raw `ChatStream::new`、原始 `PreparedProviderCall::start_attempt`
+入口及非 chat 操作仍是显式/手动边界，observed
+`start_attempt_with_telemetry` helper 则使用同一自动 observer。因此不能宣称每条
+provider 执行路径都自动埋点。载体
 回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
 `tests/ai_telemetry.rs`。
 
@@ -1493,8 +1501,9 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 `Models` chat 执行和真实 Codex producer，覆盖其异步回调与 SSE 回退。显式 context
 会为普通 chat 创建一个 `pi.ai.request` observer；若 telemetry backend 失败，宿主
 `tracing` 会收到 warning，但业务调用仍保留原有 typed 结果。raw `ChatStream::new`
-和 prepared attempt 仍需宿主直接使用公开 `AiRequestTelemetry` seam 才能获得等价
-观测。省略时不隐式捕获 ambient 上下文。载体不序列化、不上 wire，不安装 global
+和原始 `start_attempt` 仍需宿主直接使用公开 `AiRequestTelemetry` seam 才能获得等价
+观测；`start_attempt_with_telemetry` 提供 prepared 的 observed 变体。省略时不隐式
+捕获 ambient 上下文。载体不序列化、不上 wire，不安装 global
 subscriber、exporter、采样政策或自动 SDK root span。全部 SDK 操作的传播已闭合
 （任务 20.55）：四类 chat 入口（native/simple/direct，以及含 acquisition retry
 与 strict 变体重建的 advanced `prepare_call` 路径）、图片生成、分类器调用与

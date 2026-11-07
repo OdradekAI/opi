@@ -320,7 +320,11 @@ You can also iterate `started` with `StreamExt::next`. Dropping it or abandoning
 its `result()` future stops consumption but keeps execution running. Retain
 `request.cancel.clone()` before constructing the call if you need explicit
 cancellation. `ChatStream::new(prepared.start_attempt()?).start()` supplies the
-same execution ownership for an advanced prepared attempt. Scheduling does not
+same execution ownership for an advanced prepared attempt. Independent
+consumers that want the standard result and AI telemetry settlement can use
+`prepared.start_attempt_with_telemetry()?`, which returns a `ChatStream` and
+observes an explicit request telemetry context. The original `start_attempt()`
+remains the raw attempt seam for retry/admission controllers. Scheduling does not
 mean authentication has completed before `start()` returns; keep the runtime
 alive for the request to finish.
 
@@ -637,7 +641,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
 | `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments (AIR-048): empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the ordinary consumer that freezes input and schedules execution on Tokio at construction. |
-| `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
+| `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs; `start_attempt_with_telemetry` adds the standard `ChatStream` result/observer seam. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Boxed-future contracts for the nine SDK OAuth families, read-only flow metadata, provider-specific request identity conversion, and injected login UX. |
 | `AuthResolver` / `ResolvedAuth` | Driver-owned per-call auth resolution contract; one prepared result is frozen before an attempt starts. |
@@ -721,6 +725,9 @@ collection resolves `AuthResolver` once in `prepare_call`, before any attempt,
 and returns `PreparedProviderCall`. Its `route()` exposes only `PreparedRoute`,
 `auth_provenance()` exposes non-secret provenance, and every `start_attempt()`
 reuses the frozen route, request, authentication, and cancellation token.
+`start_attempt_with_telemetry()` wraps one such attempt in `ChatStream` and
+settles an explicit AI observer; use the raw method when the caller owns retry
+admission and stream normalization.
 Attempts are sequential: an overlapping stream returns
 `ModelsError::AttemptAlreadyActive`, cancellation returns `CallCancelled`,
 and a prior credential-needed/revoked attempt closes the prepared call with
@@ -1709,8 +1716,10 @@ its tracing scope adapter. The public `AiRequestTelemetry` seam now owns the
 Pi-shaped request/poll names, event schema, UTF-16 block counts, usage/cost
 settlement and aborted/deferred status policy. Ordinary `Models` chat entries
 install this observer automatically when `Request::telemetry_context` is
-`Some`. Raw `ChatStream::new`, prepared provider attempts and non-chat
-operations remain explicit/manual boundaries; this is not a claim that every
+`Some`. Raw `ChatStream::new`, the raw `PreparedProviderCall::start_attempt`
+seam and non-chat operations remain explicit/manual boundaries; the observed
+`start_attempt_with_telemetry` helper uses the same automatic observer. This is
+not a claim that every
 provider execution path is automatically instrumented. Carrier regression
 tests live at `tests/telemetry_carrier.rs`, and the AI seam tests live at
 `tests/ai_telemetry.rs`.
@@ -1739,9 +1748,10 @@ pair into ordinary `Models` chat execution and into the real Codex producer,
 including its async callbacks and SSE fallback. With an explicit context, the
 ordinary chat path creates one `pi.ai.request` observer; if the telemetry
 backend fails, the host `tracing` channel receives a warning and the business
-call keeps its normal typed result. Raw `ChatStream::new` and prepared attempts
-still require the public `AiRequestTelemetry` seam when a host wants equivalent
-observation. Omission captures no implicit ambient context. No carrier is
+call keeps its normal typed result. Raw `ChatStream::new` and the raw
+`start_attempt` seam still require the public `AiRequestTelemetry` seam when a
+host wants equivalent observation; `start_attempt_with_telemetry` supplies the
+observed prepared variant. Omission captures no implicit ambient context. No carrier is
 serialized or placed on the wire, and no global subscriber, exporter, sampling
 policy or automatic SDK root span is installed. Propagation is closed across
 all SDK operations (task 20.55): the four chat entries (native/simple/direct

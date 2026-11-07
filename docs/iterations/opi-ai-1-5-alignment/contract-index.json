@@ -257335,6 +257335,74 @@
         "raw/prepared/non-chat other paths and deferred cancel remain manual or open",
         "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-11-PREPARED-AI-TELEMETRY",
+      "issue": "issues/11-prepared-ai-telemetry.md",
+      "base_commit": "80e706b",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION",
+        "CAP-PACKAGE"
+      ],
+      "status": "prepared-observed-helper-pass-raw-and-cross-attempt-boundaries-open",
+      "public_entry_mapping": [
+        {
+          "entry": "PreparedProviderCall::start_attempt_with_telemetry",
+          "owner": "models::PreparedProviderCall -> stream::ChatStream",
+          "scope": "compatibility helper wraps one raw attempt in standard result/source-tail settlement and optional pi.ai.request observer"
+        },
+        {
+          "entry": "PreparedProviderCall::start_attempt",
+          "owner": "models::PreparedProviderCall",
+          "scope": "raw EventStream seam remains available for retry/admission controllers"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "observed helper reuses frozen route, request, auth and provider without re-preparation"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "memory recorder proves prepared observed attempt emits pi.ai.request"
+        },
+        {
+          "path": "crates/opi-ai/README.md",
+          "status": "documents raw versus observed prepared attempt entry points"
+        },
+        {
+          "path": "crates/opi-ai/README.zh.md",
+          "status": "documents raw versus observed prepared attempt entry points"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "prepared observed helper request span assertion"
+        ],
+        "update": [
+          "bilingual prepared-call documentation"
+        ],
+        "delete": [],
+        "retain": "raw start, retry admission, cancellation, resource and credential-terminal coverage"
+      },
+      "evidence": [
+        "evidence/phase4-prepared-ai-telemetry-checks.json"
+      ],
+      "limits": [
+        "No cross-attempt span aggregation or automatic raw start_attempt observer",
+        "No image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

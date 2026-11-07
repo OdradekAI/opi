@@ -167,6 +167,84 @@ async fn deferred_fetch_auto_records_ai_poll() {
     );
 }
 
+#[tokio::test]
+async fn prepared_attempt_observed_helper_records_ai_request() {
+    let recorder = Recorder::default();
+    let telemetry_context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let mut message = start.clone();
+    message
+        .content
+        .push(opi_ai::message::AssistantContent::Text {
+            text: "prepared".into(),
+            signature: None,
+        });
+    let provider = MockProvider::new(
+        "probe",
+        vec![vec![
+            AssistantStreamEvent::Start { partial: start },
+            AssistantStreamEvent::Done {
+                reason: StopReason::Stop,
+                message,
+            },
+        ]],
+    );
+    let models = single_route_collection(Box::new(provider));
+    let request = Request {
+        model: "probe:mock-model".into(),
+        context: normalize_context(Default::default()).expect("empty context normalizes"),
+        projection: Default::default(),
+        transport: Default::default(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: Default::default(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        telemetry_context: Some(telemetry_context),
+        callbacks: Default::default(),
+    };
+
+    let prepared = models
+        .prepare_call("probe:mock-model", request)
+        .await
+        .expect("prepared call resolves");
+    let result = prepared
+        .start_attempt_with_telemetry()
+        .expect("observed attempt starts")
+        .result()
+        .await
+        .expect("prepared attempt completes");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("provider"),
+        Some(&AttributeValue::String("probe".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("model"),
+        Some(&AttributeValue::String("mock-model".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("api"),
+        Some(&AttributeValue::String("openai-completions".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+}
+
 #[test]
 fn records_request_events_and_result_after_the_terminal_payload() {
     let recorder = Recorder::default();
