@@ -11,6 +11,7 @@ use opi_ai::provider::{EventStream, ProviderError, Request};
 use opi_ai::stream::{AssistantStreamEvent, ChatStream, StopReason};
 use opi_ai::test_support::{MockProvider, base_assistant, single_route_collection};
 use opi_ai::{ChatModelRecord, ModelInfo, Provider};
+use opi_telemetry::memory::Recorder;
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 
@@ -484,10 +485,13 @@ async fn cancelling_after_consumer_drop_still_releases_the_source() {
 async fn started_models_setup_failure_is_one_typed_outcome() {
     let models = opi_ai::Models::new();
     let model = MockProvider::new("missing", vec![]).models()[0].clone();
+    let recorder = Recorder::default();
+    let mut request = request(CancellationToken::new());
+    request.telemetry_context = Some(recorder.context());
     let mut started = models
         .stream_simple(
             ChatModelRecord::new("missing", model),
-            request(CancellationToken::new()),
+            request,
             Default::default(),
         )
         .start();
@@ -495,6 +499,14 @@ async fn started_models_setup_failure_is_one_typed_outcome() {
     assert!(matches!(failure.cause(), ProviderError::Config(_)));
     assert!(started.next().await.is_none());
     assert_eq!(started.result().await, Err(failure));
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&opi_telemetry::AttributeValue::String("error".into()))
+    );
+    assert!(spans[0].end_sequence.is_some());
 }
 
 fn request(cancel: CancellationToken) -> Request {

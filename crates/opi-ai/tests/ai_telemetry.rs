@@ -140,6 +140,13 @@ async fn ordinary_models_chat_abort_finishes_request_telemetry() {
         request,
         SimpleOptions::default(),
     );
+    let constructed_spans = recorder.spans();
+    assert_eq!(constructed_spans.len(), 1);
+    assert_eq!(constructed_spans[0].name, "pi.ai.request");
+    assert!(
+        constructed_spans[0].end_sequence.is_none(),
+        "request observer starts at stream construction and remains open until settlement"
+    );
     for _ in 0..100 {
         if !calls.lock().expect("mock call log lock").is_empty() {
             break;

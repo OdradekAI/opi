@@ -257920,6 +257920,73 @@
         "Adapter-owned spans are not claimed equivalent to Pi AI spans",
         "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-20-ORDINARY-CHAT-TELEMETRY-CONSTRUCTION",
+      "issue": "issues/20-ordinary-chat-telemetry-construction.md",
+      "base_commit": "eb07594",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-EXECUTION",
+        "CAP-STREAM"
+      ],
+      "status": "ordinary-chat-observer-starts-at-construction",
+      "public_entry_mapping": [
+        {
+          "entry": "Models::stream / stream_simple / stream_direct",
+          "owner": "models::ChatCall -> execution::StartedChatStream -> stream::ChatStream",
+          "scope": "one pi.ai.request observer starts synchronously at ChatCall construction when an explicit context is supplied"
+        },
+        {
+          "entry": "ChatCall setup failure",
+          "owner": "models::ChatCallDriver",
+          "scope": "canonical CallFailure.message() settles the construction-time observer"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "ChatCall owns one shared observer across construction, setup, stream result, and abort"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "recorder regression observes the unfinished span immediately after construction and verifies abort settlement"
+        },
+        {
+          "path": "crates/opi-ai/README.md",
+          "status": "existing ordinary chat telemetry contract remains the public usage boundary"
+        },
+        {
+          "path": "crates/opi-ai/README.zh.md",
+          "status": "existing ordinary chat telemetry contract remains the public usage boundary"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "ordinary chat construction-time observer visibility"
+        ],
+        "update": [
+          "ChatCall observer ownership and setup-failure settlement"
+        ],
+        "delete": [],
+        "retain": "ordinary result, source-tail, abort, request-token cancellation, prepared and non-chat telemetry boundaries"
+      },
+      "evidence": [
+        "evidence/phase4-ordinary-chat-telemetry-construction-checks.json"
+      ],
+      "limits": [
+        "Authentication and provider setup remain asynchronously scheduled",
+        "No automatic observer for prepared raw attempts or non-chat operations",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

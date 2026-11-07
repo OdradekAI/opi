@@ -349,7 +349,12 @@ still observe its completion. A source blocking inside a poll must yield before
 Tokio can abort it.
 
 For an ordinary `Models` call with an explicit `Request::telemetry_context`,
-`call.abort().await` settles its automatically installed `pi.ai.request`
+the `pi.ai.request` observer is created synchronously when `Models::stream`,
+`stream_simple`, or `stream_direct` constructs its `ChatCall`; authentication
+and provider setup still run asynchronously afterward. A recorder can therefore
+see the unfinished request span before the execution task reaches its first
+poll. Setup failures settle that same span from the canonical `CallFailure`
+message. `call.abort().await` settles its automatically installed `pi.ai.request`
 observer with `stop=aborted` after the execution task is confirmed cancelled.
 The same shared observer remains idempotent if the provider reaches a normal
 terminal before the abort takes effect.

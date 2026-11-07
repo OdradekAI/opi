@@ -329,7 +329,11 @@ runtime 运行，直至请求完成。该 observed helper 冻结的 `Request::ca
 执行权，Tokio 才能中止它。
 
 普通 `Models` 调用如果显式提供 `Request::telemetry_context`，
-`call.abort().await` 在确认执行任务已被 Tokio 取消后，会把自动安装的
+`Models::stream`、`stream_simple` 或 `stream_direct` 构造 `ChatCall` 时就会同步创建
+`pi.ai.request` observer；认证和 provider setup 仍在之后异步执行。因此 recorder
+可以在执行任务第一次 poll 前看到尚未结束的 request span。setup 失败会使用规范的
+`CallFailure` message 结算同一个 span。随后 `call.abort().await` 在确认执行任务已被
+Tokio 取消后，会把自动安装的
 `pi.ai.request` observer 以 `stop=aborted` 结算。如果 provider 在 abort 生效前
 已经到达正常终态，同一 observer 仍保持幂等，正常终态优先。
 保留的 `Request::cancel` token 所触发的协作式取消则沿 provider 的类型化

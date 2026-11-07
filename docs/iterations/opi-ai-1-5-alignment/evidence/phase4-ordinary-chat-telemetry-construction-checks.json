@@ -1,0 +1,46 @@
+{
+  "phase": "phase4-ordinary-chat-telemetry-construction",
+  "scope": "start ordinary Models chat AI telemetry at ChatCall construction, before lazy setup",
+  "commands": [
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "pass",
+      "result": "16 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test execution_lifecycle started_models_setup_failure_is_one_typed_outcome --offline -j4",
+      "status": "pass",
+      "result": "1 passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "pass"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "pass"
+    },
+    {
+      "command": "cargo fmt --all --check",
+      "status": "pass"
+    },
+    {
+      "command": "git diff --check",
+      "status": "pass"
+    }
+  ],
+  "behavior": {
+    "ordinary_chat_construction": "explicit context creates one unfinished pi.ai.request span synchronously at ChatCall construction",
+    "ordinary_chat_abort": "the same observer finishes once with stop=aborted after explicit abort",
+    "setup_failure": "canonical CallFailure.message() settles the construction-time observer",
+    "scope": "no new observer is installed for prepared raw attempts or non-chat operations"
+  },
+  "source_anchors": [
+    ".pi/pi-1.5.0/packages/ai/src/models.ts:910-968",
+    ".pi/pi-1.5.0/packages/ai/src/api/lazy.ts:58-123"
+  ],
+  "known_workspace_failures": [
+    "schema_engine::encoded_pointer_targets_preserve_selected_resource_identity",
+    "spec_ledger::live_ledger_spec_hash_matches_current_spec"
+  ]
+}
