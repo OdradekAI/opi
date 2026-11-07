@@ -30,5 +30,6 @@ Depends on: [Public ChatStream telemetry constructor](12-public-chatstream-telem
 ## Limits
 
 本票只覆盖正常业务终态的后台结算。显式 abort 在无业务终态时的 observer
-终态、跨 attempt 聚合、raw `start_attempt` 自动观测、图像、分类、deferred cancel、
-真实 provider、完整 feature/platform/MSRV、性能和六门发布验收仍未完成。
+终态由 [issue 15](15-started-chatstream-abort-telemetry.md) 补齐；跨 attempt 聚合、
+raw `start_attempt` 自动观测、图像、分类、deferred cancel、真实 provider、完整
+feature/platform/MSRV、性能和六门发布验收仍未完成。

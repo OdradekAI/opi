@@ -25,6 +25,6 @@
 
 ## 未完成
 
-显式 abort 无业务终态时的 observer 终态、跨 retry attempt 聚合、raw attempt 自动化、
-图像、分类、deferred cancel、完整 provider/feature 矩阵、真实服务、TS/Rust 差分、
-跨平台/MSRV、性能和六门发布验收仍未执行。
+显式 abort 无业务终态时的 observer 终态由后续 issue 15 补齐；跨 retry attempt 聚合、
+raw attempt 自动化、图像、分类、deferred cancel、完整 provider/feature 矩阵、真实
+服务、TS/Rust 差分、跨平台/MSRV、性能和六门发布验收仍未执行。

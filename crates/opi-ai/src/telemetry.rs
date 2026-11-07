@@ -7,6 +7,7 @@
 //! independently of context cloning, future polling or consumer Drop.
 
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use crate::types::usage::{Pricing, calculate_cost};
@@ -319,6 +320,44 @@ impl AiRequestTelemetry {
 /// the normal `ChatStream` contract.
 pub(crate) struct AiRequestObserver {
     inner: Option<AiRequestTelemetry>,
+}
+
+/// Shared one-shot ownership for a request observer that may cross the
+/// `ChatStream`/`StartedChatStream` execution seam.
+///
+/// Normal completion remains owned by `ChatStream`; the started execution can
+/// use the same cell to settle an explicitly aborted task after Tokio confirms
+/// that the task was cancelled. The underlying observer is idempotent, so a
+/// completion/abort race cannot produce a second span or overwrite a terminal
+/// already recorded by the normal path.
+#[derive(Clone)]
+pub(crate) struct SharedAiRequestObserver {
+    inner: Arc<Mutex<AiRequestObserver>>,
+}
+
+impl SharedAiRequestObserver {
+    pub(crate) fn start(
+        context: Option<&TelemetryContext>,
+        attributes: AiRequestAttributes,
+    ) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(AiRequestObserver::start(context, attributes))),
+        }
+    }
+
+    pub(crate) fn on_event(&self, event: &crate::stream::AssistantStreamEvent) {
+        self.inner
+            .lock()
+            .expect("AI telemetry observer lock")
+            .on_event(event);
+    }
+
+    pub(crate) fn finish(&self, message: Option<&crate::message::AssistantMessage>) {
+        self.inner
+            .lock()
+            .expect("AI telemetry observer lock")
+            .finish(message);
+    }
 }
 
 impl AiRequestObserver {

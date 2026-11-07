@@ -299,7 +299,7 @@ pub struct ChatStream {
     inner: Option<crate::provider::EventStream>,
     partial: Option<crate::message::AssistantMessage>,
     terminal: Option<Result<crate::message::AssistantMessage, CallFailure>>,
-    ai_telemetry: Option<crate::telemetry::AiRequestObserver>,
+    ai_telemetry: Option<crate::telemetry::SharedAiRequestObserver>,
 }
 
 struct ProjectionStream {
@@ -402,6 +402,8 @@ impl ChatStream {
     /// [`StartedChatStream`] for buffering, cancellation and panic behavior.
     /// If this stream has an explicit AI telemetry observer, a normal terminal
     /// finishes that observer before the started handle reports its outcome.
+    /// Explicit [`StartedChatStream::abort`] also settles that observer with the
+    /// typed `aborted` outcome after Tokio confirms cancellation.
     ///
     /// # Panics
     ///
@@ -417,11 +419,15 @@ impl ChatStream {
             return StartedChatStream::finished(outcome);
         }
         let progress = self.progress_snapshot();
+        let abort_handler = self.ai_telemetry.clone().map(|observer| {
+            Box::new(move |failure: &CallFailure| observer.finish(Some(failure.message())))
+                as crate::execution::AbortHandler
+        });
         // The background execution owner keeps its established resource
         // contract: once it has forwarded the terminal, it releases the
         // source. Direct `result()` retains the source long enough to drain
         // provider-owned tail work.
-        StartedChatStream::spawn(self, Self::result_without_tail, progress)
+        StartedChatStream::spawn(self, Self::result_without_tail, progress, abort_handler)
     }
 
     pub(crate) fn progress_snapshot(&self) -> ProducerSnapshot {
@@ -463,7 +469,7 @@ impl ChatStream {
             inner: Some(stream),
             partial: None,
             terminal: None,
-            ai_telemetry: Some(crate::telemetry::AiRequestObserver::start(
+            ai_telemetry: Some(crate::telemetry::SharedAiRequestObserver::start(
                 context, attributes,
             )),
         }
@@ -552,7 +558,7 @@ impl Stream for ChatStream {
                 Poll::Ready(Some(Err(failure)))
             }
             Poll::Ready(Some(Ok(event))) => {
-                if let Some(observer) = &mut this.ai_telemetry {
+                if let Some(observer) = &this.ai_telemetry {
                     observer.on_event(&event);
                 }
                 if let Some(partial) = event.latest_partial() {

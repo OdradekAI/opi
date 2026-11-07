@@ -190,6 +190,46 @@ async fn started_observed_chat_stream_finishes_request_telemetry() {
 }
 
 #[tokio::test]
+async fn started_observed_chat_stream_abort_finishes_request_telemetry() {
+    use futures_util::StreamExt as _;
+
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let source: EventStream = Box::pin(
+        futures_util::stream::iter([Ok(AssistantStreamEvent::Start { partial: start })]).chain(
+            futures_util::stream::pending::<
+                Result<AssistantStreamEvent, opi_ai::provider::ProviderError>,
+            >(),
+        ),
+    );
+    let mut started = ChatStream::new_with_telemetry(
+        source,
+        Some(&context),
+        AiRequestAttributes::new("probe", "mock-model", "openai-completions"),
+    )
+    .start();
+    assert!(started.next().await.expect("partial event").is_ok());
+
+    let failure = started
+        .abort()
+        .await
+        .expect_err("explicit abort fails the call");
+    assert_eq!(failure.message().stop_reason, StopReason::Aborted);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("aborted".into()))
+    );
+    assert!(spans[0].end_sequence.is_some());
+}
+
+#[tokio::test]
 async fn already_terminal_observed_chat_stream_finishes_before_start() {
     use futures_util::StreamExt as _;
 

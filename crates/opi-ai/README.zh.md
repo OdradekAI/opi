@@ -340,7 +340,9 @@ provider 自己的尾部工作后再返回缓存结果。`StartedChatStream` 后
 不会安装 observer；provider 自己持有 raw source 时，使用
 `ChatStream::new_with_telemetry(...)` 接入 Pi 风格的 AI telemetry。通过
 `ChatStream::start().result()` 调度到后台时，正常终态仍会在返回前完成同一请求
-observer。省略 context
+observer；observed stream 显式调用 `StartedChatStream::abort()` 时，在 Tokio 确认任务
+已取消后也会用 `stop=aborted` 结算同一 observer；若与正常完成竞态，正常终态优先。
+省略 context
 或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；跨任务传播需显式传入
 context。
 
@@ -1489,7 +1491,8 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 入口及非 chat 操作仍是显式/手动边界；调用方持有的 raw stream 可以用
 `ChatStream::new_with_telemetry`，observed `start_attempt_with_telemetry` helper
 也复用这个构造器；调度 observed stream 后，正常终态仍会完成同一 request
-observer。因此不能宣称每条
+observer；显式 abort 在确认 Tokio cancellation 后以 `stop=aborted` 结算，正常终态
+在竞态中优先。因此不能宣称每条
 provider 执行路径都自动埋点。载体
 回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
 `tests/ai_telemetry.rs`。

@@ -16,6 +16,8 @@ use crate::stream::{AssistantStreamEvent, CallFailure, ProducerSnapshot};
 type Event = Result<AssistantStreamEvent, CallFailure>;
 type Outcome = Result<AssistantMessage, CallFailure>;
 
+pub(crate) type AbortHandler = Box<dyn FnOnce(&CallFailure) + Send + 'static>;
+
 /// The consumer of a chat call scheduled on a Tokio runtime.
 ///
 /// Ordinary [`ChatCall`](crate::ChatCall) wraps this consumer from construction;
@@ -48,14 +50,16 @@ type Outcome = Result<AssistantMessage, CallFailure>;
 /// Provider panics use Tokio's panic hook and are resumed when this handle is
 /// polled or awaited; they are not converted to a successful business result.
 /// If the runtime cancels the task, a waiting consumer receives a typed stream
-/// failure retaining the latest produced partial. No AI span or exporter is
-/// installed by this execution owner.
+/// failure retaining the latest produced partial. This execution owner does
+/// not create telemetry; an observed [`ChatStream`](crate::stream::ChatStream)
+/// may supply an abort finalizer for the same observer it owns.
 pub struct StartedChatStream {
     events: Option<UnboundedReceiver<Event>>,
     execution: Option<JoinHandle<Outcome>>,
     terminal: Option<Outcome>,
     progress: ProducerSnapshot,
     abort_requested: bool,
+    abort_handler: Option<AbortHandler>,
 }
 
 impl StartedChatStream {
@@ -66,10 +70,16 @@ impl StartedChatStream {
             terminal: Some(outcome),
             progress: ProducerSnapshot::default(),
             abort_requested: false,
+            abort_handler: None,
         }
     }
 
-    pub(crate) fn spawn<S, F, R>(mut source: S, finish: F, progress: ProducerSnapshot) -> Self
+    pub(crate) fn spawn<S, F, R>(
+        mut source: S,
+        finish: F,
+        progress: ProducerSnapshot,
+        abort_handler: Option<AbortHandler>,
+    ) -> Self
     where
         S: Stream<Item = Event> + Send + Unpin + 'static,
         F: FnOnce(S) -> R + Send + 'static,
@@ -115,6 +125,7 @@ impl StartedChatStream {
             terminal: None,
             progress,
             abort_requested: false,
+            abort_handler,
         }
     }
 
@@ -144,7 +155,10 @@ impl StartedChatStream {
     /// when other work shares the request. Awaiting this method joins this
     /// execution task only; independently spawned provider tasks and session
     /// resources retain their own cleanup contracts. A source that blocks
-    /// inside a poll must yield before Tokio can abort it.
+    /// inside a poll must yield before Tokio can abort it. When the source is an
+    /// observed [`ChatStream`](crate::stream::ChatStream), its request observer is
+    /// settled with the returned `aborted` outcome after Tokio confirms task
+    /// cancellation.
     ///
     /// The handle retains the task while waiting. Dropping this future after
     /// its first poll does not undo the abort request; `abort`, `result` or
@@ -158,8 +172,16 @@ impl StartedChatStream {
                 task.abort();
             }
             let joined = task.await;
+            let cancelled = joined.as_ref().is_err_and(|error| error.is_cancelled());
             self.execution.take();
-            self.terminal = Some(completed(joined, &self.progress, self.abort_requested));
+            let outcome = completed(joined, &self.progress, self.abort_requested);
+            if cancelled
+                && let Some(handler) = self.abort_handler.take()
+                && let Err(failure) = &outcome
+            {
+                handler(failure);
+            }
+            self.terminal = Some(outcome);
         }
         self.terminal.clone().expect("observed execution outcome")
     }

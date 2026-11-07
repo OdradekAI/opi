@@ -365,7 +365,10 @@ to `StartedChatStream`, with no duplicate terminal. `ChatStream::new(raw)` does
 not install an observer; use `ChatStream::new_with_telemetry(...)` when the
 provider owns the raw source and the host wants Pi-shaped AI telemetry. The
 observed constructor also finishes request telemetry through
-`ChatStream::start().result()` on a normal terminal. An
+`ChatStream::start().result()` on a normal terminal. An explicit
+`started.abort().await` on an observed stream settles that same request
+observer with the typed `aborted` outcome after Tokio confirms task
+cancellation; normal completion wins any race. An
 omitted/no-op context does not capture the consumer's ambient tracing dispatcher; supply an explicit context for propagation.
 
 ## Context, Tools, and Continuation
@@ -1730,7 +1733,9 @@ seam and non-chat operations remain explicit/manual boundaries; caller-owned
 raw streams can opt into the same observer with `ChatStream::new_with_telemetry`,
 and the observed `start_attempt_with_telemetry` helper uses that constructor.
 When the observed stream is scheduled with `ChatStream::start()`, its normal
-terminal still finishes the same request observer before `result()` returns.
+terminal still finishes the same request observer before `result()` returns;
+an explicit `StartedChatStream::abort()` settles it with `stop=aborted` after
+Tokio confirms cancellation. A normal terminal wins a completion/abort race.
 This is not a claim that every
 provider execution path is automatically instrumented. Carrier regression
 tests live at `tests/telemetry_carrier.rs`, and the AI seam tests live at

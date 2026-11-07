@@ -257483,7 +257483,7 @@
         "CAP-STREAM",
         "CAP-EXECUTION"
       ],
-      "status": "started-observed-normal-terminal-settlement-pass-abort-boundary-open",
+      "status": "started-observed-normal-and-explicit-abort-settlement-pass",
       "public_entry_mapping": [
         {
           "entry": "ChatStream::start -> StartedChatStream::result",
@@ -257531,9 +257531,66 @@
         "evidence/phase4-started-chatstream-telemetry-checks.json"
       ],
       "limits": [
-        "No observer completion contract for explicit abort without a business terminal",
-        "No cross-attempt aggregation or automatic raw start_attempt observer",
+        "No automatic raw start_attempt observer",
+        "No cross-attempt aggregation",
         "No image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
+    },
+    {
+      "id": "IMPL-15-STARTED-CHATSTREAM-ABORT-TELEMETRY",
+      "issue": "issues/15-started-chatstream-abort-telemetry.md",
+      "base_commit": "4cb164e",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION"
+      ],
+      "status": "started-observed-explicit-abort-settlement-pass",
+      "public_entry_mapping": [
+        {
+          "entry": "ChatStream::new_with_telemetry -> ChatStream::start -> StartedChatStream::abort",
+          "owner": "stream::ChatStream -> execution::StartedChatStream",
+          "scope": "explicit abort settles the shared pi.ai.request observer only after Tokio confirms task cancellation, using the existing Aborted partial contract"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/telemetry.rs",
+          "status": "shared one-shot observer cell bridges normal ChatStream completion and explicit abort"
+        },
+        {
+          "path": "crates/opi-ai/src/execution.rs",
+          "status": "abort handler runs only for a joined Tokio cancellation and is idempotent with normal completion"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "pending source with partial plus explicit abort proves one settled span with stop=aborted"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "started observed ChatStream explicit-abort pi.ai.request assertion"
+        ],
+        "update": [
+          "StartedChatStream telemetry lifecycle boundary documentation"
+        ],
+        "delete": [],
+        "retain": "normal terminal, already-terminal conversion, raw stream and source-release contracts"
+      },
+      "evidence": [
+        "evidence/phase4-started-chatstream-abort-telemetry-checks.json"
+      ],
+      "limits": [
+        "No automatic raw start_attempt observer",
+        "No cross-attempt aggregation or image/classifier/deferred-cancel observer",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
     },
     {

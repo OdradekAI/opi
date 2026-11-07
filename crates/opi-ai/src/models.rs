@@ -4983,6 +4983,7 @@ impl ChatCall {
                 driver,
                 ChatCallDriver::result,
                 crate::stream::ProducerSnapshot::default(),
+                None,
             ),
         }
     }

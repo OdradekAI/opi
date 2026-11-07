@@ -32,5 +32,5 @@ route/request/auth。多次 attempt 不自动共享或合并 AI request span。
 ## Limits
 
 本票没有新增 logical whole-call aggregator，也没有把 raw attempt 改成 observed
-类型；显式 abort 无业务终态、图像/classifier、deferred cancel、真实 provider、
+类型；图像/classifier、deferred cancel、真实 provider、
 完整 feature/platform/MSRV、性能和六门发布验收仍按原票开放。

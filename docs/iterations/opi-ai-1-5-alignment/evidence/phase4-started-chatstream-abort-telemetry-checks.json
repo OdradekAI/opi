@@ -1,0 +1,42 @@
+{
+  "phase": "phase4-started-chatstream-abort-telemetry",
+  "scope": "explicit abort settlement for an observed ChatStream scheduled through StartedChatStream",
+  "commands": [
+    {
+      "command": "cargo fmt --all --check",
+      "status": "pass"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "pass",
+      "result": "12 passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "pass"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "pass"
+    },
+    {
+      "command": "cargo doc -p opi-ai --no-deps --offline",
+      "status": "pass"
+    },
+    {
+      "command": "cargo test -p opi-ai --lib --offline -j4 --quiet",
+      "status": "pass",
+      "result": "369 passed"
+    }
+  ],
+  "behavior": {
+    "normal_terminal": "existing observer settlement retained",
+    "explicit_abort": "one pi.ai.request span settles with stop=aborted after Tokio confirms cancellation",
+    "race": "finish remains idempotent",
+    "raw_stream": "no automatic observer"
+  },
+  "known_workspace_failures": [
+    "schema_engine::encoded_pointer_targets_preserve_selected_resource_identity",
+    "spec_ledger::live_ledger_spec_hash_matches_current_spec"
+  ]
+}
