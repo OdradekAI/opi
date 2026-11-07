@@ -833,6 +833,10 @@ fn records_request_events_and_result_after_the_terminal_payload() {
         spans[0].attributes.get("cost.total"),
         Some(&AttributeValue::Number(30.0))
     );
+    assert_eq!(
+        spans[0].attributes.get("response.id"),
+        Some(&AttributeValue::String("response-1".into()))
+    );
 
     let measurements = recorder.measurements();
     assert_eq!(measurements.len(), 7);
@@ -914,6 +918,30 @@ fn telemetry_uses_pi_tool_use_stop_reason_spelling() {
     assert_eq!(
         duration.attributes.get("stop"),
         Some(&AttributeValue::String("toolUse".into()))
+    );
+}
+
+#[test]
+fn telemetry_omits_absent_response_id_attribute() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut telemetry = AiRequestTelemetry::start(
+        Some(&context),
+        AiRequestAttributes::new("probe", "model", "api"),
+    )
+    .expect("telemetry starts")
+    .expect("explicit context enables observation");
+    let mut message = base_assistant();
+    message.stop_reason = StopReason::Stop;
+    message.response_id = None;
+
+    telemetry
+        .finish(Some(&message))
+        .expect("result observation");
+
+    assert!(
+        !recorder.spans()[0].attributes.contains_key("response.id"),
+        "optional response.id must be omitted when the provider did not report one"
     );
 }
 

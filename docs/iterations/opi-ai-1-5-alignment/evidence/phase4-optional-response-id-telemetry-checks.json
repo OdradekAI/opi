@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "issue": "issues/23-optional-response-id-telemetry.md",
+  "scope": "preserve the optional response.id shape in AI telemetry",
+  "tdd_observations": [
+    "Before implementation, telemetry_omits_absent_response_id_attribute failed because Rust inserted an empty response.id string for None."
+  ],
+  "commands": [
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry telemetry_omits_absent_response_id_attribute --offline -j4",
+      "status": "passed",
+      "observed": "absent response id is omitted"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry records_request_events_and_result_after_the_terminal_payload --offline -j4",
+      "status": "passed",
+      "observed": "present response id remains exact"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "passed",
+      "observed": "19 passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "passed",
+      "observed": "all opi-ai targets compile"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "passed",
+      "observed": "opi-ai targets pass Clippy with warnings denied"
+    },
+    {
+      "command": "cargo doc -p opi-ai --no-deps --offline",
+      "status": "passed",
+      "observed": "rustdoc generated without warnings"
+    },
+    {
+      "command": "cargo fmt --all --check",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "python -B scripts/opi-doc-check.py",
+      "status": "passed",
+      "observed": "opi documentation contracts: PASS"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch C:/Temp/opi-sdk-response-id-proof-20261108 --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "status": "passed",
+      "observed": "actual .crate external consumer passed both feature profiles; 73/73 public checks passed in each profile"
+    },
+    {
+      "command": "cargo test -p opi-ai --test anthropic_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "153 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test gemini_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "71 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test openai_chat_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "114 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test bedrock_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "178 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test mistral_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "54 passed"
+    }
+  ],
+  "behavior": {
+    "absent": "No response.id span attribute is emitted when AssistantMessage.response_id is None.",
+    "present": "A reported response id is emitted unchanged as a string attribute."
+  },
+  "source_anchors": [
+    ".pi/pi-1.5.0/packages/ai/src/telemetry.ts:182-198",
+    ".pi/pi-1.5.0/packages/ai/src/types.ts:592"
+  ],
+  "limits": [
+    "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
+  ]
+}

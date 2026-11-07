@@ -258105,6 +258105,53 @@
         "Pending is non-terminal; a terminal Done carrying Pending is rejected as a protocol error",
         "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-23-OPTIONAL-RESPONSE-ID-TELEMETRY",
+      "issue": "issues/23-optional-response-id-telemetry.md",
+      "base_commit": "ed76f27",
+      "contracts": [
+        "CAP-TELEMETRY-AI"
+      ],
+      "status": "optional-response-id-shape-preserved",
+      "public_entry_mapping": [
+        {
+          "entry": "AiRequestTelemetry::finish",
+          "owner": "telemetry::AiRequestTelemetry",
+          "scope": "response.id is emitted only when the provider reports an id"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/telemetry.rs",
+          "status": "omits the optional response.id attribute for None"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "pins both absent and present response id shapes"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs::telemetry_omits_absent_response_id_attribute",
+        "crates/opi-ai/tests/ai_telemetry.rs::records_request_events_and_result_after_the_terminal_payload"
+      ],
+      "complementary_tests": [],
+      "test_impact": {
+        "add": [
+          "absent response id is omitted from span attributes"
+        ],
+        "update": [
+          "present response id remains exact"
+        ],
+        "delete": [],
+        "retain": "existing AI telemetry lifecycle and provider fixture coverage"
+      },
+      "evidence": [
+        "evidence/phase4-optional-response-id-telemetry-checks.json"
+      ],
+      "limits": [
+        "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

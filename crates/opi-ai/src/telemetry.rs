@@ -242,10 +242,9 @@ impl AiRequestTelemetry {
                 "usage.cache_write".into(),
                 number(message.usage.cache_write_tokens as f64),
             );
-            end.insert(
-                "response.id".into(),
-                string(message.response_id.as_deref().unwrap_or_default()),
-            );
+            if let Some(response_id) = message.response_id.as_deref() {
+                end.insert("response.id".into(), string(response_id));
+            }
             let cost_total = self
                 .attributes
                 .pricing
