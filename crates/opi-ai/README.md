@@ -1792,14 +1792,21 @@ attempts can use `start_attempt_with_telemetry` when the host wants equivalent
 observation. Omission captures no implicit ambient context. No carrier is
 serialized or placed on the wire, and no global subscriber, exporter, sampling
 policy or automatic SDK root span is installed. Propagation is closed across
-all SDK operations (task 20.55): the four chat entries (native/simple/direct
-and the advanced `prepare_call` path including acquisition retry and the
-strict-variant rebuild), image generation, classifier calls and deferred
-submit/fetch/cancel observe the same frozen pair through their producers and
-scoped poll/drop sections, with default/`noop` carriers staying passive and
-business results unchanged. The assembled all-operation conformance suite
-lives at `tests/telemetry_operations.rs`; the Codex producer path is
-additionally covered by `tests/codex_telemetry.rs`.
+the SDK's carrier boundaries (task 20.55): the four chat entries
+(native/simple/direct and the advanced `prepare_call` path including
+acquisition retry and the strict-variant rebuild), image generation,
+classifier calls and deferred submit/fetch/cancel all receive the same frozen
+pair through their producers and scoped poll/drop sections, with
+default/`noop` carriers staying passive and business results unchanged. This
+carrier propagation does not mean that every operation installs a Pi AI span:
+ordinary chat creates `pi.ai.request`, deferred fetch creates one
+`pi.ai.poll` per fetch, while `cancel_deferred`, image generation and
+classifier calls deliberately create no `pi.ai.*` span. Those non-observed
+operations still pass the explicit context to their adapter so a host or
+adapter can add its own instrumentation without an implicit SDK vocabulary.
+The assembled all-operation conformance suite lives at
+`tests/telemetry_operations.rs`; the Codex producer path is additionally
+covered by `tests/codex_telemetry.rs`.
 
 ## Instance Resource Generation, Pool Cleanup and Awaited Release (task 20.17)
 
@@ -2965,8 +2972,9 @@ replaces the registration wholesale. `Models::validate_deferred_handle`
 exposes the typed pre-auth validation (`RouteMismatch` boxed detail,
 `Expired`, `Unsupported`). Fetch and cancel calls carry an optional frozen
 `TelemetryContext` straight to the backend (AIR-054); submission reuses the
-chat request's existing carrier. No real remote deferred protocol is
-claimed: the published seam serves scripted and custom backends, and
+chat request's existing carrier. Fetch installs `pi.ai.poll`; remote
+`cancel_deferred` does not install a Pi AI span. No real remote deferred
+protocol is claimed: the published seam serves scripted and custom backends, and
 `test_support::ScriptedDeferredBackend` plus
 `MockProvider::with_deferred` provide the deterministic pi-faux scripting
 (pending-fetch countdown, cancel recording, optional forced cancel

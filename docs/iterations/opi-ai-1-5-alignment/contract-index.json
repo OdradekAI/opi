@@ -257838,6 +257838,88 @@
         "No explicit-abort observer completion without a business terminal",
         "No raw start_attempt observer, non-chat observer closure, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-19-NON-CHAT-AI-TELEMETRY-BOUNDARY",
+      "issue": "issues/19-non-chat-ai-telemetry-boundary.md",
+      "base_commit": "4224fa3",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-DEFERRED",
+        "CAP-IMAGES",
+        "CAP-CLASSIFIER"
+      ],
+      "status": "non-chat-and-deferred-cancel-ai-span-boundary-pinned",
+      "public_entry_mapping": [
+        {
+          "entry": "Models::stream_deferred",
+          "owner": "models::Models -> stream::ChatStream -> telemetry::AiRequestTelemetry",
+          "scope": "one pi.ai.poll observer per deferred fetch when an explicit context is supplied"
+        },
+        {
+          "entry": "Models::cancel_deferred",
+          "owner": "models::Models -> deferred::DeferredApi",
+          "scope": "explicit context reaches the adapter, but the SDK creates no pi.ai.* span"
+        },
+        {
+          "entry": "Models::generate_images / Models::classify",
+          "owner": "models::Models -> operation-specific adapter",
+          "scope": "explicit context reaches the adapter, but the SDK creates no pi.ai.* span"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "recorder regression proves deferred remote cancel emits no Pi AI span"
+        },
+        {
+          "path": "crates/opi-ai/tests/deferred_contract.rs",
+          "status": "carrier presence remains observable at the deferred backend"
+        },
+        {
+          "path": "crates/opi-ai/tests/openrouter_fixtures.rs",
+          "status": "image carrier presence remains observable at the adapter"
+        },
+        {
+          "path": "crates/opi-ai/tests/classifier_contract.rs",
+          "status": "classifier carrier presence remains observable at the adapter"
+        },
+        {
+          "path": "crates/opi-ai/README.md",
+          "status": "documents carrier propagation separately from Pi AI observer creation"
+        },
+        {
+          "path": "crates/opi-ai/README.zh.md",
+          "status": "documents carrier propagation separately from Pi AI observer creation"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/deferred_contract.rs",
+        "crates/opi-ai/tests/openrouter_fixtures.rs",
+        "crates/opi-ai/tests/classifier_contract.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "deferred remote cancel with recorder context proves no pi.ai.* span"
+        ],
+        "update": [
+          "bilingual telemetry and deferred documentation"
+        ],
+        "delete": [],
+        "retain": "deferred fetch poll, image/classifier carrier, chat observer and raw adapter boundaries"
+      },
+      "evidence": [
+        "evidence/phase4-non-chat-ai-telemetry-boundary-checks.json"
+      ],
+      "limits": [
+        "No image/classifier/cancel span schema",
+        "Adapter-owned spans are not claimed equivalent to Pi AI spans",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

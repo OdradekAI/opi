@@ -1,0 +1,60 @@
+{
+  "phase": "phase4-non-chat-ai-telemetry-boundary",
+  "scope": "distinguish frozen telemetry-carrier propagation from Pi AI span creation for cancel, image and classifier operations",
+  "commands": [
+    {
+      "command": "cargo fmt --all --check",
+      "status": "pass"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "pass",
+      "result": "16 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test deferred_contract --offline -j4",
+      "status": "pass",
+      "result": "16 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test classifier_contract --offline -j4",
+      "status": "pass",
+      "result": "84 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test openrouter_fixtures images_telemetry_context_passes_through --offline -j4",
+      "status": "pass",
+      "result": "1 passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "pass"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "pass"
+    },
+    {
+      "command": "cargo doc -p opi-ai --no-deps --offline",
+      "status": "pass"
+    },
+    {
+      "command": "python scripts/opi-doc-check.py",
+      "status": "pass"
+    }
+  ],
+  "behavior": {
+    "ordinary_chat": "creates one pi.ai.request observer when an explicit context is supplied",
+    "deferred_fetch": "creates one pi.ai.poll observer per fetch",
+    "deferred_cancel": "forwards the context but creates no pi.ai.* span",
+    "image_and_classifier": "forwards the context to adapters but create no SDK-owned pi.ai.* span"
+  },
+  "source_anchors": [
+    ".pi/pi-1.5.0/packages/ai/src/models.ts:969-1023",
+    ".pi/pi-1.5.0/packages/ai/src/telemetry.ts:123-153"
+  ],
+  "known_workspace_failures": [
+    "schema_engine::encoded_pointer_targets_preserve_selected_resource_identity",
+    "spec_ledger::live_ledger_spec_hash_matches_current_spec"
+  ]
+}

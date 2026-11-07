@@ -1534,13 +1534,17 @@ provider 执行路径都自动埋点。载体
 `ChatStream::new_with_telemetry`，prepared attempt 可使用
 `start_attempt_with_telemetry` 获得等价观测。省略时不隐式
 捕获 ambient 上下文。载体不序列化、不上 wire，不安装 global
-subscriber、exporter、采样政策或自动 SDK root span。全部 SDK 操作的传播已闭合
-（任务 20.55）：四类 chat 入口（native/simple/direct，以及含 acquisition retry
-与 strict 变体重建的 advanced `prepare_call` 路径）、图片生成、分类器调用与
-deferred submit/fetch/cancel 均经各自 producer 与 scoped poll/drop 段观察到同一
-冻结配对；default/`noop` 载体保持被动，业务结果不变。跨操作组装一致性套件位于
-`tests/telemetry_operations.rs`；真实 Codex 路径另由 `tests/codex_telemetry.rs`
-覆盖。
+subscriber、exporter、采样政策或自动 SDK root span。全部 SDK 操作的传播已在
+carrier 边界之间闭合（任务 20.55）：四类 chat 入口
+（native/simple/direct，以及含 acquisition retry 与 strict 变体重建的 advanced
+`prepare_call` 路径）、图片生成、分类器调用与 deferred submit/fetch/cancel 均经
+各自 producer 与 scoped poll/drop 段接收同一冻结配对；default/`noop` 载体保持被动，
+业务结果不变。这不表示每个操作都会安装 Pi AI span：普通 chat 创建
+`pi.ai.request`，deferred fetch 每次创建一个 `pi.ai.poll`，而
+`cancel_deferred`、图片和分类器有意不创建任何 `pi.ai.*` span。这些未观测操作
+仍把显式 context 透传给 adapter，宿主或 adapter 可以自行增加观测，而不会引入
+隐式 SDK 词汇。跨操作组装一致性套件位于 `tests/telemetry_operations.rs`；真实
+Codex 路径另由 `tests/codex_telemetry.rs` 覆盖。
 
 ## 实例 Resource Generation／Pool 清理／Await 释放（任务 20.17）
 
@@ -2492,7 +2496,8 @@ camelCase（`expiresAt`、`pollAfterMs`、`data`）序列化。
 `Models::validate_deferred_handle` 暴露类型化的鉴权前校验（装箱 detail 的
 `RouteMismatch`、`Expired`、`Unsupported`）。fetch/cancel 调用可将可选的
 冻结 `TelemetryContext` 直达后端（AIR-054）；提交复用 chat 请求既有的
-载体。本任务不声称任何真实远端 deferred 协议：发布的接缝服务于脚本化与
+载体。fetch 会创建 `pi.ai.poll`，远端 `cancel_deferred` 不创建 Pi AI span。
+本任务不声称任何真实远端 deferred 协议：发布的接缝服务于脚本化与
 自定义后端，`test_support::ScriptedDeferredBackend` 与
 `MockProvider::with_deferred` 提供确定性的 pi-faux 脚本（pending 倒计时、
 取消记录、可选强制取消失败），`tests/deferred_contract.rs` 中的可重开

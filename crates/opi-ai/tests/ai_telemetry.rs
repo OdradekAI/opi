@@ -1,6 +1,6 @@
 use futures_util::stream;
 use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
-use opi_ai::deferred::DeferredFetchCall;
+use opi_ai::deferred::{DeferredCancelCall, DeferredFetchCall};
 use opi_ai::message::ToolCall;
 use opi_ai::models::{ChatModelRecord, SimpleOptions};
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
@@ -460,6 +460,41 @@ async fn deferred_fetch_auto_records_ai_poll() {
     assert_eq!(
         spans[0].attributes.get("stop"),
         Some(&AttributeValue::String("stop".into()))
+    );
+}
+
+#[tokio::test]
+async fn deferred_cancel_does_not_create_ai_poll() {
+    let recorder = Recorder::default();
+    let backend = Arc::new(ScriptedDeferredBackend::new("probe", "mock-model"));
+    let provider = MockProvider::new("probe", vec![text_response("unused")]);
+    let mut models = single_route_collection(Box::new(provider));
+    models
+        .register_deferred_api(
+            backend.clone(),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                SecretString::from("test-key"),
+            )),
+            AuthProvenanceSource::Static,
+        )
+        .expect("register deferred backend");
+
+    let handle = backend.submit(text_response("deferred result"), 0, None);
+    models
+        .cancel_deferred(
+            &handle,
+            DeferredCancelCall {
+                telemetry_context: Some(recorder.context()),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("deferred cancel succeeds");
+
+    assert!(
+        recorder.spans().is_empty(),
+        "remote deferred cancellation carries telemetry context but does not install a pi.ai span"
     );
 }
 
