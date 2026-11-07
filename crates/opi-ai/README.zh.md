@@ -2431,11 +2431,12 @@ camelCase（`expiresAt`、`pollAfterMs`、`data`）序列化。
 
 获取与取消是针对该 handle 的显式操作：
 
-- `Models::stream_deferred(handle, call) -> EventStream` 先校验 handle
+- `Models::stream_deferred(handle, call) -> ChatStream` 先校验 handle
   （身份，然后按调用方注入的 `now_ms` 校验过期），再经后端注册的
   resolver 解析鉴权，最后恰好派发一次 fetch。派发前失败以单个类型化
-  `Err` 流项呈现，由 `ChatStream` 转换为规范 `CallFailure`（含类型化
-  `CredentialNeeded` 原因）。
+  `Err(CallFailure)` 流项呈现。`call.telemetry_context` 非空时，SDK
+  同时在此边界安装一个 `pi.ai.poll` observer，并用相同的终态结果结算；
+  observer 不会改变 fetch 的业务结果。
 - `Models::fetch_deferred(handle, call)` 驱动该流至单一最终结果：仍
   pending 的结果是 `Ok`，返回消息携带 `StopReason::Deferred` 与 handle；
   ready 的结果交付最终 assistant 消息。`wait_ms = 0`（pi wait0）执行一次

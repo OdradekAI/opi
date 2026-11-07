@@ -2890,12 +2890,13 @@ serializes pi-shaped camelCase (`expiresAt`, `pollAfterMs`, `data`).
 
 Fetch and cancellation are explicit operations on that handle:
 
-- `Models::stream_deferred(handle, call) -> EventStream` validates the
+- `Models::stream_deferred(handle, call) -> ChatStream` validates the
   handle (identity, then expiry against the caller-injected `now_ms`),
   resolves authentication through the backend's registered resolver, and
   dispatches exactly one fetch. Pre-dispatch failures surface as one typed
-  `Err` stream item that `ChatStream` converts into the canonical
-  `CallFailure` (typed `CredentialNeeded` causes included).
+  `Err(CallFailure)` item. When `call.telemetry_context` is present, the
+  SDK also installs one `pi.ai.poll` observer and completes it from the same
+  terminal result; the observer never changes the fetch outcome.
 - `Models::fetch_deferred(handle, call)` drives that stream to the single
   final outcome: still-pending results are `Ok` with
   `StopReason::Deferred` and the handle on the returned message; ready

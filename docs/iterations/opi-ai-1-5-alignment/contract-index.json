@@ -257271,6 +257271,70 @@
         "Rust observer backend failures are intentionally logged and isolated; this is not strict Pi error-channel equivalence",
         "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-10-DEFERRED-AI-TELEMETRY",
+      "issue": "issues/10-deferred-ai-telemetry.md",
+      "base_commit": "1495260",
+      "contracts": [
+        "CAP-DEFERRED",
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-PACKAGE"
+      ],
+      "status": "deferred-poll-automatic-observer-pass-other-boundaries-open",
+      "public_entry_mapping": [
+        {
+          "entry": "Models::stream_deferred",
+          "owner": "models::stream_deferred -> stream::ChatStream",
+          "scope": "deferred handle identity supplies pi.ai.poll attributes; explicit call telemetry context controls observation and ChatStream::result settles the same business outcome"
+        },
+        {
+          "entry": "Models::fetch_deferred",
+          "owner": "Models::stream_deferred(...).result()",
+          "scope": "fetch and direct stream consumption share one observer and one terminal contract"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "raw deferred source remains private; public stream is observed ChatStream"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "memory recorder proves ready fetch and direct ChatStream both emit pi.ai.poll"
+        },
+        {
+          "path": "crates/opi-ai/tests/deferred_contract.rs",
+          "status": "existing pending, cancellation, expiry and carrier contracts remain green"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs",
+        "crates/opi-ai/tests/deferred_contract.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "crates/opi-ai/tests/external_sdk.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "deferred ready fetch and direct stream pi.ai.poll observer assertions"
+        ],
+        "update": [
+          "README return type and automatic deferred poll telemetry contract"
+        ],
+        "delete": [],
+        "retain": "deferred route validation, pending/ready, cancellation and serialized-handle assertions"
+      },
+      "evidence": [
+        "evidence/phase4-deferred-ai-telemetry-checks.json"
+      ],
+      "limits": [
+        "raw/prepared/non-chat other paths and deferred cancel remain manual or open",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

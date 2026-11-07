@@ -1009,7 +1009,7 @@ impl Models {
         Ok(())
     }
 
-    /// Fetch one deferred response as an event stream: validate the handle
+    /// Fetch one deferred response as a [`ChatStream`]: validate the handle
     /// (identity, then expiry), resolve authentication through the
     /// backend's registered resolver, and dispatch exactly one fetch.
     ///
@@ -1017,8 +1017,34 @@ impl Models {
     /// expiry, missing credential) surface as one typed `Err` stream item,
     /// which [`ChatStream`] converts into the canonical `CallFailure`.
     /// `wait_ms = 0` (pi wait0) performs a single status check; the SDK
-    /// never polls implicitly.
-    pub fn stream_deferred(&self, handle: &DeferredHandle, call: DeferredFetchCall) -> EventStream {
+    /// never polls implicitly. When the call carries a telemetry context,
+    /// the SDK installs the Pi-shaped `pi.ai.poll` observer at this boundary
+    /// and completes it with the same result that [`ChatStream::result`]
+    /// returns.
+    pub fn stream_deferred(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> crate::stream::ChatStream {
+        let telemetry_context = call.telemetry_context.clone();
+        let attributes = crate::telemetry::AiRequestAttributes::new(
+            handle.provider.clone(),
+            handle.model_id.clone(),
+            handle.api.clone(),
+        )
+        .as_poll(true);
+        crate::stream::ChatStream::new_with_ai_telemetry(
+            self.stream_deferred_source(handle, call),
+            telemetry_context.as_ref(),
+            attributes,
+        )
+    }
+
+    fn stream_deferred_source(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> EventStream {
         let validated = self
             .deferred_registration(handle)
             .and_then(|registration| {
@@ -1101,7 +1127,7 @@ impl Models {
         handle: &DeferredHandle,
         call: DeferredFetchCall,
     ) -> Result<crate::message::AssistantMessage, CallFailure> {
-        drain_to_completion(self.stream_deferred(handle, call)).await
+        self.stream_deferred(handle, call).result().await
     }
 
     /// Cancel one deferred response remotely, best effort (AIR-043/AIR-044).

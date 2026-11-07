@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "issue": "issues/10-deferred-ai-telemetry.md",
+  "scope": "deferred fetch ChatStream and automatic pi.ai.poll observer",
+  "commands": [
+    {
+      "command": "cargo fmt --all --check",
+      "status": "passed",
+      "observed": "workspace formatting is clean"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "passed",
+      "observed": "6 tests passed, including deferred ready poll telemetry"
+    },
+    {
+      "command": "cargo test -p opi-ai --test deferred_contract --offline -j4",
+      "status": "passed",
+      "observed": "16 deferred contract tests passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "passed",
+      "observed": "all opi-ai targets compile after the ChatStream return-type change"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "passed",
+      "observed": "opi-ai targets pass Clippy with warnings denied"
+    },
+    {
+      "command": "python scripts/opi-doc-check.py; git diff --check",
+      "status": "passed",
+      "observed": "documentation contracts and whitespace checks pass"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch C:/Temp/opi-sdk-feature-proof-20261107d --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "status": "passed",
+      "observed": "actual .crate external consumer passed both feature profiles with 73/73 checks; raw evidence is retained in C:/Temp/opi-sdk-feature-proof-20261107d/evidence.json"
+    }
+  ],
+  "limits": [
+    "Automatic observer coverage is limited to deferred fetch and ordinary Models chat; raw/prepared/non-chat paths remain open.",
+    "No live provider, TS/Rust full differential, cross-platform/MSRV, performance, or six-gate acceptance.",
+    "The two previously recorded unrelated workspace failures remain outside this slice."
+  ]
+}

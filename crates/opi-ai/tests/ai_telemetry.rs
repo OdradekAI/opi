@@ -1,3 +1,5 @@
+use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
+use opi_ai::deferred::DeferredFetchCall;
 use opi_ai::message::ToolCall;
 use opi_ai::models::{ChatModelRecord, SimpleOptions};
 use opi_ai::provider::{EventStream, Provider, Request};
@@ -5,10 +7,13 @@ use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::telemetry::{
     AI_BLOCK, AI_FIRST_CHUNK, AiRequestAttributes, AiRequestTelemetry, ai_telemetry_schema,
 };
-use opi_ai::test_support::{MockProvider, base_assistant, single_route_collection};
+use opi_ai::test_support::{
+    MockProvider, ScriptedDeferredBackend, base_assistant, single_route_collection, text_response,
+};
 use opi_ai::transcript::normalize_context;
 use opi_telemetry::memory::Recorder;
 use opi_telemetry::{AttributeValue, SpanStatus};
+use secrecy::SecretString;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -90,6 +95,71 @@ async fn ordinary_models_chat_auto_records_ai_request() {
     assert_eq!(
         spans[0].events[1].attributes.get("chars"),
         Some(&AttributeValue::Number(3.0))
+    );
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+}
+
+#[tokio::test]
+async fn deferred_fetch_auto_records_ai_poll() {
+    let recorder = Recorder::default();
+    let telemetry_context = recorder.context();
+    let backend = Arc::new(ScriptedDeferredBackend::new("probe", "mock-model"));
+    let provider = MockProvider::new("probe", vec![text_response("unused")]);
+    let mut models = single_route_collection(Box::new(provider));
+    models
+        .register_deferred_api(
+            backend.clone(),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                SecretString::from("test-key"),
+            )),
+            AuthProvenanceSource::Static,
+        )
+        .expect("register deferred backend");
+
+    let handle = backend.submit(text_response("deferred result"), 0, None);
+    let message = models
+        .fetch_deferred(
+            &handle,
+            DeferredFetchCall {
+                telemetry_context: Some(telemetry_context),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("deferred fetch succeeds");
+    assert_eq!(message.stop_reason, StopReason::Stop);
+
+    let streamed = models
+        .stream_deferred(
+            &handle,
+            DeferredFetchCall {
+                telemetry_context: Some(recorder.context()),
+                ..Default::default()
+            },
+        )
+        .result()
+        .await
+        .expect("deferred ChatStream succeeds");
+    assert_eq!(streamed.stop_reason, StopReason::Stop);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 2);
+    assert!(spans.iter().all(|span| span.name == "pi.ai.poll"));
+    assert_eq!(
+        spans[0].attributes.get("provider"),
+        Some(&AttributeValue::String("probe".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("model"),
+        Some(&AttributeValue::String("mock-model".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("api"),
+        Some(&AttributeValue::String("scripted-deferred".into()))
     );
     assert_eq!(
         spans[0].attributes.get("stop"),
