@@ -27,6 +27,11 @@
       "result": "1 passed"
     },
     {
+      "command": "cargo test -p opi-ai --test classifier_contract classify_passes_frozen_telemetry_context --offline -j4",
+      "status": "pass",
+      "result": "1 passed"
+    },
+    {
       "command": "cargo check -p opi-ai --all-targets --offline -j4",
       "status": "pass"
     },
@@ -47,7 +52,7 @@
     "ordinary_chat": "creates one pi.ai.request observer when an explicit context is supplied",
     "deferred_fetch": "creates one pi.ai.poll observer per fetch",
     "deferred_cancel": "forwards the context but creates no pi.ai.* span",
-    "image_and_classifier": "forwards the context to adapters but create no SDK-owned pi.ai.* span"
+    "image_and_classifier": "forwards the context to adapters but create no SDK-owned pi.ai.* span; recorder regressions cover both operations"
   },
   "source_anchors": [
     ".pi/pi-1.5.0/packages/ai/src/models.ts:969-1023",

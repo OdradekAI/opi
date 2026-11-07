@@ -257904,7 +257904,7 @@
       ],
       "test_impact": {
         "add": [
-          "deferred remote cancel with recorder context proves no pi.ai.* span"
+          "deferred remote cancel, image generation and classifier recorder contexts prove no pi.ai.* span"
         ],
         "update": [
           "bilingual telemetry and deferred documentation"

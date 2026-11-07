@@ -20,7 +20,7 @@ adapter，不自动创建 `pi.ai.*` span。这与 Pi 1.5.0 的 `Models` 入口�
 
 - `ai_telemetry` 新增 deferred remote cancel + recorder 回归测试，断言没有
   `pi.ai.poll` 或 `pi.ai.request`；
-- 现有 deferred fetch poll、image carrier、classifier carrier 测试继续通过；
+- deferred fetch poll、image carrier/no-span、classifier carrier/no-span 测试继续通过；
 - 文档检查和 JSON contract index 校验通过。
 
 ## 未完成

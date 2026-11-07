@@ -29,8 +29,8 @@ creation for deferred cancellation, image generation and classification.
 
 - cancelling a registered deferred response with a recorder context succeeds
   without emitting a `pi.ai.poll` or `pi.ai.request` span;
-- existing image and classifier carrier tests continue to prove context
-  presence reaches the adapter;
+- image and classifier recorder regressions prove context reaches the adapter
+  without creating a Pi AI span;
 - bilingual README text distinguishes carrier propagation from AI observer
   creation;
 - deferred fetch continues to emit exactly one `pi.ai.poll` per fetch.
