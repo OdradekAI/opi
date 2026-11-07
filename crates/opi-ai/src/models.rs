@@ -3853,7 +3853,9 @@ impl PreparedProviderCall {
     /// keeps [`start_attempt`](Self::start_attempt) available as the raw
     /// attempt seam used by retry/admission controllers, while exposing the
     /// same terminal absorption, source-tail settlement and optional
-    /// `pi.ai.request` observer as ordinary `Models` chat calls. An explicit
+    /// `pi.ai.request` observer as ordinary `Models` chat calls. Each invocation
+    /// owns one attempt span; sequential retry attempts are not implicitly
+    /// aggregated. An explicit
     /// [`Request::telemetry_context`](crate::provider::Request::telemetry_context)
     /// enables observation; omission keeps the stream business-only.
     pub fn start_attempt_with_telemetry(&self) -> Result<crate::stream::ChatStream, ModelsError> {

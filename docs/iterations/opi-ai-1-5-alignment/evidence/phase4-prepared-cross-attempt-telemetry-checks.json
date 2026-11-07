@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "issue": "issues/14-prepared-cross-attempt-telemetry.md",
+  "scope": "prepared observed attempt telemetry remains per-attempt across a retryable failure and a successful retry",
+  "commands": [
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry prepared_attempt_observation_is_per_attempt_without_cross_attempt_aggregation --offline -j4",
+      "status": "passed",
+      "observed": "one retryable failure and one successful attempt produce two settled pi.ai.request spans"
+    },
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "passed",
+      "observed": "11 tests passed, including the cross-attempt boundary regression"
+    },
+    {
+      "command": "cargo fmt --all; git diff --check",
+      "status": "passed",
+      "observed": "workspace formatting and whitespace checks pass"
+    },
+    {
+      "command": "python scripts/opi-doc-check.py",
+      "status": "passed",
+      "observed": "documentation contracts pass"
+    },
+    {
+      "command": "python -c \"import json; [json.load(open(p, encoding='utf-8')) for p in ['docs/iterations/opi-ai-1-5-alignment/contract-index.json','docs/iterations/opi-ai-1-5-alignment/evidence/phase4-prepared-cross-attempt-telemetry-checks.json']]\"",
+      "status": "passed",
+      "observed": "contract index and evidence JSON parse as UTF-8 JSON"
+    }
+  ],
+  "limits": [
+    "No automatic logical whole-call cross-attempt aggregator",
+    "No explicit-abort observer completion without a business terminal",
+    "No raw start_attempt observer, non-chat observer closure, live provider, complete feature/platform/MSRV, performance or six-gate acceptance",
+    "The two previously recorded unrelated workspace failures remain outside this slice"
+  ]
+}

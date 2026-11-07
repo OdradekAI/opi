@@ -310,7 +310,9 @@ let outcome = started.result().await;
 结算，可以使用返回 `ChatStream` 的
 `prepared.start_attempt_with_telemetry()?`；显式传入的 request telemetry context
 会自动安装 observer。原始 `start_attempt()` 仍保留给 retry/admission controller
-使用。provider 已持有 raw `EventStream` 时，可以用
+使用。observed prepared helper 每个 attempt 各拥有一个 `pi.ai.request` span，
+不会把顺序重试的多个 attempt 自动聚合成一个 span；需要 logical whole-call
+视图时，由上层调用方拥有聚合。provider 已持有 raw `EventStream` 时，可以用
 `ChatStream::new_with_telemetry(source, context, attributes)` 接入同一 observer
 与结果合同。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
 runtime 运行，直至请求完成。

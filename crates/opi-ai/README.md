@@ -327,6 +327,9 @@ observes an explicit request telemetry context. A custom provider that already
 has an `EventStream` can use `ChatStream::new_with_telemetry(source, context,
 attributes)` for the same observer and result contract. The original
 `start_attempt()` remains the raw attempt seam for retry/admission controllers.
+The observed prepared helper owns one `pi.ai.request` span per attempt. It does
+not aggregate sequential retry attempts into one span; a caller that needs a
+logical whole-call view must own that higher-level aggregation.
 Scheduling does not
 mean authentication has completed before `start()` returns; keep the runtime
 alive for the request to finish.

@@ -7,7 +7,8 @@ Baseline: opi 90f953d5ee288c165dc295bfdfb7cb7a05d7cecd; initial worktree clean; 
 `pi.ai.poll` 自动观测、prepared attempt 的 observed helper，以及供独立 provider
 使用的公开 `ChatStream::new_with_telemetry` 均已落地；其 `ChatStream::start()` 正常
 后台终态也会完成同一 observer。无观测的 raw ChatStream、
-prepared raw attempt、非 chat 其他路径与跨 attempt 聚合仍开放；完整 provider
+prepared raw attempt、非 chat 其他路径仍开放；prepared observed helper 的跨 attempt
+聚合已明确为调用方责任，不自动合并；完整 provider
 覆盖、feature 矩阵与 Pi 差分仍开放。各票独立维护检查范围，不代表完整能力对齐
 通过。答案细节以各决策票的 Answer 为准，研究报告只提供证据。
 

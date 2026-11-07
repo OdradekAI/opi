@@ -257346,7 +257346,7 @@
         "CAP-EXECUTION",
         "CAP-PACKAGE"
       ],
-      "status": "prepared-observed-helper-pass-raw-and-cross-attempt-boundaries-open",
+      "status": "prepared-observed-helper-pass-raw-and-cross-attempt-aggregation-caller-owned",
       "public_entry_mapping": [
         {
           "entry": "PreparedProviderCall::start_attempt_with_telemetry",
@@ -257413,7 +257413,7 @@
         "CAP-STREAM",
         "CAP-PACKAGE"
       ],
-      "status": "public-explicit-observed-chatstream-pass-automatic-and-cross-attempt-boundaries-open",
+      "status": "public-explicit-observed-chatstream-pass-automatic-and-cross-attempt-aggregation-caller-owned",
       "public_entry_mapping": [
         {
           "entry": "ChatStream::new_with_telemetry",
@@ -257534,6 +257534,74 @@
         "No observer completion contract for explicit abort without a business terminal",
         "No cross-attempt aggregation or automatic raw start_attempt observer",
         "No image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
+    },
+    {
+      "id": "IMPL-14-PREPARED-CROSS-ATTEMPT-TELEMETRY",
+      "issue": "issues/14-prepared-cross-attempt-telemetry.md",
+      "base_commit": "e089aa2",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION"
+      ],
+      "status": "prepared-observed-per-attempt-span-pass-cross-attempt-aggregation-caller-owned",
+      "public_entry_mapping": [
+        {
+          "entry": "PreparedProviderCall::start_attempt_with_telemetry",
+          "owner": "models::PreparedProviderCall -> stream::ChatStream",
+          "scope": "one observed prepared attempt owns one settled pi.ai.request span; sequential retry attempts are not implicitly aggregated"
+        },
+        {
+          "entry": "PreparedProviderCall::start_attempt",
+          "owner": "models::PreparedProviderCall",
+          "scope": "raw EventStream retry/admission seam remains unchanged and unobserved"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "scripted retryable failure followed by success proves two independently settled request spans"
+        },
+        {
+          "path": "crates/opi-ai/README.md",
+          "status": "documents per-attempt observation and caller-owned whole-call aggregation"
+        },
+        {
+          "path": "crates/opi-ai/README.zh.md",
+          "status": "documents per-attempt observation and caller-owned whole-call aggregation"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/phase4-prepared-cross-attempt-telemetry.md",
+          "status": "records the settled boundary and evidence scope"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "prepared observed retry sequence with separate error and stop spans"
+        ],
+        "update": [
+          "bilingual prepared attempt telemetry boundary documentation"
+        ],
+        "delete": [],
+        "retain": "raw attempt, admission, retry budget, cancellation, resource and credential-terminal coverage"
+      },
+      "evidence": [
+        "evidence/phase4-prepared-cross-attempt-telemetry-checks.json"
+      ],
+      "limits": [
+        "No automatic logical whole-call aggregator",
+        "No explicit-abort observer completion without a business terminal",
+        "No raw start_attempt observer, non-chat observer closure, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
     }
   ]

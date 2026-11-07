@@ -4,12 +4,14 @@ use opi_ai::deferred::DeferredFetchCall;
 use opi_ai::message::ToolCall;
 use opi_ai::models::{ChatModelRecord, SimpleOptions};
 use opi_ai::provider::{EventStream, Provider, Request};
+use opi_ai::retry::AcquisitionPolicy;
 use opi_ai::stream::{AssistantStreamEvent, ChatStream, StopReason};
 use opi_ai::telemetry::{
     AI_BLOCK, AI_FIRST_CHUNK, AiRequestAttributes, AiRequestTelemetry, ai_telemetry_schema,
 };
 use opi_ai::test_support::{
-    MockProvider, ScriptedDeferredBackend, base_assistant, single_route_collection, text_response,
+    MockProvider, MockResponse, ScriptedDeferredBackend, base_assistant, single_route_collection,
+    text_response,
 };
 use opi_ai::transcript::normalize_context;
 use opi_telemetry::memory::Recorder;
@@ -371,6 +373,108 @@ async fn prepared_attempt_observed_helper_records_ai_request() {
         spans[0].attributes.get("stop"),
         Some(&AttributeValue::String("stop".into()))
     );
+}
+
+#[tokio::test]
+async fn prepared_attempt_observation_is_per_attempt_without_cross_attempt_aggregation() {
+    let recorder = Recorder::default();
+    let telemetry_context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let mut message = start.clone();
+    message.stop_reason = StopReason::Stop;
+    message
+        .content
+        .push(opi_ai::message::AssistantContent::Text {
+            text: "retry-success".into(),
+            signature: None,
+        });
+
+    let provider = MockProvider::new_with_errors(
+        "probe",
+        vec![MockResponse::DelayedAfter {
+            pending_attempts: 1,
+            retry_after_ms: Some(0),
+            events: vec![
+                AssistantStreamEvent::Start {
+                    partial: start.clone(),
+                },
+                AssistantStreamEvent::Done {
+                    reason: StopReason::Stop,
+                    message: message.clone(),
+                },
+            ],
+        }],
+    );
+    let models = single_route_collection(Box::new(provider));
+    let request = Request {
+        model: "probe:mock-model".into(),
+        context: normalize_context(Default::default()).expect("empty context normalizes"),
+        projection: Default::default(),
+        transport: Default::default(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: Default::default(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        telemetry_context: Some(telemetry_context),
+        callbacks: Default::default(),
+    };
+
+    let prepared = models
+        .prepare_call_with_policy(
+            "probe:mock-model",
+            request,
+            AcquisitionPolicy::with_max_retries(1),
+        )
+        .await
+        .expect("prepared call resolves");
+    let first = prepared
+        .start_attempt_with_telemetry()
+        .expect("first observed attempt starts")
+        .result()
+        .await
+        .expect_err("first attempt is the scripted retryable failure");
+    assert_eq!(first.message().stop_reason, StopReason::Error);
+    assert_eq!(
+        prepared
+            .retry_admission()
+            .expect("retry is admitted")
+            .retry_index,
+        1
+    );
+
+    let result = prepared
+        .start_attempt_with_telemetry()
+        .expect("second observed attempt starts")
+        .result()
+        .await
+        .expect("retry succeeds");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+
+    let spans = recorder.spans();
+    assert_eq!(
+        spans.len(),
+        2,
+        "each prepared attempt owns one request span"
+    );
+    assert!(spans.iter().all(|span| span.name == "pi.ai.request"));
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("error".into()))
+    );
+    assert_eq!(
+        spans[1].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+    assert!(spans.iter().all(|span| span.end_sequence.is_some()));
 }
 
 #[test]
