@@ -11,6 +11,7 @@ use opi_ai::provider::{
 };
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
+use opi_telemetry::memory::Recorder;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -616,8 +617,6 @@ use opi_ai::images::{
     ImagesOutput, ImagesStopReason,
 };
 use opi_ai::models::{ApiId, Models};
-use opi_ai::telemetry::TelemetryContext;
-
 fn image_cost_rates() -> ImageCostRates {
     ImageCostRates {
         input: 3.0,
@@ -1750,6 +1749,7 @@ async fn image_custom_native_option_validation_runs_before_auth() {
 
 #[tokio::test]
 async fn images_telemetry_context_passes_through() {
+    let recorder = Recorder::default();
     let server = wiremock::MockServer::start().await;
     wiremock::Mock::given(method("POST"))
         .and(path("/chat/completions"))
@@ -1771,13 +1771,17 @@ async fn images_telemetry_context_passes_through() {
                 input: vec![ImagesInput::Text { text: "hi".into() }],
             },
             ImagesCall {
-                telemetry_context: Some(TelemetryContext::noop()),
+                telemetry_context: Some(recorder.context()),
                 ..images_call()
             },
         )
         .await;
 
     assert_eq!(result.stop_reason, ImagesStopReason::Stop);
+    assert!(
+        recorder.spans().is_empty(),
+        "image generation carries telemetry context but does not install a pi.ai span"
+    );
 }
 
 #[tokio::test]

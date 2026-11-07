@@ -39,6 +39,7 @@ use opi_ai::model_info::{ModelPricing, PricingTier};
 use opi_ai::models::{ApiId, Models, ModelsError};
 use opi_ai::provider::ProviderError;
 use opi_ai::stream::Pricing;
+use opi_telemetry::memory::Recorder;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
@@ -1186,6 +1187,7 @@ async fn classify_callbacks_observe_payload_then_response() {
 
 #[tokio::test]
 async fn classify_passes_frozen_telemetry_context() {
+    let recorder = Recorder::default();
     let server = MockServer::start().await;
     Mock::given(method("POST"))
         .and(path("/systemone"))
@@ -1197,11 +1199,15 @@ async fn classify_passes_frozen_telemetry_context() {
     let record = classifier_record(server.uri());
     let (models, _handle) = classifier_models(&record);
     let call = ClassifierCall {
-        telemetry_context: Some(opi_ai::telemetry::TelemetryContext::noop()),
+        telemetry_context: Some(recorder.context()),
         ..Default::default()
     };
     let result = models.classify(record, classify_context(), call).await;
     assert_eq!(result.stop_reason, ClassifierStopReason::Stop);
+    assert!(
+        recorder.spans().is_empty(),
+        "classification carries telemetry context but does not install a pi.ai span"
+    );
 }
 
 #[tokio::test]
