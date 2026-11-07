@@ -330,6 +330,9 @@ runtime 运行，直至请求完成。
 `call.abort().await` 在确认执行任务已被 Tokio 取消后，会把自动安装的
 `pi.ai.request` observer 以 `stop=aborted` 结算。如果 provider 在 abort 生效前
 已经到达正常终态，同一 observer 仍保持幂等，正常终态优先。
+保留的 `Request::cancel` token 所触发的协作式取消则沿 provider 的类型化
+`ProviderError::Cancelled` 终态结算；普通 observer 同样记录
+`stop=aborted`，但不会经过 force-abort handler。
 
 未读事件保存在**无固定上限的 FIFO** 中，因此慢读或全不读取不会阻塞执行；内存
 随未读事件增长。`result()` 首次 poll 时丢弃积压，消费句柄 Drop 也立即释放积压。
@@ -1501,6 +1504,10 @@ observer；显式 abort 在确认 Tokio cancellation 后以 `stop=aborted` 结�
 provider 执行路径都自动埋点。载体
 回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
 `tests/ai_telemetry.rs`。
+
+普通 chat 的 request-token 协作式取消另由 provider 交付的
+`ProviderError::Cancelled` 终态驱动 observer 结算；它与外层
+`ChatCall::abort()` 的强制取消是两个可观察路径。
 
 - **`TelemetryContext::from_span(span)`** 通过 `Span::with_subscriber` 冻结 parent
   `tracing::Span` 与其自身 `Dispatch` 的配对。即使创建或 poll 时另有当前

@@ -350,6 +350,9 @@ For an ordinary `Models` call with an explicit `Request::telemetry_context`,
 observer with `stop=aborted` after the execution task is confirmed cancelled.
 The same shared observer remains idempotent if the provider reaches a normal
 terminal before the abort takes effect.
+Cooperative cancellation through the retained `Request::cancel` token follows
+the provider's typed `ProviderError::Cancelled` terminal instead; the ordinary
+observer settles from that terminal with the same `stop=aborted` outcome.
 
 Unread events are retained in an **unbounded FIFO** so a slow or absent reader
 cannot block execution. Memory grows with the unread events; `result()` drops
@@ -1741,6 +1744,9 @@ and the observed `start_attempt_with_telemetry` helper uses that constructor.
 An explicit `ChatCall::abort()` on an ordinary observed call settles the same
 observer with `stop=aborted` after Tokio confirms cancellation; normal
 completion remains the completion authority.
+Request-token cancellation is verified separately through the provider's
+typed `Cancelled` terminal and settles the same observer without using the
+force-abort handler.
 When the observed stream is scheduled with `ChatStream::start()`, its normal
 terminal still finishes the same request observer before `result()` returns;
 an explicit `StartedChatStream::abort()` settles it with `stop=aborted` after

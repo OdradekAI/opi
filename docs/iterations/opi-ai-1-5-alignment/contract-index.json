@@ -257652,6 +257652,64 @@
       ]
     },
     {
+      "id": "IMPL-17-REQUEST-TOKEN-CANCEL-TELEMETRY",
+      "issue": "issues/17-request-token-cancel-telemetry.md",
+      "base_commit": "920556e",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION",
+        "CAP-MODELS-DISPATCH"
+      ],
+      "status": "ordinary-request-token-cancel-settlement-pass",
+      "public_entry_mapping": [
+        {
+          "entry": "Models::stream_simple -> Request::cancel -> ChatCall::result",
+          "owner": "models::ChatCallDriver -> stream::ChatStream -> telemetry::AiRequestTelemetry",
+          "scope": "provider-cooperative cancellation reaches the typed Cancelled terminal and settles the automatically installed pi.ai.request observer"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "ordinary ChatCall keeps the request token in the frozen setup and routes the provider cancellation through normal result settlement"
+        },
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "CallFailure maps ProviderError::Cancelled to StopReason::Aborted while the normal ChatStream path remains completion authority"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "hanging mock provider plus retained request token proves typed cancellation and one settled stop=aborted span"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "ordinary Models request-token cancellation pi.ai.request assertion"
+        ],
+        "update": [
+          "bilingual cooperative-cancellation telemetry documentation"
+        ],
+        "delete": [],
+        "retain": "ordinary normal completion, explicit ChatCall abort, started-stream abort, prepared-attempt and raw collector boundaries"
+      },
+      "evidence": [
+        "evidence/phase4-ordinary-request-token-cancel-telemetry-checks.json"
+      ],
+      "limits": [
+        "No automatic raw start_attempt observer",
+        "No cross-attempt aggregation or image/classifier/deferred-cancel observer",
+        "No live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
+    },
+    {
       "id": "IMPL-14-PREPARED-CROSS-ATTEMPT-TELEMETRY",
       "issue": "issues/14-prepared-cross-attempt-telemetry.md",
       "base_commit": "e089aa2",
