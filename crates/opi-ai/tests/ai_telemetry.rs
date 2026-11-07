@@ -870,6 +870,50 @@ fn records_request_events_and_result_after_the_terminal_payload() {
 }
 
 #[test]
+fn provider_reported_cost_drives_telemetry_total() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut telemetry = AiRequestTelemetry::start(
+        Some(&context),
+        AiRequestAttributes::new("probe", "model", "api").with_pricing(opi_ai::stream::Pricing {
+            input_cost_per_mtok: 1_000_000.0,
+            output_cost_per_mtok: 1_000_000.0,
+            ..Default::default()
+        }),
+    )
+    .expect("telemetry starts")
+    .expect("explicit context enables observation");
+
+    let mut message = base_assistant();
+    message.stop_reason = StopReason::Stop;
+    message.usage =
+        opi_ai::stream::Usage::reported(1, 1, 0, 0, None, None).with_cost(opi_ai::CostBreakdown {
+            input_cost: 1.0,
+            output_cost: 1.0,
+            total: 7.5,
+            total_from_provider: true,
+            ..Default::default()
+        });
+    telemetry
+        .finish(Some(&message))
+        .expect("result observation");
+
+    let spans = recorder.spans();
+    assert_eq!(
+        spans[0].attributes.get("cost.total"),
+        Some(&AttributeValue::Number(7.5))
+    );
+    assert_eq!(
+        recorder
+            .measurements()
+            .iter()
+            .find(|measurement| measurement.definition.name == "pi.ai.cost")
+            .map(|measurement| measurement.value),
+        Some(7.5)
+    );
+}
+
+#[test]
 fn pending_poll_does_not_record_token_or_cost_counters() {
     let recorder = Recorder::default();
     let context = recorder.context();

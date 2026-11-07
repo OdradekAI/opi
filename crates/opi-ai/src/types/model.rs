@@ -1191,6 +1191,8 @@ pub fn calculate_cost_tiered(
         output_cost: cost.output_cost * multiplier,
         cache_read_cost: cost.cache_read_cost * multiplier,
         cache_write_cost: cost.cache_write_cost * multiplier,
+        total: cost.total * multiplier,
+        total_from_provider: false,
     };
     [
         cost.input_cost,
@@ -1340,6 +1342,19 @@ impl ModelInfo {
             (self.pricing.as_ref()?, self.id.as_str())
         };
         calculate_cost_tiered(&response.usage, pricing, model_id, self.wire_api)
+    }
+
+    /// Apply catalog pricing to a response while preserving a provider
+    /// reported total, if the adapter already captured one.
+    pub fn apply_response_cost(&self, response: &mut crate::types::message::AssistantMessage) {
+        let provider_total = response.usage.cost;
+        if let Some(catalog) = self.calculate_response_cost(response) {
+            response.usage.cost = catalog;
+            if provider_total.total_from_provider {
+                response.usage.cost.total = provider_total.total;
+                response.usage.cost.total_from_provider = true;
+            }
+        }
     }
 
     /// Attach model-base sampling parameters, preserving an explicit empty map.

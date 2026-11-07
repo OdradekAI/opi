@@ -245,11 +245,16 @@ impl AiRequestTelemetry {
             if let Some(response_id) = message.response_id.as_deref() {
                 end.insert("response.id".into(), string(response_id));
             }
-            let cost_total = self
-                .attributes
-                .pricing
-                .map(|pricing| calculate_cost(&message.usage, &pricing).total_cost())
-                .unwrap_or(0.0);
+            let cost_total = if message.usage.cost.total_from_provider {
+                message.usage.cost.total
+            } else if message.usage.cost.catalog_total_cost() != 0.0 {
+                message.usage.cost.total_cost()
+            } else {
+                self.attributes
+                    .pricing
+                    .map(|pricing| calculate_cost(&message.usage, &pricing).total_cost())
+                    .unwrap_or(0.0)
+            };
             end.insert("cost.total".into(), number(cost_total));
             self.span.set_attributes(&end)?;
             if matches!(message.stop_reason, crate::stream::StopReason::Error) {

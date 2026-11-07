@@ -50,6 +50,13 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
     parse_sse_events_with_raw(input).map(|(parsed, _raw)| parsed)
 }
 
+/// Parse OpenRouter-compatible usage fields in addition to the standard
+/// OpenAI Chat event shape. Generic parsing intentionally leaves those fields
+/// as opaque extension data, matching Pi's provider-gated accounting.
+pub fn parse_sse_events_for_openrouter(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
+    parse_sse_events_with_raw_for_model(input, true).map(|(parsed, _raw)| parsed)
+}
+
 /// [`parse_sse_events`] paired with each processed frame's raw wire JSON
 /// (task 20.51): the raw-event callback observes exactly these values, before
 /// normalization. The `[DONE]` sentinel and malformed frames carry no raw
@@ -57,7 +64,15 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
 pub fn parse_sse_events_with_raw(
     input: &str,
 ) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
-    parse_frames(input).filter_map(|frame| {
+    parse_sse_events_with_raw_for_model(input, false)
+}
+
+/// [`parse_sse_events_with_raw`] with an explicit provider route flag.
+pub fn parse_sse_events_with_raw_for_model(
+    input: &str,
+    is_openrouter: bool,
+) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
+    parse_frames(input).filter_map(move |frame| {
         if frame.data == "[DONE]" {
             return None;
         }
@@ -65,7 +80,7 @@ pub fn parse_sse_events_with_raw(
         match serde_json::from_str::<OpenAiRawChunk>(&frame.data) {
             Ok(raw_chunk) => Some(match validate_usage_subset(&raw_chunk) {
                 Ok(()) => (
-                    ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw_chunk)),
+                    ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw_chunk, is_openrouter)),
                     raw,
                 ),
                 Err(error) => (ParsedEvent::UsageError(error), raw),
@@ -193,11 +208,21 @@ struct RawUsage {
     prompt_tokens_details: Option<RawPromptTokenDetails>,
     #[serde(default)]
     completion_tokens_details: Option<RawCompletionTokenDetails>,
+    /// OpenRouter billing fields are outside the OpenAI schema but arrive on
+    /// the same usage object for compatible routes.
+    #[serde(default)]
+    cost: Option<f64>,
+    #[serde(default)]
+    is_byok: Option<bool>,
+    #[serde(default)]
+    cost_details: Option<crate::openrouter::OpenRouterCostDetails>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawPromptTokenDetails {
     cached_tokens: Option<u32>,
+    #[serde(default)]
+    cache_write_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -290,7 +315,7 @@ pub enum OpenAiChatEvent {
 }
 
 impl OpenAiChatEvent {
-    fn from_raw_vec(raw: OpenAiRawChunk) -> Vec<Self> {
+    fn from_raw_vec(raw: OpenAiRawChunk, is_openrouter: bool) -> Vec<Self> {
         // Check for top-level error
         if let Some(err) = raw.error {
             return vec![OpenAiChatEvent::Error {
@@ -304,20 +329,39 @@ impl OpenAiChatEvent {
                 .as_ref()
                 .and_then(|d| d.cached_tokens)
                 .unwrap_or(0);
+            let cache_write = u
+                .prompt_tokens_details
+                .as_ref()
+                .and_then(|d| d.cache_write_tokens)
+                .unwrap_or(0);
             let output = u.completion_tokens.unwrap_or(0);
             let reasoning = u
                 .completion_tokens_details
                 .as_ref()
                 .and_then(|d| d.reasoning_tokens);
-            Usage::reported(
-                u.prompt_tokens.unwrap_or(0),
+            let mut usage = Usage::reported(
+                u.prompt_tokens
+                    .unwrap_or(0)
+                    .saturating_sub(cached)
+                    .saturating_sub(cache_write),
                 output,
                 cached,
-                0,
+                cache_write,
                 None, // cache_write_1h_tokens — Chat doesn't write cache
                 reasoning,
             )
-            .with_total_tokens(u.total_tokens.map(u64::from))
+            .with_total_tokens(u.total_tokens.map(u64::from));
+            if is_openrouter {
+                crate::openrouter::apply_openrouter_reported_cost(
+                    &mut usage,
+                    &crate::openrouter::OpenRouterUsageAccounting {
+                        cost: u.cost,
+                        is_byok: u.is_byok,
+                        cost_details: u.cost_details,
+                    },
+                );
+            }
+            usage
         });
 
         let response_id = raw.id.clone();
@@ -533,6 +577,7 @@ pub struct OpenAiChatMapper {
     inferred_finish: bool,
     grammar_input_properties: HashMap<String, String>,
     strict_tools: HashMap<String, crate::message::ToolDef>,
+    model_info: Option<crate::model_info::ModelInfo>,
 }
 
 struct ToolCallState {
@@ -583,7 +628,12 @@ impl OpenAiChatMapper {
             inferred_finish: false,
             grammar_input_properties: HashMap::new(),
             strict_tools: HashMap::new(),
+            model_info: None,
         }
+    }
+
+    pub(crate) fn set_model_info(&mut self, model_info: Option<crate::model_info::ModelInfo>) {
+        self.model_info = model_info;
     }
 
     fn set_tool_metadata(
@@ -647,6 +697,9 @@ impl OpenAiChatMapper {
     }
 
     fn emit_done(&mut self, reason: StopReason) -> AssistantStreamEvent {
+        if let Some(model_info) = &self.model_info {
+            model_info.apply_response_cost(&mut self.partial);
+        }
         self.partial.stop_reason = reason;
         self.saw_done = true;
         AssistantStreamEvent::Done {
@@ -1925,8 +1978,11 @@ impl OpenAiChatProvider {
             crate::model_info::WireApi::OpenAiCompletions,
             "",
         );
+        mapper.set_model_info(None);
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
-        for (parsed, _raw) in parse_sse_events_with_raw(sse_body) {
+        let is_openrouter =
+            self.provider_id == "openrouter" || self.base_url.contains("openrouter.ai");
+        for (parsed, _raw) in parse_sse_events_with_raw_for_model(sse_body, is_openrouter) {
             match parsed {
                 ParsedEvent::Valid(events) => {
                     for event in events {
@@ -1986,6 +2042,7 @@ impl OpenAiChatProvider {
         auth_invalid_policy: AuthInvalidPolicy,
         chat_completions_path: String,
         requested_model: String,
+        model_info: Option<ModelInfo>,
         compat: CompatConfig,
         tool_metadata: Option<crate::openai_responses_shared::ResponsesWireTools>,
         extra_headers: Vec<(String, String)>,
@@ -2081,6 +2138,7 @@ impl OpenAiChatProvider {
         let mut byte_stream = response.bytes_stream();
         let mut buffer = String::new();
         let mut decoder = crate::text_decode::StreamTextDecoder::new();
+        let is_openrouter = provider_id == "openrouter" || base_url.contains("openrouter.ai");
         // AIR-061: monotonic duration from response-stream activation (first
         // body poll) to terminal; setup time before activation stays untimed.
         let mut response_activated_at: Option<std::time::Instant> = None;
@@ -2090,6 +2148,7 @@ impl OpenAiChatProvider {
             crate::model_info::WireApi::OpenAiCompletions,
             &requested_model,
         );
+        mapper.set_model_info(model_info);
 
         mapper.set_tool_metadata(tool_metadata);
         mapper.set_snapshot(snapshot);
@@ -2125,7 +2184,7 @@ impl OpenAiChatProvider {
                 })?;
                 buffer.push_str(&decoder.push(&chunk));
 
-                for (parsed, raw) in drain_sse_events(&mut buffer) {
+                for (parsed, raw) in drain_sse_events(&mut buffer, is_openrouter) {
                     // Raw observer first: strictly before normalization, in
                     // wire order (task 20.51); failure ends the call with the
                     // partial preserved.
@@ -2185,7 +2244,10 @@ impl OpenAiChatProvider {
 // Streaming helpers
 // ---------------------------------------------------------------------------
 
-fn drain_sse_events(buffer: &mut String) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {
+fn drain_sse_events(
+    buffer: &mut String,
+    is_openrouter: bool,
+) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {
     if buffer.contains('\r') {
         // A trailing CR after data may be the first half of a split CRLF.
         // A CR ending a blank line already completes a frame; a later LF is
@@ -2206,7 +2268,7 @@ fn drain_sse_events(buffer: &mut String) -> Vec<(ParsedEvent, Option<serde_json:
     while let Some(idx) = buffer.find("\n\n") {
         let end = idx + 2;
         let chunk: String = buffer.drain(..end).collect();
-        events.extend(parse_sse_events_with_raw(&chunk));
+        events.extend(parse_sse_events_with_raw_for_model(&chunk, is_openrouter));
     }
     events
 }
@@ -2999,6 +3061,7 @@ impl Provider for OpenAiChatProvider {
                 .map(|(_, model_id)| model_id)
                 .unwrap_or(&request.model);
             let model = self.models.iter().find(|model| model.id == model_id);
+            let model_info = model.cloned();
             let model_base_url = model.and_then(|model| model.base_url.clone());
             let compat = self.resolve_compat(model_id);
             let chat_completions_path = compat.chat_completions_path.clone();
@@ -3149,6 +3212,7 @@ impl Provider for OpenAiChatProvider {
                         auth_invalid_policy,
                         chat_completions_path,
                         requested_model,
+                        model_info,
                         compat,
                         tool_metadata,
                         extra_headers,
@@ -3501,7 +3565,7 @@ mod fragmented_sse_tests {
     }
 
     fn drain(buffer: &mut String) -> Vec<serde_json::Value> {
-        drain_sse_events(buffer)
+        drain_sse_events(buffer, false)
             .into_iter()
             .map(|(parsed, raw)| {
                 assert!(

@@ -802,9 +802,20 @@ Anthropic 则使用模型能力门控的 cache marker。`ModelInfo` 包含现有
 `ModelCapabilities`；未知/自定义模型默认关闭 cache 支持。
 
 `Usage::cache_write_1h_tokens` 与 `Usage::reasoning_tokens` 是可选 `u64` 子集，
-可区分缺失与显式上报的零。`CostBreakdown` 只有四行：`input_cost`、`output_cost`、
-`cache_read_cost` 和 `cache_write_cost`。加权的一小时 write 子集折算进
+可区分缺失与显式上报的零。`CostBreakdown` 包含四个 catalog 分量
+`input_cost`、`output_cost`、`cache_read_cost`、`cache_write_cost`，以及
+`total` 与 `total_from_provider`。加权的一小时 write 子集折算进
 `cache_write_cost`，reasoning 仍计入 `output_cost`，费用与总 token 只计一次父 bucket。
+`catalog_total_cost()` 始终求四个 catalog 分量；`total_cost()` 只有在
+`total_from_provider` 为真时才使用 provider 上报的 `total`。
+`Usage::apply_catalog_cost` 会重新计算 catalog 估算并清除 provider 覆盖。
+
+计价 tier 遵循 Pi 的边界规则：以 `input + cache_read + cache_write` 选择
+`input_tokens_above` 严格小于该值的最高 tier，选中的费率作用于整个请求。
+一小时 cache-write 子集按 input 费率的两倍计费，剩余写入使用短期费率，绝不重复计算。
+OpenRouter 计费字段只在 OpenRouter 路由上解释：非 BYOK 使用其 charged `cost`，
+BYOK 加上 provider 上报的 upstream 总额，缺少总额时回退到 prompt 加 completion。
+provider 计费数据无效或不完整时保留 catalog 计价。
 `AssistantMessage::raw_stop_reason: Option<String>` 保存 provider 已上报的原始
 终止事实，与归一化的 `stop_reason` 独立。旧记录缺失该字段时读为 `None`，
 序列化省略 `None`；现有 assistant-message 结构体字面量补上

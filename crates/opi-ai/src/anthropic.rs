@@ -59,6 +59,13 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
     parse_sse_events_with_raw(input).map(|(parsed, _raw)| parsed)
 }
 
+/// Parse OpenRouter-compatible usage fields in addition to the standard
+/// Anthropic event shape. Generic parsing intentionally leaves those fields
+/// as opaque extension data, matching Pi's provider-gated accounting.
+pub fn parse_sse_events_for_openrouter(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
+    parse_sse_events_with_raw_for_model(input, true).map(|(parsed, _raw)| parsed)
+}
+
 /// [`parse_sse_events`] paired with each processed frame's raw wire JSON (the
 /// `data` payload parsed as a JSON value). Task 20.51: the raw-event callback
 /// observes exactly these values, before normalization. Malformed frames carry
@@ -66,16 +73,27 @@ pub fn parse_sse_events(input: &str) -> impl Iterator<Item = ParsedEvent> + '_ {
 pub fn parse_sse_events_with_raw(
     input: &str,
 ) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
-    parse_frames(input).filter_map(parse_sse_frame)
+    parse_sse_events_with_raw_for_model(input, false)
 }
 
-fn parse_sse_frame(frame: SseFrame) -> Option<(ParsedEvent, Option<serde_json::Value>)> {
+/// [`parse_sse_events_with_raw`] with an explicit provider route flag.
+pub fn parse_sse_events_with_raw_for_model(
+    input: &str,
+    is_openrouter: bool,
+) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
+    parse_frames(input).filter_map(move |frame| parse_sse_frame(frame, is_openrouter))
+}
+
+fn parse_sse_frame(
+    frame: SseFrame,
+    is_openrouter: bool,
+) -> Option<(ParsedEvent, Option<serde_json::Value>)> {
     if !ANTHROPIC_EVENTS.contains(&frame.event.as_str()) {
         return None;
     }
     let raw = serde_json::from_str::<serde_json::Value>(&frame.data).ok();
     match serde_json::from_str::<AnthropicRawEvent>(&frame.data) {
-        Ok(raw_event) => Some(match AnthropicEvent::from_raw(raw_event) {
+        Ok(raw_event) => Some(match AnthropicEvent::from_raw(raw_event, is_openrouter) {
             Ok(event) => (ParsedEvent::Valid(event), raw),
             Err(error) => (ParsedEvent::UsageError(error), raw),
         }),
@@ -112,10 +130,11 @@ enum RawFallbackBlock {
     Fallback,
 }
 
-fn parse_transport_events_with_raw(
+fn parse_transport_events_with_raw_for_model(
     input: &str,
+    is_openrouter: bool,
 ) -> impl Iterator<Item = (TransportParsedEvent, Option<serde_json::Value>)> + '_ {
-    parse_frames(input).filter_map(|frame| {
+    parse_frames(input).filter_map(move |frame| {
         if frame.event == "content_block_start"
             && let Ok(RawFallbackStart::Start {
                 index,
@@ -127,7 +146,8 @@ fn parse_transport_events_with_raw(
                 serde_json::from_str(&frame.data).ok(),
             ));
         }
-        parse_sse_frame(frame).map(|(parsed, raw)| (TransportParsedEvent::Public(parsed), raw))
+        parse_sse_frame(frame, is_openrouter)
+            .map(|(parsed, raw)| (TransportParsedEvent::Public(parsed), raw))
     })
 }
 
@@ -231,10 +251,17 @@ struct RawUsage {
     /// Subset of `cache_creation_input_tokens` eligible for 1h TTL.
     #[serde(default)]
     cache_creation_input_tokens_1h: Option<u64>,
+    /// OpenRouter billing fields may be attached to Anthropic usage deltas.
+    #[serde(default)]
+    cost: Option<f64>,
+    #[serde(default)]
+    is_byok: Option<bool>,
+    #[serde(default)]
+    cost_details: Option<crate::openrouter::OpenRouterCostDetails>,
 }
 
 impl RawUsage {
-    fn into_usage(self) -> Result<Usage, ProviderError> {
+    fn into_usage(self, is_openrouter: bool) -> Result<Usage, ProviderError> {
         let cache_write = self.cache_creation_input_tokens.unwrap_or(0);
         let cache_write_1h = self.cache_creation_input_tokens_1h;
         if cache_write_1h.is_some_and(|tokens| tokens > u64::from(cache_write)) {
@@ -250,14 +277,25 @@ impl RawUsage {
             || self.cache_read_input_tokens.is_some()
             || self.cache_creation_input_tokens.is_some()
         {
-            Ok(Usage::reported(
+            let mut usage = Usage::reported(
                 self.input_tokens.unwrap_or(0),
                 self.output_tokens.unwrap_or(0),
                 self.cache_read_input_tokens.unwrap_or(0),
                 cache_write,
                 cache_write_1h,
                 None, // reasoning_tokens
-            ))
+            );
+            if is_openrouter {
+                crate::openrouter::apply_openrouter_reported_cost(
+                    &mut usage,
+                    &crate::openrouter::OpenRouterUsageAccounting {
+                        cost: self.cost,
+                        is_byok: self.is_byok,
+                        cost_details: self.cost_details,
+                    },
+                );
+            }
+            Ok(usage)
         } else {
             Ok(Usage::unknown())
         }
@@ -375,12 +413,12 @@ pub enum DeltaData {
 }
 
 impl AnthropicEvent {
-    fn from_raw(raw: AnthropicRawEvent) -> Result<Self, ProviderError> {
+    fn from_raw(raw: AnthropicRawEvent, is_openrouter: bool) -> Result<Self, ProviderError> {
         let event = match raw {
             AnthropicRawEvent::MessageStart { message } => {
                 let usage = message
                     .usage
-                    .map(RawUsage::into_usage)
+                    .map(|usage| usage.into_usage(is_openrouter))
                     .transpose()?
                     .unwrap_or_else(Usage::unknown);
                 AnthropicEvent::MessageStart {
@@ -430,7 +468,7 @@ impl AnthropicEvent {
             }
             AnthropicRawEvent::MessageDelta { delta, usage } => AnthropicEvent::MessageDelta {
                 stop_reason: delta.stop_reason,
-                usage: usage.into_usage()?,
+                usage: usage.into_usage(is_openrouter)?,
             },
             AnthropicRawEvent::MessageStop => AnthropicEvent::MessageStop,
             AnthropicRawEvent::Error { error } => AnthropicEvent::Error {
@@ -557,6 +595,7 @@ pub struct AnthropicMapper {
     /// remain after closure so duplicate active indices advance in order.
     transport_indices: Vec<Option<usize>>,
     saw_done: bool,
+    model_info: Option<crate::model_info::ModelInfo>,
 }
 
 enum BlockState {
@@ -673,7 +712,12 @@ impl AnthropicMapper {
             blocks: Vec::new(),
             transport_indices: Vec::new(),
             saw_done: false,
+            model_info: None,
         }
+    }
+
+    pub(crate) fn set_model_info(&mut self, model_info: Option<crate::model_info::ModelInfo>) {
+        self.model_info = model_info;
     }
 
     /// Record the strict-dispatched tools of this call (task 20.11,
@@ -950,10 +994,16 @@ impl AnthropicMapper {
                 if usage.cache_write_1h_tokens.is_some() {
                     self.partial.usage.cache_write_1h_tokens = usage.cache_write_1h_tokens;
                 }
+                if usage.cost.total_from_provider {
+                    self.partial.usage.cost = usage.cost;
+                }
                 // message_delta doesn't emit a stream event; Done comes from message_stop
                 Vec::new()
             }
             AnthropicEvent::MessageStop => {
+                if let Some(model_info) = &self.model_info {
+                    model_info.apply_response_cost(&mut self.partial);
+                }
                 self.saw_done = true;
                 vec![Ok(AssistantStreamEvent::Done {
                     reason: self.partial.stop_reason,
@@ -1759,8 +1809,11 @@ impl AnthropicProvider {
     /// Stream events from a raw SSE response body.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
         let mut mapper = AnthropicMapper::new();
+        mapper.set_model_info(None);
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
-        for (parsed, _raw) in parse_transport_events_with_raw(sse_body) {
+        let is_openrouter =
+            self.provider_id == "openrouter" || self.default_base_url.contains("openrouter.ai");
+        for (parsed, _raw) in parse_transport_events_with_raw_for_model(sse_body, is_openrouter) {
             let usage_error = matches!(
                 &parsed,
                 TransportParsedEvent::Public(ParsedEvent::UsageError(_))
@@ -1853,6 +1906,11 @@ impl AnthropicProvider {
                 .split_once(':')
                 .map(|(_, model_id)| model_id)
                 .unwrap_or(&request.model);
+            let model_info = self
+                .models
+                .iter()
+                .find(|model| model.id == model_id)
+                .cloned();
             let model_base_url = self
                 .models
                 .iter()
@@ -2083,6 +2141,7 @@ impl AnthropicProvider {
                         oauth_tool_names,
                         diagnostics_seed,
                         provider_thinking_level,
+                        model_info,
                         &body,
                         cancel,
                         timeout,
@@ -2133,6 +2192,7 @@ impl AnthropicProvider {
         oauth_tool_names: Vec<String>,
         diagnostics_seed: Vec<crate::stream::AssistantDiagnostic>,
         provider_thinking_level: Option<String>,
+        model_info: Option<ModelInfo>,
         body: &serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
@@ -2248,6 +2308,7 @@ impl AnthropicProvider {
             ));
         }
         let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
+        mapper.set_model_info(model_info);
         mapper.set_strict_tools(strict_tools);
         mapper.oauth_tool_names = oauth_tool_names;
         mapper.seed_diagnostics(diagnostics_seed);
@@ -2271,6 +2332,7 @@ impl AnthropicProvider {
             .map_err(|error| mapper.failure(error))?;
         let mut byte_stream = response.bytes_stream();
         let mut buffer = Vec::new();
+        let is_openrouter = provider_id == "openrouter" || base_url.contains("openrouter.ai");
         let result: Result<(), ProviderError> = async {
             loop {
                 let chunk = tokio::select! {
@@ -2298,7 +2360,7 @@ impl AnthropicProvider {
                     buffer.extend_from_slice(&chunk);
                 }
 
-                for (parsed, raw) in drain_sse_events(&mut buffer, eof)? {
+                for (parsed, raw) in drain_sse_events(&mut buffer, eof, is_openrouter)? {
                     if mapper.saw_done {
                         return Ok(());
                     }
@@ -2356,6 +2418,7 @@ impl AnthropicProvider {
 fn drain_sse_events(
     buffer: &mut Vec<u8>,
     eof: bool,
+    is_openrouter: bool,
 ) -> Result<Vec<(TransportParsedEvent, Option<serde_json::Value>)>, ProviderError> {
     let mut events = Vec::new();
     loop {
@@ -2403,7 +2466,10 @@ fn drain_sse_events(
         let mut chunk = frame_decoder.push(&frame_bytes);
         chunk.push_str(&frame_decoder.finish());
         let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
-        events.extend(parse_transport_events_with_raw(&normalized));
+        events.extend(parse_transport_events_with_raw_for_model(
+            &normalized,
+            is_openrouter,
+        ));
     }
     Ok(events)
 }
@@ -3526,7 +3592,8 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 
 "#,
         );
-        let events = drain_sse_events(&mut frame, false).expect("frames parse with replacement");
+        let events =
+            drain_sse_events(&mut frame, false, false).expect("frames parse with replacement");
         assert_eq!(events.len(), 1);
         assert!(matches!(
             events[0],

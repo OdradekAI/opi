@@ -258204,6 +258204,76 @@
       "limits": [
         "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-25-COST-PRICING-SEMANTICS",
+      "issue": "issues/25-cost-pricing-semantics.md",
+      "base_commit": "f110950",
+      "contracts": [
+        "CAP-USAGE",
+        "CAP-TELEMETRY-AI"
+      ],
+      "status": "catalog-and-provider-cost-semantics-aligned",
+      "public_entry_mapping": [
+        {
+          "entry": "Usage::cost",
+          "owner": "types::usage::Usage",
+          "scope": "catalog component costs, provider total override, and serialized cost shape"
+        },
+        {
+          "entry": "ModelInfo::apply_response_cost",
+          "owner": "types::model::ModelInfo",
+          "scope": "apply catalog pricing at terminal response while preserving provider total"
+        },
+        {
+          "entry": "apply_openrouter_reported_cost",
+          "owner": "openrouter",
+          "scope": "non-BYOK direct charge and BYOK upstream accounting"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/openai_chat.rs",
+          "status": "provider-gated cache-write and OpenRouter accounting"
+        },
+        {
+          "path": "crates/opi-ai/src/anthropic.rs",
+          "status": "provider-gated OpenRouter accounting and terminal catalog pricing"
+        },
+        {
+          "path": "crates/opi-ai/src/telemetry.rs",
+          "status": "reported total or catalog total drives span and cost metric"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/usage_cost.rs",
+        "crates/opi-ai/tests/openrouter_cost.rs",
+        "crates/opi-ai/tests/ai_telemetry.rs::provider_reported_cost_drives_telemetry_total"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/anthropic_fixtures.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "strict tier and cache-write pricing boundaries",
+          "provider total and OpenRouter accounting",
+          "generic parser provider gate"
+        ],
+        "update": [
+          "Usage and CostBreakdown literals initialize the new cost fields",
+          "README documents the Pi cost contract"
+        ],
+        "delete": [],
+        "retain": "existing pricing, telemetry, and provider fixture coverage"
+      },
+      "evidence": [
+        "evidence/phase4-cost-pricing-semantics-checks.json"
+      ],
+      "limits": [
+        "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance",
+        "Full package run retains the known model_wire_metadata pending-stop baseline failure"
+      ]
     }
   ]
 }

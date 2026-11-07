@@ -127,6 +127,12 @@ pub struct Usage {
     /// and response precedence. Absent on wires without service-tier pricing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub effective_service_tier: Option<ServiceTier>,
+    /// Catalog-derived component costs and the best available total.
+    ///
+    /// Provider-reported accounting may replace only `total`; the component
+    /// fields remain the catalog estimate, matching Pi's `Usage.cost` shape.
+    #[serde(default)]
+    pub cost: CostBreakdown,
     #[serde(default)]
     pub reported: bool,
 }
@@ -149,6 +155,7 @@ impl Usage {
             total_tokens: None,
             service_tier: None,
             effective_service_tier: None,
+            cost: CostBreakdown::default(),
             reported: false,
         }
     }
@@ -171,6 +178,7 @@ impl Usage {
             total_tokens: None,
             service_tier: None,
             effective_service_tier: None,
+            cost: CostBreakdown::default(),
             reported: true,
         }
     }
@@ -330,6 +338,7 @@ impl CumulativeUsage {
             total_tokens: None,
             service_tier: None,
             effective_service_tier: None,
+            cost: CostBreakdown::default(),
             reported: self.unknown_turns == 0,
         }
     }
@@ -345,7 +354,7 @@ pub struct Pricing {
 }
 
 /// Cost breakdown from a usage + pricing calculation.
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct CostBreakdown {
     pub input_cost: f64,
     pub output_cost: f64,
@@ -354,11 +363,41 @@ pub struct CostBreakdown {
     /// `cache_write_cost_per_mtok`, while the 1-hour subset uses twice the
     /// input-token price.
     pub cache_write_cost: f64,
+    /// Best available total. When `total_from_provider` is false, this is the
+    /// catalog sum; when true, it is the provider-reported billed total.
+    #[serde(default)]
+    pub total: f64,
+    /// Whether `total` came from provider billing rather than catalog rates.
+    #[serde(default)]
+    pub total_from_provider: bool,
 }
 
 impl CostBreakdown {
-    pub fn total_cost(&self) -> f64 {
+    /// Sum of catalog-priced components, regardless of provider overrides.
+    pub fn catalog_total_cost(&self) -> f64 {
         self.input_cost + self.output_cost + self.cache_read_cost + self.cache_write_cost
+    }
+
+    pub fn total_cost(&self) -> f64 {
+        if self.total_from_provider {
+            self.total
+        } else {
+            self.catalog_total_cost()
+        }
+    }
+}
+
+impl Usage {
+    /// Replace the usage cost with a catalog-derived breakdown.
+    pub fn with_cost(mut self, cost: CostBreakdown) -> Self {
+        self.cost = cost;
+        self
+    }
+
+    /// Recompute all cost components from catalog rates and clear any
+    /// provider-total override, matching Pi's `calculateCost` mutation.
+    pub fn apply_catalog_cost(&mut self, pricing: &Pricing) {
+        self.cost = calculate_cost(self, pricing);
     }
 }
 
@@ -403,11 +442,17 @@ fn calculate_cost_totals(
     let per_tok = |cost_per_mtok: f64| cost_per_mtok / 1_000_000.0;
     let cache_write_1h = cache_write_1h_tokens.unwrap_or(0).min(cache_write_tokens);
     let short_cache_write = cache_write_tokens.saturating_sub(cache_write_1h);
+    let input_cost = input_tokens as f64 * per_tok(pricing.input_cost_per_mtok);
+    let output_cost = output_tokens as f64 * per_tok(pricing.output_cost_per_mtok);
+    let cache_read_cost = cache_read_tokens as f64 * per_tok(pricing.cache_read_cost_per_mtok);
+    let cache_write_cost = short_cache_write as f64 * per_tok(pricing.cache_write_cost_per_mtok)
+        + cache_write_1h as f64 * per_tok(pricing.input_cost_per_mtok) * 2.0;
     CostBreakdown {
-        input_cost: input_tokens as f64 * per_tok(pricing.input_cost_per_mtok),
-        output_cost: output_tokens as f64 * per_tok(pricing.output_cost_per_mtok),
-        cache_read_cost: cache_read_tokens as f64 * per_tok(pricing.cache_read_cost_per_mtok),
-        cache_write_cost: short_cache_write as f64 * per_tok(pricing.cache_write_cost_per_mtok)
-            + cache_write_1h as f64 * per_tok(pricing.input_cost_per_mtok) * 2.0,
+        input_cost,
+        output_cost,
+        cache_read_cost,
+        cache_write_cost,
+        total: input_cost + output_cost + cache_read_cost + cache_write_cost,
+        total_from_provider: false,
     }
 }

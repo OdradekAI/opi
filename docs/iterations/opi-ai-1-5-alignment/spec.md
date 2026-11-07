@@ -28,6 +28,14 @@ token/cost，并将 `toolUse` 与完整 stop vocabulary 对齐。canonical Rust
 不把它改写为空字符串。request duration metric 也改为只携带 Pi 定义的
 `provider`、`model`、`stop`，不复用 span 的高基数和 usage 结束属性。
 
+当前 pricing/cost 切片已完成：`Usage.cost` 区分 catalog 分量、catalog total
+和 provider-reported total；tier 选择、cache-write 1h 子集以及 OpenRouter
+非 BYOK/BYOK 账单规则按 Pi 1.5.0 固定。通用 OpenAI/Anthropic 解析器保留
+OpenRouter 扩展字段但不应用它们，只有对应 provider route 才进行账单覆盖。
+专项测试与两个 provider fixture 集合通过；全量包测试仍记录既有的
+`model_wire_metadata` pending-stop 失败。详情见[pricing/cost 切片报告](phase4-cost-pricing-semantics.md)
+和[检查证据](evidence/phase4-cost-pricing-semantics-checks.json)。
+
 ## 目标与范围
 
 让第三方 Rust 开发者按 opi-ai 文档，仅依赖 opi-ai 及其声明的库依赖，就能在普通项目中使用与指定 Pi 1.5.0 对应的能力。无需 opi-agent、opi CLI、仓库私有路径或隐式全局初始化；可以保持同一 workspace，不要求独立仓库。

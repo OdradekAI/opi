@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "issue": "issues/25-cost-pricing-semantics.md",
+  "scope": "pricing tiers, cache pricing, provider-reported totals, and provider gating",
+  "tdd_observations": [
+    "Before the cost model implementation, targeted usage and OpenRouter tests failed to compile because Usage had no cost field and the provider accounting types were absent.",
+    "Before provider gating, a generic OpenAI parser test observed cost.total=0.004 from OpenRouter fields; after routing the flag, it retains catalog total.",
+    "Before telemetry integration, provider-reported cost emitted the catalog fallback; after integration the span and pi.ai.cost measurement use the reported total."
+  ],
+  "commands": [
+    {
+      "command": "cargo test -p opi-ai --test usage_cost --test openrouter_cost --test ai_telemetry --offline -j4",
+      "status": "passed",
+      "observed": "45 usage-cost, 6 provider-accounting/gating, and 20 AI telemetry tests passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test openai_chat_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "114 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test anthropic_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "153 passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "passed",
+      "observed": "all opi-ai targets compile"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "passed",
+      "observed": "warnings denied"
+    },
+    {
+      "command": "cargo doc -p opi-ai --no-deps --offline",
+      "status": "passed",
+      "observed": "rustdoc generated"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "passed"
+    },
+    {
+      "command": "git diff --check",
+      "status": "passed"
+    },
+    {
+      "command": "python -B scripts/opi-doc-check.py",
+      "status": "passed",
+      "observed": "opi documentation contracts: PASS"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch C:/Temp/opi-sdk-cost-proof-20261108 --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "status": "passed",
+      "observed": "external package proof PASS for the current crate artifact"
+    },
+    {
+      "command": "cargo test -p opi-ai --test model_wire_metadata sampling_presence_reaches_supported_wires_once_and_other_wires_keep_metadata_only --offline -j4",
+      "status": "failed-baseline",
+      "observed": "pre-existing Anthropic pending-stop failure; reproduced independently of cost tests"
+    }
+  ],
+  "behavior": {
+    "catalog_cost": "four component rates plus a catalog total",
+    "provider_total": "overrides only total when total_from_provider is true",
+    "tier_boundary": "strict input+cacheRead+cacheWrite threshold",
+    "cache_write": "1h subset charged twice input rate; short remainder charged once",
+    "openrouter": "non-BYOK direct charge; BYOK charge plus aggregate or component fallback",
+    "provider_gate": "accounting extensions applied only on OpenRouter routes"
+  },
+  "limits": [
+    "No live provider billing or complete TS/Rust differential",
+    "No feature/platform/MSRV, performance, or six-gate release acceptance",
+    "Full package run is not green because of the recorded baseline model_wire_metadata failure"
+  ]
+}

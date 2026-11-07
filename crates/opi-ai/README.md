@@ -889,10 +889,23 @@ support off.
 termination fact independently of normalized `stop_reason`. Historical records
 read the missing field as `None`, which is omitted when serialized. Existing
 assistant-message literals add `raw_stop_reason: None`.
-`CostBreakdown` has four lines: `input_cost`, `output_cost`,
-`cache_read_cost`, and `cache_write_cost`. The weighted one-hour write subset
-is folded into `cache_write_cost`, reasoning remains in `output_cost`, and
-cost and total-token calculation count the parent buckets once.
+`CostBreakdown` has four catalog component lines: `input_cost`, `output_cost`,
+`cache_read_cost`, and `cache_write_cost`, plus `total` and
+`total_from_provider`. The weighted one-hour write subset is folded into
+`cache_write_cost`, reasoning remains in `output_cost`, and cost and
+total-token calculation count the parent buckets once. `catalog_total_cost()`
+always sums the four catalog components; `total_cost()` uses the provider
+reported `total` only when `total_from_provider` is true. `Usage::apply_catalog_cost`
+recomputes the catalog estimate and clears a provider override.
+
+Pricing tiers follow Pi's exact boundary rule: select the highest tier whose
+`input_tokens_above` is strictly less than `input + cache_read + cache_write`;
+the selected rates apply to the whole request. A one-hour cache-write subset is
+charged at twice the input rate, while the remaining writes use the short-cache
+rate and are never double-counted. OpenRouter billing fields are interpreted
+only on an OpenRouter route: non-BYOK uses its charged `cost`, and BYOK adds the
+reported upstream aggregate or its prompt-plus-completion fallback. Invalid or
+incomplete provider accounting leaves catalog pricing intact.
 All HTTP adapters decode streaming bytes through one incremental
 replacement decoder: multi-byte UTF-8 split across network chunks survives
 byte-exactly, each maximal invalid subsequence becomes one U+FFFD (no fatal

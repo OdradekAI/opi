@@ -1318,6 +1318,7 @@ fn parse_usage(event: &serde_json::Value) -> Result<Usage, ProviderError> {
         total_tokens: optional("totalTokens")?,
         service_tier: None,
         effective_service_tier: None,
+        cost: crate::types::usage::CostBreakdown::default(),
         reported: true,
     })
 }

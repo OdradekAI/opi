@@ -224,6 +224,7 @@ fn cumulative_usage_accumulation_saturates_totals_and_counters() {
         total_tokens: None,
         service_tier: None,
         effective_service_tier: None,
+        cost: CostBreakdown::default(),
         reported: false,
     };
 
@@ -319,6 +320,67 @@ fn pricing_default_is_zero() {
     assert_eq!(p.cache_write_cost_per_mtok, 0.0);
 }
 
+#[test]
+fn usage_cost_starts_as_catalog_zero() {
+    let usage = Usage::default();
+
+    assert_eq!(usage.cost.input_cost, 0.0);
+    assert_eq!(usage.cost.output_cost, 0.0);
+    assert_eq!(usage.cost.cache_read_cost, 0.0);
+    assert_eq!(usage.cost.cache_write_cost, 0.0);
+    assert_eq!(usage.cost.total, 0.0);
+    assert!(!usage.cost.total_from_provider);
+}
+
+#[test]
+fn provider_total_can_differ_from_catalog_components() {
+    let usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    let mut cost = calculate_cost(
+        &usage,
+        &Pricing {
+            input_cost_per_mtok: 1.0,
+            output_cost_per_mtok: 1.0,
+            ..Pricing::default()
+        },
+    );
+    assert_eq!(cost.catalog_total_cost(), 2.0);
+
+    cost.total = 3.25;
+    cost.total_from_provider = true;
+    assert_eq!(cost.total_cost(), 3.25);
+    assert_eq!(cost.catalog_total_cost(), 2.0);
+}
+
+#[test]
+fn usage_can_apply_catalog_cost_without_losing_provider_override_contract() {
+    let mut usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    usage.apply_catalog_cost(&Pricing {
+        input_cost_per_mtok: 1.0,
+        output_cost_per_mtok: 2.0,
+        ..Pricing::default()
+    });
+    assert_eq!(usage.cost.input_cost, 1.0);
+    assert_eq!(usage.cost.output_cost, 2.0);
+    assert_eq!(usage.cost.total, 3.0);
+    assert!(!usage.cost.total_from_provider);
+}
+
+#[test]
+fn cache_write_subset_is_clamped_and_never_double_counted() {
+    let usage = Usage::reported(0, 0, 0, 100, Some(150), None);
+    let cost = calculate_cost(
+        &usage,
+        &Pricing {
+            input_cost_per_mtok: 2.0,
+            cache_write_cost_per_mtok: 1.0,
+            ..Pricing::default()
+        },
+    );
+
+    assert!((cost.cache_write_cost - 0.0004).abs() < 1e-12);
+    assert!((cost.catalog_total_cost() - 0.0004).abs() < 1e-12);
+}
+
 // ---------------------------------------------------------------------------
 // Cost calculation
 // ---------------------------------------------------------------------------
@@ -400,6 +462,7 @@ fn cost_breakdown_total_sums_fields() {
         output_cost: 2.0,
         cache_read_cost: 0.5,
         cache_write_cost: 0.25,
+        ..CostBreakdown::default()
     };
     assert!((cb.total_cost() - 3.75).abs() < 1e-10);
 }
@@ -849,6 +912,8 @@ fn scaled(cost: &CostBreakdown, multiplier: f64) -> CostBreakdown {
         output_cost: cost.output_cost * multiplier,
         cache_read_cost: cost.cache_read_cost * multiplier,
         cache_write_cost: cost.cache_write_cost * multiplier,
+        total: cost.total * multiplier,
+        total_from_provider: false,
     }
 }
 
