@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "issue": "issues/20-ordinary-chat-telemetry-construction.md",
+  "scope": "package-boundary regression for the construction-time ordinary chat telemetry slice",
+  "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch C:/Temp/opi-sdk-ordinary-construction-proof-20261107 --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958",
+  "status": "passed",
+  "scratch": "C:/Temp/opi-sdk-ordinary-construction-proof-20261107",
+  "package": {
+    "opi_ai": {
+      "file": "opi-ai-0.8.3.crate",
+      "sha256": "4ab1f76c8e113354e19afb4ab31b798c94070fe60b2f02a40cd89aee462d554b"
+    },
+    "opi_telemetry": {
+      "file": "opi-telemetry-0.8.3.crate",
+      "sha256": "302d89a569b742130bf9d18aab2bf6e76313ba7a5722544ee0c207a0db925859",
+      "resolution": "exact extracted candidate artifact; no workspace source patch"
+    }
+  },
+  "profiles": [
+    {
+      "name": "defaults-off",
+      "opi_ai_features": [],
+      "public_checks": "73/73"
+    },
+    {
+      "name": "caller-defaults-on",
+      "opi_ai_features": ["telemetry-tracing"],
+      "public_checks": "73/73"
+    }
+  ],
+  "consumer_lock_sha256": "3765f908b042024b22246629822ea6a4cda4e8d24928daa6cb076ffa7ca825fd",
+  "limits": [
+    "This proves packaged independent consumption and the existing public schema battery; it does not prove live-provider behavior or the construction-time observer timing inside the external consumer.",
+    "The two previously recorded unrelated workspace failures remain outside this slice."
+  ]
+}

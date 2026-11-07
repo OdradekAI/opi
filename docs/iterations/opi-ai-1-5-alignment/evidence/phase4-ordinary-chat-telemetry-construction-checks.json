@@ -27,6 +27,11 @@
     {
       "command": "git diff --check",
       "status": "pass"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch C:/Temp/opi-sdk-ordinary-construction-proof-20261107 --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "status": "pass",
+      "result": "actual .crate external consumer passed both default and defaults-off profiles; 73/73 public checks passed in each profile"
     }
   ],
   "behavior": {

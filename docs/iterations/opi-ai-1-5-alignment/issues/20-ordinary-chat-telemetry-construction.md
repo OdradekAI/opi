@@ -33,6 +33,8 @@ after the independently scheduled setup had completed.
 - explicit abort still finishes that same span once with `stop = aborted`;
 - the existing ordinary, prepared, deferred, raw stream and non-chat telemetry
   suites remain green;
+- the exact packaged crates still compile and pass the external 73-check public
+  battery with defaults off and with the default `telemetry-tracing` profile;
 - the README and phase evidence describe construction-time observation without
   claiming that authentication or provider setup is synchronous.
 
@@ -46,6 +48,8 @@ after the independently scheduled setup had completed.
   `ChatCallDriver`, and `materialize_chat_call`).
 - Regression: `crates/opi-ai/tests/ai_telemetry.rs` asserts the span exists and
   is unfinished immediately after construction, then verifies abort settlement.
+- Package proof: [phase4-ordinary-chat-telemetry-construction-package.json](../evidence/phase4-ordinary-chat-telemetry-construction-package.json)
+  records both external consumer profiles and exact artifact hashes.
 
 ## Limits
 

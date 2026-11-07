@@ -257980,7 +257980,8 @@
         "retain": "ordinary result, source-tail, abort, request-token cancellation, prepared and non-chat telemetry boundaries"
       },
       "evidence": [
-        "evidence/phase4-ordinary-chat-telemetry-construction-checks.json"
+        "evidence/phase4-ordinary-chat-telemetry-construction-checks.json",
+        "evidence/phase4-ordinary-chat-telemetry-construction-package.json"
       ],
       "limits": [
         "Authentication and provider setup remain asynchronously scheduled",

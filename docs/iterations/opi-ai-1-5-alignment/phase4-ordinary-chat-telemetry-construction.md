@@ -24,6 +24,9 @@
 - `cargo check -p opi-ai --all-targets --offline -j4` 通过；
 - `cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings` 通过；
 - `cargo fmt --all --check` 与 `git diff --check` 通过。
+- 从精确 `.crate` 产物启动仓库外消费者的双 profile proof 通过；两个 profile
+  均为公共 73/73 检查通过，证据见
+  [package proof](evidence/phase4-ordinary-chat-telemetry-construction-package.json)。
 
 ## 尚未完成
 
