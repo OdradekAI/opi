@@ -22,15 +22,15 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{Map, Value, json};
 
-use crate::model_info::{
+use crate::types::model::{
     AnthropicAllowedFallbackModel, AnthropicMessagesCompat, ModelCapabilities, ModelInfo,
     OpenAiCodexResponsesCompat, OpenAiResponsesCompat, ThinkingLevel, ThinkingLevelMap,
     ThinkingLevelMapping, WireApi, WireCompat,
 };
-use crate::stream::Pricing;
+use crate::types::usage::Pricing;
 
-use super::store::CatalogPublisher;
-use super::{CatalogRecord, ModelsStoreEntry, ModelsStoreError};
+use super::store_contract::{CatalogPublisher, ModelsStoreError};
+use super::{CatalogRecord, ModelsStoreEntry};
 
 /// The distribution schema identity the store and HTTP documents declare.
 pub(crate) const DISTRIBUTION_SCHEMA_ID: &str = "https://pi.dev/schemas/models.schema.json";
@@ -231,17 +231,17 @@ fn compat_to_extension(compat: &WireCompat) -> Value {
         WireCompat::OpenAiCompletions(inner) => json!({
             "api": WireApi::OpenAiCompletions.as_str(),
             "storeField": match &inner.store {
-                Some(crate::model_info::ChatStoreField::Omit) => json!("omit"),
-                Some(crate::model_info::ChatStoreField::SendFalse) => json!("send_false"),
+                Some(crate::types::model::ChatStoreField::Omit) => json!("omit"),
+                Some(crate::types::model::ChatStoreField::SendFalse) => json!("send_false"),
                 None => serde_json::Value::Null,
             },
             "instructionRole": match &inner.instruction_role {
-                Some(crate::model_info::ChatInstructionRole::Auto) => json!("auto"),
-                Some(crate::model_info::ChatInstructionRole::System) => json!("system"),
-                Some(crate::model_info::ChatInstructionRole::DeveloperForReasoning) => {
+                Some(crate::types::model::ChatInstructionRole::Auto) => json!("auto"),
+                Some(crate::types::model::ChatInstructionRole::System) => json!("system"),
+                Some(crate::types::model::ChatInstructionRole::DeveloperForReasoning) => {
                     json!("developer_for_reasoning")
                 }
-                Some(crate::model_info::ChatInstructionRole::Developer) => json!("developer"),
+                Some(crate::types::model::ChatInstructionRole::Developer) => json!("developer"),
                 None => serde_json::Value::Null,
             },
             "thinkingFormat": match &inner.thinking_format {
@@ -414,7 +414,7 @@ fn anthropic_fallback_models(
             let cost = value
                 .get("cost")
                 .ok_or("Anthropic fallback cost is required")?;
-            let cost = crate::model_info::ModelPricing {
+            let cost = crate::types::model::ModelPricing {
                 base: pricing_from_json(cost)?,
                 tiers: decode_pricing_tiers(cost.get("tiers"))?,
             };
@@ -432,8 +432,8 @@ fn anthropic_fallback_models(
 
 fn thinking_budget_field(
     value: &Value,
-) -> Result<Option<crate::model_info::ChatThinkingTokenBudgetField>, String> {
-    use crate::model_info::ChatThinkingTokenBudgetField;
+) -> Result<Option<crate::types::model::ChatThinkingTokenBudgetField>, String> {
+    use crate::types::model::ChatThinkingTokenBudgetField;
     match opt_string(value, "thinkingTokenBudgetField")?.as_deref() {
         None => Ok(None),
         Some("thinking_token_budget") => {
@@ -450,9 +450,9 @@ fn thinking_budget_field(
 }
 
 fn template_values_to_extension(
-    values: &Option<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>,
+    values: &Option<BTreeMap<String, crate::types::model::ChatTemplateKwargValue>>,
 ) -> Value {
-    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+    use crate::types::model::{ChatTemplateKwargValue, ChatTemplateKwargVar};
     let Some(values) = values else {
         return Value::Null;
     };
@@ -480,8 +480,8 @@ fn template_values_to_extension(
 fn template_values_from_extension(
     value: &Value,
     key: &str,
-) -> Result<Option<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>, String> {
-    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+) -> Result<Option<BTreeMap<String, crate::types::model::ChatTemplateKwargValue>>, String> {
+    use crate::types::model::{ChatTemplateKwargValue, ChatTemplateKwargVar};
     let Some(values) = value.get(key).filter(|value| !value.is_null()) else {
         return Ok(None);
     };
@@ -512,8 +512,8 @@ fn template_values_from_extension(
 fn template_values_from_source(
     value: &Value,
     key: &str,
-) -> Result<Option<BTreeMap<String, crate::model_info::ChatTemplateKwargValue>>, String> {
-    use crate::model_info::{ChatTemplateKwargValue, ChatTemplateKwargVar};
+) -> Result<Option<BTreeMap<String, crate::types::model::ChatTemplateKwargValue>>, String> {
+    use crate::types::model::{ChatTemplateKwargValue, ChatTemplateKwargVar};
     let Some(values) = value.get(key).filter(|value| !value.is_null()) else {
         return Ok(None);
     };
@@ -544,7 +544,7 @@ fn template_values_from_source(
 fn parse_chat_thinking_format(
     value: &Value,
     key: &str,
-) -> Result<Option<crate::model_info::ChatThinkingFormat>, String> {
+) -> Result<Option<crate::types::model::ChatThinkingFormat>, String> {
     match value.get(key).and_then(Value::as_str) {
         None => Ok(None),
         Some(name) => Ok(Some(name.parse().map_err(|_| {
@@ -663,11 +663,11 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
             reject_retired_chat_compat_keys(value)?;
             let thinking_token_budget_field = thinking_budget_field(value)?;
             Ok(Some(WireCompat::OpenAiCompletions(
-                crate::model_info::OpenAiCompletionsCompat {
+                crate::types::model::OpenAiCompletionsCompat {
                     store: match value.get("storeField").and_then(Value::as_str) {
                         None | Some("auto") => None,
-                        Some("omit") => Some(crate::model_info::ChatStoreField::Omit),
-                        Some("send_false") => Some(crate::model_info::ChatStoreField::SendFalse),
+                        Some("omit") => Some(crate::types::model::ChatStoreField::Omit),
+                        Some("send_false") => Some(crate::types::model::ChatStoreField::SendFalse),
                         Some(other) => {
                             return Err(format!(
                                 "field 'storeField' carries unknown store policy '{other}'"
@@ -676,13 +676,13 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
                     },
                     instruction_role: match value.get("instructionRole").and_then(Value::as_str) {
                         None => None,
-                        Some("auto") => Some(crate::model_info::ChatInstructionRole::Auto),
-                        Some("system") => Some(crate::model_info::ChatInstructionRole::System),
+                        Some("auto") => Some(crate::types::model::ChatInstructionRole::Auto),
+                        Some("system") => Some(crate::types::model::ChatInstructionRole::System),
                         Some("developer_for_reasoning") => {
-                            Some(crate::model_info::ChatInstructionRole::DeveloperForReasoning)
+                            Some(crate::types::model::ChatInstructionRole::DeveloperForReasoning)
                         }
                         Some("developer") => {
-                            Some(crate::model_info::ChatInstructionRole::Developer)
+                            Some(crate::types::model::ChatInstructionRole::Developer)
                         }
                         Some(other) => {
                             return Err(format!(
@@ -757,7 +757,7 @@ fn compat_from_extension(value: &Value) -> Result<Option<WireCompat>, String> {
         WireApi::GoogleGenerativeAi => Ok(Some(WireCompat::GoogleGenerativeAi)),
         WireApi::GoogleVertex => Ok(Some(WireCompat::GoogleVertex)),
         WireApi::BedrockConverseStream => Ok(Some(WireCompat::BedrockConverseStream(
-            crate::model_info::BedrockConverseStreamCompat {
+            crate::types::model::BedrockConverseStreamCompat {
                 supports_strict_tools: match value.get("supportsStrictTools") {
                     None => false,
                     Some(value) => value
@@ -919,20 +919,20 @@ fn apply_source_metadata(model: &mut ModelInfo, entry: &Value) -> Result<(), Str
             c.supports_mid_convo_tool_additions = flag("supportsMidConvoToolAdditions")?;
             c.store = flag("supportsStore")?.map(|value| {
                 if value {
-                    crate::model_info::ChatStoreField::SendFalse
+                    crate::types::model::ChatStoreField::SendFalse
                 } else {
-                    crate::model_info::ChatStoreField::Omit
+                    crate::types::model::ChatStoreField::Omit
                 }
             });
             c.instruction_role = match opt_string(compat, "systemRoleOverride")?.as_deref() {
-                Some("system") => Some(crate::model_info::ChatInstructionRole::System),
-                Some("developer") => Some(crate::model_info::ChatInstructionRole::Developer),
+                Some("system") => Some(crate::types::model::ChatInstructionRole::System),
+                Some("developer") => Some(crate::types::model::ChatInstructionRole::Developer),
                 Some(_) => return Err("invalid systemRoleOverride".into()),
                 None => flag("supportsDeveloperRole")?.map(|value| {
                     if value {
-                        crate::model_info::ChatInstructionRole::DeveloperForReasoning
+                        crate::types::model::ChatInstructionRole::DeveloperForReasoning
                     } else {
-                        crate::model_info::ChatInstructionRole::System
+                        crate::types::model::ChatInstructionRole::System
                     }
                 }),
             };
@@ -1152,7 +1152,7 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
                 tiers
                     .iter()
                     .map(|tier| {
-                        Ok(crate::model_info::PricingTier {
+                        Ok(crate::types::model::PricingTier {
                             input_tokens_above: tier
                                 .get("above")
                                 .or_else(|| tier.get("inputTokensAbove"))
@@ -1167,7 +1167,7 @@ pub(crate) fn decode_model_entry(entry: &Value) -> Result<ModelInfo, String> {
             })
             .transpose()?
             .unwrap_or_default();
-        model.pricing = Some(crate::model_info::ModelPricing { base, tiers });
+        model.pricing = Some(crate::types::model::ModelPricing { base, tiers });
     }
 
     if let Some(compat) = extension
@@ -1237,7 +1237,7 @@ fn encode_record_headers(
     }
 }
 
-fn encode_pricing_tiers(tiers: &[crate::model_info::PricingTier]) -> Value {
+fn encode_pricing_tiers(tiers: &[crate::types::model::PricingTier]) -> Value {
     json!(
         tiers
             .iter()
@@ -1252,7 +1252,7 @@ fn encode_pricing_tiers(tiers: &[crate::model_info::PricingTier]) -> Value {
 
 pub(crate) fn decode_pricing_tiers(
     value: Option<&Value>,
-) -> Result<Vec<crate::model_info::PricingTier>, String> {
+) -> Result<Vec<crate::types::model::PricingTier>, String> {
     value
         .map(|value| {
             value
@@ -1260,7 +1260,7 @@ pub(crate) fn decode_pricing_tiers(
                 .ok_or("pricing tiers must be an array")?
                 .iter()
                 .map(|tier| {
-                    Ok(crate::model_info::PricingTier {
+                    Ok(crate::types::model::PricingTier {
                         input_tokens_above: tier
                             .get("inputTokensAbove")
                             .and_then(serde_json::Value::as_number)
@@ -1277,8 +1277,8 @@ pub(crate) fn decode_pricing_tiers(
 }
 
 fn encode_catalog_record(record: &CatalogRecord) -> Value {
-    use crate::classifier::ClassifierInputModality;
-    use crate::images::ImageOutputModality;
+    use crate::types::classifier::ClassifierInputModality;
+    use crate::types::images::ImageOutputModality;
     match record {
         CatalogRecord::Chat(model) => {
             let mut entry = encode_model_entry(model);
@@ -1375,7 +1375,7 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
         .and_then(Value::as_str)
         .unwrap_or(&id)
         .to_owned();
-    let api = crate::models::ApiId::new(string("api")?);
+    let api = crate::types::ApiId::new(string("api")?);
     let base_url = string("baseUrl")?;
     let input = entry
         .get("input")
@@ -1400,8 +1400,8 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
             .ok_or("image model requires output array")?
             .iter()
             .map(|value| match value.as_str() {
-                Some("text") => Ok(crate::images::ImageOutputModality::Text),
-                Some("image") => Ok(crate::images::ImageOutputModality::Image),
+                Some("text") => Ok(crate::types::images::ImageOutputModality::Text),
+                Some("image") => Ok(crate::types::images::ImageOutputModality::Image),
                 _ => Err("unknown image output modality".to_owned()),
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -1410,7 +1410,7 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
             .filter(|value| !value.is_null())
             .map(|cost| {
                 Ok::<_, String>(known_pricing_from_json(cost)?.map(|pricing| {
-                    crate::images::ImageCostRates {
+                    crate::types::images::ImageCostRates {
                         input: pricing.input_cost_per_mtok,
                         output: pricing.output_cost_per_mtok,
                         cache_read: pricing.cache_read_cost_per_mtok,
@@ -1420,23 +1420,25 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
             })
             .transpose()?
             .flatten();
-        Ok(CatalogRecord::Image(crate::images::ImageModelRecord {
-            provider_id: provider.into(),
-            id,
-            name,
-            api,
-            base_url,
-            input,
-            headers,
-            input_limits,
-            output,
-            cost,
-            cost_tiers: decode_pricing_tiers(
-                entry
-                    .pointer("/x-opi/imagePricingTiers")
-                    .or_else(|| entry.pointer("/cost/tiers")),
-            )?,
-        }))
+        Ok(CatalogRecord::Image(
+            crate::types::images::ImageModelRecord {
+                provider_id: provider.into(),
+                id,
+                name,
+                api,
+                base_url,
+                input,
+                headers,
+                input_limits,
+                output,
+                cost,
+                cost_tiers: decode_pricing_tiers(
+                    entry
+                        .pointer("/x-opi/imagePricingTiers")
+                        .or_else(|| entry.pointer("/cost/tiers")),
+                )?,
+            },
+        ))
     } else {
         let cost = entry.get("cost").filter(|value| !value.is_null());
         let tiers = cost
@@ -1447,7 +1449,7 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
                     .ok_or("pricing tiers must be an array")?
                     .iter()
                     .map(|tier| {
-                        Ok(crate::model_info::PricingTier {
+                        Ok(crate::types::model::PricingTier {
                             input_tokens_above: tier
                                 .get("inputTokensAbove")
                                 .and_then(serde_json::Value::as_number)
@@ -1464,9 +1466,9 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
         let cost = cost
             .map(pricing_from_json)
             .transpose()?
-            .map(|base| crate::model_info::ModelPricing { base, tiers });
+            .map(|base| crate::types::model::ModelPricing { base, tiers });
         Ok(CatalogRecord::Classifier(
-            crate::classifier::ClassifierModelRecord {
+            crate::types::classifier::ClassifierModelRecord {
                 provider_id: provider.into(),
                 id,
                 name,
@@ -1478,10 +1480,10 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
                     .into_iter()
                     .map(|value| match value {
                         super::CatalogInputModality::Text => {
-                            crate::classifier::ClassifierInputModality::Text
+                            crate::types::classifier::ClassifierInputModality::Text
                         }
                         super::CatalogInputModality::Image => {
-                            crate::classifier::ClassifierInputModality::Image
+                            crate::types::classifier::ClassifierInputModality::Image
                         }
                     })
                     .collect(),
@@ -1520,13 +1522,13 @@ pub(crate) fn validate_provider_entry(
                         cache_read_cost_per_mtok: cost.cache_read,
                         cache_write_cost_per_mtok: cost.cache_write,
                     };
-                    crate::model_info::validate_pricing(&base)
+                    crate::types::model::validate_pricing(&base)
                         .map_err(|error| error.to_string())?;
                     base
                 } else {
                     Pricing::default()
                 };
-                crate::model_info::ModelPricing {
+                crate::types::model::ModelPricing {
                     base,
                     tiers: model.cost_tiers.clone(),
                 }
@@ -1545,7 +1547,7 @@ pub(crate) fn validate_provider_entry(
         if owner != provider || api.as_str().is_empty() {
             return Err("model route identity does not match its catalog".into());
         }
-        crate::provider_headers::validate_model_headers(headers)
+        crate::types::headers::validate_model_headers(headers)
             .map_err(|error| error.to_string())?;
     }
     Ok(())
@@ -1695,8 +1697,8 @@ pub(crate) fn decode_store_document(document: &Value) -> Result<DecodedStore, Mo
 
 fn parse_responses_source(
     value: &Value,
-) -> Result<crate::model_info::OpenAiResponsesSourceCompat, String> {
-    Ok(crate::model_info::OpenAiResponsesSourceCompat {
+) -> Result<crate::types::model::OpenAiResponsesSourceCompat, String> {
+    Ok(crate::types::model::OpenAiResponsesSourceCompat {
         supports_strict_mode: opt_flag(value, "strictTools")?,
         supports_grammar_tools: opt_flag(value, "supportsOpenAIGrammarTools")?,
         supports_mid_convo_effort: opt_flag(value, "supportsMidConvoEffort")?,
@@ -1713,7 +1715,7 @@ fn parse_responses_source(
 
 fn parse_source_responses_compat(
     value: &Value,
-) -> Result<crate::model_info::OpenAiResponsesSourceCompat, String> {
+) -> Result<crate::types::model::OpenAiResponsesSourceCompat, String> {
     let mut source = parse_responses_source(value)?;
     source.supports_strict_mode = opt_flag(value, "supportsStrictMode")?;
     Ok(source)
@@ -1722,7 +1724,7 @@ fn parse_source_responses_compat(
 #[cfg(test)]
 mod projection_compat_tests {
     use super::*;
-    use crate::model_info::{ModelCapabilities, ModelInfo, WireApi, WireCompat};
+    use crate::types::model::{ModelCapabilities, ModelInfo, WireApi, WireCompat};
 
     fn source_model(wire: WireApi, compat: Value) -> ModelInfo {
         decode_model_entry(&json!({
@@ -1965,7 +1967,7 @@ mod projection_compat_tests {
                     }
                     WireCompat::OpenAiResponses(compat)
                     | WireCompat::AzureOpenAiResponses(compat) => {
-                        compat.source = crate::model_info::OpenAiResponsesSourceCompat {
+                        compat.source = crate::types::model::OpenAiResponsesSourceCompat {
                             supports_strict_mode: value,
                             supports_grammar_tools: value,
                             supports_mid_convo_effort: value,
@@ -1976,7 +1978,7 @@ mod projection_compat_tests {
                         };
                     }
                     WireCompat::OpenAiCodexResponses(compat) => {
-                        compat.source = crate::model_info::OpenAiResponsesSourceCompat {
+                        compat.source = crate::types::model::OpenAiResponsesSourceCompat {
                             supports_strict_mode: value,
                             supports_grammar_tools: value,
                             supports_mid_convo_effort: value,
@@ -2037,7 +2039,7 @@ mod projection_compat_tests {
                 };
                 assert_eq!(
                     source,
-                    &crate::model_info::OpenAiResponsesSourceCompat::default()
+                    &crate::types::model::OpenAiResponsesSourceCompat::default()
                 );
             };
             assert_absent(&model);
@@ -2066,7 +2068,7 @@ mod projection_compat_tests {
         }
         assert_eq!(
             crate::openai_responses::ResponsesConfig::default().source,
-            crate::model_info::OpenAiResponsesSourceCompat::default()
+            crate::types::model::OpenAiResponsesSourceCompat::default()
         );
     }
 

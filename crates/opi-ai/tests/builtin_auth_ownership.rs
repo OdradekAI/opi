@@ -352,16 +352,30 @@ enum Record {
     Image(opi_ai::images::ImageModelRecord),
     Classifier(opi_ai::classifier::ClassifierModelRecord),
 }
-fn issue(models: &Models, record: &Record) -> futures_util::future::BoxFuture<'static, ()> {
+fn issue(
+    models: &Models,
+    record: &Record,
+    id: &'static str,
+) -> futures_util::future::BoxFuture<'static, ()> {
+    let headers = vec![("x-test-call".into(), id.into())];
     match record.clone() {
         Record::Chat(record) => {
-            let call = models.complete_simple(*record, request(), Default::default());
+            let mut request = request();
+            request.extra_headers = headers;
+            let call = models.complete_simple(*record, request, Default::default());
             Box::pin(async move {
                 call.await.expect("controlled chat should succeed");
             })
         }
         Record::Image(record) => {
-            let call = models.generate_images(record, Default::default(), Default::default());
+            let call = models.generate_images(
+                record,
+                Default::default(),
+                opi_ai::images::ImagesCall {
+                    extra_headers: headers,
+                    ..Default::default()
+                },
+            );
             Box::pin(async move {
                 let result = call.await;
                 assert_eq!(
@@ -378,7 +392,10 @@ fn issue(models: &Models, record: &Record) -> futures_util::future::BoxFuture<'s
                     state: serde_json::json!({"fixture":true}),
                     ..Default::default()
                 },
-                Default::default(),
+                opi_ai::classifier::ClassifierCall {
+                    extra_headers: headers,
+                    ..Default::default()
+                },
             );
             Box::pin(async move {
                 let result = call.await;
@@ -446,8 +463,8 @@ async fn exercise(replace: &str) {
         "classifier" => (classifier.clone(), chat.clone()),
         _ => unreachable!(),
     };
-    let old_replaced = issue(&models, &replaced);
-    let old_retained = issue(&models, &retained);
+    let old_replaced = issue(&models, &replaced, "old_replaced");
+    let old_retained = issue(&models, &retained, "old_retained");
     let reads = Arc::new(AtomicUsize::new(0));
     let auth = Arc::new(CustomAuth {
         reads: reads.clone(),
@@ -488,13 +505,12 @@ async fn exercise(replace: &str) {
                 .unwrap();
         }
     }
-    let custom_before = issue(&models, &replaced);
+    let custom_before = issue(&models, &replaced, "custom_before");
     models.set_credential_store(store(provider, "builtin-new-key").await);
-    let custom_after_store = issue(&models, &replaced);
+    let custom_after_store = issue(&models, &replaced, "custom_after_store");
     models.register_oauth_flow(provider, Arc::new(UnusedFlow(provider)));
-    let custom_after_flow = issue(&models, &replaced);
-    let retained_after = issue(&models, &retained);
-    assert_eq!(reads.load(Ordering::SeqCst), 0, "creation is lazy");
+    let custom_after_flow = issue(&models, &replaced, "custom_after_flow");
+    let retained_after = issue(&models, &retained, "retained_after");
     old_replaced.await;
     // Keep six sends: one retained call created before attachment, three
     // custom calls across both mutations, and one current builtin operation.
@@ -507,23 +523,32 @@ async fn exercise(replace: &str) {
     let keys = requests
         .iter()
         .map(|request| {
-            request.headers["authorization"]
-                .to_str()
-                .unwrap()
-                .to_owned()
+            (
+                request.headers["x-test-call"].to_str().unwrap().to_owned(),
+                request.headers["authorization"]
+                    .to_str()
+                    .unwrap()
+                    .to_owned(),
+            )
         })
-        .collect::<Vec<_>>();
+        .collect::<std::collections::BTreeMap<_, _>>();
     assert_eq!(
         keys,
-        vec![
-            "Bearer builtin-old-key",
-            "Bearer builtin-old-key",
-            "Bearer custom-fixture-key",
-            "Bearer custom-fixture-key",
-            "Bearer custom-fixture-key",
-            "Bearer builtin-new-key"
-        ],
-        "operation {replace}"
+        std::collections::BTreeMap::from([
+            ("old_replaced".into(), "Bearer builtin-old-key".into()),
+            ("old_retained".into(), "Bearer builtin-old-key".into()),
+            ("custom_before".into(), "Bearer custom-fixture-key".into()),
+            (
+                "custom_after_store".into(),
+                "Bearer custom-fixture-key".into()
+            ),
+            (
+                "custom_after_flow".into(),
+                "Bearer custom-fixture-key".into()
+            ),
+            ("retained_after".into(), "Bearer builtin-new-key".into()),
+        ]),
+        "operation {replace}: request identity survives independent scheduling"
     );
     assert_eq!(
         reads.load(Ordering::SeqCst),

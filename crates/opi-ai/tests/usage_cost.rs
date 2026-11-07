@@ -6,7 +6,7 @@
 //!
 //! Task 14.12 restores optional subset fields and the four-line cost contract.
 
-use opi_ai::stream::{
+use opi_ai::types::usage::{
     CostBreakdown, CumulativeUsage, Pricing, Usage, calculate_cost, calculate_cumulative_cost,
 };
 
@@ -522,7 +522,7 @@ fn cumulative_cost_uses_exact_u64_totals_above_public_usage_range() {
 
 use opi_ai::calculate_cost_tiered;
 use opi_ai::model_info::{ModelPricing, PricingTier};
-use opi_ai::stream::ServiceTier;
+use opi_ai::types::usage::ServiceTier;
 
 fn rates(input: f64) -> Pricing {
     Pricing {

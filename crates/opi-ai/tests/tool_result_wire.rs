@@ -470,6 +470,11 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // `api_mapped` and `provider_headers` for custom mapped routing; Phase
     // 14.18 added the dedicated public `openai_codex_responses` provider while
     // its wire-neutral shared implementation remains private.)
+    // This scans direct module declarations, not module re-exports. The
+    // approved 1.5 alignment foundation moves credential/mutation under auth
+    // and message/model_info under types while retaining their public paths.
+    // Existing external contract tests compile through those aliases. Common
+    // types/errors are the two new declaration owners, not new providers.
     // Context estimation is shared by request budgeting and product compaction.
     let baseline_modules = vec![
         "anthropic",
@@ -499,7 +504,6 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // grammar tools) is a deliberate later-phase addition.
         "constrained_sampling",
         "context",
-        "credential",
         "deferred",
         "gemini",
         "http",
@@ -507,15 +511,10 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "identity",
         // DEL-11 (task 20.45): image-generation context/result/record types.
         "images",
-        "message",
         "mistral",
         // DEL-13 (task 20.56): the shallow Model shell module was retired
         // with zero in-repo consumers.
-        "model_info",
         "models",
-        // P20-STORE (task 20.22): store-owned serialized credential
-        // mutations are a deliberate later-phase addition.
-        "mutation",
         "openai_chat",
         "openai_codex_responses",
         "openai_responses",
@@ -544,6 +543,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // RDF-24 (task 20.15): the strict WebSocket Upgrade bridge is a
         // deliberate later-phase addition.
         "ws",
+        "errors",
+        "types",
     ];
     let declared: Vec<&str> = lib_rs
         .lines()

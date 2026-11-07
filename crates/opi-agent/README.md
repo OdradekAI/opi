@@ -282,6 +282,17 @@ in-flight assistant message is discarded: it is only pushed to the message
 buffer when the stream's `Done` event arrives, so a cancel mid-stream writes
 no partial assistant message.
 
+Turn attempts and preparation summary calls use independently started AI
+executions. Dropping an agent operation's future stops its waiting and event
+processing; the started model call continues. It does not finish the agent run
+or commit a later response to agent state. To cancel, trigger the run's token
+and keep awaiting the operation. The agent explicitly aborts and joins its AI
+execution before returning cancellation, including when an outer preparation
+hook is interrupted and the source ignores the token. This confirms release of
+the execution's source, not completion of a provider's separately spawned tasks
+or session resources; those still use `Models::cleanup_session_resources`.
+Cancellation retains priority over already buffered model events.
+
 Consumers must tolerate open turns on early provider exits. Provider failure
 and provider-stream cancellation may emit `TurnStarted` without a matching
 `TurnEnded`; the terminal boundary for those paths is `AgentEnd` plus the

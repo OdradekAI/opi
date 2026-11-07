@@ -48,6 +48,11 @@ fn preparation_error(error: ModelsError) -> AgentError {
 /// validates, and atomically applies a next-turn candidate before dispatch.
 /// Agent Core imposes no intrinsic turn limit.
 ///
+/// Started model attempts outlive a dropped loop future. Explicit cancellation
+/// aborts and joins the attempt's execution before the loop returns, releasing
+/// its source; provider-internal tasks and session resources retain their own
+/// cleanup contracts. Dropping the loop does not finalize Agent state/evidence.
+///
 /// An in-band provider stream `Error` terminal is a provider failure, not a
 /// completed turn: the provider's complete terminal message stays visible in
 /// the turn's events, no tool call is launched, and the run fails with a
@@ -231,6 +236,7 @@ async fn run_operation(
     let mut state = context.state;
     let mut committed_state = None;
     let mut pending_preparation = Vec::new();
+    let mut preparation_calls = Vec::new();
     let mut preparation_uncertainty = None;
 
     macro_rules! finish_with_error {
@@ -369,6 +375,7 @@ async fn run_operation(
             };
             let prepared = {
                 let evidence = PreparationEvidence {
+                    provider_calls: &mut preparation_calls,
                     events: &events,
                     sink: &evidence_sink,
                     identities: &mut identities,
@@ -392,6 +399,7 @@ async fn run_operation(
                         &selected_input,
                         cancel.clone(),
                         PreparationEvidence {
+                            provider_calls: &mut preparation_calls,
                             events: &events,
                             sink: &evidence_sink,
                             identities: &mut identities,
@@ -405,6 +413,7 @@ async fn run_operation(
                 }
                 Err(error) => Err(error),
             };
+            settle_preparation_calls(&mut preparation_calls, &cancel).await;
             match prepared {
                 Ok(Some((candidate, commit))) => {
                     input_context_start = candidate.context.len() - selected_input.len();
@@ -617,12 +626,11 @@ async fn run_operation(
         let mut turn_terminate = false;
 
         'stream: loop {
-            // Task 20.2: the attempt is consumed through the public ChatStream
-            // seam — one final Result per logical call, first-terminal
-            // absorption, and failures as Err(CallFailure) with the preserved
-            // partial and typed cause.
+            // The execution owns the attempt independently of this consumer.
+            // Terminal absorption and typed partial failures remain shared
+            // with ChatStream; explicit caller cancellation joins the owner.
             let mut stream = match prepared.start_attempt() {
-                Ok(attempt) => opi_ai::stream::ChatStream::new(attempt),
+                Ok(attempt) => opi_ai::stream::ChatStream::new(attempt).start(),
                 Err(ModelsError::CallCancelled) => {
                     observe(&diagnostic_sink, cancelled_diagnostic("during_prepare"));
                     fail_before_dispatch!(AgentError::Cancelled);
@@ -641,6 +649,10 @@ async fn run_operation(
                 tokio::select! {
                     biased;
                     _ = cancel.cancelled() => {
+                        // Some custom sources ignore the request token. Release
+                        // this owned source before ending the cancelled run.
+                        // Provider-internal tasks keep their cleanup contract.
+                        let _ = stream.abort().await;
                         observe(
                             &diagnostic_sink,
                             cancelled_diagnostic("during_stream"),
@@ -1433,6 +1445,7 @@ async fn run_operation(
         let preparation_health_generation = evidence_health.generation();
         let prepared_next_turn = {
             let evidence = PreparationEvidence {
+                provider_calls: &mut preparation_calls,
                 events: &events,
                 sink: &evidence_sink,
                 identities: &mut identities,
@@ -1456,6 +1469,7 @@ async fn run_operation(
                     &[],
                     cancel.clone(),
                     PreparationEvidence {
+                        provider_calls: &mut preparation_calls,
                         events: &events,
                         sink: &evidence_sink,
                         identities: &mut identities,
@@ -1469,6 +1483,7 @@ async fn run_operation(
             }
             Err(error) => Err(error),
         };
+        settle_preparation_calls(&mut preparation_calls, &cancel).await;
         let prepared_next_turn = prepared_next_turn.and_then(|prepared| {
             let mut externally_committed = false;
             if let Some((candidate, commit)) = prepared {
@@ -1523,6 +1538,20 @@ async fn run_operation(
         // earlier steering or follow-up was selected for the upcoming turn.
         if pending_steering.is_empty() && pending_follow_up.is_empty() {
             pending_steering = drain_queue(&context.steering_queue);
+        }
+    }
+}
+
+async fn settle_preparation_calls(
+    calls: &mut Vec<opi_ai::StartedChatStream>,
+    cancel: &CancellationToken,
+) {
+    // A cancelled outer select can drop the hook before run_provider_call's
+    // cancellation branch executes. Core retains these handles until here.
+    // Other hook completion/error paths only stop consuming abandoned calls.
+    for mut call in calls.drain(..) {
+        if cancel.is_cancelled() {
+            let _ = call.abort().await;
         }
     }
 }
@@ -1604,6 +1633,7 @@ impl PreparationEvidence<'_> {
     /// Temporarily lend the same run scope to a nested preparation hook.
     pub fn reborrow(&mut self) -> PreparationEvidence<'_> {
         PreparationEvidence {
+            provider_calls: self.provider_calls,
             events: self.events,
             sink: self.sink,
             identities: self.identities,
@@ -1701,6 +1731,9 @@ impl PreparationEvidence<'_> {
     /// only after that record is emitted. The terminal route uses actual provider
     /// response facts. The response is returned to policy and is never inserted
     /// into Agent conversation state or treated as a completed task turn.
+    /// Dropping the waiter leaves model execution running. Core retains its
+    /// handle across hook cancellation so explicit run cancellation can abort
+    /// and join the execution, including a source that ignores its token.
     pub async fn run_provider_call(
         &mut self,
         collection: &opi_ai::Models,
@@ -1743,18 +1776,26 @@ impl PreparationEvidence<'_> {
             crate::evidence::EvidencePayload::Provider(facts.clone()),
         )
         .map_err(|_| AgentError::Hook("summary start evidence could not be emitted".to_owned()))?;
-        let mut stream =
-            opi_ai::stream::ChatStream::new(prepared.start_attempt().map_err(AgentError::from)?);
+        let stream =
+            opi_ai::stream::ChatStream::new(prepared.start_attempt().map_err(AgentError::from)?)
+                .start();
+        let call_index = self.provider_calls.len();
+        self.provider_calls.push(stream);
         loop {
             let item = tokio::select! {
                 biased;
-                _ = cancel.cancelled() => return Err(AgentError::Cancelled),
-                item = stream.next() => item,
+                _ = cancel.cancelled() => {
+                    let _ = self.provider_calls[call_index].abort().await;
+                    self.provider_calls.remove(call_index);
+                    return Err(AgentError::Cancelled);
+                },
+                item = self.provider_calls[call_index].next() => item,
             };
             let Some(item) = item else {
                 // ChatStream synthesizes the typed protocol failure on
                 // premature EOF, so exhaustion always passes through the Err
                 // arm below; this arm is a defensive invariant guard.
+                self.provider_calls.remove(call_index);
                 return Err(AgentError::ProviderProtocol {
                     detail: opi_ai::provider::ProviderErrorSummary::redacted(),
                 });
@@ -1767,6 +1808,7 @@ impl PreparationEvidence<'_> {
                 Err(failure) => (failure.message().clone(), Some(failure)),
                 Ok(_) => continue,
             };
+            self.provider_calls.remove(call_index);
             let actual = crate::evidence::ActualRoute::from_reported_provider_model(
                 message.provider.clone(),
                 message

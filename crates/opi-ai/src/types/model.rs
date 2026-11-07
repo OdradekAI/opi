@@ -12,7 +12,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 
-use crate::stream::{CostBreakdown, Pricing, Usage, calculate_cost};
+use crate::types::usage::{CostBreakdown, Pricing, Usage, calculate_cost};
 
 /// Arbitrary sampling parameters merged into the request body as-is.
 ///
@@ -1159,7 +1159,7 @@ pub fn resolve_sampling_params(
 /// Known free usage is
 /// `Some` zero. The explicit source exception: OpenRouter image `parse_usage` keeps
 /// base model rates without tiers — image callers use
-/// [`crate::stream::calculate_cost`] directly.
+/// [`crate::types::usage::calculate_cost`] directly.
 pub fn calculate_cost_tiered(
     usage: &Usage,
     pricing: &ModelPricing,
@@ -1175,8 +1175,12 @@ pub fn calculate_cost_tiered(
     let tier = usage.effective_service_tier.or(usage.service_tier);
     let multiplier = match wire {
         WireApi::OpenAiResponses | WireApi::OpenAiCodexResponses => match tier {
-            Some(crate::stream::ServiceTier::Unknown) => return None,
-            Some(crate::stream::ServiceTier::Fast) if wire == WireApi::OpenAiCodexResponses => 1.0,
+            Some(crate::types::usage::ServiceTier::Unknown) => return None,
+            Some(crate::types::usage::ServiceTier::Fast)
+                if wire == WireApi::OpenAiCodexResponses =>
+            {
+                1.0
+            }
             Some(tier) => tier.cost_multiplier(model_id),
             None => 1.0,
         },
@@ -1310,7 +1314,7 @@ impl ModelInfo {
     /// remain unknown, including finite negative source placeholders.
     pub fn calculate_response_cost(
         &self,
-        response: &crate::message::AssistantMessage,
+        response: &crate::types::message::AssistantMessage,
     ) -> Option<CostBreakdown> {
         let fallback = if self.wire_api == WireApi::AnthropicMessages
             && let WireCompat::AnthropicMessages(compat) = &self.compat
@@ -1383,7 +1387,7 @@ impl ModelInfo {
                 compat_wire,
             });
         }
-        crate::provider_headers::validate_model_headers(&self.headers)
+        crate::types::headers::validate_model_headers(&self.headers)
             .map_err(|error| ModelInfoError::InvalidHeaders(error.to_string()))?;
         if let WireCompat::AnthropicMessages(compat) = &self.compat
             && let Some(fallbacks) = &compat.allowed_fallback_models

@@ -120,8 +120,18 @@ fn call(models: &Models, request: Request) -> opi_ai::models::ChatCall {
     )
 }
 
+async fn wait_auth(entered: &AtomicUsize, expected: usize) {
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while entered.load(Ordering::SeqCst) < expected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("execution reaches the controlled auth gate");
+}
+
 #[tokio::test]
-async fn cleanup_cancels_first_polled_call_while_auth_is_pending() {
+async fn cleanup_cancels_started_call_while_auth_is_pending() {
     let server = peer(std::time::Duration::ZERO).await;
     let entered = Arc::new(AtomicUsize::new(0));
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
@@ -130,6 +140,7 @@ async fn cleanup_cancels_first_polled_call_while_auth_is_pending() {
     let parent = request.cancel.clone();
     let mut call = call(&models, request);
     assert!(poll!(call.next()).is_pending());
+    wait_auth(&entered, 1).await;
     assert_eq!(entered.load(Ordering::SeqCst), 1);
     let cleanup = models.cleanup_session_resources(None);
     let (outcome, report) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
@@ -190,6 +201,7 @@ async fn retained_native_api_keeps_its_namespace_after_provider_route_replacemen
         handle.options(CodexOptions::default()),
     );
     assert!(poll!(retained.next()).is_pending());
+    wait_auth(&entered, 1).await;
     assert_eq!(
         entered.load(Ordering::SeqCst),
         1,
@@ -278,28 +290,33 @@ async fn disabled_cache_keeps_complete_session_cleanup_identity() {
 }
 
 #[tokio::test]
-async fn cleanup_cutoff_begins_on_first_poll_and_unpolled_calls_start_after_it() {
+async fn cleanup_cutoff_includes_unconsumed_executions_and_excludes_later_calls() {
     let server = peer(std::time::Duration::ZERO).await;
     let entered = Arc::new(AtomicUsize::new(0));
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     let models = models(&server, Some(gate.clone()), entered.clone());
     let cleanup = models.cleanup_session_resources(None);
-    let mut old = call(&models, request());
-    let later = call(&models, request());
-    assert!(poll!(old.next()).is_pending());
-    let (old_result, report) = tokio::time::timeout(std::time::Duration::from_secs(1), async {
-        tokio::join!(old.result(), cleanup)
-    })
-    .await
-    .expect("first-poll cutoff covers work started after Future construction");
-    assert!(matches!(
-        old_result.unwrap_err().cause(),
-        ProviderError::Cancelled
-    ));
-    assert_eq!(report.unwrap().cancelled_generations, 1);
+    let old = call(&models, request());
+    let also_old = call(&models, request());
+    // Neither consumer is polled. Both independent executions register before cutoff.
+    wait_auth(&entered, 2).await;
+    let (old_result, also_old_result, report) =
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::join!(old.result(), also_old.result(), cleanup)
+        })
+        .await
+        .expect("cleanup covers both registered executions");
+    for result in [old_result, also_old_result] {
+        assert!(matches!(
+            result.unwrap_err().cause(),
+            ProviderError::Cancelled
+        ));
+    }
+    assert_eq!(report.unwrap().cancelled_generations, 2);
     gate.add_permits(1);
+    let later = call(&models, request());
     assert!(later.result().await.is_ok());
-    assert_eq!(entered.load(Ordering::SeqCst), 2);
+    assert_eq!(entered.load(Ordering::SeqCst), 3);
 }
 
 #[tokio::test]
@@ -310,6 +327,7 @@ async fn cleanup_does_not_wait_for_a_dormant_auth_call_to_be_repolled() {
     let models = models(&server, Some(gate), entered.clone());
     let mut retained = call(&models, request());
     assert!(poll!(retained.next()).is_pending());
+    wait_auth(&entered, 1).await;
     assert_eq!(entered.load(Ordering::SeqCst), 1);
     let report = tokio::time::timeout(
         std::time::Duration::from_secs(1),
@@ -467,13 +485,15 @@ fn require_owned<T: Send + 'static>(value: T) -> T {
 #[tokio::test]
 async fn owned_cleanup_future_survives_models_drop() {
     let server = peer(std::time::Duration::ZERO).await;
+    let entered = Arc::new(AtomicUsize::new(0));
     let models = models(
         &server,
         Some(Arc::new(tokio::sync::Semaphore::new(0))),
-        Arc::new(AtomicUsize::new(0)),
+        entered.clone(),
     );
     let mut retained = call(&models, request());
     assert!(poll!(retained.next()).is_pending());
+    wait_auth(&entered, 1).await;
     let cleanup = require_owned(models.cleanup_session_resources(Some("complete-session")));
     drop(models);
     let (result, report) = tokio::join!(retained.result(), cleanup);
@@ -753,8 +773,8 @@ async fn cleanup_first_poll_includes_namespaces_registered_after_future_creation
     assert_eq!(report.closed_connections, 2);
 }
 
-#[test]
-fn unpolled_owned_call_does_not_retain_unrelated_namespaces_after_models_drop() {
+#[tokio::test]
+async fn unconsumed_call_retains_only_its_selected_namespace_until_execution_ends() {
     let mut models = Models::new();
     let unrelated = Arc::new(AtomicUsize::new(0));
     let selected = Arc::new(AtomicUsize::new(0));
@@ -779,7 +799,7 @@ fn unpolled_owned_call_does_not_retain_unrelated_namespaces_after_models_drop() 
             )
             .unwrap();
     }
-    let owned = models.stream_simple(
+    let mut owned = models.stream_simple(
         ChatModelRecord::new("selected", model()),
         request(),
         Default::default(),
@@ -794,7 +814,7 @@ fn unpolled_owned_call_does_not_retain_unrelated_namespaces_after_models_drop() 
         Arc::strong_count(&selected) > 1,
         "owned call retains its selected namespace and provider"
     );
-    drop(owned);
+    let _ = owned.abort().await;
     assert_eq!(Arc::strong_count(&selected), 1);
 }
 

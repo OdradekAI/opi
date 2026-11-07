@@ -123,7 +123,7 @@ pub(crate) fn setup(
 }
 
 impl ToolLoop {
-    /// Freeze the actual owned round before polling its authentication.
+    /// Freeze this round and schedule its authentication and execution on Tokio.
     pub(crate) fn start_round(&self) -> Result<ChatCall, Box<dyn std::error::Error>> {
         let context = transcript::normalize_context(transcript::Context {
             system_prompt: Some("You are a concise assistant.".into()),

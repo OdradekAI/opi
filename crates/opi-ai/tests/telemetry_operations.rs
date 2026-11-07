@@ -524,7 +524,8 @@ async fn default_and_noop_contexts_run_business_once_without_sdk_observation() {
     assert!(a_recording.lock().unwrap().events.is_empty());
 
     // Explicit noop: business runs exactly once with identical output, the
-    // adapter's own host tracing remains visible. No SDK span is added.
+    // consumer's ambient dispatcher is not adopted by the execution task.
+    // The raw carrier tests below still prove noop preserves execution-local tracing.
     let message = await_under_ambient(
         &a_dispatch,
         models.complete_simple(
@@ -541,21 +542,7 @@ async fn default_and_noop_contexts_run_business_once_without_sdk_observation() {
         *observed.telemetry_present.lock().unwrap(),
         vec![false, true]
     );
-    assert_eq!(
-        a_recording
-            .lock()
-            .unwrap()
-            .spans
-            .iter()
-            .map(|(name, _)| *name)
-            .collect::<Vec<_>>(),
-        vec![
-            "chat_poll_marker",
-            "chat_poll_marker",
-            "chat_poll_marker",
-            "chat_drop_marker"
-        ]
-    );
+    assert!(a_recording.lock().unwrap().spans.is_empty());
     assert_no_canaries(&a_recording);
 }
 
@@ -587,10 +574,11 @@ async fn abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent() {
         futures_util::StreamExt::poll_next_unpin(&mut call, &mut cx)
     });
     assert!(
-        first.is_ready(),
-        "the first poll must deliver the start event"
+        first.is_pending(),
+        "consumer does not poll the source inline"
     );
     drop(call);
+    wait_chat_release(&observed).await;
 
     let spans = probe_spans(&a_recording);
     let polls = spans
@@ -601,10 +589,26 @@ async fn abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent() {
         .iter()
         .filter(|(name, _)| *name == "chat_drop_marker")
         .count();
-    assert_eq!(polls, 1, "each poll runs exactly one scoped section");
-    assert_eq!(drops, 1, "abandonment runs one scoped drop section");
+    assert_eq!(
+        polls, 3,
+        "execution drains all scripted events after consumer Drop"
+    );
+    assert_eq!(
+        drops, 1,
+        "execution releases the source in its frozen scope"
+    );
     assert_all_parented(&spans, parent_id);
     assert!(b_recording.lock().unwrap().spans.is_empty());
+}
+
+async fn wait_chat_release(observed: &AdapterObservations) {
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while observed.drops.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("execution releases the scripted source");
 }
 
 fn business_counts(observed: &AdapterObservations) -> [usize; 4] {
@@ -614,6 +618,28 @@ fn business_counts(observed: &AdapterObservations) -> [usize; 4] {
         observed.events.load(Ordering::SeqCst),
         observed.drops.load(Ordering::SeqCst),
     ]
+}
+
+#[tokio::test]
+async fn ordinary_chat_keeps_frozen_parent_on_the_execution_task() {
+    let (recording, dispatch) = recorder();
+    let observed = Arc::new(AdapterObservations::default());
+    let (models, handle) = marker_models(Arc::clone(&observed));
+    let parent =
+        dispatcher::with_default(&dispatch, || tracing::span!(Level::INFO, "caller_parent"));
+    let parent_id = parent.id().unwrap().into_u64();
+    let context = TelemetryContext::from_span(parent);
+    let started = models.stream(
+        marker_record(),
+        marker_request(Some(context)),
+        handle.options(()),
+    );
+    drop(models);
+    let message = started.result().await.unwrap();
+    assert_eq!(message_text(&message), "marker response");
+    assert_eq!(business_counts(&observed), [1, 3, 3, 1]);
+    assert_all_parented(&probe_spans(&recording), parent_id);
+    assert_no_canaries(&recording);
 }
 
 /// Observe the caller immediately after one adapter section, while the caller's
@@ -658,7 +684,10 @@ fn pending_chat_stream_preserves_frozen_context_across_threads() {
         pending_first_poll: true,
         ..Default::default()
     });
-    let (models, handle) = marker_models(Arc::clone(&observed));
+    let api = MarkerChatApi {
+        observed: Arc::clone(&observed),
+        terminal: MarkerTerminal::Text,
+    };
     let parent =
         dispatcher::with_default(&a_dispatch, || tracing::span!(Level::INFO, "caller_parent"));
     let parent_id = parent.id().unwrap().into_u64();
@@ -667,12 +696,12 @@ fn pending_chat_stream_preserves_frozen_context_across_threads() {
         tracing::span!(Level::INFO, "ambient_parent")
     });
     let first_ambient_id = ambient_parent.id().unwrap().into_u64();
-    let mut call = models.stream(
-        marker_record(),
+    let mut call = opi_ai::ChatStream::new(api.stream_prepared(
         marker_request(Some(context)),
-        handle.options(()),
-    );
-    assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
+        (),
+        opi_ai::test_support::resolved_bearer_auth(),
+    ));
+    assert_eq!(business_counts(&observed), [1, 0, 0, 0]);
 
     let waker = futures_util::task::noop_waker();
     let mut cx = TaskContext::from_waker(&waker);
@@ -800,8 +829,8 @@ fn constructed_unpolled_event_stream_scopes_drop() {
     assert_ambient_restored(&b_recording, &[ambient_id]);
 }
 
-#[test]
-fn unpolled_models_call_does_not_construct_adapter_stream() {
+#[tokio::test]
+async fn dropped_unpolled_models_call_completes_in_its_frozen_scope() {
     let (a_recording, a_dispatch) = recorder();
     let (b_recording, b_dispatch) = recorder();
     let observed = Arc::new(AdapterObservations::default());
@@ -820,9 +849,10 @@ fn unpolled_models_call_does_not_construct_adapter_stream() {
     });
     let ambient_id = ambient_parent.id().unwrap().into_u64();
     ambient_section(&b_dispatch, &ambient_parent, || drop(call));
-    assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
-    assert!(observed.telemetry_present.lock().unwrap().is_empty());
-    assert!(probe_spans(&a_recording).is_empty());
+    wait_chat_release(&observed).await;
+    assert_eq!(business_counts(&observed), [1, 3, 3, 1]);
+    assert_eq!(*observed.telemetry_present.lock().unwrap(), vec![true]);
+    assert_eq!(probe_spans(&a_recording).len(), 4);
     assert_ambient_restored(&b_recording, &[ambient_id]);
 }
 
@@ -836,9 +866,16 @@ fn noop_pending_stream_restores_ambient_and_preserves_business() {
             pending_first_poll: true,
             ..Default::default()
         });
-        let (models, handle) = marker_models(Arc::clone(&observed));
-        let mut call = models.stream(marker_record(), marker_request(context), handle.options(()));
-        assert_eq!(business_counts(&observed), [0, 0, 0, 0]);
+        let api = MarkerChatApi {
+            observed: Arc::clone(&observed),
+            terminal: MarkerTerminal::Text,
+        };
+        let mut call = opi_ai::ChatStream::new(api.stream_prepared(
+            marker_request(context),
+            (),
+            opi_ai::test_support::resolved_bearer_auth(),
+        ));
+        assert_eq!(business_counts(&observed), [1, 0, 0, 0]);
         let ambient_parent = dispatcher::with_default(&b_dispatch, || {
             tracing::span!(Level::INFO, "ambient_parent")
         });

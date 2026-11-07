@@ -3921,25 +3921,44 @@ async fn chat_duration_on_peer(
         )
         .unwrap();
     let mut request = chat_public_request("gpt-4o", None);
-    request.callbacks = opi_ai::callbacks::RequestCallbacks::new().with_async_on_response(
-        move |status, _| async move {
+    let (terminal_tx, terminal_rx) = tokio::sync::oneshot::channel();
+    let terminal_tx = std::sync::Mutex::new(Some(terminal_tx));
+    request.callbacks = opi_ai::callbacks::RequestCallbacks::new()
+        .with_async_on_response(move |status, _| async move {
             assert_eq!(status, 200);
             tokio::time::sleep(setup_delay).await;
             Ok(())
-        },
-    );
+        })
+        .with_on_raw(Arc::new(move |event| {
+            if event["choices"][0]["finish_reason"] == "stop" {
+                terminal_tx
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .unwrap()
+                    .send(())
+                    .unwrap();
+            }
+            Ok(())
+        }));
     let started = std::time::Instant::now();
     let call = models.stream_simple(
         opi_ai::ChatModelRecord::new("openai", model),
         request,
         Default::default(),
     );
-    tokio::time::sleep(setup_delay).await;
+    tokio::time::timeout(std::time::Duration::from_secs(5), terminal_rx)
+        .await
+        .expect("unconsumed execution receives the raw terminal")
+        .unwrap();
     assert_eq!(
         calls.load(Ordering::SeqCst),
-        0,
-        "an unpolled handle starts no auth"
+        1,
+        "execution authenticates without consumption"
     );
+    // The source proceeds past the terminal independently while the consumer
+    // waits. This interval must not inflate the recorded body duration.
+    tokio::time::sleep(setup_delay).await;
     let message = call
         .result()
         .await
@@ -3973,8 +3992,8 @@ async fn chat_duration_includes_pending_first_body_poll() {
 #[tokio::test]
 async fn chat_duration_excludes_auth_setup_callback_and_unpolled_time() {
     use std::time::Duration;
-    // Four independent150ms setup intervals: unpolled handle, resolver,
-    // response headers and response callback. None belongs to body polling.
+    // Four 150ms intervals: resolver, response headers, response callback,
+    // then delayed consumption after the raw terminal. None belongs to body polling.
     let (message, elapsed) =
         chat_duration_on_peer(Duration::ZERO, Duration::from_millis(150)).await;
     let measured = Duration::from_millis(message.duration_ms.unwrap());

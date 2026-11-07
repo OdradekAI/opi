@@ -9,10 +9,6 @@ use opi_ai::bedrock;
 use opi_ai::gemini;
 use opi_ai::http::HttpClient;
 use opi_ai::mistral;
-use opi_ai::model_info::{
-    AnthropicMessagesCompat, ModelInfo, ModelPricing, PricingTier, ThinkingLevel, ThinkingLevelMap,
-    ThinkingLevelMapping, WireApi, WireCompat,
-};
 use opi_ai::openai_chat;
 use opi_ai::openai_responses;
 use opi_ai::openrouter;
@@ -21,6 +17,10 @@ use opi_ai::provider::{
 };
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::Pricing;
+use opi_ai::types::model::{
+    AnthropicMessagesCompat, ModelInfo, ModelPricing, PricingTier, ThinkingLevel, ThinkingLevelMap,
+    ThinkingLevelMapping, WireApi, WireCompat,
+};
 use opi_ai::vertex;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
@@ -89,7 +89,7 @@ fn model_info_rejects_wire_compat_mismatch() {
 
 #[test]
 fn routing_types_retain_explicit_empty_and_nested_partition_null() {
-    use opi_ai::model_info::{OpenRouterRouting, VercelGatewayRouting};
+    use opi_ai::types::model::{OpenRouterRouting, VercelGatewayRouting};
     for routing in [
         serde_json::json!({}),
         serde_json::json!({"sort":"price"}),
@@ -424,11 +424,11 @@ fn model_metadata_rejects_long_cache_without_cache_control() {
 // Task 20.35: sampling metadata precedence and adapter wiring (AIR-062).
 // ---------------------------------------------------------------------------
 
-use opi_ai::model_info::resolve_sampling_params;
 use opi_ai::stream::ServiceTier;
+use opi_ai::types::model::resolve_sampling_params;
 use serde_json::json;
 
-fn sampling_json(value: serde_json::Value) -> opi_ai::model_info::SamplingParams {
+fn sampling_json(value: serde_json::Value) -> opi_ai::types::model::SamplingParams {
     value.as_object().cloned().expect("object sampling params")
 }
 
@@ -911,8 +911,8 @@ mod anthropic_complete_metadata {
 mod anthropic_response_cost {
     use super::*;
     use opi_ai::message::AssistantMessage;
-    use opi_ai::model_info::AnthropicAllowedFallbackModel;
     use opi_ai::stream::Usage;
+    use opi_ai::types::model::AnthropicAllowedFallbackModel;
 
     fn rates(scale: f64) -> Pricing {
         Pricing {

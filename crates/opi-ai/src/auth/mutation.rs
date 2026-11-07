@@ -32,10 +32,10 @@ use std::task::{Context, Poll, Waker};
 
 use futures_util::FutureExt;
 
-use crate::credential::{
+use super::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
 };
-use crate::provider::ProviderError;
+use crate::errors::ProviderError;
 
 /// Store-wide admission number. Monotonically increasing in submission
 /// order; barrier cutoffs are expressed in generations.

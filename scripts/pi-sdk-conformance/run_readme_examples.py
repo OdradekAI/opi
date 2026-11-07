@@ -4,8 +4,8 @@
 Cargo creates the actual opi-ai artifact; a fresh workspace-external ordinary
 consumer compiles its exact examples and runs their shared setup, call
 construction and execution functions. Recording injected auth, memory store and
-loopback peers prove source-free setup/static selection, actual pre-poll
-laziness, final response/stream delivery and the tool-result second request.
+loopback peers prove source-free setup/static selection, execution before
+consumer polling, final response/stream delivery and the tool-result second request.
 No live provider, real credential, root patch or dependency is introduced.
 """
 
@@ -77,13 +77,19 @@ def check_report(report: dict[str, Any]) -> None:
     checks = report.get("checks") if isinstance(report, dict) else None
     if (not isinstance(checks, list) or len(checks) != len(EXPECTED_CASES)
             or [item.get("name") for item in checks if isinstance(item, dict)] != list(EXPECTED_CASES)
-            or report.get("schema") != "opi-readme-execution/1"
+            or report.get("schema") != "opi-readme-execution/2"
             or report.get("verdict") != "PASS" or report.get("total") != 3 or report.get("failed") != 0):
         raise ValueError("consumer did not execute exactly the three named onboarding flows")
     idle = {"source_reads": 0, "store_reads": 0, "requests": 0}
     for case in checks:
-        if case.get("passed") is not True or case.get("setup") != idle or case.get("unpolled") != idle:
-            raise ValueError(f"{case['name']} lacks zero-I/O setup and actual unpolled-call proof")
+        if case.get("passed") is not True or case.get("setup") != idle:
+            raise ValueError(f"{case['name']} lacks zero-I/O setup")
+        started = case.get("before_consumption", {})
+        if (not isinstance(started, dict)
+                or not isinstance(started.get("source_reads"), int) or started["source_reads"] <= 0
+                or not isinstance(started.get("store_reads"), int) or started["store_reads"] <= 0
+                or started.get("requests") != 1):
+            raise ValueError(f"{case['name']} lacks execution before consumption")
         observed = case.get("observed", {})
         expected_requests = 2 if case["name"] == "tool_loop" else 1
         requests = case.get("requests")
@@ -409,10 +415,25 @@ fn assert_idle(snapshot: &Value) {
     );
 }
 
+async fn wait_before_consumption(
+    context: &RecordingContext, store: &InMemoryCredentialStore, peer: &Peer,
+) -> Value {
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while peer.requests().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    }).await.expect("request reaches the peer without polling the call");
+    let started = snapshot(context, store, peer);
+    assert!(started["source_reads"].as_u64().unwrap() > 0);
+    assert!(started["store_reads"].as_u64().unwrap() > 0);
+    assert_eq!(started["requests"], 1);
+    started
+}
+
 fn finish_check(
     name: &str,
     setup: Value,
-    unpolled: Value,
+    before_consumption: Value,
     message: AssistantMessage,
     expected_text: &str,
     expected_requests: usize,
@@ -471,7 +492,7 @@ fn finish_check(
     } else {
         false
     };
-    json!({"name":name,"passed":true,"setup":setup,"unpolled":unpolled,
+    json!({"name":name,"passed":true,"setup":setup,"before_consumption":before_consumption,
         "observed":observed,"final_text":text,"continuation":continuation,"requests":requests})
 }
 
@@ -491,13 +512,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let setup = snapshot(&context, &store, &peer);
         assert_idle(&setup);
         let call = quick_start::start(&models, record)?;
-        let unpolled = snapshot(&context, &store, &peer);
-        assert_idle(&unpolled);
+        let before_consumption = wait_before_consumption(&context, &store, &peer).await;
         let message = quick_start::finish(call).await?;
         checks.push(finish_check(
             "quick_start",
             setup,
-            unpolled,
+            before_consumption,
             message,
             "Hello world",
             1,
@@ -519,13 +539,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let setup = snapshot(&context, &store, &peer);
         assert_idle(&setup);
         let call = quick_start_stream::start(&models, record)?;
-        let unpolled = snapshot(&context, &store, &peer);
-        assert_idle(&unpolled);
+        let before_consumption = wait_before_consumption(&context, &store, &peer).await;
         let message = quick_start_stream::finish(call).await?;
         checks.push(finish_check(
             "quick_start_stream",
             setup,
-            unpolled,
+            before_consumption,
             message,
             "Hello world",
             1,
@@ -550,13 +569,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let setup = snapshot(&context, &store, &peer);
         assert_idle(&setup);
         let call = state.start_round()?;
-        let unpolled = snapshot(&context, &store, &peer);
-        assert_idle(&unpolled);
+        let before_consumption = wait_before_consumption(&context, &store, &peer).await;
         let message = state.finish(call).await?;
         checks.push(finish_check(
             "tool_loop",
             setup,
-            unpolled,
+            before_consumption,
             message,
             "Tokyo: 22 C, clear.",
             2,
@@ -567,7 +585,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     println!(
         "OPI_README_PROOF={}",
-        json!({"schema":"opi-readme-execution/1","verdict":"PASS","total":3,"failed":0,"checks":checks})
+        json!({"schema":"opi-readme-execution/2","verdict":"PASS","total":3,"failed":0,"checks":checks})
     );
     Ok(())
 }
@@ -605,7 +623,7 @@ def main() -> int:
     evidence: dict[str, Any] = {
         "family": "readme-examples",
         "scope": ("three exact packaged onboarding sources execute lazy builtin setup, "
-                  "unpolled calls, final responses/stream and tool-result continuation "
+                  "execution before consumption, final responses/stream and tool-result continuation "
                   "as an ordinary workspace-external consumer (ONB-02)"),
         "scratch": str(scratch),
         "inputs": {"runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

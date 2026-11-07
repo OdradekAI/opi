@@ -8,11 +8,11 @@
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use opi_ai::auth::credential::BoxAuthFuture;
 use opi_ai::auth::{
     AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider, ResolvedAuth,
     StaticAuthResolver,
 };
-use opi_ai::credential::BoxAuthFuture;
 use opi_ai::provider::{ProviderError, ProviderErrorCategory};
 use secrecy::{ExposeSecret, SecretString};
 
@@ -619,7 +619,8 @@ async fn explicit_per_call_typed_sigv4_credentials_win_without_source_access() {
     impl AuthResolver for CountingResolver {
         fn resolve<'a>(
             &'a self,
-        ) -> opi_ai::credential::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>> {
+        ) -> opi_ai::auth::credential::BoxAuthFuture<'a, Result<ResolvedAuth, ProviderError>>
+        {
             self.resolves.fetch_add(1, Ordering::SeqCst);
             Box::pin(async {
                 Ok(ResolvedAuth {
@@ -1281,7 +1282,7 @@ async fn get_auth_resolves_descriptor_sources_without_refresh() {
 
 use std::sync::Arc;
 
-use opi_ai::credential::{Credential, CredentialStore};
+use opi_ai::auth::credential::{Credential, CredentialStore};
 use opi_ai::{
     BarrierEntry, InMemoryCredentialStore, MutationDecision, MutationOutcome, MutationQueue,
 };
@@ -1850,7 +1851,7 @@ async fn source_passive_refresh_registers_through_the_mutation_owner() {
         }
     }
 
-    let queue = std::sync::Arc::new(opi_ai::mutation::MutationQueue::new());
+    let queue = std::sync::Arc::new(opi_ai::auth::mutation::MutationQueue::new());
     let cache = AwsSourceCache::with_mutation_queue(queue.clone()).with_passive_deps(
         std::sync::Arc::new(PassiveRefreshDeps {
             transport: std::sync::Arc::new(DenyingTransport),
@@ -1882,10 +1883,13 @@ async fn source_passive_refresh_registers_through_the_mutation_owner() {
         identity,
         time::OffsetDateTime::from_unix_timestamp(0).unwrap(),
         Box::new(|| {
-            Box::pin(async { Ok(opi_ai::mutation::MutationApplied::Keep) })
+            Box::pin(async { Ok(opi_ai::auth::mutation::MutationApplied::Keep) })
                 as opi_ai::BoxAuthFuture<
                     'static,
-                    Result<opi_ai::mutation::MutationApplied, opi_ai::mutation::MutationError>,
+                    Result<
+                        opi_ai::auth::mutation::MutationApplied,
+                        opi_ai::auth::mutation::MutationError,
+                    >,
                 >
         }),
     );
@@ -2879,10 +2883,10 @@ mod adc_external {
         AdcAuthSelection, AdcNativeInput, AdcResolutionError, AdcSourceHttpError, AdcSourceRequest,
         AdcSourceResponse, AdcSourceTransport, ScopedAdcEnv,
     };
+    use opi_ai::auth::credential::BoxAuthFuture;
     use opi_ai::auth::{
         AdcCredentialSource, AuthContext, AuthContextError, ExternalAccountSupplier,
     };
-    use opi_ai::credential::BoxAuthFuture;
     use secrecy::ExposeSecret;
     use std::collections::HashMap;
     use std::path::Path;
@@ -4511,8 +4515,10 @@ mod adc_impersonation {
         fn send<'a>(
             &'a self,
             request: AdcSourceRequest,
-        ) -> opi_ai::credential::BoxAuthFuture<'a, Result<AdcSourceResponse, AdcSourceHttpError>>
-        {
+        ) -> opi_ai::auth::credential::BoxAuthFuture<
+            'a,
+            Result<AdcSourceResponse, AdcSourceHttpError>,
+        > {
             self.requests.lock().unwrap().push(request);
             let reply = self.replies.lock().unwrap().first().cloned();
             if reply.is_some() {
@@ -4559,8 +4565,10 @@ mod adc_impersonation {
         fn send<'a>(
             &'a self,
             request: AdcSourceRequest,
-        ) -> opi_ai::credential::BoxAuthFuture<'a, Result<AdcSourceResponse, AdcSourceHttpError>>
-        {
+        ) -> opi_ai::auth::credential::BoxAuthFuture<
+            'a,
+            Result<AdcSourceResponse, AdcSourceHttpError>,
+        > {
             let gate = self.gate.clone();
             let armed = self.armed.load(std::sync::atomic::Ordering::SeqCst);
             let inner = &self.inner;

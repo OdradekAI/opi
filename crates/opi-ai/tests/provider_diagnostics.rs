@@ -11,7 +11,7 @@
 
 use std::collections::HashSet;
 
-use opi_ai::http::safe_excerpt;
+use opi_ai::errors::safe_excerpt;
 use opi_ai::message::{ImageSource, InputContent, MediaType, Message, UserMessage};
 use opi_ai::provider::{
     CacheRetention, ModelInfo, ProviderError, ProviderErrorCategory, ProviderErrorSummary, Request,

@@ -2304,6 +2304,7 @@ dependencies = [
  "h2",
  "hex",
  "hmac",
+ "http",
  "http-body-util",
  "hyper",
  "hyper-util",

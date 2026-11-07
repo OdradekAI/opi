@@ -140,6 +140,44 @@ data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
+async fn started_anthropic_call_completes_after_consumer_is_dropped() {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/v1/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(text_sse_fixture())
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let cancel = CancellationToken::new();
+    let (completed, observed) = tokio::sync::oneshot::channel();
+    let mut completed = Some(completed);
+    let source = provider
+        .stream_prepared(
+            make_request(cancel.clone()),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .inspect(move |event| {
+            if let Ok(AssistantStreamEvent::Done { message, .. }) = event {
+                let _ = completed.take().unwrap().send(message.clone());
+            }
+        });
+    drop(opi_ai::ChatStream::new(Box::pin(source)).start());
+    let message = tokio::time::timeout(std::time::Duration::from_secs(5), observed)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(message.stop_reason, StopReason::Stop);
+    assert_eq!(message.usage.output_tokens, 5);
+    assert!(!cancel.is_cancelled());
+    server.verify().await;
+}
+
+#[tokio::test]
 async fn stream_text_response_produces_correct_events() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))

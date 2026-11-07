@@ -7,67 +7,15 @@
 //! [`HttpCatalogSource`], which fetches one distribution-schema-v1 document
 //! over HTTP and is the reference real-network implementation.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::HashMap;
 
 use futures_util::future::BoxFuture;
-use tokio_util::sync::CancellationToken;
 
 use super::ModelsStoreEntry;
 use crate::http::HttpClient;
 use crate::provider::{ProviderError, ProviderErrorSummary};
 
-use super::wire;
-
-/// The selected owners and caller policy for one explicit catalog refresh.
-/// Sources own freshness interpretation; the SDK forwards `force` unchanged.
-#[derive(Clone, Debug)]
-pub struct CatalogRefreshContext {
-    /// Whether the caller permits source network work.
-    pub allow_network: bool,
-    /// An optional source-specific forced-refresh choice.
-    pub force: Option<bool>,
-    /// Active provider owners selected for this source invocation.
-    pub providers: BTreeSet<String>,
-    /// Cancellation of this refresh, including its publication.
-    pub cancel: CancellationToken,
-}
-
-/// Typed failure decoding a distribution-schema-v1 catalog document.
-#[derive(Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum CatalogDocumentError {
-    /// The document violated the distribution-schema-v1 contract.
-    #[error("invalid catalog document: {message}")]
-    Invalid {
-        /// Redacted description of the violated contract.
-        message: String,
-    },
-}
-
-/// A source of complete dynamic catalogs, queried during an explicit
-/// network-enabled refresh round.
-///
-/// Implementations must be cheap to clone or wrapped in an `Arc` when
-/// registered. The context selects active declared provider owners and forwards
-/// optional source-specific freshness policy. Fetches observe cancellation;
-/// only Models publishes their acknowledged selected records. Undeclared
-/// provider output is rejected, while declared unselected output is ignored.
-pub trait DynamicCatalogSource: Send + Sync {
-    /// Stable identifier reported in refresh outcomes.
-    fn id(&self) -> &str;
-
-    /// Provider owners whose records this source may return. Construction and
-    /// this declaration perform no source work.
-    fn provider_ids(&self) -> &[String];
-
-    /// Fetch the complete dynamic catalogs this source publishes, keyed by
-    /// provider id. An error fails only this source: the refresh report
-    /// records it and prior data for its providers is retained.
-    fn fetch(
-        &self,
-        context: CatalogRefreshContext,
-    ) -> BoxFuture<'static, Result<HashMap<String, ModelsStoreEntry>, ProviderError>>;
-}
+pub use super::{CatalogDocumentError, CatalogRefreshContext, DynamicCatalogSource};
 
 /// Fetches one distribution-schema-v1 `providers` document from a fixed URL.
 ///
@@ -96,25 +44,11 @@ impl HttpCatalogSource {
         }
     }
 
-    /// Decode a distribution-schema-v1 providers document into catalogs.
-    ///
-    /// Public so hosts can validate documents out of band; the HTTP fetch
-    /// path uses the same decoder.
+    /// Decode an offline document. Prefer [`super::decode_document`] when no HTTP source is needed.
     pub fn decode_document(
         document: &serde_json::Value,
     ) -> Result<HashMap<String, ModelsStoreEntry>, CatalogDocumentError> {
-        let invalid = |message: String| CatalogDocumentError::Invalid { message };
-        let providers = document
-            .get("providers")
-            .and_then(serde_json::Value::as_object)
-            .ok_or_else(|| invalid("document requires a providers object".to_owned()))?;
-        let mut catalogs = HashMap::with_capacity(providers.len());
-        for (provider_id, provider) in providers {
-            let decoded = wire::decode_provider_entry(provider_id, provider)
-                .map_err(|message| invalid(format!("provider '{provider_id}': {message}")))?;
-            catalogs.insert(provider_id.clone(), decoded);
-        }
-        Ok(catalogs)
+        super::decode_document(document)
     }
 }
 
@@ -162,7 +96,7 @@ impl DynamicCatalogSource for HttpCatalogSource {
             }
             let document: serde_json::Value = serde_json::from_slice(&body)
                 .map_err(|_| ProviderError::RequestFailed(ProviderErrorSummary::redacted()))?;
-            HttpCatalogSource::decode_document(&document).map_err(|error| {
+            super::decode_document(&document).map_err(|error| {
                 ProviderError::RequestFailed(ProviderErrorSummary::from_untrusted(
                     error.to_string(),
                 ))

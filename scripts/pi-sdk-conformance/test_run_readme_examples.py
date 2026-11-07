@@ -57,11 +57,11 @@ def passing_report() -> dict:
                   "content": "22 C, clear"}]},
             ]
             requests.append(second)
-        checks.append({"name": name, "passed": True, "setup": dict(idle), "unpolled": dict(idle),
+        checks.append({"name": name, "passed": True, "setup": dict(idle), "before_consumption": {"source_reads": 3, "store_reads": 1, "requests": 1},
                        "observed": {"source_reads": 3, "store_reads": 1, "requests": len(requests)},
                        "final_text": "Tokyo: 22 C, clear." if name == "tool_loop" else "Hello world",
                        "continuation": name == "tool_loop", "requests": requests})
-    return {"schema": "opi-readme-execution/1", "verdict": "PASS", "failed": 0,
+    return {"schema": "opi-readme-execution/2", "verdict": "PASS", "failed": 0,
             "total": 3, "checks": checks}
 
 
@@ -114,10 +114,20 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         report["checks"][2]["requests"][1]["body"]["messages"].pop()
         self.assert_rejected(self.execution(report), "second request lost the admitted call or tool result")
 
-    def test_source_access_before_poll_is_rejected(self):
+    def test_source_access_during_setup_is_rejected(self):
         report = passing_report()
-        report["checks"][0]["unpolled"]["source_reads"] = 1
-        self.assert_rejected(self.execution(report), "zero-I/O setup and actual unpolled-call proof")
+        report["checks"][0]["setup"]["source_reads"] = 1
+        self.assert_rejected(self.execution(report), "zero-I/O setup")
+
+    def test_missing_execution_before_consumption_is_rejected(self):
+        report = passing_report()
+        report["checks"][0]["before_consumption"]["requests"] = 0
+        self.assert_rejected(self.execution(report), "execution before consumption")
+
+    def test_legacy_lazy_evidence_is_rejected(self):
+        report = passing_report()
+        report["schema"] = "opi-readme-execution/1"
+        self.assert_rejected(self.execution(report), "exactly the three named onboarding flows")
 
     def test_success_without_expected_business_output_is_rejected(self):
         report = passing_report()

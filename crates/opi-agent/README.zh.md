@@ -239,6 +239,14 @@ evidence 记录。公共事件在发出前会脱敏；provider 请求只通过
 部分流式内容会被丢弃：只有当流的 `Done` 事件到达时才会被推入消息缓冲区，因此流式
 过程中取消不会写入任何部分 assistant 消息。
 
+主 turn 的 attempt 和准备阶段的 summary 调用均使用独立启动的 AI 执行者。
+丢弃 agent 操作的 future 会停止等待及事件处理，已启动的模型调用继续执行；
+这不会完成 agent run，也不会把后续响应提交到 agent 状态。需要取消时，应触发
+run 的 token 并继续等待操作结束。agent 会显式中止并等待 AI 执行者退出，再返回
+取消结果；外层准备 hook 被中断、源不响应 token 的情况也适用。这仅确认执行者
+持有的源已释放，provider 另行启动的任务和会话资源仍通过
+`Models::cleanup_session_resources` 等既有合同确认。取消仍优先于已缓冲的模型事件。
+
 消费方必须容忍 provider 提前退出时留下的 open turn。Provider failure 和
 provider-stream cancellation 可能发出 `TurnStarted` 而没有匹配的 `TurnEnded`；
 这些路径的终止边界是 `AgentEnd` 以及关联的诊断。

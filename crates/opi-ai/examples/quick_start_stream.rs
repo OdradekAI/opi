@@ -31,7 +31,7 @@ pub(crate) fn setup(
     Ok((models, ChatModelRecord::new("anthropic", info)))
 }
 
-/// Construct the real lazy ChatCall before the execution loop starts.
+/// Schedule the ChatCall on Tokio before consuming its events.
 pub(crate) fn start(
     models: &Models,
     record: ChatModelRecord,

@@ -12,7 +12,7 @@ use opi_ai::openai_responses::{
     OpenAiResponsesChatApi, OpenAiResponsesOptions, OpenAiResponsesProvider, ResponsesServiceTier,
 };
 use opi_ai::provider::{ProviderError, Request, TransportPreference};
-use opi_ai::stream::{Pricing, ServiceTier, StopReason};
+use opi_ai::types::usage::{Pricing, ServiceTier, StopReason};
 use opi_ai::{
     AuthProvenanceSource, ChatModelRecord, ModelCapabilities, ModelInfo, ModelPricing, Models,
     WireApi,

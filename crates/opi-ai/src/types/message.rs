@@ -17,7 +17,7 @@ pub enum Message {
     #[serde(rename = "user")]
     User(UserMessage),
     #[serde(rename = "system")]
-    System(crate::transcript::SystemMessage),
+    System(crate::types::transcript::SystemMessage),
     #[serde(rename = "assistant")]
     Assistant(AssistantMessage),
     #[serde(rename = "tool_result")]
@@ -34,9 +34,9 @@ pub struct UserMessage {
 pub struct AssistantMessage {
     /// Known request projection facts; legacy and unformed setup state remain unknown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub projection: Option<crate::transcript::ProjectionFacts>,
+    pub projection: Option<crate::types::transcript::ProjectionFacts>,
     pub content: Vec<AssistantContent>,
-    pub api: crate::ApiKind,
+    pub api: crate::types::ApiKind,
     pub provider: String,
     pub model: String,
     /// Reported model override: `None` falls back to `model`; an empty string
@@ -48,10 +48,10 @@ pub struct AssistantMessage {
     /// (fail-closed; `ApiKind` alone cannot distinguish the
     /// Completions/Responses/Codex wires).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub wire: Option<crate::model_info::WireApi>,
+    pub wire: Option<crate::types::model::WireApi>,
     pub response_id: Option<String>,
-    pub usage: crate::stream::Usage,
-    pub stop_reason: crate::stream::StopReason,
+    pub usage: crate::types::usage::Usage,
+    pub stop_reason: crate::types::usage::StopReason,
     /// Original provider termination fact, independent of the normalized stop
     /// reason. Absent when the provider did not report one or on old records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,7 +63,7 @@ pub struct AssistantMessage {
     /// reason, plus grammar-target fallback losses. Default empty;
     /// historical messages deserialize without it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub diagnostics: Vec<crate::stream::AssistantDiagnostic>,
+    pub diagnostics: Vec<crate::types::usage::AssistantDiagnostic>,
     /// Monotonic adapter response-stream duration (AIR-061): measured from
     /// response-stream first poll/activation to terminal. `None` when
     /// not measured (setup failures before activation, older records);
@@ -81,7 +81,7 @@ pub struct AssistantMessage {
     /// handle is source-owned identity plus provider advice and never
     /// carries a credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deferred: Option<Box<crate::deferred::DeferredHandle>>,
+    pub deferred: Option<Box<crate::types::deferred::DeferredHandle>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -757,7 +757,7 @@ fn cerebras_bodyless_overflow_pattern() -> &'static regex::Regex {
 /// Three cases, in pinned order:
 ///
 /// 1. Error-based overflow: `stop_reason` is
-///    [`crate::stream::StopReason::Error`] with an
+///    [`crate::types::usage::StopReason::Error`] with an
 ///    `error_message` matching a pinned provider overflow pattern. Messages
 ///    matching a pinned non-overflow pattern first (throttling/rate-limit
 ///    style) are excluded even when they also match an overflow pattern; the
@@ -775,7 +775,7 @@ fn cerebras_bodyless_overflow_pattern() -> &'static regex::Regex {
 /// (`usage.reported == false`) is never converted to zero tokens. This is a
 /// pure predicate: it never invokes compaction or retry policy.
 pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u64>) -> bool {
-    if message.stop_reason == crate::stream::StopReason::Error
+    if message.stop_reason == crate::types::usage::StopReason::Error
         && let Some(error_message) = &message.error_message
         && !non_context_overflow_pattern().is_match(error_message)
     {
@@ -797,8 +797,8 @@ pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u6
     let input_tokens =
         u64::from(message.usage.input_tokens) + u64::from(message.usage.cache_read_tokens);
     match message.stop_reason {
-        crate::stream::StopReason::Stop => input_tokens > window,
-        crate::stream::StopReason::Length if message.usage.output_tokens == 0 => {
+        crate::types::usage::StopReason::Stop => input_tokens > window,
+        crate::types::usage::StopReason::Length if message.usage.output_tokens == 0 => {
             u128::from(input_tokens) * 100 >= u128::from(window) * 99
         }
         _ => false,
@@ -809,7 +809,7 @@ pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u6
 /// output limit (pinned `isRecoverableLength`; task 20.53.3, P20-S53-3).
 ///
 /// True when the message stopped for
-/// [`crate::stream::StopReason::Length`],
+/// [`crate::types::usage::StopReason::Length`],
 /// `desired_max_output` is the original positive limit before any
 /// context-based clamping, and known usage (`usage.reported`) produced fewer
 /// output tokens than that limit - the response may have been caused by
@@ -817,7 +817,7 @@ pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u6
 /// bounded compact-and-retry attempt. Unknown usage is never converted to
 /// zero tokens; this is a pure predicate that never invokes retry policy.
 pub fn is_recoverable_length(message: &AssistantMessage, desired_max_output: u64) -> bool {
-    message.stop_reason == crate::stream::StopReason::Length
+    message.stop_reason == crate::types::usage::StopReason::Length
         && desired_max_output > 0
         && message.usage.reported
         && u64::from(message.usage.output_tokens) < desired_max_output
@@ -834,7 +834,7 @@ pub struct ToolDef {
     /// sampling. Adapters resolve it at body-build time; the trusted
     /// `input_schema` is never mutated by the strict projection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub constrained_sampling: Option<crate::constrained_sampling::ConstrainedSampling>,
+    pub constrained_sampling: Option<crate::types::tools::ConstrainedSampling>,
 }
 
 #[cfg(test)]

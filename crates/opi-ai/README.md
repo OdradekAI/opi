@@ -53,8 +53,9 @@ The examples below additionally use `tokio` (features `macros` and
 
 One complete ordinary call: register lazy builtins on an empty `Models`, select
 a model, normalize the transcript, and drive the neutral entry to its single
-final message. Construction and static selection read no authentication source;
-the actual owned call starts authentication on its first poll. This is the exact source of
+final message. Models construction, builtin registration and static selection read
+no authentication source. Calling `stream*` or `complete*` schedules authentication
+and execution immediately on the current Tokio runtime, independently of consumption. This is the exact source of
 `examples/quick_start.rs`; run it with
 `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
 
@@ -92,7 +93,7 @@ pub(crate) fn setup(
     Ok((models, ChatModelRecord::new("anthropic", info)))
 }
 
-/// Build the actual owned call; authentication starts only on first poll.
+/// Schedule the owned call on Tokio; setup does not wait for result consumption.
 pub(crate) fn start(
     models: &Models,
     record: ChatModelRecord,
@@ -172,7 +173,7 @@ prompt and tool declarations into the canonical chronology (AIR-020);
 
 ## Streaming and the Final Result
 
-`stream_simple` returns a lazy `ChatCall` - a
+`stream_simple` returns an independently executing `ChatCall` - a
 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` whose terminal
 absorbs into permanent EOF. The `Done` event carries the final
 `AssistantMessage`. This is the exact source of
@@ -212,7 +213,7 @@ pub(crate) fn setup(
     Ok((models, ChatModelRecord::new("anthropic", info)))
 }
 
-/// Construct the real lazy ChatCall before the execution loop starts.
+/// Schedule the ChatCall on Tokio before consuming its events.
 pub(crate) fn start(
     models: &Models,
     record: ChatModelRecord,
@@ -283,8 +284,57 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`ChatCall::result(self)` (and `Models::complete_simple`) actively drains the
-same stream to the single final outcome.
+`ChatCall::result(self)` discards queued events and awaits the same execution's
+single final outcome. `Models::complete_simple` schedules that execution before
+returning its result future; dropping an unpolled future does not cancel it.
+
+### Starting independently of consumption
+
+All ordinary `Models.stream*` and `complete*` calls schedule execution when
+called. Construct them inside a Tokio runtime; construction outside one panics.
+`ChatCall::start()` optionally converts the consumer to `StartedChatStream`
+without spawning again. For the `call` constructed above:
+
+```rust
+let started = call.start();
+// Other work may run here; event consumption does not drive this request.
+let outcome = started.result().await;
+```
+
+You can also iterate `started` with `StreamExt::next`. Dropping it or abandoning
+its `result()` future stops consumption but keeps execution running. Retain
+`request.cancel.clone()` before constructing the call if you need explicit
+cancellation. `ChatStream::new(prepared.start_attempt()?).start()` supplies the
+same execution ownership for an advanced prepared attempt. Scheduling does not
+mean authentication has completed before `start()` returns; keep the runtime
+alive for the request to finish.
+
+To explicitly stop the execution task, use `call.abort().await` or
+`started.abort().await` on a mutable handle. It releases queued events and waits for the task's source to be dropped,
+even if that source ignores cancellation tokens. A completed task keeps its
+original result; an interrupted task returns cancellation with the latest partial
+the execution observed. This does not cancel the request token or join tasks
+spawned separately by a provider. Cancel the original token when stopping shared
+request work; use the provider's session cleanup contract for resource confirmation.
+Abandoning the `abort()` wait leaves the task on the handle so a later wait can
+still observe its completion. A source blocking inside a poll must yield before
+Tokio can abort it.
+
+Unread events are retained in an **unbounded FIFO** so a slow or absent reader
+cannot block execution. Memory grows with the unread events; `result()` drops
+the backlog on first poll, and dropping the handle releases it immediately.
+Request-token cancellation preserves events already forwarded into this FIFO before
+delivering the cancellation failure. Source-level cancellation still applies
+to the provider's own buffer. If the runtime stops an unfinished execution, the
+waiter receives a typed stream failure with the latest produced partial; source
+panics are resumed by the waiter.
+
+The advanced `ChatStream::new(raw)` collector remains lazy until `.start()`:
+polling drives the raw source and Drop releases it. Ordinary `ChatCall` has no
+consumer-driven execution mode. An already delivered result survives conversion
+to `StartedChatStream`, with no duplicate terminal. No automatic AI spans are
+installed by this execution owner. An omitted/no-op context does not capture the
+consumer's ambient tracing dispatcher; supply an explicit context for propagation.
 
 ## Context, Tools, and Continuation
 
@@ -422,7 +472,7 @@ pub(crate) fn setup(
 }
 
 impl ToolLoop {
-    /// Freeze the actual owned round before polling its authentication.
+    /// Freeze this round and schedule its authentication and execution on Tokio.
     pub(crate) fn start_round(&self) -> Result<ChatCall, Box<dyn std::error::Error>> {
         let context = transcript::normalize_context(transcript::Context {
             system_prompt: Some("You are a concise assistant.".into()),
@@ -556,6 +606,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `ToolResultMessage` | Tool-result content, details, error/truncation/time metadata and optional typed `not_executed` facts from the trusted execution boundary. Historical absence means unknown effect; ordinary error text never proves non-execution. |
 | `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, and done. The in-band `Error` terminal is a read-only legacy format retained for deserializing historical saved events; current producers never emit it. |
 | `ChatStream` | The public owner of one logical call's event stream: iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` with first-terminal absorption into permanent EOF, and `result(self)` actively drains to the single final outcome. |
+| `StartedChatStream` | Consumer returned by `ChatCall::start` / `ChatStream::start`: Tokio execution progresses independently, with ordered buffered events and a single result. Consumer Drop does not cancel. |
 | `CallFailure` | The single final failure of one logical call: the canonical partial/terminal `AssistantMessage` (content, provenance, diagnostics, known usage; setup failures have none) plus a typed redacted cause. |
 | `drain_to_completion` | Collector sharing the `ChatStream::result` seam: `Ok(AssistantMessage)` for done terminals, one `Err(CallFailure)` for every failure, including premature EOF. |
 | `WireApi` / `ModelInfo` / `ModelCapabilities` | Exact request-wire identity plus model capability, thinking, compatibility, and pricing metadata. |
@@ -566,7 +617,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `Models` / `AuthDescriptor` / `AuthCheck` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Native/simple/direct and advanced entries share validation and the call lifecycle; native options retain adapter budget semantics, while simple/advanced preparation applies the shared output budget. |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
 | `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments (AIR-048): empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
-| `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the lazy ordinary-call owner that captures input at construction and starts auth on first poll. |
+| `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the ordinary consumer that freezes input and schedules execution on Tokio at construction. |
 | `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | Boxed-future contracts for the nine SDK OAuth families, read-only flow metadata, provider-specific request identity conversion, and injected login UX. |
@@ -1678,8 +1729,9 @@ and exposes session-scoped cleanup through the public
 `Models::cleanup_session_resources` entry (`codex_resources` module;
 tests at `tests/openai_codex_responses.rs` and `tests/resource_cleanup.rs`).
 
-- **Registration:** the call's first poll atomically registers its generation
-  before any auth, transform or network await. Pure `Sse`-preference calls stay
+- **Registration:** an ordinary ChatCall's execution task registers its generation
+  on its first poll, before any auth, transform or network await. Advanced
+  `prepare_call` registers when its preparation future is polled, before auth. Pure `Sse`-preference calls stay
   unregistered. The original complete session id remains the cleanup identity
   even with `Disabled` cache retention. Phases (`prepared`/`connecting`/`busy`/
   `temporary`/`active-fallback`) include the same call's SSE fallback.
@@ -1690,13 +1742,15 @@ tests at `tests/openai_codex_responses.rs` and `tests/resource_cleanup.rs`).
   `None` selects everything, including sessionless work; an unmatched id is a
   no-op retaining idle reuse; `Some("")` is a typed zero-effect failure. Late
   attachment, publication, reconnect and entry into SSE are forbidden. Calls
-  first polled after the cutoff get a new generation; an already registered
+  first executed after the cutoff get a new generation, even if their consumer
+  was constructed earlier. Consumer polling is not the registration boundary; an already registered
   `PreparedProviderCall` keeps its old generation even for an unpolled attempt.
 - **Release:** cleanup awaits library-owned producers, connections and bounded
   closes. A retained, dormant caller preparation/auth Future needs no further
   poll for cleanup to finish; its next poll sees latched cancellation. Dropping
   a polled cleanup Future does not undo its close marks, and another cleanup can
-  await the remaining exits. Drop initiates release without claiming an await
+  await the remaining exits. Dropping execution-owned resources initiates release
+  (ordinary consumer Drop does not), without claiming an await
   barrier. Removed connections send Close and flush before bounded confirmation;
   one failure still allows the other releases and returns
   `CleanupError::Incomplete { report }` with confirmed counts and unconfirmed
@@ -2198,11 +2252,38 @@ Upgrade → codec path, continuation/pool behavior or complete cleanup acceptanc
 
 ## Modules
 
-`provider`, `message`, `stream`, `model_info`, `api_mapped`, `registry`,
-`models`, `provider_headers`, `auth`, `credential`, `catalog`, `http`, `retry`, `model`,
-`anthropic`, `openai_chat`, `openai_responses`, `openai_codex_responses`,
-`openrouter`, `mistral`, `gemini`, `bedrock`, `azure_openai`, `vertex`,
-`config`, `time`, and `test_support`.
+Start with `Models`; use the following modules when supplying values or extending
+the SDK. Existing root exports remain available.
+
+| Responsibility | Entry |
+| --- | --- |
+| Messages, model metadata, usage and pricing | `types::message`, `types::model`, `types::usage` |
+| Image, classifier and deferred values | `types::images`, `types::classifier`, `types::deferred` |
+| Shared errors, diagnostic redaction and classification | `errors` |
+| Authentication contracts and credential persistence | `auth`, `auth::credential`, `auth::mutation` |
+| Catalog validation, custom sources and file store | `catalog` |
+| Calls, operation controls and result consumption | `models`, `provider`, `api`, `images`, `classifier`, `deferred`, `stream` |
+| Transcript, replay, schema and constrained sampling | `transcript`, `replay`, `schema`, `constrained_sampling` |
+
+`types` contains deterministic values and validation, without clients, execution
+tasks or embedded catalog assets. Call controls such as cancellation and callbacks
+remain in the operation modules. `auth` separates resolver/OAuth/source contracts
+from ambient, cloud and OAuth implementations; `auth::mutation` retains the store's
+single queue and acknowledgement owner. Its contracts can have on-demand effects:
+`AuthContext::process_snapshot` reads the working directory by default, and
+`OAuthCredential::needs_refresh` reads the current time.
+
+Use `catalog::decode_document(&json)` to validate an offline distribution document.
+It shares the HTTP source's decoder and does not construct a client. The builtin
+asset/cache and the file store remain separate implementations. These source
+boundaries do not yet offer a reduced Cargo feature configuration.
+
+Existing `message`/`model_info` modules, the value exports in `stream`, `images`,
+`classifier` and `deferred`, errors in `provider`, `http::safe_excerpt`, and root
+`credential`/`mutation` modules re-export the same definitions. No conversion is
+needed when mixing these paths. `HttpCatalogSource::decode_document` delegates to
+the public offline function. Provider adapters and transport entry points retain
+their current paths.
 
 
 ## Anthropic Messages Native Options and Inline-Tools Chronology (task 20.39)

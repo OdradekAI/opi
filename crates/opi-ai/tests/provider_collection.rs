@@ -5597,7 +5597,7 @@ async fn builtin_classifier_profiles_send_the_selected_record_with_stored_auth()
 }
 
 #[test]
-fn builtin_construction_and_unpolled_calls_do_not_read_sources() {
+fn builtin_construction_and_static_selection_need_no_runtime_or_source_reads() {
     struct NoSources;
     impl opi_ai::auth::AuthContext for NoSources {
         fn env(&self, _: &str) -> Result<Option<String>, opi_ai::auth::AuthContextError> {
@@ -5619,12 +5619,7 @@ fn builtin_construction_and_unpolled_calls_do_not_read_sources() {
     let model = models
         .get_model("groq", &first_catalog_chat_model("groq"))
         .unwrap();
-    let call = models.complete_simple(
-        opi_ai::ChatModelRecord::new("groq", model),
-        minimal_request("ignored"),
-        Default::default(),
-    );
-    drop(call);
+    assert!(!model.id.is_empty());
 }
 
 #[tokio::test]
@@ -6941,7 +6936,18 @@ mod selected_owner_management {
             Default::default(),
         );
         assert!(new.await.is_err());
-        assert_eq!(count.load(Ordering::SeqCst), 0);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while count.load(Ordering::SeqCst) == 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("captured execution resolves its original auth");
+        assert_eq!(
+            count.load(Ordering::SeqCst),
+            1,
+            "only the original captured call reaches auth"
+        );
         let mut other = Models::new();
         register(&mut other, "managed", Arc::default());
         models

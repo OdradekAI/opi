@@ -255616,6 +255616,1449 @@
           "Vertex executable auth failure once; isolated candidate/base pass; cause unresolved"
         ]
       }
+    },
+    {
+      "id": "IMPL-03-FOUNDATION-BOUNDARIES",
+      "issue": "issues/03-values-errors-auth-catalog.md",
+      "base_commit": "814c95f7ce575fb9be3df6b9d04ff6e2942706c1",
+      "contracts": [
+        "CAP-VALUES",
+        "CAP-AUTH",
+        "CAP-CREDENTIALS",
+        "CAP-OAUTH",
+        "CAP-CATALOG",
+        "CAP-IMAGES",
+        "CAP-CLASSIFIER",
+        "CAP-DEFERRED",
+        "CAP-TRANSCRIPT",
+        "CAP-USAGE",
+        "CAP-TEXT",
+        "CAP-PACKAGE"
+      ],
+      "status": "slice-implemented-affected-contracts-pass-full-workspace-tests-not-rerun",
+      "baseline_policy": "Original phase-one records and prior implementation slice unchanged; these mappings describe the current owner, not a rewritten baseline.",
+      "symbol_migrations": [
+        {
+          "old": "opi_ai::message::Message",
+          "new": "opi_ai::types::message::Message",
+          "definition": "crates/opi-ai/src/types/message.rs:16",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::UserMessage",
+          "new": "opi_ai::types::message::UserMessage",
+          "definition": "crates/opi-ai/src/types/message.rs:28",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::AssistantMessage",
+          "new": "opi_ai::types::message::AssistantMessage",
+          "definition": "crates/opi-ai/src/types/message.rs:34",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::ToolResultMessage",
+          "new": "opi_ai::types::message::ToolResultMessage",
+          "definition": "crates/opi-ai/src/types/message.rs:88",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::ToolNotExecutedReason",
+          "new": "opi_ai::types::message::ToolNotExecutedReason",
+          "definition": "crates/opi-ai/src/types/message.rs:108",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::MediaType",
+          "new": "opi_ai::types::message::MediaType",
+          "definition": "crates/opi-ai/src/types/message.rs:120",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::ImageSource",
+          "new": "opi_ai::types::message::ImageSource",
+          "definition": "crates/opi-ai/src/types/message.rs:146",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::content_text",
+          "new": "opi_ai::types::message::content_text",
+          "definition": "crates/opi-ai/src/types/message.rs:166",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::assistant_content_text",
+          "new": "opi_ai::types::message::assistant_content_text",
+          "definition": "crates/opi-ai/src/types/message.rs:180",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::output_content_text",
+          "new": "opi_ai::types::message::output_content_text",
+          "definition": "crates/opi-ai/src/types/message.rs:193",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::InputContent",
+          "new": "opi_ai::types::message::InputContent",
+          "definition": "crates/opi-ai/src/types/message.rs:207",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::AssistantContent",
+          "new": "opi_ai::types::message::AssistantContent",
+          "definition": "crates/opi-ai/src/types/message.rs:220",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::OutputContent",
+          "new": "opi_ai::types::message::OutputContent",
+          "definition": "crates/opi-ai/src/types/message.rs:247",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::ToolCall",
+          "new": "opi_ai::types::message::ToolCall",
+          "definition": "crates/opi-ai/src/types/message.rs:258",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::finalize_tool_arguments",
+          "new": "opi_ai::types::message::finalize_tool_arguments",
+          "definition": "crates/opi-ai/src/types/message.rs:317",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::repair_json",
+          "new": "opi_ai::types::message::repair_json",
+          "definition": "crates/opi-ai/src/types/message.rs:353",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::parse_streaming_json",
+          "new": "opi_ai::types::message::parse_streaming_json",
+          "definition": "crates/opi-ai/src/types/message.rs:428",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::string_enum",
+          "new": "opi_ai::types::message::string_enum",
+          "definition": "crates/opi-ai/src/types/message.rs:648",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::is_context_overflow",
+          "new": "opi_ai::types::message::is_context_overflow",
+          "definition": "crates/opi-ai/src/types/message.rs:777",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::is_recoverable_length",
+          "new": "opi_ai::types::message::is_recoverable_length",
+          "definition": "crates/opi-ai/src/types/message.rs:819",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::message::ToolDef",
+          "new": "opi_ai::types::message::ToolDef",
+          "definition": "crates/opi-ai/src/types/message.rs:827",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::SamplingParams",
+          "new": "opi_ai::types::model::SamplingParams",
+          "definition": "crates/opi-ai/src/types/model.rs:23",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ModelCapabilities",
+          "new": "opi_ai::types::model::ModelCapabilities",
+          "definition": "crates/opi-ai/src/types/model.rs:28",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::WireApi",
+          "new": "opi_ai::types::model::WireApi",
+          "definition": "crates/opi-ai/src/types/model.rs:90",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ParseWireApiError",
+          "new": "opi_ai::types::model::ParseWireApiError",
+          "definition": "crates/opi-ai/src/types/model.rs:165",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ThinkingLevel",
+          "new": "opi_ai::types::model::ThinkingLevel",
+          "definition": "crates/opi-ai/src/types/model.rs:169",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ThinkingLevelMapping",
+          "new": "opi_ai::types::model::ThinkingLevelMapping",
+          "definition": "crates/opi-ai/src/types/model.rs:224",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ThinkingLevelMap",
+          "new": "opi_ai::types::model::ThinkingLevelMap",
+          "definition": "crates/opi-ai/src/types/model.rs:231",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::UnsupportedThinkingLevel",
+          "new": "opi_ai::types::model::UnsupportedThinkingLevel",
+          "definition": "crates/opi-ai/src/types/model.rs:337",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::BedrockConverseStreamCompat",
+          "new": "opi_ai::types::model::BedrockConverseStreamCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:342",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::AnthropicSessionAffinityFormat",
+          "new": "opi_ai::types::model::AnthropicSessionAffinityFormat",
+          "definition": "crates/opi-ai/src/types/model.rs:351",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::AnthropicAllowedFallbackModel",
+          "new": "opi_ai::types::model::AnthropicAllowedFallbackModel",
+          "definition": "crates/opi-ai/src/types/model.rs:358",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::AnthropicMessagesCompat",
+          "new": "opi_ai::types::model::AnthropicMessagesCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:365",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ChatStoreField",
+          "new": "opi_ai::types::model::ChatStoreField",
+          "definition": "crates/opi-ai/src/types/model.rs:417",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ChatInstructionRole",
+          "new": "opi_ai::types::model::ChatInstructionRole",
+          "definition": "crates/opi-ai/src/types/model.rs:437",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ChatThinkingFormat",
+          "new": "opi_ai::types::model::ChatThinkingFormat",
+          "definition": "crates/opi-ai/src/types/model.rs:505",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ChatThinkingTokenBudgetField",
+          "new": "opi_ai::types::model::ChatThinkingTokenBudgetField",
+          "definition": "crates/opi-ai/src/types/model.rs:524",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ChatTemplateKwargValue",
+          "new": "opi_ai::types::model::ChatTemplateKwargValue",
+          "definition": "crates/opi-ai/src/types/model.rs:545",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ChatTemplateKwargVar",
+          "new": "opi_ai::types::model::ChatTemplateKwargVar",
+          "definition": "crates/opi-ai/src/types/model.rs:554",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::SessionAffinityFormat",
+          "new": "opi_ai::types::model::SessionAffinityFormat",
+          "definition": "crates/opi-ai/src/types/model.rs:582",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::CacheControlFormat",
+          "new": "opi_ai::types::model::CacheControlFormat",
+          "definition": "crates/opi-ai/src/types/model.rs:593",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenRouterDataCollection",
+          "new": "opi_ai::types::model::OpenRouterDataCollection",
+          "definition": "crates/opi-ai/src/types/model.rs:599",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::NumberOrString",
+          "new": "opi_ai::types::model::NumberOrString",
+          "definition": "crates/opi-ai/src/types/model.rs:606",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::PercentileCutoffs",
+          "new": "opi_ai::types::model::PercentileCutoffs",
+          "definition": "crates/opi-ai/src/types/model.rs:613",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::NumberOrPercentileCutoffs",
+          "new": "opi_ai::types::model::NumberOrPercentileCutoffs",
+          "definition": "crates/opi-ai/src/types/model.rs:626",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenRouterSort",
+          "new": "opi_ai::types::model::OpenRouterSort",
+          "definition": "crates/opi-ai/src/types/model.rs:633",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenRouterMaxPrice",
+          "new": "opi_ai::types::model::OpenRouterMaxPrice",
+          "definition": "crates/opi-ai/src/types/model.rs:675",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenRouterRouting",
+          "new": "opi_ai::types::model::OpenRouterRouting",
+          "definition": "crates/opi-ai/src/types/model.rs:691",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::VercelGatewayRouting",
+          "new": "opi_ai::types::model::VercelGatewayRouting",
+          "definition": "crates/opi-ai/src/types/model.rs:722",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenAiCompletionsCompat",
+          "new": "opi_ai::types::model::OpenAiCompletionsCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:766",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenAiResponsesSourceCompat",
+          "new": "opi_ai::types::model::OpenAiResponsesSourceCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:853",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenAiResponsesCompat",
+          "new": "opi_ai::types::model::OpenAiResponsesCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:868",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::OpenAiCodexResponsesCompat",
+          "new": "opi_ai::types::model::OpenAiCodexResponsesCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:889",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::WireCompat",
+          "new": "opi_ai::types::model::WireCompat",
+          "definition": "crates/opi-ai/src/types/model.rs:911",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ModelPricing",
+          "new": "opi_ai::types::model::ModelPricing",
+          "definition": "crates/opi-ai/src/types/model.rs:968",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::PricingTier",
+          "new": "opi_ai::types::model::PricingTier",
+          "definition": "crates/opi-ai/src/types/model.rs:974",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::resolve_sampling_params",
+          "new": "opi_ai::types::model::resolve_sampling_params",
+          "definition": "crates/opi-ai/src/types/model.rs:1125",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::calculate_cost_tiered",
+          "new": "opi_ai::types::model::calculate_cost_tiered",
+          "definition": "crates/opi-ai/src/types/model.rs:1163",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ModelInfo",
+          "new": "opi_ai::types::model::ModelInfo",
+          "definition": "crates/opi-ai/src/types/model.rs:1230",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::model_info::ModelInfoError",
+          "new": "opi_ai::types::model::ModelInfoError",
+          "definition": "crates/opi-ai/src/types/model.rs:1420",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::StopReason",
+          "new": "opi_ai::types::usage::StopReason",
+          "definition": "crates/opi-ai/src/types/usage.rs:7",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::AssistantDiagnostic",
+          "new": "opi_ai::types::usage::AssistantDiagnostic",
+          "definition": "crates/opi-ai/src/types/usage.rs:35",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::ServiceTier",
+          "new": "opi_ai::types::usage::ServiceTier",
+          "definition": "crates/opi-ai/src/types/usage.rs:65",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::Usage",
+          "new": "opi_ai::types::usage::Usage",
+          "definition": "crates/opi-ai/src/types/usage.rs:99",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::CumulativeUsage",
+          "new": "opi_ai::types::usage::CumulativeUsage",
+          "definition": "crates/opi-ai/src/types/usage.rs:206",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::Pricing",
+          "new": "opi_ai::types::usage::Pricing",
+          "definition": "crates/opi-ai/src/types/usage.rs:336",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::CostBreakdown",
+          "new": "opi_ai::types::usage::CostBreakdown",
+          "definition": "crates/opi-ai/src/types/usage.rs:345",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::calculate_cost",
+          "new": "opi_ai::types::usage::calculate_cost",
+          "definition": "crates/opi-ai/src/types/usage.rs:367",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::stream::calculate_cumulative_cost",
+          "new": "opi_ai::types::usage::calculate_cumulative_cost",
+          "definition": "crates/opi-ai/src/types/usage.rs:380",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImagesInput",
+          "new": "opi_ai::types::images::ImagesInput",
+          "definition": "crates/opi-ai/src/types/images.rs:9",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImagesContext",
+          "new": "opi_ai::types::images::ImagesContext",
+          "definition": "crates/opi-ai/src/types/images.rs:19",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImagesOutput",
+          "new": "opi_ai::types::images::ImagesOutput",
+          "definition": "crates/opi-ai/src/types/images.rs:26",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImagesStopReason",
+          "new": "opi_ai::types::images::ImagesStopReason",
+          "definition": "crates/opi-ai/src/types/images.rs:36",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImageCostRates",
+          "new": "opi_ai::types::images::ImageCostRates",
+          "definition": "crates/opi-ai/src/types/images.rs:53",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImagesCost",
+          "new": "opi_ai::types::images::ImagesCost",
+          "definition": "crates/opi-ai/src/types/images.rs:77",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImageOutputModality",
+          "new": "opi_ai::types::images::ImageOutputModality",
+          "definition": "crates/opi-ai/src/types/images.rs:88",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImageModelRecord",
+          "new": "opi_ai::types::images::ImageModelRecord",
+          "definition": "crates/opi-ai/src/types/images.rs:104",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::images::ImagesResult",
+          "new": "opi_ai::types::images::ImagesResult",
+          "definition": "crates/opi-ai/src/types/images.rs:141",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierInputModality",
+          "new": "opi_ai::types::classifier::ClassifierInputModality",
+          "definition": "crates/opi-ai/src/types/classifier.rs:10",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierImage",
+          "new": "opi_ai::types::classifier::ClassifierImage",
+          "definition": "crates/opi-ai/src/types/classifier.rs:19",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierDeclarations",
+          "new": "opi_ai::types::classifier::ClassifierDeclarations",
+          "definition": "crates/opi-ai/src/types/classifier.rs:39",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierQuestion",
+          "new": "opi_ai::types::classifier::ClassifierQuestion",
+          "definition": "crates/opi-ai/src/types/classifier.rs:169",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierContext",
+          "new": "opi_ai::types::classifier::ClassifierContext",
+          "definition": "crates/opi-ai/src/types/classifier.rs:208",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierAnswer",
+          "new": "opi_ai::types::classifier::ClassifierAnswer",
+          "definition": "crates/opi-ai/src/types/classifier.rs:220",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierStopReason",
+          "new": "opi_ai::types::classifier::ClassifierStopReason",
+          "definition": "crates/opi-ai/src/types/classifier.rs:246",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierModelRecord",
+          "new": "opi_ai::types::classifier::ClassifierModelRecord",
+          "definition": "crates/opi-ai/src/types/classifier.rs:266",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::classifier::ClassifierResult",
+          "new": "opi_ai::types::classifier::ClassifierResult",
+          "definition": "crates/opi-ai/src/types/classifier.rs:314",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::deferred::DeferredHandle",
+          "new": "opi_ai::types::deferred::DeferredHandle",
+          "definition": "crates/opi-ai/src/types/deferred.rs:12",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::deferred::RouteMismatchDetail",
+          "new": "opi_ai::types::deferred::RouteMismatchDetail",
+          "definition": "crates/opi-ai/src/types/deferred.rs:82",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::deferred::DeferredError",
+          "new": "opi_ai::types::deferred::DeferredError",
+          "definition": "crates/opi-ai/src/types/deferred.rs:100",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::ToolReference",
+          "new": "opi_ai::types::transcript::ToolReference",
+          "definition": "crates/opi-ai/src/types/transcript.rs:9",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::SystemSection",
+          "new": "opi_ai::types::transcript::SystemSection",
+          "definition": "crates/opi-ai/src/types/transcript.rs:16",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::SystemMessage",
+          "new": "opi_ai::types::transcript::SystemMessage",
+          "definition": "crates/opi-ai/src/types/transcript.rs:30",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::TranscriptError",
+          "new": "opi_ai::types::transcript::TranscriptError",
+          "definition": "crates/opi-ai/src/types/transcript.rs:102",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::ToolDeclarationError",
+          "new": "opi_ai::types::transcript::ToolDeclarationError",
+          "definition": "crates/opi-ai/src/types/transcript.rs:123",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::SourcePrefix",
+          "new": "opi_ai::types::transcript::SourcePrefix",
+          "definition": "crates/opi-ai/src/types/transcript.rs:140",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::MessageRange",
+          "new": "opi_ai::types::transcript::MessageRange",
+          "definition": "crates/opi-ai/src/types/transcript.rs:147",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::ProjectionMode",
+          "new": "opi_ai::types::transcript::ProjectionMode",
+          "definition": "crates/opi-ai/src/types/transcript.rs:154",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::TemporalProjectionFacts",
+          "new": "opi_ai::types::transcript::TemporalProjectionFacts",
+          "definition": "crates/opi-ai/src/types/transcript.rs:162",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::transcript::ProjectionFacts",
+          "new": "opi_ai::types::transcript::ProjectionFacts",
+          "definition": "crates/opi-ai/src/types/transcript.rs:169",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::replay::ReplayRoute",
+          "new": "opi_ai::types::replay::ReplayRoute",
+          "definition": "crates/opi-ai/src/types/replay.rs:9",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::replay::ReplayProjection",
+          "new": "opi_ai::types::replay::ReplayProjection",
+          "definition": "crates/opi-ai/src/types/replay.rs:27",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::replay::ReplayLoss",
+          "new": "opi_ai::types::replay::ReplayLoss",
+          "definition": "crates/opi-ai/src/types/replay.rs:36",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::replay::ReplayError",
+          "new": "opi_ai::types::replay::ReplayError",
+          "definition": "crates/opi-ai/src/types/replay.rs:89",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::replay::ReplayFacts",
+          "new": "opi_ai::types::replay::ReplayFacts",
+          "definition": "crates/opi-ai/src/types/replay.rs:121",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::replay::ReplayOutput",
+          "new": "opi_ai::types::replay::ReplayOutput",
+          "definition": "crates/opi-ai/src/types/replay.rs:136",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::constrained_sampling::ConstrainedSampling",
+          "new": "opi_ai::types::tools::ConstrainedSampling",
+          "definition": "crates/opi-ai/src/types/tools.rs:14",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::constrained_sampling::StrictPreference",
+          "new": "opi_ai::types::tools::StrictPreference",
+          "definition": "crates/opi-ai/src/types/tools.rs:30",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::CatalogInputModality",
+          "new": "opi_ai::types::catalog::CatalogInputModality",
+          "definition": "crates/opi-ai/src/types/catalog.rs:5",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider_headers::ProviderHeadersError",
+          "new": "opi_ai::types::headers::ProviderHeadersError",
+          "definition": "crates/opi-ai/src/types/headers.rs:61",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::models::ChatModelRecord",
+          "new": "opi_ai::types::ChatModelRecord",
+          "definition": "crates/opi-ai/src/types/chat.rs:12",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::models::ApiId",
+          "new": "opi_ai::types::ApiId",
+          "definition": "crates/opi-ai/src/types/identity.rs:8",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::ApiKind",
+          "new": "opi_ai::types::ApiKind",
+          "definition": "crates/opi-ai/src/types/identity.rs:23",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider::ProviderErrorSummary",
+          "new": "opi_ai::errors::ProviderErrorSummary",
+          "definition": "crates/opi-ai/src/errors.rs:42",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider::ProviderError",
+          "new": "opi_ai::errors::ProviderError",
+          "definition": "crates/opi-ai/src/errors.rs:174",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider::ProviderStreamFailure",
+          "new": "opi_ai::errors::ProviderStreamFailure",
+          "definition": "crates/opi-ai/src/errors.rs:276",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider::ProviderErrorCategory",
+          "new": "opi_ai::errors::ProviderErrorCategory",
+          "definition": "crates/opi-ai/src/errors.rs:446",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider::DiagnosticErrorInfo",
+          "new": "opi_ai::errors::DiagnosticErrorInfo",
+          "definition": "crates/opi-ai/src/errors.rs:485",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::provider::extract_diagnostic_error",
+          "new": "opi_ai::errors::extract_diagnostic_error",
+          "definition": "crates/opi-ai/src/errors.rs:504",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::http::safe_excerpt",
+          "new": "opi_ai::errors::safe_excerpt",
+          "definition": "crates/opi-ai/src/errors/redaction.rs:49",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::bedrock::retry::SmithyErrorClass",
+          "new": "opi_ai::errors::SmithyErrorClass",
+          "definition": "crates/opi-ai/src/errors/service_fault.rs:37",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::bedrock::retry::classify_service_failure",
+          "new": "opi_ai::errors::classify_service_failure",
+          "definition": "crates/opi-ai/src/errors/service_fault.rs:59",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::ApiKeyCredential",
+          "new": "opi_ai::auth::credential::ApiKeyCredential",
+          "definition": "crates/opi-ai/src/auth/credential.rs:49",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::Credential",
+          "new": "opi_ai::auth::credential::Credential",
+          "definition": "crates/opi-ai/src/auth/credential.rs:114",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::CredentialSource",
+          "new": "opi_ai::auth::credential::CredentialSource",
+          "definition": "crates/opi-ai/src/auth/credential.rs:194",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::CredentialStoreError",
+          "new": "opi_ai::auth::credential::CredentialStoreError",
+          "definition": "crates/opi-ai/src/auth/credential.rs:237",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::UnknownEnvelopeField",
+          "new": "opi_ai::auth::credential::UnknownEnvelopeField",
+          "definition": "crates/opi-ai/src/auth/credential.rs:270",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::BoxAuthFuture",
+          "new": "opi_ai::auth::credential::BoxAuthFuture",
+          "definition": "crates/opi-ai/src/auth/credential.rs:286",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::credential::CredentialStore",
+          "new": "opi_ai::auth::credential::CredentialStore",
+          "definition": "crates/opi-ai/src/auth/credential.rs:311",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationGeneration",
+          "new": "opi_ai::auth::mutation::MutationGeneration",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:42",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::CredentialRevision",
+          "new": "opi_ai::auth::mutation::CredentialRevision",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:48",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationDecision",
+          "new": "opi_ai::auth::mutation::MutationDecision",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:51",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationError",
+          "new": "opi_ai::auth::mutation::MutationError",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:69",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationOutcome",
+          "new": "opi_ai::auth::mutation::MutationOutcome",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:84",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationReceipt",
+          "new": "opi_ai::auth::mutation::MutationReceipt",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:103",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationSlotView",
+          "new": "opi_ai::auth::mutation::MutationSlotView",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:116",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::CredentialUpdateOp",
+          "new": "opi_ai::auth::mutation::CredentialUpdateOp",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:125",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::CredentialMutationOp",
+          "new": "opi_ai::auth::mutation::CredentialMutationOp",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:138",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationSlot",
+          "new": "opi_ai::auth::mutation::MutationSlot",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:151",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationApplied",
+          "new": "opi_ai::auth::mutation::MutationApplied",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:158",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::write_mutation",
+          "new": "opi_ai::auth::mutation::write_mutation",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:168",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::delete_mutation",
+          "new": "opi_ai::auth::mutation::delete_mutation",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:173",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationQueue",
+          "new": "opi_ai::auth::mutation::MutationQueue",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:325",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationAbandoned",
+          "new": "opi_ai::auth::mutation::MutationAbandoned",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:412",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationHandle",
+          "new": "opi_ai::auth::mutation::MutationHandle",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:416",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::BarrierEntry",
+          "new": "opi_ai::auth::mutation::BarrierEntry",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:436",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::BarrierReport",
+          "new": "opi_ai::auth::mutation::BarrierReport",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:466",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::MutationBarrier",
+          "new": "opi_ai::auth::mutation::MutationBarrier",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:492",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::mutation::InMemoryCredentialStore",
+          "new": "opi_ai::auth::mutation::InMemoryCredentialStore",
+          "definition": "crates/opi-ai/src/auth/mutation.rs:592",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AwsSigV4Credentials",
+          "new": "opi_ai::auth::AwsSigV4Credentials",
+          "definition": "crates/opi-ai/src/auth/values.rs:12",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthScheme",
+          "new": "opi_ai::auth::AuthScheme",
+          "definition": "crates/opi-ai/src/auth/values.rs:78",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthInvalidPolicy",
+          "new": "opi_ai::auth::AuthInvalidPolicy",
+          "definition": "crates/opi-ai/src/auth/values.rs:121",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::ResolvedAuth",
+          "new": "opi_ai::auth::ResolvedAuth",
+          "definition": "crates/opi-ai/src/auth/values.rs:153",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthProvenanceSource",
+          "new": "opi_ai::auth::AuthProvenanceSource",
+          "definition": "crates/opi-ai/src/auth/values.rs:219",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AwsCredentialSource",
+          "new": "opi_ai::auth::AwsCredentialSource",
+          "definition": "crates/opi-ai/src/auth/values.rs:261",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::WebIdentityRoute",
+          "new": "opi_ai::auth::WebIdentityRoute",
+          "definition": "crates/opi-ai/src/auth/values.rs:329",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AdcCredentialSource",
+          "new": "opi_ai::auth::AdcCredentialSource",
+          "definition": "crates/opi-ai/src/auth/values.rs:340",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::ExternalAccountSupplier",
+          "new": "opi_ai::auth::ExternalAccountSupplier",
+          "definition": "crates/opi-ai/src/auth/values.rs:397",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthFallback",
+          "new": "opi_ai::auth::AuthFallback",
+          "definition": "crates/opi-ai/src/auth/values.rs:416",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthProvenance",
+          "new": "opi_ai::auth::AuthProvenance",
+          "definition": "crates/opi-ai/src/auth/values.rs:438",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthResolver",
+          "new": "opi_ai::auth::AuthResolver",
+          "definition": "crates/opi-ai/src/auth/resolver.rs:17",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::StaticAuthResolver",
+          "new": "opi_ai::auth::StaticAuthResolver",
+          "definition": "crates/opi-ai/src/auth/resolver.rs:40",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::OAuthCredential",
+          "new": "opi_ai::auth::OAuthCredential",
+          "definition": "crates/opi-ai/src/auth/oauth_contract.rs:17",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::OAuthLoginMethod",
+          "new": "opi_ai::auth::OAuthLoginMethod",
+          "definition": "crates/opi-ai/src/auth/oauth_contract.rs:91",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::OAuthProvider",
+          "new": "opi_ai::auth::OAuthProvider",
+          "definition": "crates/opi-ai/src/auth/oauth_contract.rs:111",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::LoginPresenter",
+          "new": "opi_ai::auth::LoginPresenter",
+          "definition": "crates/opi-ai/src/auth/oauth_contract.rs:173",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthContextError",
+          "new": "opi_ai::auth::AuthContextError",
+          "definition": "crates/opi-ai/src/auth/context.rs:12",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthProcessSnapshot",
+          "new": "opi_ai::auth::AuthProcessSnapshot",
+          "definition": "crates/opi-ai/src/auth/context.rs:52",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AuthContext",
+          "new": "opi_ai::auth::AuthContext",
+          "definition": "crates/opi-ai/src/auth/context.rs:84",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::auth::AmbientAuthContext",
+          "new": "opi_ai::auth::AmbientAuthContext",
+          "definition": "crates/opi-ai/src/auth/ambient.rs:14",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::http_source::CatalogRefreshContext",
+          "new": "opi_ai::catalog::CatalogRefreshContext",
+          "definition": "crates/opi-ai/src/catalog/source.rs:12",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::http_source::DynamicCatalogSource",
+          "new": "opi_ai::catalog::DynamicCatalogSource",
+          "definition": "crates/opi-ai/src/catalog/source.rs:31",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::http_source::CatalogDocumentError",
+          "new": "opi_ai::catalog::CatalogDocumentError",
+          "definition": "crates/opi-ai/src/catalog/document.rs:9",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::HttpCatalogSource::decode_document",
+          "new": "opi_ai::catalog::decode_document",
+          "definition": "crates/opi-ai/src/catalog/document.rs:22",
+          "compatibility": "same-function delegate"
+        },
+        {
+          "old": "opi_ai::catalog::store::ModelsStoreError",
+          "new": "opi_ai::catalog::ModelsStoreError",
+          "definition": "crates/opi-ai/src/catalog/store_contract.rs:18",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::store::StoreCommitError",
+          "new": "opi_ai::catalog::StoreCommitError",
+          "definition": "crates/opi-ai/src/catalog/store_contract.rs:33",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::store::StoreSnapshot",
+          "new": "opi_ai::catalog::StoreSnapshot",
+          "definition": "crates/opi-ai/src/catalog/store_contract.rs:53",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::store::StoreCommit",
+          "new": "opi_ai::catalog::StoreCommit",
+          "definition": "crates/opi-ai/src/catalog/store_contract.rs:65",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::CatalogOperation",
+          "new": "opi_ai::catalog::CatalogOperation",
+          "definition": "crates/opi-ai/src/catalog/values.rs:10",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::CatalogRecord",
+          "new": "opi_ai::catalog::CatalogRecord",
+          "definition": "crates/opi-ai/src/catalog/values.rs:40",
+          "compatibility": "same declaration; existing public path retained"
+        },
+        {
+          "old": "opi_ai::catalog::ModelsStoreEntry",
+          "new": "opi_ai::catalog::ModelsStoreEntry",
+          "definition": "crates/opi-ai/src/catalog/values.rs:80",
+          "compatibility": "same declaration; existing public path retained"
+        }
+      ],
+      "migration_granularity": "Top-level declarations; a type entry includes its inherent methods and variants. Existing root selected exports also remain. This is not a compiler-complete inventory of every alias.",
+      "primary_tests": [
+        "crates/opi-ai/tests/usage_cost.rs",
+        "crates/opi-ai/tests/service_tier_cost.rs",
+        "crates/opi-ai/tests/model_wire_metadata.rs",
+        "crates/opi-ai/tests/provider_error_classes.rs",
+        "crates/opi-ai/tests/provider_diagnostics.rs",
+        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/catalog_lifecycle.rs",
+        "crates/opi-ai/tests/catalog_operations.rs",
+        "crates/opi-ai/tests/classifier_contract.rs",
+        "crates/opi-ai/tests/deferred_contract.rs",
+        "crates/opi-ai/tests/image_provider_serialization.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/registry.rs",
+        "crates/opi-ai/tests/public_utilities.rs",
+        "crates/opi-ai/tests/schema_public.rs",
+        "crates/opi-ai/tests/transcript_contract.rs",
+        "crates/opi-ai/tests/replay_contract.rs",
+        "crates/opi-ai/tests/chat_pi_messages.rs",
+        "crates/opi-ai/tests/output_content_image.rs",
+        "crates/opi-ai/tests/image_input.rs",
+        "crates/opi-ai/tests/custom_provider_registration.rs",
+        "crates/opi-ai/tests/provider_trait.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/api_mapped_provider.rs",
+        "crates/opi-ai/tests/model_capabilities_migration.rs",
+        "crates/opi-ai/tests/catalog_artifact.rs",
+        "crates/opi-ai/tests/catalog_personalization.rs",
+        "crates/opi-ai/tests/auth_process_lifecycle.rs",
+        "crates/opi-ai/tests/builtin_native_scoped.rs",
+        "crates/opi-ai/tests/builtin_scoped_env.rs",
+        "crates/opi-ai/tests/builtin_auth_ownership.rs",
+        "crates/opi-ai/tests/oauth_store_integration.rs",
+        "crates/opi-ai/tests/oauth_wire_shape.rs",
+        "crates/opi-ai/tests/oauth_flows.rs",
+        "crates/opi-ai/tests/per_request_auth.rs",
+        "crates/opi-ai/tests/external_sdk.rs",
+        "crates/opi-ai/tests/platform_delivery.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-ai/tests/whole_call_retry.rs"
+      ],
+      "test_impact": {
+        "add": [],
+        "update": [
+          "canonical imports in auth_contracts, catalog_operations, model_wire_metadata, provider_diagnostics, service_tier_cost, usage_cost",
+          "eight message unit tests relocated with their owning module"
+        ],
+        "delete": [],
+        "retain": "All assertions, fixtures, old public path consumers and original phase-one evidence"
+      },
+      "evidence": [
+        "evidence/phase2-foundation-checks.json",
+        "evidence/phase2-foundation-isolation.json",
+        "evidence/phase2-foundation-package.json"
+      ],
+      "limits": [
+        "No feature isolation or reduced opi-ai Cargo closure claimed",
+        "No full Pi differential or six-gate acceptance",
+        "Prior schema/spec_ledger/Vertex failure observations remain open; full workspace all-targets tests not repeated",
+        "Windows Rust 1.99.1 only; no MSRV1.97/Linux/macOS/live verification"
+      ]
+    },
+    {
+      "id": "IMPL-04-STARTED-CHAT-EXECUTION",
+      "issue": "issues/04-started-chat-execution.md",
+      "base_commit": "814c95f7ce575fb9be3df6b9d04ff6e2942706c1",
+      "contracts": [
+        "CAP-EXECUTION",
+        "CAP-STREAM",
+        "CAP-LAZY",
+        "CAP-MODELS-DISPATCH",
+        "CAP-RETRY",
+        "CAP-TELEMETRY-CORE",
+        "CAP-TELEMETRY-AI"
+      ],
+      "status": "explicit-start-slice-pass-legacy-migration-and-ai-instrumentation-open",
+      "baseline_policy": "Phase-one objects and two previous implementation slices remain frozen; carried-in foundation changes preserved.",
+      "public_entry_mapping": [
+        {
+          "entry": "ChatCall::start",
+          "owner": "execution (private)",
+          "returns": "stream::StartedChatStream / root StartedChatStream",
+          "scope": "explicit opt-in for native/simple/direct frozen Models calls; schedules on Tokio without consumer polling"
+        },
+        {
+          "entry": "ChatStream::start",
+          "owner": "execution (private)",
+          "returns": "StartedChatStream",
+          "scope": "explicit opt-in for normalized advanced/provider event stream; preserves already consumed progress/result"
+        },
+        {
+          "entry": "StartedChatStream::result / Stream",
+          "owner": "execution (private), stream public facade",
+          "scope": "consumer drop/result abandonment detach; FIFO retained until consumed/drop; explicit cancellation preserves forwarded prefix"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/tests/execution_lifecycle.rs",
+          "status": "ordinary/custom/prepared external public-entry tests"
+        },
+        {
+          "path": "crates/opi-ai/tests/provider_lifecycle.rs",
+          "status": "real Anthropic local HTTP stream after consumer Drop"
+        },
+        {
+          "path": "crates/opi-ai/tests/telemetry_operations.rs",
+          "status": "native ChatApi frozen context across spawned executor and Models drop"
+        },
+        {
+          "path": "crates/opi-agent/src/agent_loop.rs",
+          "status": "legacy consumer retained, migration still open"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/resource_cleanup.rs",
+        "crates/opi-ai/tests/telemetry_carrier.rs",
+        "crates/opi-ai/tests/whole_call_retry.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "15 execution lifecycle cases",
+          "1 local HTTP completion case",
+          "1 frozen context task case"
+        ],
+        "update": [],
+        "delete": [],
+        "retain": "Existing cases/assertions and phase-one observation bytes"
+      },
+      "evidence": [
+        "evidence/phase3-started-checks.json",
+        "evidence/phase3-ai-telemetry-observations.json"
+      ],
+      "limits": [
+        "No ordinary first-poll/drop or agent/raw-source migration",
+        "No AI instrumentation or observer error-policy mapping",
+        "Scheduling is not JS synchronous setup equivalence; first-terminal/source-result gap stays open",
+        "Unbounded unread FIFO is documented; no memory/performance budget acceptance",
+        "No new actual-package consumption, full-workspace tests, Linux/macOS, MSRV1.97, live or six-gate acceptance"
+      ]
+    },
+    {
+      "id": "IMPL-05-AGENT-EXECUTION-CONSUMERS",
+      "issue": "issues/05-agent-execution-consumers.md",
+      "base_commit": "814c95f7ce575fb9be3df6b9d04ff6e2942706c1",
+      "contracts": [
+        "CAP-EXECUTION",
+        "CAP-STREAM",
+        "CAP-MODELS-DISPATCH",
+        "CAP-RETRY"
+      ],
+      "status": "agent-consumer-slice-pass-workspace-regression-gaps-open",
+      "supersedes_consumer_status": {
+        "slice": "IMPL-04-STARTED-CHAT-EXECUTION",
+        "path": "crates/opi-agent/src/agent_loop.rs",
+        "scope": "two production agent consumers migrated; previous slice remains historical evidence"
+      },
+      "public_entry_mapping": [
+        {
+          "entry": "StartedChatStream::abort(&mut self)",
+          "owner": "execution (private), stream/root facade",
+          "scope": "explicit task abort/join; preserved completed outcome or observed partial; task ownership survives cancellation of the abort wait; does not cancel request token or join provider-private tasks"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-agent/src/agent_loop.rs",
+          "entry": "agent_loop turn/retry attempts",
+          "status": "ChatStream::new(...).start(); caller cancellation awaits abort; dropping loop detaches"
+        },
+        {
+          "path": "crates/opi-agent/src/agent_loop.rs",
+          "entry": "PreparationEvidence::run_provider_call",
+          "status": "started consumer retained by Core across hook cancellation; initial/next preparation and reborrow settle explicit cancellation before return"
+        },
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "entry": "ChatCall default Stream/result",
+          "status": "unchanged legacy manual-poll/drop; migration open"
+        },
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "entry": "ChatStream / raw EventStream",
+          "status": "unchanged raw lifecycle; source/result-tail mapping open"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-agent/tests/request_execution.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-agent/tests/agent_loop_semantics.rs",
+        "crates/opi-agent/tests/preparation_transaction.rs",
+        "crates/opi-agent/tests/retry_agent.rs",
+        "crates/opi-agent/tests/continuation_contract.rs",
+        "crates/opi-agent/tests/agent_wrapper.rs",
+        "crates/opi-ai/tests/tool_result_wire.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "5 AI abort cases",
+          "2 agent consumer tests, each with turn/initial summary/next summary cases"
+        ],
+        "update": [
+          "tool_result_wire direct-module inventory follows the approved carried-in foundation move; wire and remaining guard assertions retained"
+        ],
+        "delete": [],
+        "retain": "Other pre-existing test assertions and fixture contracts"
+      },
+      "evidence": [
+        "evidence/phase3-consumers-checks.json"
+      ],
+      "limits": [
+        "No default ChatCall/raw producer lifecycle migration",
+        "No AI instrumentation/source-result-tail equivalence",
+        "No claim to join independently spawned provider tasks or stop non-yielding poll",
+        "No actual candidate package, feature/native multi-OS/MSRV/live/performance/six-gate acceptance"
+      ]
+    },
+    {
+      "id": "IMPL-06-DEFAULT-CHAT-EXECUTION",
+      "issue": "issues/06-default-chat-execution.md",
+      "base_commit": "814c95f7ce575fb9be3df6b9d04ff6e2942706c1",
+      "contracts": [
+        "CAP-EXECUTION",
+        "CAP-STREAM",
+        "CAP-MODELS-DISPATCH",
+        "CAP-AUTH",
+        "CAP-LAZY",
+        "CAP-SESSION",
+        "CAP-PACKAGE"
+      ],
+      "status": "ordinary-chat-slice-pass-workspace-regression-gaps-open",
+      "supersedes_consumer_status": {
+        "slices": [
+          "IMPL-04-STARTED-CHAT-EXECUTION",
+          "IMPL-05-AGENT-EXECUTION-CONSUMERS"
+        ],
+        "scope": "ordinary ChatCall default lifecycle migrated; prior slice objects remain historical evidence"
+      },
+      "public_entry_mapping": [
+        {
+          "entries": [
+            "Models::stream",
+            "Models::complete",
+            "Models::stream_simple",
+            "Models::complete_simple",
+            "Models::stream_direct",
+            "Models::complete_direct"
+          ],
+          "owner": "models/public ChatCall -> private ChatCallDriver + execution",
+          "scope": "freeze binding at construction; schedule on current Tokio runtime; no consumer poll required; dropping consumer/result waiter detaches"
+        },
+        {
+          "entry": "ChatCall::start",
+          "scope": "extract existing StartedChatStream; no second spawn or request; runtime not required for conversion"
+        },
+        {
+          "entry": "ChatCall::abort(&mut self)",
+          "scope": "delegate explicit abort/join and partial/completed outcome retention"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/examples",
+          "status": "three onboarding examples construct ordinary calls within Tokio"
+        },
+        {
+          "path": "scripts/pi-sdk-conformance/run_readme_examples.py",
+          "status": "schema 2 requires package-shipped sources to send before consumption; schema 1 historical reports rejected"
+        },
+        {
+          "path": "crates/opi-agent/src/agent_loop.rs",
+          "status": "unchanged from preceding slice; advanced started consumers already migrated"
+        },
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "raw ChatStream collector remains manual-poll; advanced prepare/attempt contracts unchanged"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/custom_provider_registration.rs",
+        "crates/opi-ai/tests/resource_cleanup.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/builtin_auth_ownership.rs",
+        "crates/opi-ai/tests/provider_collection.rs",
+        "crates/opi-ai/tests/openai_codex_responses.rs",
+        "crates/opi-ai/tests/codex_native_options.rs",
+        "crates/opi-ai/tests/azure_openai_fixtures.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+        "scripts/pi-sdk-conformance/test_run_readme_examples.py",
+        "scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "test_impact": {
+        "add": [
+          "4 ordinary execution cases",
+          "2 README report admission cases"
+        ],
+        "update": [
+          "six ordinary-entry coverage and scheduling-independent binding assertions",
+          "cleanup cutoffs/drop use execution barriers; source partial is nonempty with known usage",
+          "raw carrier assertions retained at raw adapter seam; ordinary consumers verify background context",
+          "builtin zero-I/O construction separated from eager request execution",
+          "six Azure/Chat/Responses timing cases observe raw terminal before delayed consumption; original body/setup timing thresholds retained",
+          "README report schema 2 rejects missing pre-consumption execution and old schema"
+        ],
+        "delete": [],
+        "retain": "All other targets and behavioral assertions; prior reports and baseline objects remain frozen"
+      },
+      "evidence": [
+        "evidence/phase3-default-checks.json",
+        "evidence/phase3-default-package.json"
+      ],
+      "limits": [
+        "Tokio scheduling does not prove synchronous setup-before-return parity",
+        "No raw producer/advanced attempt/default non-chat migration",
+        "No AI instrumentation or source/result-tail equivalence",
+        "Unbounded unread queue budget not calibrated",
+        "No Linux/macOS/MSRV/live/full Pi differential/six-gate acceptance"
+      ]
     }
   ]
 }

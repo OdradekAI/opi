@@ -2,6 +2,20 @@
 
 ### Breaking Changes
 
+- `opi-ai`: ordinary `Models.stream*` and `complete*` chat entries now require
+  a current Tokio runtime and schedule execution at construction. Dropping an
+  unpolled call or result future no longer cancels it. `ChatCall::start` converts
+  the existing consumer without spawning again; `ChatCall::abort` explicitly
+  joins execution abortion. Resource registration occurs when the execution
+  task first runs, independently of consumer polling.
+
+- `opi-agent` (0.x): turn attempts and preparation summary calls now execute
+  independently of their waiters. Dropping an agent operation future leaves
+  an already started model call running. Explicit run cancellation aborts and
+  joins the AI execution before returning, including when an outer preparation
+  hook interrupts the summary waiter. Provider-internal task/session cleanup
+  remains a separate contract; cancelled partials are not committed.
+
 - `opi-ai` (0.x): `TelemetryContext::noop()` and disabled tracing spans now
   preserve ambient host tracing inside callbacks, future polls and drops. They
   no longer install a disabled dispatcher. Business execution and explicitly
@@ -602,8 +616,8 @@
   `StreamError` cause instead of an `AssistantStreamEvent::Error` terminal;
   the variant is retained read-only for deserializing historical saved
   events and is converted at the `ChatStream` seam.
-- `opi-agent`: the agent loop and summary `run_provider_call` consume the
-  public `ChatStream` seam. Failures classify retries through the typed
+- `opi-agent`: the agent loop and summary `run_provider_call` consume explicitly
+  started `ChatStream` executions. Failures classify retries through the typed
   cause as before, and failed calls now preserve the canonical partial in
   the turn's events and Agent state (in-band terminals unchanged; mid-stream
   failures previously lost the partial). Premature EOF surfaces as the
@@ -902,8 +916,9 @@
   'static` after the driver is changed or dropped; tool-registry installation
   freezes validation against the final declaration rather than assembly cache.
 - Error/Aborted terminals deliver one failure; errors, cancellation and premature
-  EOF retain canonical raw/opaque content and known usage. Receiver drop releases
-  current adapters' connect/read/backpressure work.
+  EOF retain canonical raw/opaque content and known usage. Underlying provider
+  receiver drop releases current adapters' connect/read/backpressure work;
+  dropping a `StartedChatStream` consumer retains that receiver in its execution.
 - Replay validates association before omitting failure pairs, rejects conflicting
   effect facts, retains unknown effects and prevents legalized wire-ID collisions.
   Missing results in omitted Error/Aborted turns retain their unknown effects in
@@ -948,6 +963,29 @@
   call sites add `Default`/`None` fields; historical records deserialize
   unchanged.
 ### Added
+
+- **Explicit chat execution:** `ChatCall::start()` and `ChatStream::start()`
+  return a `StartedChatStream` backed by a Tokio execution owner. Requests
+  progress without event consumption; dropping the started handle or its result
+  waiter leaves execution running. Unread events use an unbounded FIFO, freed
+  when consumption is dropped or result-only waiting begins. Request-token cancellation
+  preserves already-forwarded events before its failure. Runtime interruption
+  retains the latest produced partial; source panics remain observable. Existing
+  raw `ChatStream`/`EventStream` Drop contracts remain in place, and no automatic AI spans are
+  installed by this entry. `StartedChatStream::abort(&mut self)` explicitly
+  aborts and joins the execution, preserving a completed outcome or the latest
+  observed partial on interruption. An abandoned abort wait retains the task on
+  its handle for subsequent observation; request tokens are not implicitly cancelled.
+
+- **`opi-ai` foundation modules:** deterministic message/model/usage and
+  multimodal values now live under `types`, shared provider errors and diagnostic
+  redaction under `errors`, and credential/serialized mutation contracts under
+  `auth`. Existing consumer paths re-export the same definitions. Catalog source
+  contracts, offline document decoding, store acknowledgements and embedded assets
+  have separate owners; `catalog::decode_document` validates documents without
+  constructing an HTTP client. Header validation directly uses the existing locked
+  `http` parser. Runtime behavior and default Cargo capabilities are unchanged;
+  feature-based dependency reduction remains separate work.
 
 - `opi-telemetry`: independent backend-neutral span, attribute, event, status,
   metric and schema contracts, with no-op and in-memory recording. Explicit
@@ -1353,8 +1391,9 @@
   remaining release continues). `Some(nonempty id)` cancels only that
   session (unmatched is a no-op that retains idle reuse), `None` cancels
   everything including sessionless generations, and `Some("")` is a typed
-  zero-effect failure. Dropping a call starts its release (producer work is
-  cancelled with it) but never claims barrier completion; caller parent
+  zero-effect failure. Releasing the underlying execution source starts its
+  release (producer work is cancelled with it), but dropping an independently
+  started consumer retains the execution's lease. Neither claims barrier completion; caller parent
   tokens, external owners, credentials and catalogs stay untouched, and
   pure `Sse`-preference calls remain unregistered.
 - `opi-ai`: real Codex WebSocket/Auto/continuation public path (task
@@ -2176,8 +2215,8 @@
   later fields survive, and incomplete or non-object finals keep the owned
   raw text plus the error, never a partial-prefix success. Streaming partial
   JSON stays provisional.
-- `opi-ai`: cancellation now takes priority over buffered events on every
-  adapter (V-04). Anthropic, OpenAI Chat, OpenAI Responses and Codex
+- `opi-ai`: cancellation now takes priority over buffered events in every
+  adapter's raw queue (V-04). Anthropic, OpenAI Chat, OpenAI Responses and Codex
   Responses migrate to the cancel-aware queue/consumer seams already used by
   Azure, Gemini, Vertex and Bedrock: cancelling at a confirmed wait point
   (read or full queue) delivers exactly one typed cancellation without
@@ -2190,8 +2229,8 @@
   and `ChatStream` collector. Native options retain adapter budget semantics;
   simple and advanced preparation apply the shared budget. Ordinary calls capture the owned
   input, the caller's complete record, and the registered adapter at
-  construction (`Send + 'static`), and authentication starts on the first
-  poll; pre-auth failures (unregistered ApiId, options type/provider
+  construction (`Send + 'static`), then schedule authentication and execution
+  independently of consumer polling; pre-auth failures (unregistered ApiId, options type/provider
   mismatch, non-dispatchable route, cancellation) surface as exactly one
   typed `CallFailure` and never reach auth.
 - `opi-ai`: typed custom chat registration. `ChatApi<O>` adapters register

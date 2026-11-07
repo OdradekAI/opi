@@ -1,0 +1,744 @@
+{
+  "family": "readme-examples",
+  "scope": "three exact packaged onboarding sources execute lazy builtin setup, execution before consumption, final responses/stream and tool-result continuation as an ordinary workspace-external consumer (ONB-02)",
+  "scratch": "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase3-default-package-final",
+  "inputs": {
+    "runner_sha256": "61e796d0cd141fcd2006b37f6ec6e13ae044764930a78cc8e8eec513dbd4a36f",
+    "consumer_source_sha256": "d09fb3396209a0d94a350683d9a1060c2970aa8a985769a2d30b52a73edf9a7a"
+  },
+  "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+  "cargo_configs": [
+    {
+      "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+      "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+    }
+  ],
+  "steps": [
+    {
+      "name": "rustc-version",
+      "command": [
+        "rustc",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.05,
+      "stdout_sha256": "2a9ba90ddc1895fc7b4d94baee548ac7947533b6ef348fc9f010ab5d9f3d7898",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "cargo-version",
+      "command": [
+        "cargo",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.03,
+      "stdout_sha256": "f1bd358f06a9ce032236e2ba498f33d3c9449b1b4db9763b66d29081127798f9",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "79632"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.19,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "opi-telemetry",
+        "-p",
+        "opi-ai",
+        "--allow-dirty",
+        "--no-verify",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.7,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "9b88cd7660c1a952cee8f24cbc90371fce49de78dfacacf9957ba1752c43f29d"
+    },
+    {
+      "name": "consumer-lock",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase3-default-package-final\\candidate-telemetry.toml",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.53,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "fa7634eea6f8b165d801a96efa5979287335dd468d83f0ee2b8b2390eeb1e906"
+    },
+    {
+      "name": "consumer-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase3-default-package-final\\candidate-telemetry.toml",
+        "metadata",
+        "--offline",
+        "--locked",
+        "--format-version",
+        "1"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.23,
+      "stdout_sha256": "5c8046664a6ee19e3fda0a4575f44f48ca78683548e40f99617dd11d8b2e8605",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "consumer-check",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase3-default-package-final\\candidate-telemetry.toml",
+        "check",
+        "--offline",
+        "--locked",
+        "--bins"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 40.89,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "c15abb06a0480b2eb8127f033d3d8ed4e25fa0ed5e5ad630204f5654ac18eaf6"
+    },
+    {
+      "name": "consumer-peer-test",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase3-default-package-final\\candidate-telemetry.toml",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "consumer-readme",
+        "controlled_peer_waits_for_bytes_after_accept",
+        "--",
+        "--exact"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 27.55,
+      "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
+      "stderr_sha256": "57b348d09301cca865b3bb1f81a11cb2c2d2e9bff6f70993ad1c9908f759af56"
+    },
+    {
+      "name": "consumer-execute",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Users\\Luiz\\Documents\\Codex\\2026-11-06\\prompt-pi-1-5-0-pi\\work\\phase3-default-package-final\\candidate-telemetry.toml",
+        "run",
+        "--offline",
+        "--locked",
+        "--quiet",
+        "--bin",
+        "consumer-readme"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 88.3,
+      "stdout_sha256": "a7a2382eeda018891734f9c4618b682bd3884a250017662a2e66ffde813bc06c",
+      "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "79632"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.22,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "verdict": "PASS",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+  "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\nrelease: 1.99.1\ncommit-hash: 5f94df4789f005f9a352888e8355ffc645b7ed0e\ncommit-date: 2026-08-27\nhost: x86_64-pc-windows-msvc\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.21.0-DEV (sys:0.4.90+curl-8.21.0 vendored ssl:Schannel)\nos: Windows 10.0.22631 (Windows 11 Core) [64-bit]\n",
+  "package": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "752d12014db07cfed9b792d800e262fbee1a0db25189eb68248563c380bd5305",
+    "dependencies": [
+      {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "28d145afef940b8ea9589a1473f6736ea6a96a7497bd11ba720b66d74e4a19c6",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      }
+    ]
+  },
+  "packaged_examples": {
+    "quick_start.rs": "14268ef64007a5ba3cdd3d64934feb243494d14b575d43ba568de8b9797f99ce",
+    "quick_start_stream.rs": "e858723623a220fc9fa3d6f5d236e690f5fdbab8f0dfa932556ff5973542937c",
+    "tool_loop.rs": "fe3417b8f2088015cd7e45de1b560433cf402633b18f7d3b06c572baf0eef550"
+  },
+  "manuals_embed_exact_sources": {
+    "README.md": true,
+    "README.zh.md": true
+  },
+  "consumer_dependencies": [
+    "aho-corasick",
+    "atomic-waker",
+    "autocfg",
+    "aws-lc-rs",
+    "aws-lc-sys",
+    "aws-smithy-async",
+    "aws-smithy-query",
+    "aws-smithy-runtime-api",
+    "aws-smithy-runtime-api-macros",
+    "aws-smithy-schema",
+    "aws-smithy-types",
+    "aws-smithy-xml",
+    "base16ct",
+    "base64",
+    "base64-simd",
+    "base64ct",
+    "bitflags",
+    "block-buffer",
+    "bumpalo",
+    "bytes",
+    "bytes-utils",
+    "cc",
+    "cfg-if",
+    "cfg_aliases",
+    "chacha20",
+    "cmake",
+    "const-oid",
+    "consumer-readme",
+    "core-foundation",
+    "core-foundation-sys",
+    "cpufeatures",
+    "crypto-bigint",
+    "crypto-common",
+    "der",
+    "deranged",
+    "digest",
+    "displaydoc",
+    "dunce",
+    "ecdsa",
+    "either",
+    "elliptic-curve",
+    "equivalent",
+    "errno",
+    "ff",
+    "find-msvc-tools",
+    "flate2",
+    "fnv",
+    "form_urlencoded",
+    "fs_extra",
+    "futures-channel",
+    "futures-core",
+    "futures-io",
+    "futures-macro",
+    "futures-sink",
+    "futures-task",
+    "futures-util",
+    "generic-array",
+    "getrandom",
+    "group",
+    "h2",
+    "hashbrown",
+    "hex",
+    "hmac",
+    "http",
+    "http-body",
+    "http-body-util",
+    "httparse",
+    "hyper",
+    "hyper-rustls",
+    "hyper-util",
+    "icu_collections",
+    "icu_locale_core",
+    "icu_normalizer",
+    "icu_normalizer_data",
+    "icu_properties",
+    "icu_properties_data",
+    "icu_provider",
+    "idna",
+    "idna_adapter",
+    "indexmap",
+    "ipnet",
+    "itoa",
+    "jobserver",
+    "js-sys",
+    "libc",
+    "libz-rs-sys",
+    "litemap",
+    "log",
+    "lru-slab",
+    "memchr",
+    "mio",
+    "num-conv",
+    "num-integer",
+    "num-traits",
+    "once_cell",
+    "openssl-probe",
+    "opi-ai",
+    "opi-telemetry",
+    "outref",
+    "p256",
+    "pem-rfc7468",
+    "percent-encoding",
+    "pin-project-lite",
+    "pkcs8",
+    "pkg-config",
+    "potential_utf",
+    "powerfmt",
+    "ppv-lite86",
+    "primeorder",
+    "proc-macro2",
+    "quinn",
+    "quinn-proto",
+    "quinn-udp",
+    "quote",
+    "r-efi",
+    "rand",
+    "rand_chacha",
+    "rand_core",
+    "rand_pcg",
+    "regex",
+    "regex-automata",
+    "regex-syntax",
+    "regress",
+    "reqwest",
+    "rfc6979",
+    "ring",
+    "rustc-hash",
+    "rustls",
+    "rustls-native-certs",
+    "rustls-pki-types",
+    "rustls-webpki",
+    "rustversion",
+    "ryu",
+    "ryu-js",
+    "schannel",
+    "sec1",
+    "secrecy",
+    "security-framework",
+    "security-framework-sys",
+    "serde",
+    "serde_core",
+    "serde_derive",
+    "serde_json",
+    "serde_urlencoded",
+    "sha1",
+    "sha2",
+    "shlex",
+    "signal-hook-registry",
+    "signature",
+    "slab",
+    "smallvec",
+    "socket2",
+    "spki",
+    "stable_deref_trait",
+    "subtle",
+    "syn",
+    "sync_wrapper",
+    "synstructure",
+    "thiserror",
+    "thiserror-impl",
+    "time",
+    "time-core",
+    "time-macros",
+    "tinystr",
+    "tinyvec",
+    "tokio",
+    "tokio-macros",
+    "tokio-rustls",
+    "tokio-util",
+    "tower",
+    "tower-http",
+    "tower-layer",
+    "tower-service",
+    "tracing",
+    "tracing-attributes",
+    "tracing-core",
+    "try-lock",
+    "typenum",
+    "unicode-ident",
+    "unicode-normalization",
+    "untrusted",
+    "url",
+    "urlencoding",
+    "utf8_iter",
+    "uuid",
+    "valuable",
+    "version_check",
+    "vsimd",
+    "want",
+    "wasi",
+    "wasm-bindgen",
+    "wasm-bindgen-futures",
+    "wasm-bindgen-macro",
+    "wasm-bindgen-macro-support",
+    "wasm-bindgen-shared",
+    "wasm-streams",
+    "web-sys",
+    "web-time",
+    "webpki-roots",
+    "windows-link",
+    "windows-sys",
+    "windows-targets",
+    "windows_aarch64_gnullvm",
+    "windows_aarch64_msvc",
+    "windows_i686_gnu",
+    "windows_i686_gnullvm",
+    "windows_i686_msvc",
+    "windows_x86_64_gnu",
+    "windows_x86_64_gnullvm",
+    "windows_x86_64_msvc",
+    "writeable",
+    "xmlparser",
+    "yoke",
+    "yoke-derive",
+    "zerocopy",
+    "zerocopy-derive",
+    "zerofrom",
+    "zerofrom-derive",
+    "zeroize",
+    "zerotrie",
+    "zerovec",
+    "zerovec-derive",
+    "zlib-rs",
+    "zmij"
+  ],
+  "execution_environment": {
+    "removed_proxy_variable_names": [],
+    "loopback_bypass": {
+      "NO_PROXY": "localhost,127.0.0.1,::1",
+      "no_proxy": "localhost,127.0.0.1,::1"
+    }
+  },
+  "execution": {
+    "schema": "opi-readme-execution/2",
+    "verdict": "PASS",
+    "total": 3,
+    "failed": 0,
+    "checks": [
+      {
+        "name": "quick_start",
+        "passed": true,
+        "setup": {
+          "source_reads": 0,
+          "store_reads": 0,
+          "requests": 0
+        },
+        "before_consumption": {
+          "source_reads": 3,
+          "store_reads": 1,
+          "requests": 1
+        },
+        "observed": {
+          "source_reads": 3,
+          "store_reads": 1,
+          "requests": 1
+        },
+        "final_text": "Hello world",
+        "continuation": false,
+        "requests": [
+          {
+            "method": "POST",
+            "target": "/v1/messages",
+            "headers": {
+              "accept": "*/*",
+              "anthropic-version": "2023-06-01",
+              "content-length": "288",
+              "content-type": "application/json",
+              "host": "127.0.0.1:10003",
+              "x-api-key": "readme-synthetic-key"
+            },
+            "body": {
+              "model": "claude-sonnet-4-5",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "In one short sentence, say hello.",
+                      "cache_control": {
+                        "type": "ephemeral"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "system": [
+                {
+                  "type": "text",
+                  "text": "You are concise.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ],
+              "max_tokens": 1024
+            }
+          }
+        ]
+      },
+      {
+        "name": "quick_start_stream",
+        "passed": true,
+        "setup": {
+          "source_reads": 0,
+          "store_reads": 0,
+          "requests": 0
+        },
+        "before_consumption": {
+          "source_reads": 3,
+          "store_reads": 1,
+          "requests": 1
+        },
+        "observed": {
+          "source_reads": 3,
+          "store_reads": 1,
+          "requests": 1
+        },
+        "final_text": "Hello world",
+        "continuation": false,
+        "requests": [
+          {
+            "method": "POST",
+            "target": "/v1/messages",
+            "headers": {
+              "accept": "*/*",
+              "anthropic-version": "2023-06-01",
+              "content-length": "278",
+              "content-type": "application/json",
+              "host": "127.0.0.1:10005",
+              "x-api-key": "readme-synthetic-key"
+            },
+            "body": {
+              "model": "claude-sonnet-4-5",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "Count from one to five.",
+                      "cache_control": {
+                        "type": "ephemeral"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "system": [
+                {
+                  "type": "text",
+                  "text": "You are concise.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ],
+              "max_tokens": 1024
+            }
+          }
+        ]
+      },
+      {
+        "name": "tool_loop",
+        "passed": true,
+        "setup": {
+          "source_reads": 0,
+          "store_reads": 0,
+          "requests": 0
+        },
+        "before_consumption": {
+          "source_reads": 3,
+          "store_reads": 1,
+          "requests": 1
+        },
+        "observed": {
+          "source_reads": 6,
+          "store_reads": 2,
+          "requests": 2
+        },
+        "final_text": "Tokyo: 22 C, clear.",
+        "continuation": true,
+        "requests": [
+          {
+            "method": "POST",
+            "target": "/v1/messages",
+            "headers": {
+              "accept": "*/*",
+              "anthropic-version": "2023-06-01",
+              "content-length": "519",
+              "content-type": "application/json",
+              "host": "127.0.0.1:10007",
+              "x-api-key": "readme-synthetic-key"
+            },
+            "body": {
+              "model": "claude-sonnet-4-5",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "What is the weather in Tokyo? Use the tool.",
+                      "cache_control": {
+                        "type": "ephemeral"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "system": [
+                {
+                  "type": "text",
+                  "text": "You are a concise assistant.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ],
+              "max_tokens": 1024,
+              "tools": [
+                {
+                  "name": "get_weather",
+                  "description": "Current weather for one city.",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {
+                      "city": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "city"
+                    ]
+                  },
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "method": "POST",
+            "target": "/v1/messages",
+            "headers": {
+              "accept": "*/*",
+              "anthropic-version": "2023-06-01",
+              "content-length": "736",
+              "content-type": "application/json",
+              "host": "127.0.0.1:10007",
+              "x-api-key": "readme-synthetic-key"
+            },
+            "body": {
+              "model": "claude-sonnet-4-5",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "What is the weather in Tokyo? Use the tool.",
+                      "cache_control": {
+                        "type": "ephemeral"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "role": "assistant",
+                  "content": [
+                    {
+                      "type": "tool_use",
+                      "id": "weather-1",
+                      "name": "get_weather",
+                      "input": {
+                        "city": "Tokyo"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "role": "user",
+                  "content": [
+                    {
+                      "type": "tool_result",
+                      "tool_use_id": "weather-1",
+                      "content": "22 C, clear"
+                    }
+                  ]
+                }
+              ],
+              "system": [
+                {
+                  "type": "text",
+                  "text": "You are a concise assistant.",
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ],
+              "max_tokens": 1024,
+              "tools": [
+                {
+                  "name": "get_weather",
+                  "description": "Current weather for one city.",
+                  "input_schema": {
+                    "type": "object",
+                    "properties": {
+                      "city": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "city"
+                    ]
+                  },
+                  "cache_control": {
+                    "type": "ephemeral"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "current_workspace_applicability": {
+    "opi-ai": {
+      "matching_files": 176,
+      "scope": "all packaged src/assets/examples and README counterparts; test-only files are not consumer build inputs"
+    },
+    "opi-telemetry": {
+      "matching_files": 11,
+      "scope": "all packaged src/assets/examples and README counterparts; test-only files are not consumer build inputs"
+    }
+  }
+}

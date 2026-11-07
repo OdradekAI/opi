@@ -2538,7 +2538,7 @@ mod ws_cancellation {
         call.transport = TransportPreference::WebsocketCached;
         let cancel = call.cancel.clone();
         let mut stream = provider.stream_prepared(call, auth("s", None, Some("a".into())));
-        // First poll starts the lazy direct call. Dropping only this borrowed
+        // First poll starts this raw provider call. Dropping only this borrowed
         // wait leaves the call and its idle connection alive for cancellation.
         assert!(
             tokio::time::timeout(std::time::Duration::from_millis(100), stream.next())
@@ -2655,8 +2655,8 @@ mod ws_resources {
         matches!(failure.cause(), ProviderError::Cancelled)
     }
 
-    /// ChatCall is lazy: one poll starts the producer without waiting for
-    /// its first event, so cleanup-relative timing is deterministic.
+    /// Construct the independently executing call and wait for its first
+    /// event within the fixture window. Cutoff tests also observe peer progress.
     async fn start_call(
         models: &Models,
         request: Request,
@@ -2674,9 +2674,8 @@ mod ws_resources {
             },
         );
         let mut call = Box::pin(call);
-        // Drive the lazy prepare to a live producer: the first event arrives
-        // when the peer speaks; otherwise the bounded window still covers
-        // prepare + connect + first request frame.
+        // Consume the first event if it arrives within the fixture window.
+        // Execution continues independently when this borrowed wait times out.
         let _ = tokio::time::timeout(std::time::Duration::from_millis(400), call.next()).await;
         call
     }
@@ -2917,22 +2916,30 @@ mod ws_resources {
     async fn cleanup_none_cancels_inflight_sessionless_and_closes_pool() {
         let creates = Arc::new(Mutex::new(Vec::new()));
         let closes = Arc::new(Mutex::new(0));
-        let peer = ScriptPeer::spawn(
-            vec![
-                ws_serve_completed(&creates, &closes),
-                ws_hold_busy(&creates),
-            ],
-            false,
-        );
+        let peer = ScriptPeer::spawn(vec![ws_serve_completed(&creates, &closes)], false);
         let models = models_with(peer.base_url());
         run_call(&models, session_request("s2"))
             .await
             .expect("pooled call");
-        let parent = sessionless_request();
+        let mut parent = sessionless_request();
         let parent_token = parent.cancel.clone();
-        let call = run_call(&models, parent);
+        let entered = Arc::new(tokio::sync::Notify::new());
+        let signal = entered.clone();
+        parent.callbacks =
+            opi_ai::callbacks::RequestCallbacks::new().with_async_on_payload(move |_| {
+                signal.notify_one();
+                std::future::pending()
+            });
+        let call = Box::pin(models.stream_simple(
+            ChatModelRecord::new("openai-codex", model(None)),
+            parent,
+            SimpleOptions::default(),
+        ));
+        tokio::time::timeout(std::time::Duration::from_secs(2), entered.notified())
+            .await
+            .expect("sessionless execution registers and enters payload before cutoff");
         let cleanup = models.cleanup_session_resources(None);
-        let (outcome, report) = tokio::join!(call, cleanup);
+        let (outcome, report) = tokio::join!(finish_call(call), cleanup);
         let failure = outcome.expect_err("sessionless call is cancelled");
         assert!(
             is_cancelled(&failure),
@@ -3132,23 +3139,26 @@ mod ws_resources {
     // -- drop / barrier semantics ----------------------------------------------
 
     #[tokio::test]
-    async fn borrowed_future_drop_releases_and_barrier_still_completes() {
+    async fn consumer_drop_detaches_and_cleanup_joins_the_remaining_execution() {
         let creates = Arc::new(Mutex::new(Vec::new()));
         let peer = ScriptPeer::spawn(vec![ws_hold_busy(&creates)], false);
         let models = models_with(peer.base_url());
         let call = start_call(&models, session_request("dropped")).await;
-        // The producer is live; drop the borrowed future without awaiting
-        // its exit.
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while creates.lock().unwrap().is_empty() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("the peer observes the active request before consumer Drop");
+        // Consumer Drop leaves the producer live. The explicit cleanup owns
+        // cancellation and confirms its release.
         drop(call);
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let report = models
             .cleanup_session_resources(Some("dropped"))
             .await
             .expect("barrier completes after drop");
-        // The drop already started the release: the generation exited and
-        // its in-flight connection was released with it, so the later
-        // cleanup barrier confirms the exit with no remaining work.
-        assert_eq!(report.cancelled_generations, 0);
+        assert_eq!(report.cancelled_generations, 1);
         assert_eq!(report.closed_connections, 0);
         peer.finish();
     }

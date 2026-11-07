@@ -4,7 +4,7 @@
 //! The runner is flow-mechanism only: HTTP goes through an injected
 //! `reqwest::Client`, interaction through an injected
 //! [`LoginPresenter`], and persistence through
-//! an injected [`CredentialStore`](crate::credential::CredentialStore). No
+//! an injected [`CredentialStore`]. No
 //! browser is opened, no ambient
 //! environment is consulted, and no keychain is read here.
 //!

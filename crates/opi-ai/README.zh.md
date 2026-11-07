@@ -45,8 +45,9 @@ cargo add opi-ai
 ## 快速开始
 
 一次完整的普通调用：在空 `Models` 上注册惰性 builtins、静态选择模型、
-规范化 transcript，并把 neutral 入口驱动到唯一的最终消息。构造与静态选择不读取认证来源，
-实际持有的调用在首次 poll 时才启动认证。以下为
+规范化 transcript，并通过 neutral 入口得到唯一的最终消息。Models 构造、builtins
+注册与静态选择不读取认证来源；调用 `stream*` 或 `complete*` 时立即在当前 Tokio
+runtime 调度认证与执行，无须消费者 poll。以下为
 `examples/quick_start.rs` 的逐字源码；运行：
 `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`。
 
@@ -84,7 +85,7 @@ pub(crate) fn setup(
     Ok((models, ChatModelRecord::new("anthropic", info)))
 }
 
-/// Build the actual owned call; authentication starts only on first poll.
+/// Schedule the owned call on Tokio; setup does not wait for result consumption.
 pub(crate) fn start(
     models: &Models,
     record: ChatModelRecord,
@@ -163,7 +164,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## 流式与最终结果
 
-`stream_simple` 返回惰性 `ChatCall`——一个
+`stream_simple` 返回独立执行的 `ChatCall`——一个
 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，终态吸收为
 永久 EOF；`Done` 事件携带最终 `AssistantMessage`。以下为
 `examples/quick_start_stream.rs` 的逐字源码。
@@ -202,7 +203,7 @@ pub(crate) fn setup(
     Ok((models, ChatModelRecord::new("anthropic", info)))
 }
 
-/// Construct the real lazy ChatCall before the execution loop starts.
+/// Schedule the ChatCall on Tokio before consuming its events.
 pub(crate) fn start(
     models: &Models,
     record: ChatModelRecord,
@@ -273,8 +274,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-`ChatCall::result(self)`（及 `Models::complete_simple`）主动排空同一
-stream，得到单一最终结果。
+`ChatCall::result(self)` 丢弃积压事件并等待同一执行的最终结果。
+`Models::complete_simple` 在返回结果 future 前就已调度执行；丢弃未 poll 的
+future 不会取消请求。
+
+### 不依赖消费端推进请求
+
+所有普通 `Models.stream*` 和 `complete*` 入口均在调用时调度执行，构造时必须
+处于 Tokio runtime 内，否则 panic。`ChatCall::start()` 可把消费句柄转换为
+`StartedChatStream`，不会再次启动请求。对于上文构造的 `call`：
+
+```rust
+let started = call.start();
+// Other work may run here; event consumption does not drive this request.
+let outcome = started.result().await;
+```
+
+也可以通过 `StreamExt::next` 迭代 `started`。丢弃句柄或其中的 `result()` future
+只停止消费，执行继续。需要显式取消时，在构造调用前保留 `request.cancel.clone()`。
+高级 prepared attempt 可使用 `ChatStream::new(prepared.start_attempt()?).start()`
+取得相同的执行所有权。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
+runtime 运行，直至请求完成。
+
+需要显式停止执行任务时，可在可变句柄上调用 `call.abort().await` 或
+`started.abort().await`。它会释放
+积压事件，并等待任务持有的源被丢弃，即使源不响应取消 token。已经完成的任务
+保留原结果；被中止的任务返回取消，保留执行者已观察到的最新 partial。这个操作
+不取消原请求 token，也不等待 provider 另行启动的任务。停止共享请求工作时应
+同时取消原 token；资源确认仍使用 provider 的会话清理合同。中途丢弃 `abort()`
+等待时，句柄仍保留任务，可再次等待完成。若源阻塞在一次 poll 内，必须先让出
+执行权，Tokio 才能中止它。
+
+未读事件保存在**无固定上限的 FIFO** 中，因此慢读或全不读取不会阻塞执行；内存
+随未读事件增长。`result()` 首次 poll 时丢弃积压，消费句柄 Drop 也立即释放积压。
+通过请求 token 取消后，已转发进这个 FIFO 的事件仍按原序交付，然后交付取消失败；provider
+自身缓冲区仍遵循其取消优先规则。如果 runtime 停止尚未完成的执行，等待者会得到
+保留最新已生成 partial 的 typed stream failure；源 panic 会在等待者中恢复抛出。
+
+高级 `ChatStream::new(raw)` collector 在调用 `.start()` 前仍由 poll 推进，Drop
+释放其持有的原始源；普通 `ChatCall` 不再由消费者驱动执行。已交付结果转换成
+`StartedChatStream` 后仍可读取，不重复交付终态。执行者不会安装自动 AI span。
+省略 context 或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；跨任务
+传播需显式传入 context。
 
 ## Context、工具与续轮
 
@@ -410,7 +451,7 @@ pub(crate) fn setup(
 }
 
 impl ToolLoop {
-    /// Freeze the actual owned round before polling its authentication.
+    /// Freeze this round and schedule its authentication and execution on Tokio.
     pub(crate) fn start_round(&self) -> Result<ChatCall, Box<dyn std::error::Error>> {
         let context = transcript::normalize_context(transcript::Context {
             system_prompt: Some("You are a concise assistant.".into()),
@@ -541,6 +582,7 @@ OpenAI-compatible profile 加入。
 | `ToolResultMessage` | 工具结果 content、details、错误/截断/时间元数据，以及可信执行边界写入的可选 typed `not_executed` 事实；历史缺省表示效果未知，普通错误文本不能证明未执行。 |
 | `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call 与 done。带内 `Error` 终结符是只读的历史格式，仅为反序列化历史保存事件而保留；当前 producer 不再产生它。 |
 | `ChatStream` | 一个 logical call 事件流的公开 owner：迭代为 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，首个终结符被吸收为永久 EOF，`result(self)` 主动驱动到唯一最终结果。 |
+| `StartedChatStream` | `ChatCall::start` / `ChatStream::start` 返回的消费句柄：Tokio 执行独立推进，按序缓存事件并提供唯一结果；消费端 Drop 不取消。 |
 | `CallFailure` | 一个 logical call 的唯一最终失败：规范化 partial/terminal `AssistantMessage`（内容、出处、诊断、已知 usage；setup 失败没有生成内容）加一个已脱敏的 typed cause。 |
 | `drain_to_completion` | 复用 `ChatStream::result` seam 的收集器：done 终结符返回 `Ok(AssistantMessage)`，一切失败（含提前 EOF）恰好一次 `Err(CallFailure)`。 |
 | `WireApi` / `ModelInfo` / `ModelCapabilities` | 精确请求 wire identity，以及模型能力、thinking、compatibility 与 pricing 元数据。 |
@@ -551,7 +593,7 @@ OpenAI-compatible profile 加入。
 | `Models` / `AuthDescriptor` / `AuthCheck` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。native/simple/direct 与高级入口共用校验及调用生命周期；native options 保留适配器预算语义，simple/高级准备采用共享输出预算。 |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | 类型化自定义 chat adapter 注册，携带精确 API 身份与固定 options 类型；由 handle 创建的 options 携带 API/类型标签，可在具备兼容注册的实例间移植。 |
 | `ToolCall::arguments_error` | 文本 tool 参数的最终解析结果标记（AIR-048）：空输入归一为 `{}`，可修复的非法转义保留字面文本，不完整/非对象最终文本保留自有 raw 并携带该错误，绝不以 partial-prefix 成功执行；缺少该字段的历史记录仍可反序列化。 |
-| `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时捕获输入、首次 poll 才启动鉴权的惰性普通调用 owner。 |
+| `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时冻结输入并在 Tokio 调度执行的普通消费句柄。 |
 | `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
 | `OAuthProvider` / `OAuthCredential` / `LoginPresenter` | 九种 SDK OAuth 家族的 boxed-future 契约、只读 flow 元数据、逐家请求身份转换与注入的登录 UX。 |
@@ -1444,8 +1486,8 @@ Codex WebSocket 族现在为每次调用注册一个 resource generation，并�
 （`codex_resources` 模块；测试位于 `tests/openai_codex_responses.rs` 与
 `tests/resource_cleanup.rs`）。
 
-- **注册：** 调用首次 poll 时、在任何 auth、transform 或 network await 之前，
-  原子注册 generation。纯 `Sse` 偏好调用不注册。即使 cache retention 为
+- **注册：** 普通 ChatCall 在执行任务首次 poll 时、任何 auth、transform 或 network
+  await 之前注册 generation；高级 `prepare_call` 则在准备 future 被 poll 时、认证前注册。纯 `Sse` 偏好调用不注册。即使 cache retention 为
   `Disabled`，清理身份仍是原始完整 session id。阶段
   （`prepared`/`connecting`/`busy`/`temporary`/`active-fallback`）覆盖同一调用
   的 SSE 回退。
@@ -1454,12 +1496,14 @@ Codex WebSocket 族现在为每次调用注册一个 resource generation，并�
   同步捕获 cutoff。`Some(非空 id)` 选择匹配的旧 generation 与池化连接；`None`
   选择全部，含 sessionless；未匹配 id 为保留 idle 复用的 no-op；`Some("")` 为
   零副作用的 typed 失败。cutoff 后禁止迟到挂接、发布、重连及转入 SSE。此后才首次
-  poll 的调用获得新 generation；已登记的 `PreparedProviderCall` 保持旧 generation，
+  执行的调用获得新 generation，即使消费句柄更早构造；消费者 poll 不是注册边界。
+  已登记的 `PreparedProviderCall` 保持旧 generation，
   即使 attempt 从未 poll。
 - **释放：** cleanup 等待库拥有的 producer、连接及有界关闭。调用方保留但暂停的
   preparation/auth Future 无须再次 poll，cleanup 即可完成；其下一次 poll 会看到
   已锁存取消。丢弃已 poll 的 cleanup Future 不撤销关闭标记，再次 cleanup 可继续等待
-  剩余退出。Drop 只发起释放，不宣称 await barrier 完成。被移除的连接发送 Close 并
+  剩余退出。执行者持有的资源 Drop 只发起释放，不宣称 await barrier 完成；普通
+  消费者 Drop 不触发这一释放。被移除的连接发送 Close 并
   flush 后有界等待确认；某一步失败仍尝试其余释放，以
   `CleanupError::Incomplete { report }` 返回已确认计数及未确认效果。已交付终态保持
   最终性，协议释放可继续进行。
@@ -2325,11 +2369,32 @@ cleanup 验收。
 
 ## 模块
 
-`provider`、`message`、`stream`、`model_info`、`api_mapped`、`registry`、
-`models`、`provider_headers`、`auth`、`credential`、`catalog`、`http`、`retry`、`model`、
-`anthropic`、`openai_chat`、`openai_responses`、`openai_codex_responses`、
-`openrouter`、`mistral`、`gemini`、`bedrock`、`azure_openai`、`vertex`、
-`config`、`time` 和 `test_support`。
+普通调用从 `Models` 开始；提供值或扩展 SDK 时使用以下入口。现有根级重导出仍可使用。
+
+| 职责 | 入口 |
+| --- | --- |
+| 消息、模型元数据、用量与计费 | `types::message`、`types::model`、`types::usage` |
+| 图像、分类和 deferred 值 | `types::images`、`types::classifier`、`types::deferred` |
+| 公共错误、诊断脱敏与分类 | `errors` |
+| 认证合同与凭据持久化 | `auth`、`auth::credential`、`auth::mutation` |
+| 目录验证、自定义来源与文件 Store | `catalog` |
+| 调用、操作控制与结果消费 | `models`、`provider`、`api`、`images`、`classifier`、`deferred`、`stream` |
+| Transcript、重放、schema 与受约束采样 | `transcript`、`replay`、`schema`、`constrained_sampling` |
+
+`types` 只拥有确定性值与验证，不拥有客户端、执行任务或内嵌目录资产。
+取消和回调等调用控制仍属于操作模块。`auth` 将 resolver、OAuth 和来源合同
+与 ambient、云认证、OAuth 实现分开；`auth::mutation` 保留 Store 唯一的队列
+与确认所有者。合同方法仍可能按需产生副作用：`AuthContext::process_snapshot`
+默认读取工作目录，`OAuthCredential::needs_refresh` 读取当前时间。
+
+使用 `catalog::decode_document(&json)` 验证离线分发目录文档；它与 HTTP 来源
+共用同一解码器，不构造客户端。内嵌资产/缓存与文件 Store 保持独立实现。
+这些源码边界尚不等于已提供裁剪后的 Cargo feature 配置。
+
+现有 `message`/`model_info`、`stream`、`images`、`classifier`、`deferred` 中的值、
+`provider` 中的错误、`http::safe_excerpt` 以及根级 `credential`/`mutation`
+均重导出同一定义，混用路径无需转换。`HttpCatalogSource::decode_document`
+委托公共离线函数。Provider 适配器与 transport 入口保持当前路径。
 
 ## Deferred 响应（任务 20.50）
 

@@ -110,8 +110,14 @@ pub struct PendingPreparationCompaction {
 /// Borrowed access to the active run's preparation evidence lifecycle.
 ///
 /// The allocator and health remain owned by Core. Operations use the same run
-/// and turn as the preparation and cannot outlive its awaited callback.
+/// and turn as the preparation. Evidence access cannot outlive its awaited
+/// callback; a started model execution can outlive its dropped waiter. Core
+/// retains execution handles until preparation settles so run cancellation can
+/// abort and join their sources even when the hook future is interrupted.
 pub struct PreparationEvidence<'a> {
+    // Retain started calls across cancellation of the hook future so Core can
+    // join their explicit abort before reporting preparation cancellation.
+    pub(crate) provider_calls: &'a mut Vec<opi_ai::StartedChatStream>,
     pub(crate) events: &'a crate::event::AgentEventSink,
     pub(crate) sink: &'a Option<std::sync::Arc<dyn crate::evidence::EvidenceSink>>,
     pub(crate) identities: &'a mut crate::evidence::IdentityAllocator,

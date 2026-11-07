@@ -31,7 +31,7 @@ pub(crate) fn setup(
     Ok((models, ChatModelRecord::new("anthropic", info)))
 }
 
-/// Build the actual owned call; authentication starts only on first poll.
+/// Schedule the owned call on Tokio; setup does not wait for result consumption.
 pub(crate) fn start(
     models: &Models,
     record: ChatModelRecord,

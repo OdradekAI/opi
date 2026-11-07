@@ -302,12 +302,12 @@ pub type BoxAuthFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 ///   OAuth refresh, not to these unconditional methods.
 /// * `modify` submits a store-owned serialized mutation (login, logout,
 ///   replace, refresh) that survives waiter cancellation while the host
-///   runtime lives; the resolved [`crate::mutation::MutationReceipt`] is the ACK and records
+///   runtime lives; the resolved [`crate::auth::mutation::MutationReceipt`] is the ACK and records
 ///   operation/store failures and unknown loss windows instead of hiding
 ///   them. The default implementation runs inline without serialization and
 ///   is only for single-consumer stores; shared or persistent stores must
 ///   override it (and `mutation_barrier`) with a real
-///   `crate::mutation::MutationQueue`.
+///   `crate::auth::mutation::MutationQueue`.
 pub trait CredentialStore: Send + Sync {
     /// Read the credential for `provider_id`, if present.
     fn read<'a>(
@@ -335,15 +335,15 @@ pub trait CredentialStore: Send + Sync {
     /// for its ACK. Unconditional write/delete operations do not read the
     /// previous entry, so they can repair corrupt stored data. An update
     /// callback sees the current credential (strictly read under the slot's
-    /// exclusion) plus a [`crate::mutation::MutationSlotView`] for post-failure
-    /// re-reads, and returns a [`crate::mutation::MutationDecision`]. Dropping the returned
+    /// exclusion) plus a [`crate::auth::mutation::MutationSlotView`] for post-failure
+    /// re-reads, and returns a [`crate::auth::mutation::MutationDecision`]. Dropping the returned
     /// future cancels only the wait: once a mutation starts it runs to its
     /// recorded outcome while the host runtime lives. Worker panic records
-    /// [`crate::mutation::MutationOutcome::Unknown`]; runtime loss may leave
+    /// [`crate::auth::mutation::MutationOutcome::Unknown`]; runtime loss may leave
     /// the operation pending without an ACK, never a silent success.
     ///
     /// Operation and store failures settle into the receipt
-    /// ([`crate::mutation::MutationOutcome::Failed`]); `Err` is reserved for stores that
+    /// ([`crate::auth::mutation::MutationOutcome::Failed`]); `Err` is reserved for stores that
     /// cannot admit mutations at all. There is no default wait, receipt, or
     /// admission cap.
     /// Queue-backed stores require a host Tokio runtime for execution. If
@@ -353,9 +353,10 @@ pub trait CredentialStore: Send + Sync {
     fn modify<'a>(
         &'a self,
         provider_id: &'a str,
-        op: crate::mutation::CredentialMutationOp,
-    ) -> BoxAuthFuture<'a, Result<crate::mutation::MutationReceipt, CredentialStoreError>> {
-        crate::mutation::modify_inline(self, provider_id, op)
+        op: crate::auth::mutation::CredentialMutationOp,
+    ) -> BoxAuthFuture<'a, Result<crate::auth::mutation::MutationReceipt, CredentialStoreError>>
+    {
+        crate::auth::mutation::modify_inline(self, provider_id, op)
     }
 
     /// Synchronously capture the store-wide mutation cutoff. Every caller
@@ -365,14 +366,14 @@ pub trait CredentialStore: Send + Sync {
     /// creation; it never starts auth and never aborts a running mutation.
     /// The default returns an inert barrier for stores without real
     /// mutations.
-    fn mutation_barrier(&self) -> crate::mutation::MutationBarrier {
-        crate::mutation::inert_barrier()
+    fn mutation_barrier(&self) -> crate::auth::mutation::MutationBarrier {
+        crate::auth::mutation::inert_barrier()
     }
 
     /// The store-owned queue to which rotating source owners can attach.
     /// Sharing it makes their receipts visible through this store's barrier.
     /// Single-consumer inline stores have no queue.
-    fn mutation_queue(&self) -> Option<std::sync::Arc<crate::mutation::MutationQueue>> {
+    fn mutation_queue(&self) -> Option<std::sync::Arc<crate::auth::mutation::MutationQueue>> {
         None
     }
 }

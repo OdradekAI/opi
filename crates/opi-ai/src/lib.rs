@@ -17,9 +17,10 @@ pub mod classifier;
 pub mod codex_resources;
 pub mod constrained_sampling;
 pub mod context;
-pub mod credential;
+pub use auth::credential;
 pub mod deferred;
 mod endpoint;
+mod execution;
 // Private upstream crypto substrate (RDF-23): explicit-provider key
 // admission/signing owner over unmodified crates.io rustls/aws-lc-rs.
 // Consumed by the TLS host wiring (task 20.14) and real ADC callers (task
@@ -30,11 +31,11 @@ pub mod gemini;
 pub mod http;
 pub mod identity;
 pub mod images;
-pub mod message;
+pub use types::message;
 pub mod mistral;
-pub mod model_info;
+pub use types::model as model_info;
 pub mod models;
-pub mod mutation;
+pub use auth::mutation;
 pub mod openai_chat;
 pub mod openai_codex_responses;
 pub mod openai_responses;
@@ -98,13 +99,10 @@ pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};
 pub use stream::AssistantStreamEvent;
 pub use stream::{
-    CallFailure, ChatStream, CostBreakdown, CumulativeUsage, Pricing, ServiceTier, calculate_cost,
+    CallFailure, ChatStream, CostBreakdown, CumulativeUsage, Pricing, ServiceTier,
+    StartedChatStream, calculate_cost,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ApiKind {
-    Anthropic,
-    OpenAi,
-    Google,
-    Mistral,
-}
+pub mod errors;
+pub mod types;
+pub use types::ApiKind;

@@ -45,6 +45,7 @@ thiserror = "2"
 # async traits
 
 # HTTP/SSE
+http = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "http2"] }
 url = "2.5.8"
 # Private WebSocket protocol machinery: the decoder owns the pinned Rust

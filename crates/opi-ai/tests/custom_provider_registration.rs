@@ -1163,7 +1163,7 @@ async fn models_old_call_survives_provider_mutation() {
 }
 
 #[tokio::test]
-async fn models_completion_entries_capture_owned_binding_before_first_poll() {
+async fn models_six_ordinary_entries_freeze_binding_and_execute_before_consumption() {
     fn owned<F: std::future::Future + Send + 'static>(future: F) -> F {
         future
     }
@@ -1210,8 +1210,23 @@ async fn models_completion_entries_capture_owned_binding_before_first_poll() {
             provenance: opi_ai::AuthProvenance::default(),
         },
     ));
-    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
-    assert!(observed.lock().unwrap().is_empty());
+    let native_stream = models.stream(
+        record.clone(),
+        models_request(),
+        handle.options(EchoOptions {
+            label: "native-stream".into(),
+        }),
+    );
+    let simple_stream =
+        models.stream_simple(record.clone(), models_request(), SimpleOptions::default());
+    let direct_stream = models.stream_direct(
+        record.clone(),
+        models_request(),
+        handle.options(EchoOptions {
+            label: "direct-stream".into(),
+        }),
+        opi_ai::test_support::resolved_bearer_auth(),
+    );
 
     let replacement_reads = counting_resolver();
     models
@@ -1229,11 +1244,21 @@ async fn models_completion_entries_capture_owned_binding_before_first_poll() {
         .unwrap();
     let fresh = owned(models.complete_simple(record, models_request(), SimpleOptions::default()));
     drop(models);
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while observed.lock().unwrap().len() < 6 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("all six entries execute without consumer polling");
 
     for future in [
         tokio::spawn(native),
         tokio::spawn(simple),
         tokio::spawn(direct),
+        tokio::spawn(native_stream.result()),
+        tokio::spawn(simple_stream.result()),
+        tokio::spawn(direct_stream.result()),
     ] {
         assert_eq!(
             assistant_text(&future.await.unwrap().unwrap()),
@@ -1244,10 +1269,10 @@ async fn models_completion_entries_capture_owned_binding_before_first_poll() {
         assistant_text(&tokio::spawn(fresh).await.unwrap().unwrap()),
         "after-mutation"
     );
-    assert_eq!(reads.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(reads.calls.load(Ordering::SeqCst), 4);
     assert_eq!(replacement_reads.calls.load(Ordering::SeqCst), 1);
     let calls = observed.lock().unwrap();
-    assert_eq!(calls.len(), 3);
+    assert_eq!(calls.len(), 6);
     let direct = calls
         .iter()
         .find(|call| call.options_label == "direct")
@@ -1361,7 +1386,7 @@ async fn models_type_mismatch_and_unregistered_api_fail_before_auth() {
 }
 
 #[tokio::test]
-async fn models_auth_starts_on_first_poll_and_call_is_send_static() {
+async fn models_auth_runs_without_consumption_and_call_is_send_static() {
     let mut models = Models::new();
     let observed: Observed = Arc::default();
     let record_info = echo_record_info(2_048);
@@ -1388,11 +1413,16 @@ async fn models_auth_starts_on_first_poll_and_call_is_send_static() {
             label: "lazy".into(),
         }),
     );
-    // Construction captured the binding without auth IO.
-    assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while reads.calls.load(Ordering::SeqCst) == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("auth starts without polling the consumer");
 
     // The call is Send + 'static: it can cross into a fresh runtime task.
-    let first_poll_happened = tokio::spawn(async move {
+    let consumed = tokio::spawn(async move {
         let mut call = call;
         let first = call.next().await;
         let saw_event = first.is_some();
@@ -1401,13 +1431,13 @@ async fn models_auth_starts_on_first_poll_and_call_is_send_static() {
     })
     .await
     .unwrap();
-    assert!(first_poll_happened.0);
-    assert_eq!(first_poll_happened.1, "lazy auth");
+    assert!(consumed.0);
+    assert_eq!(consumed.1, "lazy auth");
     assert_eq!(reads.calls.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
-async fn models_cancel_before_first_poll_fails_typed() {
+async fn models_pre_cancelled_request_fails_before_auth() {
     let mut models = Models::new();
     let record_info = echo_record_info(2_048);
     let reads = counting_resolver();

@@ -64,6 +64,7 @@ use crate::provider::{
 };
 use crate::registry::{ModelCapabilities, ProviderRegistry, RegistrationError, RegistryError};
 use crate::stream::{AssistantStreamEvent, CallFailure, ChatStream};
+pub use crate::types::{ApiId, ChatModelRecord};
 
 // ---------------------------------------------------------------------------
 // SecretKey — redacted credential value
@@ -596,7 +597,7 @@ pub struct Models {
     catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
     /// Publisher ownership from the same acknowledged revision as each
     /// dynamic catalog; unrelated sources cannot retain a native snapshot.
-    catalog_publishers: HashMap<String, crate::catalog::store::CatalogPublisher>,
+    catalog_publishers: HashMap<String, crate::catalog::CatalogPublisher>,
     /// Acknowledged catalogs for all three operations; chat is projected into the registry.
     dynamic_catalogs: HashMap<String, crate::catalog::ModelsStoreEntry>,
     /// Identity of this instance's current registration/publication owner.
@@ -1650,9 +1651,13 @@ impl Models {
     /// Native entry: start one chat call with the adapter's typed options.
     ///
     /// Construction captures the owned input, the caller's complete record,
-    /// and the registered adapter behind the options' exact [`ApiId`] — no
-    /// auth or external IO happens until the first poll. Type/provider/
+    /// and the registered adapter behind the options' exact [`ApiId`], then
+    /// schedules setup and execution independently of consumption. Type/provider/
     /// registration problems surface as one typed [`CallFailure`] before auth.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime. See [`ChatCall`] for lifecycle and buffering.
     pub fn stream<O: Send + 'static>(
         &self,
         record: ChatModelRecord,
@@ -1664,8 +1669,12 @@ impl Models {
         ChatCall::new(binding, request, options.into_call_options())
     }
 
-    /// Native entry driven to the single final outcome. Construction freezes
-    /// the owned call; authentication starts when the returned future is polled.
+    /// Schedule a native call and return a waiter for its single final outcome.
+    /// Execution begins independently of polling or retaining that waiter.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream`](Self::stream).
     pub fn complete<O: Send + 'static>(
         &self,
         record: ChatModelRecord,
@@ -1681,7 +1690,11 @@ impl Models {
     /// [`ChatApi`] serves the route through its `simple_options` mapping).
     /// `Some` fields in `options` override the corresponding request fields
     /// before the shared compiler runs; everything else matches the native
-    /// entry's frozen-binding and lazy-auth contract.
+    /// entry's frozen-binding and independent-execution contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream`](Self::stream).
     pub fn stream_simple(
         &self,
         record: ChatModelRecord,
@@ -1706,8 +1719,12 @@ impl Models {
         ChatCall::new(binding, request, CallOptions::Simple(options))
     }
 
-    /// Neutral entry driven to the single final outcome. Construction freezes
-    /// the owned call; authentication starts when the returned future is polled.
+    /// Schedule a neutral call and return a waiter for its single final outcome.
+    /// Execution begins independently of polling or retaining that waiter.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream_simple`](Self::stream_simple).
     pub fn complete_simple(
         &self,
         record: ChatModelRecord,
@@ -1722,7 +1739,11 @@ impl Models {
     ///
     /// The driver never consults its own resolvers for this call; the injected
     /// [`ResolvedAuth`] is frozen at construction exactly like the rest of the
-    /// binding.
+    /// binding. Execution is scheduled independently of consumption.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream`](Self::stream).
     pub fn stream_direct<O: Send + 'static>(
         &self,
         record: ChatModelRecord,
@@ -1734,8 +1755,13 @@ impl Models {
         ChatCall::new(binding, request, options.into_call_options())
     }
 
-    /// Direct entry driven to the single final outcome. Construction freezes
-    /// the owned call and injected authentication before returning the future.
+    /// Freeze the owned call and injected authentication, schedule execution,
+    /// and return a waiter for the single final outcome. Dropping this waiter
+    /// does not cancel execution.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream_direct`](Self::stream_direct).
     pub fn complete_direct<O: Send + 'static>(
         &self,
         record: ChatModelRecord,
@@ -3098,8 +3124,7 @@ impl Models {
                                 models: models.len(),
                             },
                         });
-                        publishers
-                            .insert(id.clone(), crate::catalog::store::CatalogPublisher::Native);
+                        publishers.insert(id.clone(), crate::catalog::CatalogPublisher::Native);
                         merged.insert(
                             id.clone(),
                             crate::catalog::ModelsStoreEntry {
@@ -3119,7 +3144,7 @@ impl Models {
                 Ok(None) => {
                     // A source's ownership is limited to its declared provider
                     // scope; unrelated sources cannot retain this snapshot.
-                    let source_owned = matches!(publishers.get(id), Some(crate::catalog::store::CatalogPublisher::Source {id:source_id})
+                    let source_owned = matches!(publishers.get(id), Some(crate::catalog::CatalogPublisher::Source {id:source_id})
                         if self.catalog_sources.iter().any(|source| source.id() == source_id && source.provider_ids().contains(id)));
                     if !source_owned {
                         merged.remove(id);
@@ -3192,7 +3217,7 @@ impl Models {
                         published += entry.models.len();
                         publishers.insert(
                             id.clone(),
-                            crate::catalog::store::CatalogPublisher::Source {
+                            crate::catalog::CatalogPublisher::Source {
                                 id: source.id().to_owned(),
                             },
                         );
@@ -3305,7 +3330,7 @@ impl Models {
         &mut self,
         selected: &BTreeSet<String>,
         entries: &HashMap<String, crate::catalog::ModelsStoreEntry>,
-        publishers: &HashMap<String, crate::catalog::store::CatalogPublisher>,
+        publishers: &HashMap<String, crate::catalog::CatalogPublisher>,
     ) {
         for id in selected {
             if let Some(entry) = entries.get(id) {
@@ -4051,7 +4076,7 @@ async fn resolve_route_auth(
 }
 
 /// Map a preparation failure onto the typed cause a [`CallFailure`] carries
-/// when the same step fails inside a lazy [`ChatCall`].
+/// when the same step fails inside an ordinary [`ChatCall`].
 fn models_error_cause(error: ModelsError) -> ProviderError {
     match error {
         ModelsError::CallCancelled => ProviderError::Cancelled,
@@ -4078,71 +4103,6 @@ fn setup_failure(message: String) -> CallFailure {
 // ---------------------------------------------------------------------------
 // Typed custom chat API registration (AIR-045)
 // ---------------------------------------------------------------------------
-
-/// Exact, caller-chosen chat API identity.
-///
-/// Preserves the exact string identity (no normalization, length, or grammar
-/// rules); two instances agree on an ApiId only when the strings are equal.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ApiId(String);
-
-impl ApiId {
-    /// Wrap an API identity string.
-    pub fn new(id: impl Into<String>) -> Self {
-        Self(id.into())
-    }
-
-    /// The exact identity string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-/// The complete chat record one ordinary call binds to: provider id, bare
-/// model id, and the full [`ModelInfo`] (exact wire, capabilities, compat).
-///
-/// A record does not need catalog membership: calls dispatch on the record's
-/// provider/wire exactly as the caller supplied it, and same-ID catalog data
-/// never replaces a frozen record.
-#[derive(Debug, Clone)]
-pub struct ChatModelRecord {
-    provider_id: String,
-    info: ModelInfo,
-}
-
-impl ChatModelRecord {
-    /// Build one complete record.
-    pub fn new(provider_id: impl Into<String>, info: ModelInfo) -> Self {
-        Self {
-            provider_id: provider_id.into(),
-            info,
-        }
-    }
-
-    /// Owning provider id of the record.
-    pub fn provider_id(&self) -> &str {
-        &self.provider_id
-    }
-
-    /// Bare model id (no provider prefix).
-    pub fn model_id(&self) -> &str {
-        &self.info.id
-    }
-
-    /// Exact wire API of the record.
-    pub fn wire_api(&self) -> crate::model_info::WireApi {
-        self.info.wire_api
-    }
-
-    /// The full model metadata.
-    pub fn info(&self) -> &ModelInfo {
-        &self.info
-    }
-
-    fn spec(&self) -> String {
-        format!("{}:{}", self.provider_id, self.info.id)
-    }
-}
 
 /// Neutral options accepted by [`Models::stream_simple`] /
 /// [`Models::complete_simple`].
@@ -4858,7 +4818,7 @@ impl Provider for ChatApiRouteProvider {
 }
 
 // ---------------------------------------------------------------------------
-// ChatCall — lazy owner of one ordinary Models entry
+// ChatCall — independently executing ordinary Models entry
 // ---------------------------------------------------------------------------
 
 /// The frozen binding captured at call creation (AIR-045).
@@ -4909,18 +4869,72 @@ enum CallOptions {
     },
 }
 
-/// One ordinary [`Models`] chat call: native, simple, or direct.
+/// The consumer of one ordinary [`Models`] chat call: native, simple, or direct.
 ///
-/// Construction captures the owned input, the caller's complete record, the
-/// registered adapter/provider, and the auth plan — all `Send + 'static` —
-/// without any auth or external IO. Authentication starts on the first
-/// `poll_next`/`next().await`/[`ChatCall::result`]. Items mirror
-/// [`ChatStream`]: events with their immutable event-time partials and exactly
-/// one `Err(CallFailure)` for any failure, including typed pre-auth failures
-/// (unregistered ApiId, options type/provider mismatch, non-dispatchable
-/// route, cancellation) which never reach authentication. The first terminal
-/// is absorbed and EOF is permanent, exactly like the shared collector.
+/// Construction freezes the owned input, registration and auth plan, then
+/// schedules setup and source execution on the current Tokio runtime. No
+/// consumer poll is needed for progress. Dropping this handle or its result
+/// future does not cancel execution. Retain the request's cancellation token
+/// or use [`abort`](Self::abort) for explicit cancellation.
+///
+/// Events, typed setup failures, buffering, panic and runtime-shutdown behavior
+/// follow [`StartedChatStream`](crate::stream::StartedChatStream). Registration,
+/// type and route failures still precede authentication. Scheduling does not
+/// promise setup has already run when construction returns; the runtime must
+/// keep running until completion. An unfinished call retains an unbounded event
+/// queue until it is consumed, discarded by `result`, or dropped.
 pub struct ChatCall {
+    execution: crate::stream::StartedChatStream,
+}
+
+impl ChatCall {
+    fn new(binding: FrozenChatBinding, request: Request, options: CallOptions) -> Self {
+        let driver = ChatCallDriver::new(binding, request, options);
+        Self {
+            execution: crate::stream::StartedChatStream::spawn(
+                driver,
+                ChatCallDriver::result,
+                crate::stream::ProducerSnapshot::default(),
+            ),
+        }
+    }
+
+    /// Take the already-started execution handle without resubmitting work.
+    ///
+    /// Partial consumption and the final outcome are preserved. This method
+    /// does not require a current runtime; construction already scheduled work.
+    pub fn start(self) -> crate::stream::StartedChatStream {
+        self.execution
+    }
+
+    /// Discard queued events and await the same execution's final outcome.
+    ///
+    /// Dropping this future does not cancel the request. No second request is
+    /// made, including after partial or complete iteration.
+    pub async fn result(self) -> Result<AssistantMessage, CallFailure> {
+        self.execution.result().await
+    }
+
+    /// Explicitly stop and join the execution task, preserving its observed
+    /// partial or already-completed outcome. See
+    /// [`StartedChatStream::abort`](crate::stream::StartedChatStream::abort)
+    /// for provider-task cleanup limits and cancellation of this wait.
+    pub async fn abort(&mut self) -> Result<AssistantMessage, CallFailure> {
+        self.execution.abort().await
+    }
+}
+
+impl Stream for ChatCall {
+    type Item = Result<AssistantStreamEvent, CallFailure>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        Pin::new(&mut self.get_mut().execution).poll_next(cx)
+    }
+}
+
+// The execution task owns setup and the canonical collector. Keeping this
+// driver private prevents consumers from accidentally taking over execution.
+struct ChatCallDriver {
     state: ChatCallState,
     terminal: Option<Result<AssistantMessage, CallFailure>>,
 }
@@ -4953,7 +4967,7 @@ enum ChatCallState {
     Done,
 }
 
-impl ChatCall {
+impl ChatCallDriver {
     fn new(binding: FrozenChatBinding, mut request: Request, options: CallOptions) -> Self {
         request.callbacks = request.callbacks.for_call();
         Self {
@@ -4988,7 +5002,7 @@ impl ChatCall {
     }
 }
 
-impl Stream for ChatCall {
+impl Stream for ChatCallDriver {
     type Item = Result<AssistantStreamEvent, CallFailure>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -5052,7 +5066,7 @@ impl Stream for ChatCall {
     }
 }
 
-/// Setup for one lazy call: canonical identity from the frozen record,
+/// Setup for one independently scheduled call: canonical identity from the frozen record,
 /// pre-auth route/type checks, the shared compiler, the shared auth
 /// resolution (or the injected auth), and one dispatch through the captured
 /// adapter/provider into the shared [`ChatStream`] collector.
@@ -5085,7 +5099,7 @@ async fn materialize_chat_call(
                     api_id.as_str()
                 )));
             };
-            if entry.provider_id != binding.record.provider_id {
+            if entry.provider_id != binding.record.provider_id() {
                 return Err(setup_failure(format!(
                     "record provider '{}' does not match the registered chat api provider '{}'",
                     binding.record.provider_id(),

@@ -18,22 +18,28 @@
 //! This surface is part of the **unstable 0.x extension substrate**. Breaking
 //! changes may occur between minor versions without a major version bump.
 
+mod builtin;
+mod values;
+pub use values::{CatalogOperation, CatalogRecord, ModelsStoreEntry};
+mod document;
 pub mod http_source;
 pub mod openrouter;
+mod source;
 pub use openrouter::personalize_openrouter_catalog;
 pub mod store;
+mod store_contract;
+pub(crate) use store_contract::CatalogPublisher;
 pub(crate) mod wire;
 
-pub use http_source::{
-    CatalogDocumentError, CatalogRefreshContext, DynamicCatalogSource, HttpCatalogSource,
-};
+pub use document::{CatalogDocumentError, decode_document};
+pub use http_source::HttpCatalogSource;
+pub use source::{CatalogRefreshContext, DynamicCatalogSource};
 pub use store::{
     ModelsStore, ModelsStoreError, RefreshGuard, StoreCommit, StoreCommitError, StoreSnapshot,
 };
 
 use std::collections::BTreeMap;
-use std::fmt;
-use std::sync::{Arc, OnceLock, RwLock};
+use std::sync::{Arc, RwLock};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -47,100 +53,9 @@ pub const BUNDLE_SCHEMA_VERSION: u32 = 1;
 /// (Pi `MODEL_DATA_SCHEMA_VERSION`).
 pub const DATA_SCHEMA_VERSION: u32 = 6;
 
-const BUILTIN_CATALOG_BYTES: &[u8] = include_bytes!("../../resources/catalog/builtin/catalog.json");
-const BUILTIN_MANIFEST_BYTES: &[u8] =
-    include_bytes!("../../resources/catalog/builtin/manifest.json");
-
 // ---------------------------------------------------------------------------
 // Operation identity
 // ---------------------------------------------------------------------------
-
-/// One catalog operation a model entry is qualified for.
-///
-/// Mirrors Pi's `type:id` entry identity: the same bare model id may appear
-/// once per operation for one provider.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum CatalogOperation {
-    /// Tool-capable chat model (`type: "chat"`).
-    Chat,
-    /// Image generation model (`type: "image"`).
-    Image,
-    /// Classifier model (`type: "classifier"`).
-    Classifier,
-}
-
-impl CatalogOperation {
-    /// The artifact's `type` string for this operation.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            CatalogOperation::Chat => "chat",
-            CatalogOperation::Image => "image",
-            CatalogOperation::Classifier => "classifier",
-        }
-    }
-}
-
-impl fmt::Display for CatalogOperation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// One owned executable record in a persisted provider catalog.
-/// The operation and bare id together identify an entry; an image and a chat
-/// model may therefore have the same bare id without replacing each other.
-#[derive(Debug, Clone, PartialEq)]
-pub enum CatalogRecord {
-    /// Complete chat metadata, boxed to keep mixed catalogs compact.
-    Chat(Box<crate::ModelInfo>),
-    /// Complete image-generation metadata.
-    Image(crate::images::ImageModelRecord),
-    /// Complete classifier metadata.
-    Classifier(crate::classifier::ClassifierModelRecord),
-}
-
-impl CatalogRecord {
-    /// The entry's operation identity.
-    pub fn operation(&self) -> CatalogOperation {
-        match self {
-            Self::Chat(_) => CatalogOperation::Chat,
-            Self::Image(_) => CatalogOperation::Image,
-            Self::Classifier(_) => CatalogOperation::Classifier,
-        }
-    }
-
-    /// The bare model id, without a provider or operation prefix.
-    pub fn id(&self) -> &str {
-        match self {
-            Self::Chat(model) => &model.id,
-            Self::Image(model) => &model.id,
-            Self::Classifier(model) => &model.id,
-        }
-    }
-}
-
-impl From<crate::ModelInfo> for CatalogRecord {
-    fn from(model: crate::ModelInfo) -> Self {
-        Self::Chat(Box::new(model))
-    }
-}
-
-/// One provider's complete dynamic catalog and source freshness facts.
-/// Timestamps are Unix milliseconds, matching the source's `Date.now()` and
-/// `Date.parse()`. Missing values stay missing; the SDK does not invent a
-/// refresh schedule or interpret the opaque ETag.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct ModelsStoreEntry {
-    /// Complete operation-qualified models, in source order. Empty is an
-    /// authoritative publication, distinct from no provider entry.
-    pub models: Vec<CatalogRecord>,
-    /// Source modification time in Unix milliseconds, when known.
-    pub last_modified: Option<i64>,
-    /// Last source check in Unix milliseconds, when supplied by the caller.
-    pub checked_at: Option<i64>,
-    /// Opaque source validator, including any quotes or weak prefix.
-    pub etag: Option<String>,
-}
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -297,15 +212,6 @@ pub struct CatalogProvenance {
 // Models
 // ---------------------------------------------------------------------------
 
-/// One input modality declared by a catalog entry.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CatalogInputModality {
-    /// Text input.
-    Text,
-    /// Image input.
-    Image,
-}
-
 /// Per-million-token cost metadata of one entry. Values may be `0.0`; only
 /// finiteness is guaranteed by the catalog contract.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -416,26 +322,6 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    /// The builtin offline bundle: parses and validates the embedded
-    /// artifact once per process. Performs no network I/O.
-    pub fn builtin() -> Result<&'static Arc<Catalog>, &'static CatalogError> {
-        static BUILTIN: OnceLock<Result<Arc<Catalog>, CatalogError>> = OnceLock::new();
-        match BUILTIN
-            .get_or_init(|| Catalog::from_bytes(BUILTIN_CATALOG_BYTES, BUILTIN_MANIFEST_BYTES))
-        {
-            Ok(catalog) => Ok(catalog),
-            Err(error) => Err(error),
-        }
-    }
-
-    /// The embedded builtin bundle bytes: `(catalog, manifest)`.
-    ///
-    /// Exposed so callers (and tests) can revalidate, copy, or derive
-    /// mutated candidates from the authentic bytes without new I/O.
-    pub fn builtin_bundle_bytes() -> (&'static [u8], &'static [u8]) {
-        (BUILTIN_CATALOG_BYTES, BUILTIN_MANIFEST_BYTES)
-    }
-
     /// Validate and build a catalog from raw bundle bytes.
     ///
     /// Checks, in order: manifest shape, bundle/data schema and reader versions, artifact
@@ -873,3 +759,5 @@ fn sha256_hex(bytes: &[u8]) -> String {
     hasher.update(bytes);
     hex::encode(hasher.finalize())
 }
+
+pub use crate::types::catalog::CatalogInputModality;

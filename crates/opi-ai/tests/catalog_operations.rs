@@ -193,7 +193,7 @@ fn catalog_document_rejects_unknown_operation() {
         "type": "audio", "id": "unsupported", "api": "openai-completions",
         "contextWindow": 8192, "maxTokens": 512,
     }]);
-    assert!(HttpCatalogSource::decode_document(&document).is_err());
+    assert!(opi_ai::catalog::decode_document(&document).is_err());
 }
 
 #[tokio::test]
@@ -207,7 +207,7 @@ async fn provider_freshness_is_preserved_without_fabricating_missing_values() {
         .unwrap()
         .remove("checkedAt");
     document["providers"]["fixture"]["etag"] = json!("\"opaque-validator\"");
-    let decoded = HttpCatalogSource::decode_document(&document).unwrap();
+    let decoded = opi_ai::catalog::decode_document(&document).unwrap();
     let temp = tempfile::tempdir().unwrap();
     let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
     store.begin().commit(decoded).await.unwrap();
@@ -296,7 +296,7 @@ async fn mixed_operation_catalog_reopens_into_three_real_models_calls() {
     }
     assert_eq!(
         store.snapshot().catalogs,
-        HttpCatalogSource::decode_document(&document(&server.uri())).unwrap()
+        opi_ai::catalog::decode_document(&document(&server.uri())).unwrap()
     );
     let tiers = persisted["providers"]["fixture"]["models"][1]["cost"]["tiers"]
         .as_array()
@@ -453,7 +453,7 @@ impl opi_ai::catalog::DynamicCatalogSource for ControlledSource {
                     value
                 }
             };
-            HttpCatalogSource::decode_document(&value).map_err(|error| {
+            opi_ai::catalog::decode_document(&value).map_err(|error| {
                 ProviderError::Config(opi_ai::provider::ProviderErrorSummary::sanitized(
                     error.to_string(),
                 ))
@@ -661,7 +661,7 @@ async fn mixed_store_preserves_unknown_image_cost_and_classifier_tier_order() {
         {"inputTokensAbove": 0, "input": 3, "output": 4, "cacheRead": 0, "cacheWrite": 0},
         {"inputTokensAbove": 0, "input": 5, "output": 6, "cacheRead": 0, "cacheWrite": 0}
     ]);
-    let entries = HttpCatalogSource::decode_document(&value).unwrap();
+    let entries = opi_ai::catalog::decode_document(&value).unwrap();
     store.begin().commit(entries.clone()).await.unwrap();
     let restored = ModelsStore::open(store.path()).unwrap().snapshot();
     assert_eq!(restored.catalogs, entries);
@@ -715,7 +715,7 @@ async fn image_adapter_replacement_keeps_authoritative_other_operations_and_froz
     value["providers"]["fixture"]["models"] = json!([image]);
     store
         .begin()
-        .commit(HttpCatalogSource::decode_document(&value).unwrap())
+        .commit(opi_ai::catalog::decode_document(&value).unwrap())
         .await
         .unwrap();
     let auth = Arc::new(FixtureAuth::default());
@@ -803,7 +803,7 @@ async fn management_lists_actual_operation_owners_and_preserves_shared_catalog_b
     let store = ModelsStore::open(temp.path().join("management.json")).unwrap();
     store
         .begin()
-        .commit(HttpCatalogSource::decode_document(&document("http://127.0.0.1:1")).unwrap())
+        .commit(opi_ai::catalog::decode_document(&document("http://127.0.0.1:1")).unwrap())
         .await
         .unwrap();
     let before = std::fs::read(store.path()).unwrap();
@@ -1102,7 +1102,7 @@ async fn removal_preserves_captured_image_and_classifier_calls_and_other_instanc
     let store = ModelsStore::open(temp.path().join("frozen-management.json")).unwrap();
     store
         .begin()
-        .commit(HttpCatalogSource::decode_document(&document(&server.uri())).unwrap())
+        .commit(opi_ai::catalog::decode_document(&document(&server.uri())).unwrap())
         .await
         .unwrap();
     let before = std::fs::read(store.path()).unwrap();
@@ -1295,7 +1295,7 @@ async fn dynamic_unknown_prices_preserve_models_without_reporting_free_results()
             });
         }
         let entry =
-            HttpCatalogSource::decode_document(&value).expect("unknown prices keep usable models");
+            opi_ai::catalog::decode_document(&value).expect("unknown prices keep usable models");
         let temp = tempfile::tempdir().unwrap();
         let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
         store.begin().commit(entry).await.unwrap();
@@ -1407,7 +1407,7 @@ async fn source_unknown_base_retains_known_tiers_and_prices_only_above_the_bound
         let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
         store
             .begin()
-            .commit(HttpCatalogSource::decode_document(&value).unwrap())
+            .commit(opi_ai::catalog::decode_document(&value).unwrap())
             .await
             .unwrap();
         let mut models = registered_collection(
@@ -1523,7 +1523,7 @@ async fn finite_fractional_thresholds_survive_all_operation_store_reopen_and_cos
             {"inputTokensAbove": 1.5, "input": 5, "output": 0, "cacheRead": 0, "cacheWrite": 0}
         ]});
     }
-    let decoded = HttpCatalogSource::decode_document(&value)
+    let decoded = opi_ai::catalog::decode_document(&value)
         .expect("finite source thresholds include negative and fractional numbers");
     let temp = tempfile::tempdir().unwrap();
     let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
@@ -1586,7 +1586,7 @@ async fn integer_threshold_above_f64_precision_survives_decode_store_and_reopen(
     let store = ModelsStore::open(temp.path().join("models.json")).unwrap();
     store
         .begin()
-        .commit(HttpCatalogSource::decode_document(&value).unwrap())
+        .commit(opi_ai::catalog::decode_document(&value).unwrap())
         .await
         .unwrap();
     let persisted: Value = serde_json::from_slice(&std::fs::read(store.path()).unwrap()).unwrap();
@@ -1649,7 +1649,7 @@ mod anthropic_complete_metadata {
     }
 
     fn decode(entry: Value) -> Result<ModelInfo, String> {
-        let mut entries = HttpCatalogSource::decode_document(&json!({
+        let mut entries = opi_ai::catalog::decode_document(&json!({
             "providers": {"anthropic": {"models": [entry]}}
         }))
         .map_err(|error| error.to_string())?;
