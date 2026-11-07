@@ -20,7 +20,11 @@ span，setup failure 使用规范 `CallFailure.message()` 结算；后台执行�
 随后修正 AI telemetry `provider_error` 状态消息的长度单位：错误文本现在按
 UTF-16 code unit 限制为 500，非 BMP 文本不会因 Rust `char` 计数而超出 Pi 的
 边界；孤立代理对无法由 Rust `String` 表示，已作为明确的 Rust-native 差异单独
-记录。
+记录。随后补齐 `StopReason::Pending`，将各 provider 的初始 partial 从 `Stop`
+改为非终态 `Pending`；AI telemetry 对 pending/deferred poll 均不累计
+token/cost，并将 `toolUse` 与完整 stop vocabulary 对齐。canonical Rust
+`StopReason::as_str()` 的 `tool_use` 仍保留，telemetry 通过独立映射使用 Pi
+词汇。
 
 ## 目标与范围
 

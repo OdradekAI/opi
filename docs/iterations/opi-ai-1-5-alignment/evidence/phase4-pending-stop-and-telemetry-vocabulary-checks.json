@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "issue": "issues/22-pending-stop-and-telemetry-vocabulary.md",
+  "scope": "align the pending stop state and Pi AI telemetry stop vocabulary",
+  "commands": [
+    {
+      "command": "cargo test -p opi-ai --test ai_telemetry --offline -j4",
+      "status": "passed",
+      "observed": "18 passed; pending poll records duration only, toolUse spelling and schema values are pinned"
+    },
+    {
+      "command": "cargo test -p opi-ai --test anthropic_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "153 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test gemini_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "71 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test openai_chat_fixtures --offline -j4",
+      "status": "passed",
+      "observed": "114 passed"
+    },
+    {
+      "command": "cargo check -p opi-ai --all-targets --offline -j4",
+      "status": "passed",
+      "observed": "all opi-ai targets compile"
+    },
+    {
+      "command": "cargo clippy -p opi-ai --all-targets --offline -j4 -- -D warnings",
+      "status": "passed",
+      "observed": "opi-ai targets pass Clippy with warnings denied"
+    },
+    {
+      "command": "cargo doc -p opi-ai --no-deps --offline",
+      "status": "passed",
+      "observed": "rustdoc generated without warnings"
+    },
+    {
+      "command": "cargo fmt --all --check",
+      "status": "passed"
+    },
+    {
+      "command": "python -B scripts/opi-doc-check.py",
+      "status": "passed",
+      "observed": "opi documentation contracts: PASS"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/run_early_package_proof.py --scratch C:/Temp/opi-sdk-pending-telemetry-proof-20261108 --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "status": "passed",
+      "observed": "actual .crate external consumer passed both feature profiles; 73/73 public checks passed in each profile"
+    }
+  ],
+  "tdd_observations": [
+    "Before implementation, the pending poll regression failed to compile because StopReason::Pending did not exist.",
+    "Before the telemetry mapping fix, the tool-use regression observed stop=tool_use instead of Pi's stop=toolUse."
+  ],
+  "behavior": {
+    "pending": "StopReason::Pending is public, serializable, used by provider partial messages, and excluded from pending poll token/cost counters",
+    "tool_use": "AI telemetry uses Pi's toolUse spelling while canonical Rust StopReason::as_str remains tool_use",
+    "schema": "stop schema values are pending, stop, length, toolUse, error, aborted, deferred"
+  },
+  "source_anchors": [
+    ".pi/pi-1.5.0/packages/ai/src/types.ts:489",
+    ".pi/pi-1.5.0/packages/ai/src/telemetry.ts:20-21,199"
+  ],
+  "limits": [
+    "No provider emits pending as a terminal event; terminal pending is rejected as a protocol error",
+    "No live provider, full TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
+  ]
+}

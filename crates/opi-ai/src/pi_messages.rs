@@ -329,6 +329,7 @@ fn output_content_value(content: &crate::message::OutputContent) -> serde_json::
 
 fn stop_reason_wire(reason: StopReason) -> &'static str {
     match reason {
+        StopReason::Pending => "pending",
         StopReason::Stop => "stop",
         StopReason::Length => "length",
         StopReason::ToolUse => "toolUse",
@@ -942,7 +943,7 @@ impl PiMessagesSseMapper {
             wire: Some(WireApi::PiMessages),
             response_id: None,
             usage: empty_usage(),
-            stop_reason: StopReason::Stop,
+            stop_reason: StopReason::Pending,
             error_message: None,
             timestamp_ms: crate::time::now_ms(),
             diagnostics: Vec::new(),

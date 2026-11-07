@@ -303,6 +303,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 single final outcome. `Models::complete_simple` schedules that execution before
 returning its result future; dropping an unpolled future does not cancel it.
 
+Provider `Start` and other partial snapshots use `StopReason::Pending`; only a
+terminal `Done` carries `Stop`, `Length`, `ToolUse`, `Deferred`, or a failure
+reason. AI telemetry follows Pi's `toolUse` spelling and does not count
+pending/deferred polls in token or cost counters.
+
 ### Starting independently of consumption
 
 All ordinary `Models.stream*` and `complete*` calls schedule execution when

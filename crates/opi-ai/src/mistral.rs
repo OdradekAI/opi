@@ -1157,7 +1157,7 @@ impl MistralSseMapper {
             wire: Some(crate::model_info::WireApi::MistralConversations),
             response_id: None,
             usage: crate::stream::Usage::default(),
-            stop_reason: StopReason::Stop,
+            stop_reason: StopReason::Pending,
             error_message: None,
             timestamp_ms: crate::time::now_ms(),
             diagnostics: Vec::new(),

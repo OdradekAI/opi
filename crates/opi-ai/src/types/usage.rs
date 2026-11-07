@@ -5,6 +5,9 @@ use serde::{Deserialize, Serialize};
 #[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StopReason {
+    /// Non-terminal stream state used while a provider response is still in flight.
+    #[serde(rename = "pending")]
+    Pending,
     #[serde(rename = "stop")]
     Stop,
     #[serde(rename = "length")]
@@ -46,6 +49,7 @@ pub struct AssistantDiagnostic {
 impl StopReason {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Pending => "pending",
             Self::Stop => "stop",
             Self::Length => "length",
             Self::ToolUse => "tool_use",

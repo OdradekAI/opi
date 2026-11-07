@@ -15,6 +15,7 @@ use opi_ai::test_support::{
 };
 use opi_ai::transcript::normalize_context;
 use opi_telemetry::memory::Recorder;
+use opi_telemetry::schema::AttributeType;
 use opi_telemetry::{AttributeValue, SpanStatus};
 use secrecy::SecretString;
 use std::sync::Arc;
@@ -867,7 +868,7 @@ fn pending_poll_does_not_record_token_or_cost_counters() {
     .expect("telemetry starts")
     .expect("explicit context enables observation");
     let mut message = base_assistant();
-    message.stop_reason = StopReason::Deferred;
+    message.stop_reason = StopReason::Pending;
     message.usage = opi_ai::stream::Usage::reported(1, 2, 3, 4, None, None);
     telemetry
         .finish(Some(&message))
@@ -876,6 +877,44 @@ fn pending_poll_does_not_record_token_or_cost_counters() {
     let measurements = recorder.measurements();
     assert_eq!(measurements.len(), 1);
     assert_eq!(measurements[0].definition.name, "pi.ai.request.duration");
+    assert_eq!(StopReason::Pending.as_str(), "pending");
+    assert_eq!(
+        serde_json::to_string(&StopReason::Pending).expect("pending serializes"),
+        "\"pending\""
+    );
+}
+
+#[test]
+fn telemetry_uses_pi_tool_use_stop_reason_spelling() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut telemetry = AiRequestTelemetry::start(
+        Some(&context),
+        AiRequestAttributes::new("probe", "model", "api"),
+    )
+    .expect("telemetry starts")
+    .expect("explicit context enables observation");
+    let mut message = base_assistant();
+    message.stop_reason = StopReason::ToolUse;
+
+    telemetry
+        .finish(Some(&message))
+        .expect("result observation");
+
+    let spans = recorder.spans();
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("toolUse".into()))
+    );
+    let duration = recorder
+        .measurements()
+        .into_iter()
+        .find(|measurement| measurement.definition.name == "pi.ai.request.duration")
+        .expect("request duration measurement");
+    assert_eq!(
+        duration.attributes.get("stop"),
+        Some(&AttributeValue::String("toolUse".into()))
+    );
 }
 
 #[test]
@@ -929,8 +968,23 @@ fn schema_keeps_ai_names_and_aborted_success_status_policy() {
         schema.spans["pi.ai.request"]
             .status
             .error_when
-            .contains("aborted stays ok")
+            .contains("Aborted stays ok")
     );
+    match &schema.spans["pi.ai.request"].end_attributes["stop"].value_type {
+        AttributeType::String {
+            values: Some(values),
+            ..
+        } => assert_eq!(
+            values,
+            &[
+                "pending", "stop", "length", "toolUse", "error", "aborted", "deferred",
+            ]
+            .into_iter()
+            .map(String::from)
+            .collect::<Vec<_>>()
+        ),
+        other => panic!("unexpected stop reason schema: {other:?}"),
+    }
 }
 
 #[tokio::test]

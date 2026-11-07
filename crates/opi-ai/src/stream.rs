@@ -585,6 +585,12 @@ impl Stream for ChatStream {
                             | StopReason::Length
                             | StopReason::ToolUse
                             | StopReason::Deferred => Ok(message.clone()),
+                            StopReason::Pending => Err(CallFailure::from_partial(
+                                Some(message.clone()),
+                                ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                                    "provider terminal carried a pending stop reason",
+                                )),
+                            )),
                             StopReason::Error | StopReason::Aborted => Err(
                                 CallFailure::from_error_stop_reason(*reason, message.clone()),
                             ),

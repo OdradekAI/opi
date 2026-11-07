@@ -258037,6 +258037,74 @@
         "A JavaScript slice ending on an isolated surrogate cannot be represented byte-for-byte by Rust String",
         "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-22-PENDING-STOP-TELEMETRY-VOCABULARY",
+      "issue": "issues/22-pending-stop-and-telemetry-vocabulary.md",
+      "base_commit": "a3ec225",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-PROVIDERS"
+      ],
+      "status": "pending-stop-and-telemetry-vocabulary-aligned",
+      "public_entry_mapping": [
+        {
+          "entry": "StopReason::Pending",
+          "owner": "types::usage::StopReason",
+          "scope": "public non-terminal stream state with serde/as_str support"
+        },
+        {
+          "entry": "AiRequestTelemetry::finish",
+          "owner": "telemetry::telemetry_stop_reason",
+          "scope": "Pi toolUse spelling, full stop vocabulary, and pending/deferred poll accounting"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/types/usage.rs",
+          "status": "adds Pending and preserves canonical Rust tool_use spelling"
+        },
+        {
+          "path": "crates/opi-ai/src/telemetry.rs",
+          "status": "maps telemetry stop values to Pi vocabulary and excludes pending/deferred poll counters"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "pins pending poll accounting, toolUse spelling and schema values"
+        },
+        {
+          "path": "scripts/pi-sdk-conformance/run_early_package_proof.py",
+          "status": "external crate consumer remains green under both feature profiles"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/anthropic_fixtures.rs",
+        "crates/opi-ai/tests/gemini_fixtures.rs",
+        "crates/opi-ai/tests/openai_chat_fixtures.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "Pending stop state, Pi toolUse telemetry spelling, complete schema stop vocabulary"
+        ],
+        "update": [
+          "provider partial constructors use Pending",
+          "pending/deferred poll counter exclusion"
+        ],
+        "delete": [],
+        "retain": "terminal stream validation, existing telemetry lifecycle and provider fixture coverage"
+      },
+      "evidence": [
+        "evidence/phase4-pending-stop-and-telemetry-vocabulary-checks.json"
+      ],
+      "limits": [
+        "Pending is non-terminal; a terminal Done carrying Pending is rejected as a protocol error",
+        "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

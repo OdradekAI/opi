@@ -291,6 +291,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 `Models::complete_simple` 在返回结果 future 前就已调度执行；丢弃未 poll 的
 future 不会取消请求。
 
+provider 的 `Start` 和其他 partial 快照使用 `StopReason::Pending`；只有终态
+`Done` 才携带 `Stop`、`Length`、`ToolUse`、`Deferred` 或失败原因。AI telemetry
+遵循 Pi 的 `toolUse` 拼写，pending/deferred poll 不计入 token 和 cost counter。
+
 ### 不依赖消费端推进请求
 
 所有普通 `Models.stream*` 和 `complete*` 入口均在调用时调度执行，构造时必须

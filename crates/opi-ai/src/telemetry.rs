@@ -222,7 +222,10 @@ impl AiRequestTelemetry {
         }
         if let Some(message) = message {
             let mut end = self.base_attributes();
-            end.insert("stop".into(), string(message.stop_reason.as_str()));
+            end.insert(
+                "stop".into(),
+                string(telemetry_stop_reason(message.stop_reason)),
+            );
             end.insert(
                 "usage.input".into(),
                 number(message.usage.input_tokens as f64),
@@ -264,7 +267,10 @@ impl AiRequestTelemetry {
                 Some(&self.span.context()),
             )?;
             if !self.attributes.poll
-                || !matches!(message.stop_reason, crate::stream::StopReason::Deferred)
+                || !matches!(
+                    message.stop_reason,
+                    crate::stream::StopReason::Pending | crate::stream::StopReason::Deferred
+                )
             {
                 self.record_tokens("input", message.usage.input_tokens)?;
                 self.record_tokens("output", message.usage.output_tokens)?;
@@ -447,6 +453,18 @@ fn owned_slice(value: &str) -> String {
     value[..end].to_owned()
 }
 
+fn telemetry_stop_reason(reason: crate::stream::StopReason) -> &'static str {
+    match reason {
+        crate::stream::StopReason::Pending => "pending",
+        crate::stream::StopReason::Stop => "stop",
+        crate::stream::StopReason::Length => "length",
+        crate::stream::StopReason::ToolUse => "toolUse",
+        crate::stream::StopReason::Error => "error",
+        crate::stream::StopReason::Aborted => "aborted",
+        crate::stream::StopReason::Deferred => "deferred",
+    }
+}
+
 /// Return the AI-owned schema metadata consumed by host telemetry adapters.
 pub fn ai_telemetry_schema() -> TelemetrySchema {
     let mut spans = BTreeMap::new();
@@ -550,7 +568,7 @@ fn request_span_definition() -> SpanDefinition {
             ),
         ]),
         end_attributes: BTreeMap::from([
-            ("stop".into(), string_definition("Normalized stop reason.")),
+            ("stop".into(), stop_reason_definition()),
             (
                 "usage.input".into(),
                 number_definition("Uncached input tokens."),
@@ -629,7 +647,7 @@ fn request_span_definition() -> SpanDefinition {
         ])),
         status: StatusDefinition {
             default: DefaultStatus::Ok,
-            error_when: "Stop reason is error; aborted stays ok.".into(),
+            error_when: "Stop reason is error: provider_error with at most 500 UTF-16 code-unit error message. Aborted stays ok.".into(),
         },
     }
 }
@@ -646,10 +664,7 @@ fn histogram_definition(description: &str, unit: &str, include_stop: bool) -> Me
         ),
     ]);
     if include_stop {
-        attributes.insert(
-            "stop".into(),
-            required(string_definition("Normalized stop reason.")),
-        );
+        attributes.insert("stop".into(), required(stop_reason_definition()));
     }
     MetricDefinition {
         description: description.into(),
@@ -681,6 +696,25 @@ fn string_definition(description: &str) -> AttributeDefinition {
         cardinality: None,
         value_type: AttributeType::String {
             values: None,
+            examples: None,
+        },
+    }
+}
+
+fn stop_reason_definition() -> AttributeDefinition {
+    AttributeDefinition {
+        description: "Normalized stop reason.".into(),
+        sensitive: None,
+        cardinality: None,
+        value_type: AttributeType::String {
+            values: Some(
+                [
+                    "pending", "stop", "length", "toolUse", "error", "aborted", "deferred",
+                ]
+                .into_iter()
+                .map(String::from)
+                .collect(),
+            ),
             examples: None,
         },
     }
