@@ -439,7 +439,15 @@ impl ChatStream {
         }
     }
 
-    pub(crate) fn new_with_ai_telemetry(
+    /// Wrap one provider event stream with the standard Pi-shaped AI
+    /// telemetry observer.
+    ///
+    /// The observer is enabled only when `context` is `Some`; omission keeps
+    /// this collector business-only. Backend failures are isolated in the
+    /// same way as ordinary [`Models`](crate::models::Models) chat calls:
+    /// they are reported through the host tracing channel and never replace
+    /// the provider's typed stream result.
+    pub fn new_with_telemetry(
         stream: crate::provider::EventStream,
         context: Option<&crate::telemetry::TelemetryContext>,
         attributes: crate::telemetry::AiRequestAttributes,

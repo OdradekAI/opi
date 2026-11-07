@@ -310,7 +310,9 @@ let outcome = started.result().await;
 结算，可以使用返回 `ChatStream` 的
 `prepared.start_attempt_with_telemetry()?`；显式传入的 request telemetry context
 会自动安装 observer。原始 `start_attempt()` 仍保留给 retry/admission controller
-使用。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
+使用。provider 已持有 raw `EventStream` 时，可以用
+`ChatStream::new_with_telemetry(source, context, attributes)` 接入同一 observer
+与结果合同。调度成功不表示 `start()` 返回前已完成认证；宿主需保持
 runtime 运行，直至请求完成。
 
 需要显式停止执行任务时，可在可变句柄上调用 `call.abort().await` 或
@@ -332,9 +334,11 @@ runtime 运行，直至请求完成。
 业务终态后普通迭代保持 EOF，而 `ChatStream::result()` 会保留源句柄，排空
 provider 自己的尾部工作后再返回缓存结果。`StartedChatStream` 后台执行者保留
 既有资源合同：终态交付后释放源。普通 `ChatCall` 不再由消费者驱动执行。已交付
-结果转换成 `StartedChatStream` 后仍可读取，不重复交付终态。执行者不会安装自动
-AI span。省略 context 或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；
-跨任务传播需显式传入 context。
+结果转换成 `StartedChatStream` 后仍可读取，不重复交付终态。`ChatStream::new(raw)`
+不会安装 observer；provider 自己持有 raw source 时，使用
+`ChatStream::new_with_telemetry(...)` 接入 Pi 风格的 AI telemetry。省略 context
+或使用 no-op 不会捕获消费者的 ambient tracing dispatcher；跨任务传播需显式传入
+context。
 
 ## Context、工具与续轮
 
@@ -600,7 +604,7 @@ OpenAI-compatible profile 加入。
 | `InputContent` / `OutputContent` | 文本与图片内容块。 |
 | `ToolResultMessage` | 工具结果 content、details、错误/截断/时间元数据，以及可信执行边界写入的可选 typed `not_executed` 事实；历史缺省表示效果未知，普通错误文本不能证明未执行。 |
 | `AssistantStreamEvent` | Provider 无关流式事件，覆盖 start、text、thinking、tool call 与 done。带内 `Error` 终结符是只读的历史格式，仅为反序列化历史保存事件而保留；当前 producer 不再产生它。 |
-| `ChatStream` | 一个 logical call 事件流的公开 owner：迭代为 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，首个终结符被吸收为永久 EOF，`result(self)` 主动驱动到唯一最终结果。 |
+| `ChatStream` | 一个 logical call 事件流的公开 owner：迭代为 `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`，首个终结符被吸收为永久 EOF，`result(self)` 主动驱动到唯一最终结果；`new_with_telemetry` 为调用方持有的 `EventStream` 提供显式 Pi 风格 observer seam。 |
 | `StartedChatStream` | `ChatCall::start` / `ChatStream::start` 返回的消费句柄：Tokio 执行独立推进，按序缓存事件并提供唯一结果；消费端 Drop 不取消。 |
 | `CallFailure` | 一个 logical call 的唯一最终失败：规范化 partial/terminal `AssistantMessage`（内容、出处、诊断、已知 usage；setup 失败没有生成内容）加一个已脱敏的 typed cause。 |
 | `drain_to_completion` | 复用 `ChatStream::result` seam 的收集器：done 终结符返回 `Ok(AssistantMessage)`，一切失败（含提前 EOF）恰好一次 `Err(CallFailure)`。 |
@@ -1478,8 +1482,9 @@ SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.
 命名、事件 schema、UTF-16 block 计数、usage/cost 结算及 aborted/deferred 状态
 策略。普通 `Models` chat 入口在 `Request::telemetry_context` 为 `Some` 时会自动
 安装该 observer；raw `ChatStream::new`、原始 `PreparedProviderCall::start_attempt`
-入口及非 chat 操作仍是显式/手动边界，observed
-`start_attempt_with_telemetry` helper 则使用同一自动 observer。因此不能宣称每条
+入口及非 chat 操作仍是显式/手动边界；调用方持有的 raw stream 可以用
+`ChatStream::new_with_telemetry`，observed `start_attempt_with_telemetry` helper
+也复用这个构造器。因此不能宣称每条
 provider 执行路径都自动埋点。载体
 回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
 `tests/ai_telemetry.rs`。
@@ -1501,8 +1506,9 @@ provider 执行路径都自动埋点。载体
 `Models` chat 执行和真实 Codex producer，覆盖其异步回调与 SSE 回退。显式 context
 会为普通 chat 创建一个 `pi.ai.request` observer；若 telemetry backend 失败，宿主
 `tracing` 会收到 warning，但业务调用仍保留原有 typed 结果。raw `ChatStream::new`
-和原始 `start_attempt` 仍需宿主直接使用公开 `AiRequestTelemetry` seam 才能获得等价
-观测；`start_attempt_with_telemetry` 提供 prepared 的 observed 变体。省略时不隐式
+保持 business-only；调用方自己的 raw stream 可使用
+`ChatStream::new_with_telemetry`，prepared attempt 可使用
+`start_attempt_with_telemetry` 获得等价观测。省略时不隐式
 捕获 ambient 上下文。载体不序列化、不上 wire，不安装 global
 subscriber、exporter、采样政策或自动 SDK root span。全部 SDK 操作的传播已闭合
 （任务 20.55）：四类 chat 入口（native/simple/direct，以及含 acquisition retry

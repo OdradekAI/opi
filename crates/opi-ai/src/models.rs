@@ -1033,7 +1033,7 @@ impl Models {
             handle.api.clone(),
         )
         .as_poll(true);
-        crate::stream::ChatStream::new_with_ai_telemetry(
+        crate::stream::ChatStream::new_with_telemetry(
             self.stream_deferred_source(handle, call),
             telemetry_context.as_ref(),
             attributes,
@@ -3858,7 +3858,7 @@ impl PreparedProviderCall {
     /// enables observation; omission keeps the stream business-only.
     pub fn start_attempt_with_telemetry(&self) -> Result<crate::stream::ChatStream, ModelsError> {
         let source = self.start_attempt()?;
-        Ok(crate::stream::ChatStream::new_with_ai_telemetry(
+        Ok(crate::stream::ChatStream::new_with_telemetry(
             source,
             self.request.telemetry_context.as_ref(),
             self.ai_telemetry_attributes(),
@@ -5315,7 +5315,7 @@ async fn materialize_chat_call(
             )
         }
     };
-    Ok(ChatStream::new_with_ai_telemetry(
+    Ok(ChatStream::new_with_telemetry(
         crate::stream::with_projection(event_stream, projection),
         telemetry_context.as_ref(),
         telemetry_attributes,

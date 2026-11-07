@@ -257403,6 +257403,76 @@
         "No cross-attempt span aggregation or automatic raw start_attempt observer",
         "No image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
       ]
+    },
+    {
+      "id": "IMPL-12-PUBLIC-CHATSTREAM-TELEMETRY",
+      "issue": "issues/12-public-chatstream-telemetry.md",
+      "base_commit": "17b34b2",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-PACKAGE"
+      ],
+      "status": "public-explicit-observed-chatstream-pass-automatic-and-cross-attempt-boundaries-open",
+      "public_entry_mapping": [
+        {
+          "entry": "ChatStream::new_with_telemetry",
+          "owner": "stream::ChatStream",
+          "scope": "explicit context and frozen AiRequestAttributes wrap caller-owned EventStream in the standard result, source-tail and pi.ai.request observer contract"
+        },
+        {
+          "entry": "ChatStream::new",
+          "owner": "stream::ChatStream",
+          "scope": "business-only raw collector remains unchanged"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "public constructor reuses the existing AiRequestObserver and ChatStream settlement implementation"
+        },
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "ordinary, deferred and prepared observed entries all route through the public seam internally"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "integration test invokes the public constructor from outside the library crate"
+        },
+        {
+          "path": "crates/opi-ai/README.md",
+          "status": "documents business-only and explicit observed ChatStream construction"
+        },
+        {
+          "path": "crates/opi-ai/README.zh.md",
+          "status": "documents business-only and explicit observed ChatStream construction"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "crates/opi-ai/tests/external_sdk.rs",
+        "scripts/pi-sdk-conformance/run_early_package_proof.py"
+      ],
+      "test_impact": {
+        "add": [
+          "public raw ChatStream constructor pi.ai.request assertion"
+        ],
+        "update": [
+          "bilingual ChatStream and telemetry documentation"
+        ],
+        "delete": [],
+        "retain": "unobserved ChatStream, prepared raw attempt, source-tail and lifecycle contracts"
+      },
+      "evidence": [
+        "evidence/phase4-public-chatstream-telemetry-checks.json"
+      ],
+      "limits": [
+        "No automatic raw ChatStream or raw start_attempt observer",
+        "No cross-attempt aggregation or image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
     }
   ]
 }

@@ -323,8 +323,11 @@ cancellation. `ChatStream::new(prepared.start_attempt()?).start()` supplies the
 same execution ownership for an advanced prepared attempt. Independent
 consumers that want the standard result and AI telemetry settlement can use
 `prepared.start_attempt_with_telemetry()?`, which returns a `ChatStream` and
-observes an explicit request telemetry context. The original `start_attempt()`
-remains the raw attempt seam for retry/admission controllers. Scheduling does not
+observes an explicit request telemetry context. A custom provider that already
+has an `EventStream` can use `ChatStream::new_with_telemetry(source, context,
+attributes)` for the same observer and result contract. The original
+`start_attempt()` remains the raw attempt seam for retry/admission controllers.
+Scheduling does not
 mean authentication has completed before `start()` returns; keep the runtime
 alive for the request to finish.
 
@@ -355,9 +358,10 @@ drain source-owned tail work and then returns the cached outcome. The
 `StartedChatStream` background owner keeps its resource contract and releases
 the source after forwarding the terminal. Ordinary `ChatCall` has no
 consumer-driven execution mode. An already delivered result survives conversion
-to `StartedChatStream`, with no duplicate terminal. No automatic AI spans are
-installed by this execution owner. An omitted/no-op context does not capture the
-consumer's ambient tracing dispatcher; supply an explicit context for propagation.
+to `StartedChatStream`, with no duplicate terminal. `ChatStream::new(raw)` does
+not install an observer; use `ChatStream::new_with_telemetry(...)` when the
+provider owns the raw source and the host wants Pi-shaped AI telemetry. An
+omitted/no-op context does not capture the consumer's ambient tracing dispatcher; supply an explicit context for propagation.
 
 ## Context, Tools, and Continuation
 
@@ -628,7 +632,7 @@ added through registry overrides or configured OpenAI-compatible profiles.
 | `InputContent` / `OutputContent` | Text and image content blocks. |
 | `ToolResultMessage` | Tool-result content, details, error/truncation/time metadata and optional typed `not_executed` facts from the trusted execution boundary. Historical absence means unknown effect; ordinary error text never proves non-execution. |
 | `AssistantStreamEvent` | Provider-neutral stream events for start, text, thinking, tool calls, and done. The in-band `Error` terminal is a read-only legacy format retained for deserializing historical saved events; current producers never emit it. |
-| `ChatStream` | The public owner of one logical call's event stream: iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` with first-terminal absorption into permanent EOF, and `result(self)` actively drains to the single final outcome. |
+| `ChatStream` | The public owner of one logical call's event stream: iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>` with first-terminal absorption into permanent EOF, and `result(self)` actively drains to the single final outcome. `new_with_telemetry` adds the explicit Pi-shaped observer seam for caller-owned `EventStream` values. |
 | `StartedChatStream` | Consumer returned by `ChatCall::start` / `ChatStream::start`: Tokio execution progresses independently, with ordered buffered events and a single result. Consumer Drop does not cancel. |
 | `CallFailure` | The single final failure of one logical call: the canonical partial/terminal `AssistantMessage` (content, provenance, diagnostics, known usage; setup failures have none) plus a typed redacted cause. |
 | `drain_to_completion` | Collector sharing the `ChatStream::result` seam: `Ok(AssistantMessage)` for done terminals, one `Err(CallFailure)` for every failure, including premature EOF. |
@@ -1717,9 +1721,10 @@ Pi-shaped request/poll names, event schema, UTF-16 block counts, usage/cost
 settlement and aborted/deferred status policy. Ordinary `Models` chat entries
 install this observer automatically when `Request::telemetry_context` is
 `Some`. Raw `ChatStream::new`, the raw `PreparedProviderCall::start_attempt`
-seam and non-chat operations remain explicit/manual boundaries; the observed
-`start_attempt_with_telemetry` helper uses the same automatic observer. This is
-not a claim that every
+seam and non-chat operations remain explicit/manual boundaries; caller-owned
+raw streams can opt into the same observer with `ChatStream::new_with_telemetry`,
+and the observed `start_attempt_with_telemetry` helper uses that constructor.
+This is not a claim that every
 provider execution path is automatically instrumented. Carrier regression
 tests live at `tests/telemetry_carrier.rs`, and the AI seam tests live at
 `tests/ai_telemetry.rs`.
@@ -1748,10 +1753,10 @@ pair into ordinary `Models` chat execution and into the real Codex producer,
 including its async callbacks and SSE fallback. With an explicit context, the
 ordinary chat path creates one `pi.ai.request` observer; if the telemetry
 backend fails, the host `tracing` channel receives a warning and the business
-call keeps its normal typed result. Raw `ChatStream::new` and the raw
-`start_attempt` seam still require the public `AiRequestTelemetry` seam when a
-host wants equivalent observation; `start_attempt_with_telemetry` supplies the
-observed prepared variant. Omission captures no implicit ambient context. No carrier is
+call keeps its normal typed result. Raw `ChatStream::new` remains business-only;
+caller-owned streams can use `ChatStream::new_with_telemetry`, and raw prepared
+attempts can use `start_attempt_with_telemetry` when the host wants equivalent
+observation. Omission captures no implicit ambient context. No carrier is
 serialized or placed on the wire, and no global subscriber, exporter, sampling
 policy or automatic SDK root span is installed. Propagation is closed across
 all SDK operations (task 20.55): the four chat entries (native/simple/direct

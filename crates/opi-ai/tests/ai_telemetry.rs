@@ -1,9 +1,10 @@
+use futures_util::stream;
 use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
 use opi_ai::deferred::DeferredFetchCall;
 use opi_ai::message::ToolCall;
 use opi_ai::models::{ChatModelRecord, SimpleOptions};
 use opi_ai::provider::{EventStream, Provider, Request};
-use opi_ai::stream::{AssistantStreamEvent, StopReason};
+use opi_ai::stream::{AssistantStreamEvent, ChatStream, StopReason};
 use opi_ai::telemetry::{
     AI_BLOCK, AI_FIRST_CHUNK, AiRequestAttributes, AiRequestTelemetry, ai_telemetry_schema,
 };
@@ -95,6 +96,52 @@ async fn ordinary_models_chat_auto_records_ai_request() {
     assert_eq!(
         spans[0].events[1].attributes.get("chars"),
         Some(&AttributeValue::Number(3.0))
+    );
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("stop".into()))
+    );
+}
+
+#[tokio::test]
+async fn public_chat_stream_telemetry_constructor_records_request() {
+    let recorder = Recorder::default();
+    let context = recorder.context();
+    let mut start = base_assistant();
+    start.provider = "probe".into();
+    start.model = "mock-model".into();
+    let mut message = start.clone();
+    message.stop_reason = StopReason::Stop;
+
+    let source: EventStream = Box::pin(stream::iter([
+        Ok(AssistantStreamEvent::Start {
+            partial: start.clone(),
+        }),
+        Ok(AssistantStreamEvent::Done {
+            reason: StopReason::Stop,
+            message,
+        }),
+    ]));
+    let result = ChatStream::new_with_telemetry(
+        source,
+        Some(&context),
+        AiRequestAttributes::new("probe", "mock-model", "openai-completions"),
+    )
+    .result()
+    .await
+    .expect("public observed ChatStream completes");
+    assert_eq!(result.stop_reason, StopReason::Stop);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("provider"),
+        Some(&AttributeValue::String("probe".into()))
+    );
+    assert_eq!(
+        spans[0].attributes.get("model"),
+        Some(&AttributeValue::String("mock-model".into()))
     );
     assert_eq!(
         spans[0].attributes.get("stop"),
