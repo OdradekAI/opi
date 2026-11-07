@@ -39,8 +39,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -4977,13 +4977,23 @@ pub struct ChatCall {
 
 impl ChatCall {
     fn new(binding: FrozenChatBinding, request: Request, options: CallOptions) -> Self {
-        let driver = ChatCallDriver::new(binding, request, options);
+        let abort_observer = Arc::new(Mutex::new(None));
+        let driver = ChatCallDriver::new(binding, request, options, abort_observer.clone());
+        let abort_handler = Box::new(move |failure: &CallFailure| {
+            if let Some(observer) = abort_observer
+                .lock()
+                .expect("chat call telemetry observer slot")
+                .as_ref()
+            {
+                observer.finish(Some(failure.message()));
+            }
+        }) as crate::execution::AbortHandler;
         Self {
             execution: crate::stream::StartedChatStream::spawn(
                 driver,
                 ChatCallDriver::result,
                 crate::stream::ProducerSnapshot::default(),
-                None,
+                Some(abort_handler),
             ),
         }
     }
@@ -5007,7 +5017,10 @@ impl ChatCall {
     /// Explicitly stop and join the execution task, preserving its observed
     /// partial or already-completed outcome. See
     /// [`StartedChatStream::abort`](crate::stream::StartedChatStream::abort)
-    /// for provider-task cleanup limits and cancellation of this wait.
+    /// for provider-task cleanup limits and cancellation of this wait. When
+    /// the request carries an explicit telemetry context, the ordinary
+    /// `pi.ai.request` observer is settled with the returned `aborted` outcome
+    /// after Tokio confirms that this execution task was cancelled.
     pub async fn abort(&mut self) -> Result<AssistantMessage, CallFailure> {
         self.execution.abort().await
     }
@@ -5026,6 +5039,7 @@ impl Stream for ChatCall {
 struct ChatCallDriver {
     state: ChatCallState,
     terminal: Option<Result<AssistantMessage, CallFailure>>,
+    abort_observer: Arc<Mutex<Option<crate::telemetry::SharedAiRequestObserver>>>,
 }
 
 /// The owned setup payload captured at construction.
@@ -5057,7 +5071,12 @@ enum ChatCallState {
 }
 
 impl ChatCallDriver {
-    fn new(binding: FrozenChatBinding, mut request: Request, options: CallOptions) -> Self {
+    fn new(
+        binding: FrozenChatBinding,
+        mut request: Request,
+        options: CallOptions,
+        abort_observer: Arc<Mutex<Option<crate::telemetry::SharedAiRequestObserver>>>,
+    ) -> Self {
         request.callbacks = request.callbacks.for_call();
         Self {
             state: ChatCallState::NotStarted(Box::new(ChatCallSetup {
@@ -5066,6 +5085,7 @@ impl ChatCallDriver {
                 options,
             })),
             terminal: None,
+            abort_observer,
         }
     }
 
@@ -5136,7 +5156,10 @@ impl Stream for ChatCallDriver {
                         options,
                     } = *setup;
                     this.state = ChatCallState::Starting(Box::pin(materialize_chat_call(
-                        binding, request, options,
+                        binding,
+                        request,
+                        options,
+                        this.abort_observer.clone(),
                     )));
                 }
                 ChatCallState::Starting(mut future) => {
@@ -5171,6 +5194,7 @@ async fn materialize_chat_call(
     binding: FrozenChatBinding,
     mut request: Request,
     options: CallOptions,
+    abort_observer: Arc<Mutex<Option<crate::telemetry::SharedAiRequestObserver>>>,
 ) -> Result<ChatStream, CallFailure> {
     // Canonical model identity comes from the frozen complete record.
     request.model = binding.record.spec();
@@ -5318,10 +5342,17 @@ async fn materialize_chat_call(
             )
         }
     };
-    Ok(ChatStream::new_with_telemetry(
-        crate::stream::with_projection(event_stream, projection),
+    let observer = crate::telemetry::SharedAiRequestObserver::start(
         telemetry_context.as_ref(),
         telemetry_attributes,
+    );
+    abort_observer
+        .lock()
+        .expect("chat call telemetry observer slot")
+        .replace(observer.clone());
+    Ok(ChatStream::with_shared_telemetry(
+        crate::stream::with_projection(event_stream, projection),
+        observer,
     ))
 }
 

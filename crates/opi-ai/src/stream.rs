@@ -465,13 +465,21 @@ impl ChatStream {
         context: Option<&crate::telemetry::TelemetryContext>,
         attributes: crate::telemetry::AiRequestAttributes,
     ) -> Self {
+        Self::with_shared_telemetry(
+            stream,
+            crate::telemetry::SharedAiRequestObserver::start(context, attributes),
+        )
+    }
+
+    pub(crate) fn with_shared_telemetry(
+        stream: crate::provider::EventStream,
+        observer: crate::telemetry::SharedAiRequestObserver,
+    ) -> Self {
         Self {
             inner: Some(stream),
             partial: None,
             terminal: None,
-            ai_telemetry: Some(crate::telemetry::SharedAiRequestObserver::start(
-                context, attributes,
-            )),
+            ai_telemetry: Some(observer),
         }
     }
 

@@ -326,6 +326,11 @@ runtime 运行，直至请求完成。
 等待时，句柄仍保留任务，可再次等待完成。若源阻塞在一次 poll 内，必须先让出
 执行权，Tokio 才能中止它。
 
+普通 `Models` 调用如果显式提供 `Request::telemetry_context`，
+`call.abort().await` 在确认执行任务已被 Tokio 取消后，会把自动安装的
+`pi.ai.request` observer 以 `stop=aborted` 结算。如果 provider 在 abort 生效前
+已经到达正常终态，同一 observer 仍保持幂等，正常终态优先。
+
 未读事件保存在**无固定上限的 FIFO** 中，因此慢读或全不读取不会阻塞执行；内存
 随未读事件增长。`result()` 首次 poll 时丢弃积压，消费句柄 Drop 也立即释放积压。
 通过请求 token 取消后，已转发进这个 FIFO 的事件仍按原序交付，然后交付取消失败；provider

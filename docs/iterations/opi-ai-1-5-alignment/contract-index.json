@@ -257594,6 +257594,64 @@
       ]
     },
     {
+      "id": "IMPL-16-ORDINARY-CHATCALL-ABORT-TELEMETRY",
+      "issue": "issues/16-ordinary-chatcall-abort-telemetry.md",
+      "base_commit": "4bf945c",
+      "contracts": [
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM",
+        "CAP-EXECUTION",
+        "CAP-MODELS-DISPATCH"
+      ],
+      "status": "ordinary-chatcall-explicit-abort-settlement-pass",
+      "public_entry_mapping": [
+        {
+          "entry": "Models::stream_simple -> ChatCall::abort",
+          "owner": "models::ChatCallDriver -> stream::ChatStream -> execution::StartedChatStream",
+          "scope": "the outer ordinary-call abort handler settles the inner automatically installed pi.ai.request observer after Tokio confirms task cancellation"
+        }
+      ],
+      "consumers": [
+        {
+          "path": "crates/opi-ai/src/models.rs",
+          "status": "ChatCallDriver shares the materialized observer with the outer StartedChatStream abort handler"
+        },
+        {
+          "path": "crates/opi-ai/src/stream.rs",
+          "status": "internal shared-observer constructor preserves one observer across the execution seam"
+        },
+        {
+          "path": "crates/opi-ai/tests/ai_telemetry.rs",
+          "status": "hanging mock provider plus ordinary ChatCall::abort proves one settled span with stop=aborted"
+        }
+      ],
+      "primary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs"
+      ],
+      "test_impact": {
+        "add": [
+          "ordinary Models ChatCall explicit-abort pi.ai.request assertion"
+        ],
+        "update": [
+          "bilingual ChatCall abort telemetry documentation"
+        ],
+        "delete": [],
+        "retain": "ordinary normal completion, started-stream abort, prepared-attempt and raw collector boundaries"
+      },
+      "evidence": [
+        "evidence/phase4-ordinary-chatcall-abort-telemetry-checks.json"
+      ],
+      "limits": [
+        "No automatic raw start_attempt observer",
+        "No cross-attempt aggregation or cooperative-cancel-specific observer policy",
+        "No image/classifier/deferred-cancel observer, live provider, complete feature/platform/MSRV, performance or six-gate acceptance"
+      ]
+    },
+    {
       "id": "IMPL-14-PREPARED-CROSS-ATTEMPT-TELEMETRY",
       "issue": "issues/14-prepared-cross-attempt-telemetry.md",
       "base_commit": "e089aa2",

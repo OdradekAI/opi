@@ -106,6 +106,68 @@ async fn ordinary_models_chat_auto_records_ai_request() {
 }
 
 #[tokio::test]
+async fn ordinary_models_chat_abort_finishes_request_telemetry() {
+    let recorder = Recorder::default();
+    let telemetry_context = recorder.context();
+    let provider =
+        MockProvider::new_with_errors("probe", vec![MockResponse::HangingUntilCancelled]);
+    let calls = provider.call_log_handle();
+    let model = provider.models()[0].clone();
+    let models = single_route_collection(Box::new(provider));
+    let cancel = tokio_util::sync::CancellationToken::new();
+    let request = Request {
+        model: "probe:mock-model".into(),
+        context: normalize_context(Default::default()).expect("empty context normalizes"),
+        projection: Default::default(),
+        transport: Default::default(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel,
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        telemetry_context: Some(telemetry_context),
+        callbacks: Default::default(),
+    };
+
+    let mut call = models.stream_simple(
+        ChatModelRecord::new("probe", model),
+        request,
+        SimpleOptions::default(),
+    );
+    for _ in 0..100 {
+        if !calls.lock().expect("mock call log lock").is_empty() {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert!(
+        !calls.lock().expect("mock call log lock").is_empty(),
+        "ordinary call reached the provider before explicit abort"
+    );
+
+    let failure = call
+        .abort()
+        .await
+        .expect_err("explicit abort fails the ordinary call");
+    assert_eq!(failure.message().stop_reason, StopReason::Aborted);
+
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].name, "pi.ai.request");
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&AttributeValue::String("aborted".into()))
+    );
+    assert!(spans[0].end_sequence.is_some());
+}
+
+#[tokio::test]
 async fn public_chat_stream_telemetry_constructor_records_request() {
     let recorder = Recorder::default();
     let context = recorder.context();

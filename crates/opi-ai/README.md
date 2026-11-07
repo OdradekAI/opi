@@ -345,6 +345,12 @@ Abandoning the `abort()` wait leaves the task on the handle so a later wait can
 still observe its completion. A source blocking inside a poll must yield before
 Tokio can abort it.
 
+For an ordinary `Models` call with an explicit `Request::telemetry_context`,
+`call.abort().await` settles its automatically installed `pi.ai.request`
+observer with `stop=aborted` after the execution task is confirmed cancelled.
+The same shared observer remains idempotent if the provider reaches a normal
+terminal before the abort takes effect.
+
 Unread events are retained in an **unbounded FIFO** so a slow or absent reader
 cannot block execution. Memory grows with the unread events; `result()` drops
 the backlog on first poll, and dropping the handle releases it immediately.
@@ -1732,6 +1738,9 @@ install this observer automatically when `Request::telemetry_context` is
 seam and non-chat operations remain explicit/manual boundaries; caller-owned
 raw streams can opt into the same observer with `ChatStream::new_with_telemetry`,
 and the observed `start_attempt_with_telemetry` helper uses that constructor.
+An explicit `ChatCall::abort()` on an ordinary observed call settles the same
+observer with `stop=aborted` after Tokio confirms cancellation; normal
+completion remains the completion authority.
 When the observed stream is scheduled with `ChatStream::start()`, its normal
 terminal still finishes the same request observer before `result()` returns;
 an explicit `StartedChatStream::abort()` settles it with `stop=aborted` after
