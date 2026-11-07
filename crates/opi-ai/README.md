@@ -1754,6 +1754,8 @@ install this observer automatically when `Request::telemetry_context` is
 seam and non-chat operations remain explicit/manual boundaries; caller-owned
 raw streams can opt into the same observer with `ChatStream::new_with_telemetry`,
 and the observed `start_attempt_with_telemetry` helper uses that constructor.
+The optional `response.id` span attribute is emitted only when the provider
+reports an id; an absent id remains absent rather than becoming an empty string.
 An explicit `ChatCall::abort()` on an ordinary observed call settles the same
 observer with `stop=aborted` after Tokio confirms cancellation; normal
 completion remains the completion authority.

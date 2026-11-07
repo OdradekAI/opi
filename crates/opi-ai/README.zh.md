@@ -1515,6 +1515,9 @@ provider 执行路径都自动埋点。载体
 回归测试位于 `tests/telemetry_carrier.rs`，AI seam 测试位于
 `tests/ai_telemetry.rs`。
 
+可选的 `response.id` span 属性只有在 provider 报告 id 时才写入；缺失 id 会保持
+缺失，不会被改写为空字符串。
+
 普通 chat 的 request-token 协作式取消另由 provider 交付的
 `ProviderError::Cancelled` 终态驱动 observer 结算；它与外层
 `ChatCall::abort()` 的强制取消是两个可观察路径。prepared 的
