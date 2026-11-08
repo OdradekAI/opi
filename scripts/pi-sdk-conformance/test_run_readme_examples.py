@@ -168,6 +168,35 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits API map entry: {fragment}")
 
+    def test_readmes_index_advanced_capability_references(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "## Reference map",
+            "[Providers](#providers)",
+            "[Factories, Catalog, and Auth](#factories-catalog-and-auth)",
+            "[Credentials, Request Enrichment, and Refresh](#credentials-request-enrichment-and-refresh)",
+            "[Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing)",
+            "[Best-Effort Cost](#best-effort-cost)",
+            "[WebSocket Upgrade (RDF-24)](#websocket-upgrade-rdf-24)",
+            "[Deferred Responses](#deferred-responses-task-2050)",
+            "[Test layers and SDK packages](#test-layers-and-sdk-packages)",
+        ):
+            self.assertIn(fragment, english, f"README.md omits reference-map entry: {fragment}")
+        for fragment in (
+            "## 参考索引",
+            "[Provider](#provider)",
+            "[工厂、Catalog 与认证](#工厂catalog-与认证)",
+            "[凭据、Request 扩充与 Refresh](#凭据request-扩充与-refresh)",
+            "[Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing)",
+            "[尽力而为的费用](#尽力而为的费用)",
+            "[WebSocket Upgrade（RDF-24）](#websocket-upgraderdf-24)",
+            "[Deferred 响应](#deferred-响应任务-2050)",
+            "[测试分层与 SDK 包](#测试分层与-sdk-包)",
+        ):
+            self.assertIn(fragment, chinese, f"README.zh.md omits reference-map entry: {fragment}")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

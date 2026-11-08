@@ -130,6 +130,26 @@ Provider adapters implement the route behind these entries. They do not change
 the ownership of `Request`, the stream terminal contract, or the caller's
 authentication context.
 
+## Reference map
+
+Use this index after the first successful call. It keeps the advanced surface
+navigable while the onboarding path above stays short.
+
+| Capability | Reference |
+| --- | --- |
+| Provider selection and adapter contracts | [Providers](#providers) |
+| Built-in registration, catalogs, and authentication | [Factories, Catalog, and Auth](#factories-catalog-and-auth) |
+| Credential enrichment and refresh lifecycle | [Credentials, Request Enrichment, and Refresh](#credentials-request-enrichment-and-refresh) |
+| Explicit context and optional tracing | [Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing) |
+| Usage, pricing tiers, cache pricing, and reported cost | [Best-Effort Cost](#best-effort-cost) |
+| Strict WebSocket handshake bridge | [WebSocket Upgrade (RDF-24)](#websocket-upgrade-rdf-24) |
+| Deferred generation and polling | [Deferred Responses](#deferred-responses-task-2050) |
+| Verification layers and downstream package proof | [Test layers and SDK packages](#test-layers-and-sdk-packages) |
+
+These links are capability references, not a promise that every provider or
+transport is enabled by the same feature profile. The installation section and
+the feature notes at the top remain the source of truth for build selection.
+
 ## Quick Start
 
 One complete ordinary call: register lazy builtins on an empty `Models`, select

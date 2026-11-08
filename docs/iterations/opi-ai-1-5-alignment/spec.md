@@ -47,6 +47,9 @@ tool-result continuation 均通过。证据见[独立消费者报告](phase4-rea
 实施记录见[README 导航票](issues/27-readme-task-guide.md)。
 随后补上公共 API 总览，固定中立入口与 Provider/Telemetry 的责任边界；实施记录见
 [README API 总览票](issues/28-readme-public-api-map.md)。
+随后补上双语高级能力参考索引，将 Provider、认证、Telemetry、cost/pricing、
+WebSocket、Deferred 与测试包证明集中成入口；实施记录见
+[README 参考索引票](issues/29-readme-reference-map.md)。
 
 ## 目标与范围
 

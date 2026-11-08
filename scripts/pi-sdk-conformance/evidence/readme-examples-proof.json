@@ -1,7 +1,7 @@
 {
   "family": "readme-examples",
   "scope": "three exact packaged onboarding sources execute lazy builtin setup, execution before consumption, final responses/stream and tool-result continuation as an ordinary workspace-external consumer (ONB-02)",
-  "scratch": "C:\\Temp\\opi-readme-proof-20261108-api-map",
+  "scratch": "C:\\Temp\\opi-readme-proof-20261108-reference-map",
   "inputs": {
     "runner_sha256": "4429a8d8818e7037b76cb83229fc8f545b31797e313ddad017c42c4abd073db1",
     "consumer_source_sha256": "d09fb3396209a0d94a350683d9a1060c2970aa8a985769a2d30b52a73edf9a7a"
@@ -46,10 +46,10 @@
         "--target",
         "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
         "--pid",
-        "24820"
+        "11692"
       ],
       "exit": 0,
-      "elapsed_seconds": 0.2,
+      "elapsed_seconds": 0.26,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -68,7 +68,7 @@
         "--locked"
       ],
       "exit": 0,
-      "elapsed_seconds": 0.66,
+      "elapsed_seconds": 0.62,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderr_sha256": "2f34034f927b6e77a23b065e5c1d23c1a25ba9e7c3634fb1c1b90f2da8d58c83"
     },
@@ -77,12 +77,12 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
         "generate-lockfile",
         "--offline"
       ],
       "exit": 0,
-      "elapsed_seconds": 0.47,
+      "elapsed_seconds": 0.48,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderr_sha256": "fa7634eea6f8b165d801a96efa5979287335dd468d83f0ee2b8b2390eeb1e906"
     },
@@ -91,78 +91,7 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
-        "metadata",
-        "--offline",
-        "--locked",
-        "--format-version",
-        "1"
-      ],
-      "exit": 0,
-      "elapsed_seconds": 0.19,
-      "stdout_sha256": "4632eb06680209c3d8b622e934d39b0d889cee7d8c8d3e99ea81f37b5a237ed3",
-      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    },
-    {
-      "name": "defaults-off-consumer-check",
-      "command": [
-        "cargo",
-        "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
-        "check",
-        "--offline",
-        "--locked",
-        "--bins"
-      ],
-      "exit": 0,
-      "elapsed_seconds": 11.52,
-      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderr_sha256": "f5aa1d812e4dc71a84ef0877a3764d073e2df0ac98a281df212f914f3301216c"
-    },
-    {
-      "name": "defaults-off-consumer-peer-test",
-      "command": [
-        "cargo",
-        "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
-        "test",
-        "--offline",
-        "--locked",
-        "--bin",
-        "consumer-readme",
-        "controlled_peer_waits_for_bytes_after_accept",
-        "--",
-        "--exact"
-      ],
-      "exit": 0,
-      "elapsed_seconds": 27.33,
-      "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
-      "stderr_sha256": "fb17ba18ee1a2dc845a6c6bf593c1fc9dbbe1f200a1857b8be25c68a19e656fa"
-    },
-    {
-      "name": "defaults-off-consumer-execute",
-      "command": [
-        "cargo",
-        "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
-        "run",
-        "--offline",
-        "--locked",
-        "--quiet",
-        "--bin",
-        "consumer-readme"
-      ],
-      "exit": 0,
-      "elapsed_seconds": 7.67,
-      "stdout_sha256": "b9091bccc7c3e8bdc267e206760322ea33c6ae368faab6866069de151886c9e6",
-      "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
-    },
-    {
-      "name": "defaults-on-metadata",
-      "command": [
-        "cargo",
-        "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
         "metadata",
         "--offline",
         "--locked",
@@ -171,31 +100,31 @@
       ],
       "exit": 0,
       "elapsed_seconds": 0.2,
-      "stdout_sha256": "0ccdcbae3f8b5fabcc894a793eb5d819d9301b1e648be84abefd5bfd63b9cfd8",
+      "stdout_sha256": "7a4f46731840c9f4b270dee3c1d8151bb0d5b6aa614570ee24498a6cbb2f81d2",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
-      "name": "defaults-on-consumer-check",
+      "name": "defaults-off-consumer-check",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
         "check",
         "--offline",
         "--locked",
         "--bins"
       ],
       "exit": 0,
-      "elapsed_seconds": 8.7,
+      "elapsed_seconds": 10.92,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderr_sha256": "eee20200a6cd40f94fc706a4b8b47e858489727c3a9adef4e96557aa0e7749d9"
+      "stderr_sha256": "1f621541fd12f76531715068f1a1b9d4ceebd171b25fdf29febeca5d5e35b6ae"
     },
     {
-      "name": "defaults-on-consumer-peer-test",
+      "name": "defaults-off-consumer-peer-test",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
         "test",
         "--offline",
         "--locked",
@@ -206,16 +135,16 @@
         "--exact"
       ],
       "exit": 0,
-      "elapsed_seconds": 27.92,
+      "elapsed_seconds": 25.75,
       "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
-      "stderr_sha256": "733a26e999e7bba9e403b2a5d90ebd87a15a3055688f3f41a92737c3ab62ce0a"
+      "stderr_sha256": "bd588c83b914ccbf42338a9c142c87184d6f79eab38a9ed7abfbefacb33a8dd9"
     },
     {
-      "name": "defaults-on-consumer-execute",
+      "name": "defaults-off-consumer-execute",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-api-map\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
         "run",
         "--offline",
         "--locked",
@@ -224,8 +153,79 @@
         "consumer-readme"
       ],
       "exit": 0,
-      "elapsed_seconds": 7.5,
-      "stdout_sha256": "02d4a164dafaa83e33b9f6662b92f7389157af9dbcdd9b1831fee7abc4abfd3d",
+      "elapsed_seconds": 7.16,
+      "stdout_sha256": "2f5389fe617cf0633f7e5605de387f67fb83347ca3ec83dac07dda5ce01c52f8",
+      "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
+    },
+    {
+      "name": "defaults-on-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
+        "metadata",
+        "--offline",
+        "--locked",
+        "--format-version",
+        "1"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.2,
+      "stdout_sha256": "6c685d3f7284232a3f19daffd0aca2f89c3b80e94f025ce5cb54a6d342f6f087",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "defaults-on-consumer-check",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
+        "check",
+        "--offline",
+        "--locked",
+        "--bins"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 8.31,
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "3e48ecb79f9e9caa2f429cf2d6db673236929ecd84555fbc62c08580a991f4cf"
+    },
+    {
+      "name": "defaults-on-consumer-peer-test",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
+        "test",
+        "--offline",
+        "--locked",
+        "--bin",
+        "consumer-readme",
+        "controlled_peer_waits_for_bytes_after_accept",
+        "--",
+        "--exact"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 25.86,
+      "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
+      "stderr_sha256": "f19ad0f85911220f52acfb33e52e17a2519247b35bd9c7d112ac874c8274abb1"
+    },
+    {
+      "name": "defaults-on-consumer-execute",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-readme-proof-20261108-reference-map\\candidate-telemetry.toml",
+        "run",
+        "--offline",
+        "--locked",
+        "--quiet",
+        "--bin",
+        "consumer-readme"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 7.48,
+      "stdout_sha256": "cece1ec54f8bcd5371d0bfed554e1815f7b256dafd8b1e277af809c8a70bd495",
       "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
     },
     {
@@ -238,7 +238,7 @@
         "--target",
         "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
         "--pid",
-        "24820"
+        "11692"
       ],
       "exit": 0,
       "elapsed_seconds": 0.2,
@@ -251,11 +251,11 @@
   "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\nrelease: 1.99.1\ncommit-hash: 5f94df4789f005f9a352888e8355ffc645b7ed0e\ncommit-date: 2026-08-27\nhost: x86_64-pc-windows-msvc\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.21.0-DEV (sys:0.4.90+curl-8.21.0 vendored ssl:Schannel)\nos: Windows 10.0.22631 (Windows 11 Core) [64-bit]\n",
   "package": {
     "file": "opi-ai-0.8.3.crate",
-    "sha256": "bdbef66a117b896df52c174e65c786c95bb1133ca035d47725e9e5bc7d24c2ac",
+    "sha256": "be185bce108009f4354eaca556e4ce701232e1e275eb83cb76b8ff256cfbd29b",
     "dependencies": [
       {
         "file": "opi-telemetry-0.8.3.crate",
-        "sha256": "8d8a5b1fe9d89cc8bd44f49d75a6a7dd9d61b004c9f6e5d9560f6650a42e217a",
+        "sha256": "a25854acd2d4bb98fea11aebaaa3a4ffdc0d1d74f6e16bc06f0f9a920df57ed4",
         "source": "exact extracted candidate artifact; no workspace source patch"
       }
     ]
@@ -544,7 +544,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "288",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:1322",
+                  "host": "127.0.0.1:10358",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -607,7 +607,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "278",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:1324",
+                  "host": "127.0.0.1:10360",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -670,7 +670,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "519",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:1326",
+                  "host": "127.0.0.1:10362",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -730,7 +730,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "736",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:1326",
+                  "host": "127.0.0.1:10362",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -861,7 +861,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "288",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:13230",
+                  "host": "127.0.0.1:9165",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -924,7 +924,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "278",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:13232",
+                  "host": "127.0.0.1:9167",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -987,7 +987,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "519",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:13234",
+                  "host": "127.0.0.1:9169",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -1047,7 +1047,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "736",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:13234",
+                  "host": "127.0.0.1:9169",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {

@@ -116,6 +116,25 @@ ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain
 Provider adapter 在这些入口之后实现具体 route；它们不会改变 `Request` 的所有权、
 流终态契约或调用方持有的认证上下文。
 
+## 参考索引
+
+第一次成功调用之后，可以从这里进入高级能力。索引让长篇参考保持可导航，
+同时让上面的接入路径保持简短。
+
+| 能力 | 参考 |
+| --- | --- |
+| Provider 选择与 adapter 契约 | [Provider](#provider) |
+| 内置注册、catalog 与认证 | [工厂、Catalog 与认证](#工厂catalog-与认证) |
+| 凭据扩充与 refresh 生命周期 | [凭据、Request 扩充与 Refresh](#凭据request-扩充与-refresh) |
+| 显式上下文与可选 tracing | [Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing) |
+| 用量、计价 tier、cache pricing 与 provider 上报成本 | [尽力而为的费用](#尽力而为的费用) |
+| 严格 WebSocket 握手桥 | [WebSocket Upgrade（RDF-24）](#websocket-upgraderdf-24) |
+| Deferred 生成与轮询 | [Deferred 响应](#deferred-响应任务-2050) |
+| 测试分层与下游包验收 | [测试分层与 SDK 包](#测试分层与-sdk-包) |
+
+这些链接是能力参考，不表示所有 Provider 或 transport 都由同一 feature
+profile 开启。构建选择仍以开头的安装说明和 feature 说明为准。
+
 ## 快速开始
 
 一次完整的普通调用：在空 `Models` 上注册惰性 builtins、静态选择模型、

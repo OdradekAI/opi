@@ -27,6 +27,11 @@ Provider、Telemetry 和测试包证明作为新接入的明确入口；长篇 p
 `ChatCall`、Context/工具与 `TelemetryContext` 的责任边界；契约由
 `test_readmes_publish_public_api_at_a_glance` 固定。
 
+随后在 API 总览之后加入双语高级能力参考索引，把 Provider、工厂/认证、凭据
+刷新、Telemetry、cost/pricing、WebSocket、Deferred 与测试包证明集中成可跳转
+入口；契约由 `test_readmes_index_advanced_capability_references` 固定。该索引
+只改善导航，不改变 feature profile 或运行时语义。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。
