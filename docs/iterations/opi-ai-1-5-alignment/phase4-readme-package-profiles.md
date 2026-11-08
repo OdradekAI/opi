@@ -43,6 +43,12 @@ feature；`default-features = false` 只关闭 `opi-telemetry` tracing carrier�
 固定。两个 crate 的实际打包消费者 smoke proof 见
 [`phase4-telemetry-readme-ai-boundary.json`](evidence/phase4-telemetry-readme-ai-boundary.json)。
 
+随后把 cost/pricing 专题从接入正文拆出：主 README 保留未知用量、缺失定价和成功流
+不被费用阻塞的短语义，并保留原估算器标题作为稳定跳转目标；完整的 estimator、
+sampling、pricing tier、cache pricing、service tier 与兼容规则进入 crate 内的
+双语 `docs/cost-pricing*.md`。`test_readmes_split_cost_pricing_into_package_local_topic_references`
+固定链接、专题文件和代表性规则，避免文档重排时丢失精确计价入口。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。

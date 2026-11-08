@@ -56,6 +56,9 @@ WebSocket、Deferred 与测试包证明集中成入口；实施记录见
 随后同步 `opi-telemetry` 独立 README 的 AI instrumentation 边界，修正过时的
 future-migration 描述；实施记录见
 [telemetry README 边界票](issues/31-telemetry-readme-ai-boundary.md)。
+随后把长篇 cost/pricing 规则拆成 crate 内双语专题文档，主 README 仅保留稳定摘要、
+旧标题锚点和包内链接；实施记录见
+[README cost/pricing 专题票](issues/32-readme-cost-pricing-topic.md)。
 
 ## 目标与范围
 

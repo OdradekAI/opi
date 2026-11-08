@@ -218,6 +218,41 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits feature-profile contract: {fragment}")
 
+    def test_readmes_split_cost_pricing_into_package_local_topic_references(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        english_topic = (root / "docs" / "cost-pricing.md").read_text(encoding="utf-8")
+        chinese_topic = (root / "docs" / "cost-pricing.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "## Best-Effort Cost",
+            "[Cost and pricing reference](docs/cost-pricing.md)",
+            "The detailed estimator, sampling, tier selection",
+        ):
+            self.assertIn(fragment, english, f"README.md omits cost-pricing topic boundary: {fragment}")
+        for fragment in (
+            "## 尽力而为的费用",
+            "[费用与计价参考](docs/cost-pricing.zh.md)",
+            "完整的估算器、sampling、tier 选择",
+        ):
+            self.assertIn(fragment, chinese, f"README.zh.md omits cost-pricing topic boundary: {fragment}")
+        for fragment in (
+            "# Cost and pricing reference",
+            "## Estimator, Sampling and Pricing Metadata",
+            "pricing tiers",
+            "calculate_cost_tiered",
+            "PricingTier::input_tokens_above",
+        ):
+            self.assertIn(fragment, english_topic, f"cost-pricing.md omits detailed rule: {fragment}")
+        for fragment in (
+            "# 费用与计价参考",
+            "## 估算器、Sampling 与计价元数据",
+            "计价 tier",
+            "calculate_cost_tiered",
+            "PricingTier::input_tokens_above",
+        ):
+            self.assertIn(fragment, chinese_topic, f"cost-pricing.zh.md omits detailed rule: {fragment}")
+
     def test_telemetry_readmes_describe_current_ai_integration_boundary(self):
         root = Path(__file__).parents[2] / "crates" / "opi-telemetry"
         english = (root / "README.md").read_text(encoding="utf-8")
