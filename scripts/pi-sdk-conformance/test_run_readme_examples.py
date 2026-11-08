@@ -110,10 +110,9 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "[Quick Start](#quick-start)",
             "[Streaming and the Final Result](#streaming-and-the-final-result)",
             "[Context, Tools, and Continuation](#context-tools-and-continuation)",
-            "[Factories, Catalog, and Auth](#factories-catalog-and-auth)",
             "[Providers](#providers)",
             "[Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing)",
-            "[Test layers and SDK packages](#test-layers-and-sdk-packages)",
+            "[Testing and Package Consumption](docs/testing.md)",
         ):
             self.assertIn(fragment, english, f"README.md omits guide entry: {fragment}")
         for fragment in (
@@ -122,10 +121,9 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "[快速开始](#快速开始)",
             "[流式与最终结果](#流式与最终结果)",
             "[Context、工具与续轮](#context工具与续轮)",
-            "[工厂、Catalog 与认证](#工厂catalog-与认证)",
             "[Provider](#provider)",
             "[Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing)",
-            "[测试分层与 SDK 包](#测试分层与-sdk-包)",
+            "[测试与包消费](docs/testing.zh.md)",
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits guide entry: {fragment}")
 
@@ -223,15 +221,15 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             self.assertGreater(source.rfind(heading), source.rfind("### "),
                                f"{name} puts reference appendices under the license heading")
 
-    def test_readmes_put_installation_before_status_context(self):
+    def test_readmes_put_installation_before_capability_context(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        for name, installation, status in (
-            ("README.md", "## Installation", "## Status"),
-            ("README.zh.md", "## 安装", "## 当前状态"),
+        for name, installation, next_section in (
+            ("README.md", "## Installation", "## Quick Start"),
+            ("README.zh.md", "## 安装", "## 快速开始"),
         ):
             source = (root / name).read_text(encoding="utf-8")
-            self.assertLess(source.index(installation), source.index(status),
-                            f"{name} puts onboarding after status context")
+            self.assertLess(source.index(installation), source.index(next_section),
+                            f"{name} puts onboarding after the first capability")
 
     def test_readmes_publish_public_api_at_a_glance(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
@@ -263,25 +261,25 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         for fragment in (
             "## Reference map",
             "[Providers](#providers)",
-            "[Factories, Catalog, and Auth](#factories-catalog-and-auth)",
-            "[Credentials, Request Enrichment, and Refresh](#credentials-request-enrichment-and-refresh)",
-            "[Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing)",
-            "[Best-Effort Cost](#best-effort-cost)",
-            "[WebSocket Upgrade](#websocket-upgrade)",
+            "[Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md)",
+            "[Cost and pricing reference](docs/cost-pricing.md)",
+            "[Transport, Protocols and Resource Lifecycle](docs/transport.md)",
+            "[Public Utilities and Data Contracts](docs/utilities.md)",
+            "[Provider Wire and Operation Reference](docs/providers.md)",
             "[Deferred Responses](#deferred-responses)",
-            "[Test layers and SDK packages](#test-layers-and-sdk-packages)",
+            "[Testing and Package Consumption](docs/testing.md)",
         ):
             self.assertIn(fragment, english, f"README.md omits reference-map entry: {fragment}")
         for fragment in (
             "## 参考索引",
             "[Provider](#provider)",
-            "[工厂、Catalog 与认证](#工厂catalog-与认证)",
-            "[凭据、Request 扩充与 Refresh](#凭据request-扩充与-refresh)",
-            "[Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing)",
-            "[尽力而为的费用](#尽力而为的费用)",
-            "[WebSocket Upgrade](#websocket-upgrade)",
+            "[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)",
+            "[费用与计价参考](docs/cost-pricing.zh.md)",
+            "[Transport、协议与资源生命周期](docs/transport.zh.md)",
+            "[公共工具与数据契约](docs/utilities.zh.md)",
+            "[Provider Wire 与操作参考](docs/providers.zh.md)",
             "[Deferred 响应](#deferred-响应)",
-            "[测试分层与 SDK 包](#测试分层与-sdk-包)",
+            "[测试与包消费](docs/testing.zh.md)",
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits reference-map entry: {fragment}")
 
