@@ -253,6 +253,51 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese_topic, f"cost-pricing.zh.md omits detailed rule: {fragment}")
 
+    def test_readmes_split_provider_catalog_auth_into_package_local_topic_references(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        english_topic = (root / "docs" / "provider-auth.md").read_text(encoding="utf-8")
+        chinese_topic = (root / "docs" / "provider-auth.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "[Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md)",
+            "The detailed Provider, Catalog, and authentication reference is in",
+            "The credential, OAuth, request-enrichment, and refresh lifecycle is maintained",
+        ):
+            self.assertIn(fragment, english, f"README.md omits provider/auth topic boundary: {fragment}")
+        for fragment in (
+            "[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)",
+            "完整的 Provider、Catalog、认证参考见",
+            "凭据、OAuth、Request 扩充和 Refresh 生命周期维护在",
+        ):
+            self.assertIn(fragment, chinese, f"README.zh.md omits provider/auth topic boundary: {fragment}")
+        for fragment in (
+            "# Provider, Catalog, Auth and Refresh reference",
+            "## Credentials, Request Enrichment, and Refresh",
+            "## Provider Behavior Matrix",
+            "## OpenAI-Compatible Profiles",
+            "## Offline Bundled Model Catalog (DEL-10)",
+            "## Dynamic Catalog Store and Refresh",
+            "Models::refresh",
+            "OAuthProvider",
+            "Catalog::builtin()",
+            "provider_collection::register_builtin",
+        ):
+            self.assertIn(fragment, english_topic, f"provider-auth.md omits detailed rule: {fragment}")
+        for fragment in (
+            "# Provider、Catalog、认证与刷新参考",
+            "## 凭据、Request 扩充与 Refresh",
+            "## Provider 行为矩阵",
+            "## OpenAI-Compatible Profile",
+            "## 离线内置 Model Catalog",
+            "## 动态 Catalog Store 与 Refresh",
+            "Models::refresh",
+            "OAuthProvider",
+            "Catalog::builtin()",
+            "provider_collection::register_builtin",
+        ):
+            self.assertIn(fragment, chinese_topic, f"provider-auth.zh.md omits detailed rule: {fragment}")
+
     def test_telemetry_readmes_describe_current_ai_integration_boundary(self):
         root = Path(__file__).parents[2] / "crates" / "opi-telemetry"
         english = (root / "README.md").read_text(encoding="utf-8")

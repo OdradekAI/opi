@@ -49,6 +49,12 @@ sampling、pricing tier、cache pricing、service tier 与兼容规则进入 cra
 双语 `docs/cost-pricing*.md`。`test_readmes_split_cost_pricing_into_package_local_topic_references`
 固定链接、专题文件和代表性规则，避免文档重排时丢失精确计价入口。
 
+随后把 Provider/Auth 专题从接入正文拆出：双语 `docs/provider-auth*.md` 集中覆盖
+Provider 工厂与能力矩阵、凭据/OAuth/Request 扩充/Refresh 生命周期、OpenAI-compatible
+profile、离线与动态 Catalog，以及 canonical built-in factory。主 README 保留原
+标题锚点和短链接，Core API 与具体协议任务仍留在正文。契约由
+`test_readmes_split_provider_catalog_auth_into_package_local_topic_references` 固定。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。
