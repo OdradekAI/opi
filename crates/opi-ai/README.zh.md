@@ -2572,10 +2572,6 @@ camelCase（`expiresAt`、`pollAfterMs`、`data`）序列化。
 取消记录、可选强制取消失败），`tests/deferred_contract.rs` 中的可重开
 consumer fixture 在伪造单调时钟下不重提交地演练这些行为。
 
-## 许可证
-
-MIT。详见包内 [LICENSE](LICENSE) 与压缩 [NOTICE](NOTICE)。
-
 ### AWS Smithy V2 重试模式（Bedrock）
 
 Bedrock 生成发送按锁定的 AWS 模式重试（`bedrock::retry`）：`standard` 与
@@ -2919,3 +2915,7 @@ OpenRouter 与 Radius 不声明 subscription flag，没有 login label 的流不
 刷新仍绑定配置的 gateway 与存储的 account 元数据。fresh 与 refreshed
 Radius 请求鉴权均忽略凭据 `base_url`，路由权威始终属于该 gateway。不新增通用 flow inventory
 或完整 provider/profile 枚举。
+
+## 许可证
+
+MIT。详见包内 [LICENSE](LICENSE) 与压缩 [NOTICE](NOTICE)。

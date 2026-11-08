@@ -3057,10 +3057,6 @@ failure) that the reopenable consumer fixture in
 `tests/deferred_contract.rs` exercises without resubmission under a fake
 monotonic clock.
 
-## License
-
-MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).
-
 ### AWS Smithy V2 retry modes (Bedrock)
 
 Bedrock generation sends retry through the pinned AWS modes
@@ -3492,3 +3488,7 @@ cancellation/revocation while refresh remains bound to its configured gateway
 and stored account metadata. Fresh and refreshed Radius request auth both
 ignore credential `base_url`; routing authority stays with that gateway. This adds no generic flow inventory or complete
 provider/profile enumeration.
+
+## License
+
+MIT. See the packaged [LICENSE](LICENSE) and compression [NOTICE](NOTICE).

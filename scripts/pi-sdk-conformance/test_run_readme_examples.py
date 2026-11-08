@@ -128,6 +128,13 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits guide entry: {fragment}")
 
+    def test_readmes_keep_license_after_reference_appendices(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        for name, heading in (("README.md", "## License"), ("README.zh.md", "## 许可证")):
+            source = (root / name).read_text(encoding="utf-8")
+            self.assertGreater(source.rfind(heading), source.rfind("### "),
+                               f"{name} puts reference appendices under the license heading")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],
