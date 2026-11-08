@@ -288,12 +288,21 @@ fn root_workspace_graph_is_frozen() {
 fn opi_ai_manifest_has_a_single_feature_union() {
     let src = read("crates/opi-ai/Cargo.toml");
 
-    // The SDK publishes exactly one feature union: default. Any optional
-    // dependency or feature would fork the delivered API surface and must be
-    // a deliberate, documented delivery change.
+    // The SDK publishes one documented feature union: the default build turns
+    // on the optional tracing adapter, while `--no-default-features` keeps the
+    // backend-neutral AI surface. Any additional feature or optional
+    // dependency would fork the delivered API surface and must be deliberate.
     assert!(
-        !src.contains("[features]"),
-        "opi-ai grew a [features] table; single-union contract broken"
+        src.contains("[features]"),
+        "opi-ai feature table is required"
+    );
+    assert!(
+        src.contains("default = [\"telemetry-tracing\"]"),
+        "opi-ai default feature union drifted"
+    );
+    assert!(
+        src.contains("telemetry-tracing = [\"opi-telemetry/tracing\"]"),
+        "opi-ai tracing adapter feature drifted"
     );
     assert!(
         !src.contains("optional = true"),

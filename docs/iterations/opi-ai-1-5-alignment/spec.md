@@ -32,8 +32,9 @@ token/cost，并将 `toolUse` 与完整 stop vocabulary 对齐。canonical Rust
 和 provider-reported total；tier 选择、cache-write 1h 子集以及 OpenRouter
 非 BYOK/BYOK 账单规则按 Pi 1.5.0 固定。通用 OpenAI/Anthropic 解析器保留
 OpenRouter 扩展字段但不应用它们，只有对应 provider route 才进行账单覆盖。
-专项测试、两个 provider fixture 集合和 `model_wire_metadata` 通过；全量包测试在
-并行 OAuth browser 场景仍有一次时序波动，单独串行重跑通过。详情见[pricing/cost
+专项测试、两个 provider fixture 集合和 `model_wire_metadata` 通过；Radius OAuth
+固定回调端口的并行竞争已修复，platform delivery feature 契约也已更新。全量包
+测试当前只剩既有的 schema-engine encoded-pointer identity 失败。详情见[pricing/cost
 切片报告](phase4-cost-pricing-semantics.md)
 和[检查证据](evidence/phase4-cost-pricing-semantics-checks.json)。
 

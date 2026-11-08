@@ -355,6 +355,11 @@ impl CredentialStore for FakeStore {
 /// across the awaited login bodies.
 static PREFERRED_PORT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// Guard around Radius' fixed callback port 1456. These tests live in the same
+/// async binary and otherwise can observe one another's listener, causing a
+/// browser test to fail before its presenter sees the authorize URL.
+static RADIUS_PORT_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// The coding-agent oauth suite (a parallel test binary) exercises the same
 /// preferred port 53692, so an intra-binary guard alone cannot make exact-port
 /// assertions safe. Poll until the port is bindable, mirroring the retry
@@ -426,6 +431,10 @@ async fn mount_token_success(server: &MockServer) {
 /// preferred port 53692.
 async fn port_guard() -> tokio::sync::MutexGuard<'static, ()> {
     PREFERRED_PORT_LOCK.lock().await
+}
+
+async fn radius_port_guard() -> tokio::sync::MutexGuard<'static, ()> {
+    RADIUS_PORT_LOCK.lock().await
 }
 
 /// Run a browser-method login whose manual arm echoes the authorize URL
@@ -6717,7 +6726,7 @@ async fn drive_radius_callback(presenter: &ScriptedPresenter, code: &str) {
 
 #[tokio::test]
 async fn radius_browser_login_discovers_endpoint_and_exchanges_code() {
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let server = MockServer::start().await;
     let authorize = format!("{}/authorize", server.uri());
     mount_radius_discovery(&server, &authorize).await;
@@ -6820,7 +6829,7 @@ async fn radius_browser_never_starts_a_manual_reader() {
             self.inner.notify_failure(reason);
         }
     }
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let server = MockServer::start().await;
     mount_radius_discovery(&server, &format!("{}/authorize", server.uri())).await;
     mount_radius_token(&server, 200, radius_token_success()).await;
@@ -6847,7 +6856,7 @@ async fn radius_browser_never_starts_a_manual_reader() {
 
 #[tokio::test]
 async fn radius_discovery_non_ok_fails_typed_without_presenting_or_echo() {
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/v1/oauth"))
@@ -6873,7 +6882,7 @@ async fn radius_discovery_non_ok_fails_typed_without_presenting_or_echo() {
 
 #[tokio::test]
 async fn radius_discovery_missing_endpoint_fails_typed() {
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let server = MockServer::start().await;
     for body in [
         serde_json::json!({}),
@@ -6908,7 +6917,7 @@ async fn radius_discovery_missing_endpoint_fails_typed() {
 
 #[tokio::test]
 async fn radius_browser_token_non_ok_fails_typed_without_echo() {
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let server = MockServer::start().await;
     let authorize = format!("{}/authorize", server.uri());
     mount_radius_discovery(&server, &authorize).await;
@@ -6983,7 +6992,7 @@ async fn radius_device_login_polls_and_completes() {
 /// adapter is delivered. An empty catalog exposes that dispatch boundary.
 #[tokio::test]
 async fn radius_public_login_refresh_and_auth_keep_the_configured_gateway() {
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let gateway = MockServer::start().await;
     let interactive = MockServer::start().await;
     mount_radius_discovery(&gateway, &format!("{}/authorize", interactive.uri())).await;
@@ -7853,7 +7862,7 @@ async fn regression_copy_code_obeys_explicit_login_budget() {
 
 #[tokio::test]
 async fn regression_radius_browser_ignores_manual_paste_until_callback() {
-    let _guard = port_guard().await;
+    let _guard = radius_port_guard().await;
     let server = MockServer::start().await;
     mount_radius_discovery(&server, &format!("{}/authorize", server.uri())).await;
     mount_radius_token(&server, 200, radius_token_success()).await;

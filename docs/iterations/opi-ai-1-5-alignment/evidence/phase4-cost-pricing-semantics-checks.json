@@ -7,7 +7,9 @@
     "Before provider gating, a generic OpenAI parser test observed cost.total=0.004 from OpenRouter fields; after routing the flag, it retains catalog total.",
     "Before telemetry integration, provider-reported cost emitted the catalog fallback; after integration the span and pi.ai.cost measurement use the reported total.",
     "Before the direct terminal tests, ModelInfo::apply_response_cost had only indirect fixture coverage; the new tests lock catalog breakdown replacement and provider-total preservation.",
-    "The model-wire metadata fixture initially omitted Anthropic message_delta.stop_reason and failed with the intended pending-stop guard; adding the protocol-required end_turn event restored the test without weakening production validation."
+    "The model-wire metadata fixture initially omitted Anthropic message_delta.stop_reason and failed with the intended pending-stop guard; adding the protocol-required end_turn event restored the test without weakening production validation.",
+    "Radius browser OAuth tests shared fixed port 1456 without a dedicated test lock; parallel execution could hide the authorize URL. A Radius-specific mutex now serializes those cases.",
+    "The platform delivery test still rejected the documented telemetry-tracing feature union; it now asserts the default plus telemetry-tracing contract and continues to reject optional dependencies."
   ],
   "commands": [
     {
@@ -65,13 +67,23 @@
     },
     {
       "command": "cargo test -p opi-ai --offline -j4",
-      "status": "flaky-unrelated",
-      "observed": "all reached suites passed except one OAuth browser timing failure; the failing test passed when rerun alone with -j1"
+      "status": "failed-unrelated",
+      "observed": "all reached suites passed except the pre-existing schema_engine encoded-pointer identity test"
     },
     {
       "command": "cargo test -p opi-ai --test oauth_flows radius_browser_token_non_ok_fails_typed_without_echo --offline -j1",
       "status": "passed",
       "observed": "isolated rerun passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test oauth_flows --offline -j4",
+      "status": "passed",
+      "observed": "195 passed with the Radius 1456-port lock"
+    },
+    {
+      "command": "cargo test -p opi-ai --test platform_delivery --offline -j4",
+      "status": "passed",
+      "observed": "9 passed with the documented telemetry-tracing feature union"
     }
   ],
   "behavior": {
@@ -85,6 +97,6 @@
   "limits": [
     "No live provider billing or complete TS/Rust differential",
     "No feature/platform/MSRV, performance, or six-gate release acceptance",
-    "Full package run still needs OAuth browser timing stabilization under parallel execution"
+    "Full package run still has the pre-existing schema_engine encoded-pointer identity failure"
   ]
 }
