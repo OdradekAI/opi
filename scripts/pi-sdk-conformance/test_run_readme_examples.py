@@ -135,6 +135,16 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             self.assertGreater(source.rfind(heading), source.rfind("### "),
                                f"{name} puts reference appendices under the license heading")
 
+    def test_readmes_put_installation_before_status_context(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        for name, installation, status in (
+            ("README.md", "## Installation", "## Status"),
+            ("README.zh.md", "## 安装", "## 当前状态"),
+        ):
+            source = (root / name).read_text(encoding="utf-8")
+            self.assertLess(source.index(installation), source.index(status),
+                            f"{name} puts onboarding after status context")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

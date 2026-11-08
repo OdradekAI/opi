@@ -52,25 +52,6 @@ opi-ai = { version = "0.8.3", default-features = false }
 前五行对应公共消费者示例；标为 Provider、协议或任务参考的章节用于记录更多
 能力及其当前验收状态。
 
-## 当前状态
-
-当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。
-
-`opi-ai` 负责模型/Provider 层：请求和消息类型、流式事件、模型元数据、Provider
-注册、HTTP/代理连接、重试辅助、图片内容、用量累计、尽力而为的费用辅助，以及供
-`opi-agent` 诊断层使用的 Provider 侧错误分类。它不实现 Agent 主循环、会话、
-package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `opi-coding-agent`。
-
-`opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`models`
-模块（`Models`）是唯一的 driver，在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
-OpenAI-compatible 兼容性元数据，以及全部聊天调用入口。无 IO 的凭据与 OAuth
-trait 位于本 crate；可复用的本地 AWS 凭据来源链（scoped/ambient 环境变量、
-显式 SSO 与 login_session 段、共享配置 INI 叠加（assume-role 与 web identity）、
-`credential_process`、以及远端 ECS/IMDS 来源段，经锁定的 STS Query/XML codec、
-SSO OIDC 与 SignIn ES256 DPoP 流程、单飞来源缓存交换）位于 `auth::aws`；
-ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain backend、
-终端 presenter 与宿主注册策略。
-
 ## 安装
 
 ```sh
@@ -99,6 +80,25 @@ opi-ai = { version = "0.8.3", default-features = false }
 
 `quick_start.rs` 只需要 `opi-ai`、`tokio` 与 `tokio-util`；流式示例另外需要
 `futures-util`，`tool_loop.rs` 另外需要 `serde_json`。
+
+## 当前状态
+
+当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。
+
+`opi-ai` 负责模型/Provider 层：请求和消息类型、流式事件、模型元数据、Provider
+注册、HTTP/代理连接、重试辅助、图片内容、用量累计、尽力而为的费用辅助，以及供
+`opi-agent` 诊断层使用的 Provider 侧错误分类。它不实现 Agent 主循环、会话、
+package 加载或内置编程工具；这些能力分别位于 `opi-agent` 和 `opi-coding-agent`。
+
+`opi-ai` 还暴露一个 unstable-0.x 的模型/鉴权 seam：`models`
+模块（`Models`）是唯一的 driver，在 `ProviderRegistry` 之上叠加 Provider 侧鉴权契约、
+OpenAI-compatible 兼容性元数据，以及全部聊天调用入口。无 IO 的凭据与 OAuth
+trait 位于本 crate；可复用的本地 AWS 凭据来源链（scoped/ambient 环境变量、
+显式 SSO 与 login_session 段、共享配置 INI 叠加（assume-role 与 web identity）、
+`credential_process`、以及远端 ECS/IMDS 来源段，经锁定的 STS Query/XML codec、
+SSO OIDC 与 SignIn ES256 DPoP 流程、单飞来源缓存交换）位于 `auth::aws`；
+ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain backend、
+终端 presenter 与宿主注册策略。
 
 ## 快速开始
 

@@ -57,30 +57,6 @@ The examples in the first five rows are public consumer examples. Sections
 labelled as provider, protocol, or task references document additional surface
 area and its current acceptance status.
 
-## Status
-
-Current crate version: `0.8.3`, inherited from the workspace package version.
-
-`opi-ai` owns the model/provider layer: request and message types, streaming
-events, model metadata, provider registration, HTTP/proxy plumbing, retry
-helpers, image content, usage accumulation, best-effort cost helpers, and the
-provider-side error taxonomy consumed by `opi-agent` diagnostics. It does not
-implement an agent loop, sessions, package loading, or built-in coding tools;
-those live in `opi-agent` and `opi-coding-agent`.
-
-`opi-ai` also exposes an unstable-0.x models/auth seam: the
-`models` module (`Models`) is the single driver wrapping `ProviderRegistry`
-with provider-side auth contracts, OpenAI-compatible compatibility metadata,
-and stream/complete dispatch. IO-free credential and OAuth traits live here;
-the reusable local AWS credential-source chain (scoped/ambient environment,
-explicit SSO and login-session segments, shared-config INI overlay with
-assume-role and web identity, `credential_process`, and the remote ECS/IMDS
-segment, exchanging through the pinned STS Query/XML codecs, the SSO OIDC and
-SignIn ES256 DPoP flows, and the single-flight source cache) lives in
-`auth::aws`;
-ADC sources and all nine OAuth flows are SDK-owned. The coding agent owns
-the keychain backend, terminal presenter and host registration policy.
-
 ## Installation
 
 ```sh
@@ -111,6 +87,30 @@ opi-ai = { version = "0.8.3", default-features = false }
 `quick_start.rs` only needs `opi-ai`, `tokio`, and `tokio-util`; the streaming
 example additionally needs `futures-util`, and `tool_loop.rs` additionally
 needs `serde_json`.
+
+## Status
+
+Current crate version: `0.8.3`, inherited from the workspace package version.
+
+`opi-ai` owns the model/provider layer: request and message types, streaming
+events, model metadata, provider registration, HTTP/proxy plumbing, retry
+helpers, image content, usage accumulation, best-effort cost helpers, and the
+provider-side error taxonomy consumed by `opi-agent` diagnostics. It does not
+implement an agent loop, sessions, package loading, or built-in coding tools;
+those live in `opi-agent` and `opi-coding-agent`.
+
+`opi-ai` also exposes an unstable-0.x models/auth seam: the
+`models` module (`Models`) is the single driver wrapping `ProviderRegistry`
+with provider-side auth contracts, OpenAI-compatible compatibility metadata,
+and stream/complete dispatch. IO-free credential and OAuth traits live here;
+the reusable local AWS credential-source chain (scoped/ambient environment,
+explicit SSO and login-session segments, shared-config INI overlay with
+assume-role and web identity, `credential_process`, and the remote ECS/IMDS
+segment, exchanging through the pinned STS Query/XML codecs, the SSO OIDC and
+SignIn ES256 DPoP flows, and the single-flight source cache) lives in
+`auth::aws`;
+ADC sources and all nine OAuth flows are SDK-owned. The coding agent owns
+the keychain backend, terminal presenter and host registration policy.
 
 ## Quick Start
 

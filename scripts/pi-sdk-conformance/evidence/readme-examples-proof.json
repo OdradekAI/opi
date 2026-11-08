@@ -1,7 +1,7 @@
 {
   "family": "readme-examples",
   "scope": "three exact packaged onboarding sources execute lazy builtin setup, execution before consumption, final responses/stream and tool-result continuation as an ordinary workspace-external consumer (ONB-02)",
-  "scratch": "C:\\Temp\\opi-readme-proof-20261108-license-order",
+  "scratch": "C:\\Temp\\opi-readme-proof-20261108-install-order",
   "inputs": {
     "runner_sha256": "4429a8d8818e7037b76cb83229fc8f545b31797e313ddad017c42c4abd073db1",
     "consumer_source_sha256": "d09fb3396209a0d94a350683d9a1060c2970aa8a985769a2d30b52a73edf9a7a"
@@ -21,7 +21,7 @@
         "-vV"
       ],
       "exit": 0,
-      "elapsed_seconds": 0.05,
+      "elapsed_seconds": 0.03,
       "stdout_sha256": "2a9ba90ddc1895fc7b4d94baee548ac7947533b6ef348fc9f010ab5d9f3d7898",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
@@ -46,7 +46,7 @@
         "--target",
         "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
         "--pid",
-        "47260"
+        "78804"
       ],
       "exit": 0,
       "elapsed_seconds": 0.19,
@@ -77,12 +77,12 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "generate-lockfile",
         "--offline"
       ],
       "exit": 0,
-      "elapsed_seconds": 0.47,
+      "elapsed_seconds": 0.45,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
       "stderr_sha256": "fa7634eea6f8b165d801a96efa5979287335dd468d83f0ee2b8b2390eeb1e906"
     },
@@ -91,7 +91,7 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "metadata",
         "--offline",
         "--locked",
@@ -99,8 +99,8 @@
         "1"
       ],
       "exit": 0,
-      "elapsed_seconds": 0.2,
-      "stdout_sha256": "fa61915e8c95fab3d347909a5b82469d05d7a6e0a9213bd46f9a768d0440e106",
+      "elapsed_seconds": 0.17,
+      "stdout_sha256": "5e523263876d630f34bb6ea9ee0a857551ea18def1e74fa477be6cc038e46c72",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -108,23 +108,23 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "check",
         "--offline",
         "--locked",
         "--bins"
       ],
       "exit": 0,
-      "elapsed_seconds": 10.95,
+      "elapsed_seconds": 10.74,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderr_sha256": "91be38966c22729c1a200b62d0515cb463a4f7fae26055aaf34a81357f22a85e"
+      "stderr_sha256": "ca5045610de87bfd0888cc8087df98a7c06f89ffd38a7bfcb24cb431812ba9b1"
     },
     {
       "name": "defaults-off-consumer-peer-test",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "test",
         "--offline",
         "--locked",
@@ -135,16 +135,16 @@
         "--exact"
       ],
       "exit": 0,
-      "elapsed_seconds": 26.45,
+      "elapsed_seconds": 25.38,
       "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
-      "stderr_sha256": "dfdeba3a0b89ed2f822dcc16532dfc3c6fefefb6d4b3895bcc18dbb770571d8c"
+      "stderr_sha256": "9b646ee59ac822f6a9e54b8d34793e2594d3ca97b0994d742f23ee03e783042a"
     },
     {
       "name": "defaults-off-consumer-execute",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "run",
         "--offline",
         "--locked",
@@ -153,8 +153,8 @@
         "consumer-readme"
       ],
       "exit": 0,
-      "elapsed_seconds": 7.38,
-      "stdout_sha256": "7ddbe6f59240077e6cd61f05a7ab6f0a07e7ebfb30b1c4404eca591aea0ec319",
+      "elapsed_seconds": 7.02,
+      "stdout_sha256": "31d1bb51ee3ec55c58d92a934015442128952649c982a389572deaed73aeb05d",
       "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
     },
     {
@@ -162,7 +162,7 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "metadata",
         "--offline",
         "--locked",
@@ -171,7 +171,7 @@
       ],
       "exit": 0,
       "elapsed_seconds": 0.2,
-      "stdout_sha256": "f4fd6900cfd4e2c324cb66c11349b525efb4868fde724a79f71cc00af2f37f25",
+      "stdout_sha256": "313b334c24b68fccdf7cc7c6ce3654ade73e6d145282e3f70cf5fee5432ec043",
       "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     },
     {
@@ -179,23 +179,23 @@
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "check",
         "--offline",
         "--locked",
         "--bins"
       ],
       "exit": 0,
-      "elapsed_seconds": 8.22,
+      "elapsed_seconds": 8.33,
       "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "stderr_sha256": "04cff403baca4482ed6b727c38ce369a3d4d8386695973a444218b6392ff32c6"
+      "stderr_sha256": "3e3f26629f107e68ff9b6cf768e61afc8b7e504a6cd4a4686e6ef3e09b9f2e07"
     },
     {
       "name": "defaults-on-consumer-peer-test",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "test",
         "--offline",
         "--locked",
@@ -206,16 +206,16 @@
         "--exact"
       ],
       "exit": 0,
-      "elapsed_seconds": 25.83,
+      "elapsed_seconds": 26.27,
       "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
-      "stderr_sha256": "a3ffce8ecdb5c2e518235aa33ee6da94a9cb8a33e37ad87344170ae17567295b"
+      "stderr_sha256": "d9f9e039c79387baf46874cb375c3b2b2602e83c5e889b52a1312d92c60aa2d6"
     },
     {
       "name": "defaults-on-consumer-execute",
       "command": [
         "cargo",
         "--config",
-        "C:\\Temp\\opi-readme-proof-20261108-license-order\\candidate-telemetry.toml",
+        "C:\\Temp\\opi-readme-proof-20261108-install-order\\candidate-telemetry.toml",
         "run",
         "--offline",
         "--locked",
@@ -224,8 +224,8 @@
         "consumer-readme"
       ],
       "exit": 0,
-      "elapsed_seconds": 6.77,
-      "stdout_sha256": "9e661241dfa216d3b5b6cf92c60c23db287494f75ae0869999987c7042cb5c05",
+      "elapsed_seconds": 7.3,
+      "stdout_sha256": "3dbee6fc9d7c66e71a07e78fd41a88fecc174465e954c970a5ca916ae4454724",
       "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
     },
     {
@@ -238,7 +238,7 @@
         "--target",
         "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
         "--pid",
-        "47260"
+        "78804"
       ],
       "exit": 0,
       "elapsed_seconds": 0.2,
@@ -251,11 +251,11 @@
   "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\nrelease: 1.99.1\ncommit-hash: 5f94df4789f005f9a352888e8355ffc645b7ed0e\ncommit-date: 2026-08-27\nhost: x86_64-pc-windows-msvc\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.21.0-DEV (sys:0.4.90+curl-8.21.0 vendored ssl:Schannel)\nos: Windows 10.0.22631 (Windows 11 Core) [64-bit]\n",
   "package": {
     "file": "opi-ai-0.8.3.crate",
-    "sha256": "af672fb709bbf02b0e10558d9e23392bf17f1231af8fe602d03a333a3ebbd6bf",
+    "sha256": "74dddef41fbd9ef27e9361425143e5425762d3c8b354bbc1e36cc195935cd02f",
     "dependencies": [
       {
         "file": "opi-telemetry-0.8.3.crate",
-        "sha256": "57587e8fda2dce8602a5e1de85c2fd4e9c6bf41f58012df224877428e7d67c8b",
+        "sha256": "c3ebee06dad89bb2979f19c4edd3e5a927681cedf599c19e2f94fcbd006f1300",
         "source": "exact extracted candidate artifact; no workspace source patch"
       }
     ]
@@ -544,7 +544,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "288",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:5063",
+                  "host": "127.0.0.1:7892",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -607,7 +607,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "278",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:5065",
+                  "host": "127.0.0.1:7894",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -670,7 +670,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "519",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:5067",
+                  "host": "127.0.0.1:7896",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -730,7 +730,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "736",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:5067",
+                  "host": "127.0.0.1:7896",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -861,7 +861,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "288",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:14742",
+                  "host": "127.0.0.1:3307",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -924,7 +924,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "278",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:14744",
+                  "host": "127.0.0.1:3309",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -987,7 +987,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "519",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:14746",
+                  "host": "127.0.0.1:3311",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
@@ -1047,7 +1047,7 @@
                   "anthropic-version": "2023-06-01",
                   "content-length": "736",
                   "content-type": "application/json",
-                  "host": "127.0.0.1:14746",
+                  "host": "127.0.0.1:3311",
                   "x-api-key": "readme-synthetic-key"
                 },
                 "body": {
