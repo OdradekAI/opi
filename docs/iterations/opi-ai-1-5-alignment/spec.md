@@ -17,6 +17,30 @@ prepared raw attempt、非 chat 其他路径仍开放；prepared observed helper
 span，setup failure 使用规范 `CallFailure.message()` 结算；后台执行仍保持异步，
 不会把构造时点误写成同步 provider 调用。
 
+随后完成首个验收材料冻结与 TS/Rust 生命周期差分切片：pinned model catalog
+响应已按 revision 校验并保存原始 bytes，Pi 源、lockfile、Cargo、工具链与平台身份
+均有哈希证据。首次记录时上游 `node_modules` 与 `packages/ai/dist` 缺失；初版
+三例只比较有限共享字段，不能证明 source 尾部结算。历史记录见
+[材料与差分报告](phase5-materials-and-differential.md)及
+[初版差分证据](evidence/phase5-lifecycle-differential.json)。
+
+用户补充依赖、dist 和生成目录后，已完成[材料复核与有屏障的差分切片](issues/36-supplemented-materials-and-gated-differential.md)。
+十个 AI 直接依赖匹配冻结声明/lock 摘录，dist 内容与 source-map/output 完整性已记录；
+但完整 lockfile 的身份发生漂移，生成目录虽内部有效却与 pinned catalog 的九个
+provider 不同（1712 vs 1738 项），这两个阻断没有清除。新增终态放行屏障和真实
+result/EOF/Drop 观察后，普通 provider 的不消费、停止消费两例均暴露 source 尾部
+未执行的 **FAIL**；setup failure 仍是未获批准的差异。该切片只补强工具，未修改生产
+生命周期；历史失败与材料阻断见[补充报告](phase5-supplemented-materials-and-gated-differential.md)。
+
+用户随后批准修复普通 source 尾部截断，[修复票](issues/37-ordinary-source-tail-settlement.md)
+已完成。普通调用 wrapper 在首终态后只排空当前 attempt，不重新进入 retry/admission；
+公共入口红绿回归覆盖终态/result/遥测等待、尾部事件吸收、显式 abort、协作取消和
+消费 Drop，以及获准 retry 后的尾部结算，209 项相关 Rust 测试及 2 项实际 driver 测试通过。新录制的三例共享观察
+全部通过，但整体仍是 `BLOCKED_WITH_RECORDED_OBSERVATIONS` / exit 2：两个材料
+身份阻断未清除，启动时点与 setup 错误通道未获差异批准。旧 FAIL 证据原样保留，
+当前状态见[普通调用尾部修复报告](phase5-ordinary-source-tail.md)，不代表完整 TS/Rust
+差分或六门验收通过。
+
 随后修正 AI telemetry `provider_error` 状态消息的长度单位：错误文本现在按
 UTF-16 code unit 限制为 500，非 BMP 文本不会因 Rust `char` 计数而超出 Pi 的
 边界；孤立代理对无法由 Rust `String` 表示，已作为明确的 Rust-native 差异单独
@@ -199,8 +223,8 @@ README 从“安装 → 单 provider 的完整调用 → 离线 Faux → streami
 
 | 待落实项 | 下一步及阻断范围 |
 | --- | --- |
-| 目标快照缺实际模型 JSON | 查找与固定快照匹配且可追溯的源数据；补全前目录/价格及依赖该数据的原版运行证据受阻。不得用 Rust 数据或当前最新线上目录冒充 |
-| 原版执行环境与实际包材料 | 解析并记录目标 lockfile、SDK/运行时、生成数据与打包入口；对照驱动分别运行真实 TS/Rust 实现，保留原始记录 |
+| pinned 响应已取得，当前生成目录不匹配 | 原始响应已验 hash；在可追溯工作副本中按该响应 hydrate 并核对 source/dist。当前目录/价格的固定快照等价结论仍受阻，不得用最新线上目录替代 |
+| 原版依赖/dist 已补充，完整 lock 身份漂移 | 直接依赖和 dist 清单已有证据；恢复原始完整 lock bytes 或提交具名基准变更决策，不能用直接版本相同推导传递依赖相同。实际 npm 包消费仍须独立验证 |
 | JS 共享/启动/异常的 Rust 映射 | 优先探证 partial 延后读取/别名、eager 与 first-poll、observer 异常及 pending 等场景；若不能同时满足兼容与工程要求，提出具体差异供用户决策 |
 | 逐符号与消费者迁移 | 形成旧入口→新入口表，覆盖现有 agent/coding-agent 和可确认的外部使用方；不能以仓库无引用推定没有外部消费者 |
 | feature、平台和工具链精确集合 | 根据实际依赖闭包冻结配置集合与支持条件；MSRV 先按当前声明 1.97 评估，变更需更新支持承诺；验证加法合并下的外部消费 |

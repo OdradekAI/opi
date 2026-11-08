@@ -625,6 +625,11 @@
 
 ### Fixed
 
+- `opi-ai`: ordinary provider calls now drain source-owned tail work after a
+  business terminal before delivering the terminal and settling request telemetry.
+  Tail events cannot replace the first outcome or re-enter retry admission;
+  explicit abort still joins source release without claiming EOF completion.
+
 - tooling: documentation checks retain structural and source-derived validation
   without locking prose wording or retired phase names. CLI safety and workflow
   guards move to their owning Rust tests; CI now runs the checker's regression suite.

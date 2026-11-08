@@ -1,0 +1,442 @@
+{
+  "schemaVersion": 1,
+  "status": "repair-verified-shared-observations-pass-material-gates-blocked",
+  "head": "3f2ff874af08a82108f2326281f579808b6dd25a",
+  "scope": "Worktree-only ordinary provider source-tail repair. Carried-in acceptance tooling and .serena work preserved; no commits, installs, network providers or upstream writes.",
+  "red": {
+    "command": [
+      "python",
+      "-B",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--test",
+      "execution_lifecycle",
+      "ordinary_business_terminal_waits_for_source_tail_and_settles_once",
+      "--offline",
+      "-j4",
+      "--",
+      "--exact"
+    ],
+    "exit_code": 101,
+    "executed": 1,
+    "failed": 1,
+    "observed": "business terminal must not truncate the source tail: RecvError(())",
+    "log": "C:/Temp/opi-ai-source-tail-20261108/red.log",
+    "sha256": "416d57dbe35d6b9865124ac8bb94ce820626094a2797074aafe4d9ba52d1b57d"
+  },
+  "green": {
+    "command": [
+      "python",
+      "-B",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--test",
+      "execution_lifecycle",
+      "--test",
+      "ai_telemetry",
+      "--test",
+      "retry_backoff",
+      "--test",
+      "stream_events",
+      "--example",
+      "lifecycle_differential",
+      "--offline",
+      "-j4"
+    ],
+    "exit_code": 0,
+    "passed": 136,
+    "log": "C:/Temp/opi-ai-source-tail-20261108/green.log",
+    "sha256": "bbf9514b020edf5a49f574c4f8a5ee8772f508ce41a0a478f5213ba72bbc3593",
+    "applicability": "Original passing 136-test command retained. Execution-lifecycle target superseded by review-followup 29-test run; all other targets retain unchanged source/build inputs."
+  },
+  "checks": [
+    {
+      "name": "consumer-regressions",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--test",
+        "external_sdk",
+        "--test",
+        "resource_cleanup",
+        "--test",
+        "provider_lifecycle",
+        "--test",
+        "telemetry_operations",
+        "--offline",
+        "-j4"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\consumer-regressions.log",
+      "sha256": "001b5455f041a213da9714411980b6a329f13cfa5b16e923163e26eeebe0315b"
+    },
+    {
+      "name": "stream-unit",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--lib",
+        "stream::tests",
+        "--offline",
+        "-j4"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\stream-unit.log",
+      "sha256": "1bf71a00474cec6788e42cd7baaca21ebd3da5714978bce3407a360b2451926c"
+    },
+    {
+      "name": "clippy",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-ai",
+        "--lib",
+        "--test",
+        "execution_lifecycle",
+        "--example",
+        "lifecycle_differential",
+        "--offline",
+        "-j4",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\clippy.log",
+      "sha256": "d93a92b5aac514719e97a5ff758baf8bcf6a9e27b452ee85e04347f06ac89b74"
+    },
+    {
+      "name": "differential-tests",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/pi-sdk-conformance/differential/test_rust_driver.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\differential-tests.log",
+      "sha256": "08d5cbb6782049d2c3074e5ff8e776322d32e31cfb3fcfe2fce521d5328fc1a8"
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\format.log",
+      "sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    },
+    {
+      "name": "docs",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\docs.log",
+      "sha256": "edb5e77939f723d839624757163f676eb9a1979432471f22a8fd2902937ff696"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\diff.log",
+      "sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    }
+  ],
+  "test_counts": {
+    "rust": {
+      "execution_lifecycle": 29,
+      "ai_telemetry": 20,
+      "retry_backoff": 57,
+      "stream_events": 29,
+      "lifecycle_differential_example": 2,
+      "external_sdk": 11,
+      "provider_lifecycle": 22,
+      "resource_cleanup": 16,
+      "telemetry_operations": 12,
+      "stream_unit": 11
+    },
+    "rust_total": 209,
+    "python_rust_driver": 2,
+    "stream_unit_not_selected": 358
+  },
+  "acceptance": {
+    "material_command": [
+      "python",
+      "-B",
+      "docs/iterations/opi-ai-1-5-alignment/tools/freeze_acceptance_materials.py",
+      "--repo",
+      "D:/Luiz/Odradek/opi",
+      "--output",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-source-tail-materials.json"
+    ],
+    "material_exit_code": 0,
+    "material_evidence": "phase5-source-tail-materials.json",
+    "differential_command": [
+      "python",
+      "-B",
+      "scripts/pi-sdk-conformance/differential/run_lifecycle_differential.py",
+      "--repo",
+      "D:/Luiz/Odradek/opi",
+      "--materials",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-source-tail-materials.json",
+      "--output",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-source-tail-differential.json"
+    ],
+    "differential_exit_code": 2,
+    "verdict": "BLOCKED_WITH_RECORDED_OBSERVATIONS",
+    "evidence": "phase5-source-tail-differential.json",
+    "shared_observations": "all three cases pass; three consistent TS repetitions per case",
+    "strict_alignment": false,
+    "blocked_gates": [
+      "frozen upstream source/lock provenance drift",
+      "generated catalog differs from pinned response"
+    ],
+    "unapproved_differences": [
+      "construction/setup timing",
+      "setup error channel and different failure injection"
+    ]
+  },
+  "additional_verification": {
+    "result": "pass",
+    "checks": [
+      "Reconstructed pre-slice contract-index bytes match prior phase5-hardening-checks hash; only one implementation slice appended.",
+      "Current material replay revalidated with verify_evidence().",
+      "Upstream source comparison and every upstream tree remain identical to prior supplied candidate.",
+      "All task-owned text has no trailing whitespace, including untracked files.",
+      "HEAD unchanged and index empty.",
+      "Production source/example unchanged after independent review and real differential; only test and docs follow-up required."
+    ]
+  },
+  "reused_checks": {
+    "evidence": "phase5-hardening-checks.json",
+    "selection": "Unchanged material freezer/inspector and comparator/runner unit tests only. Actual Rust-driver build/run and full three-case TS/Rust differential rerun for changed production source/example.",
+    "counts": {
+      "material_python": 9,
+      "material_node": 4,
+      "comparator_python": 7,
+      "runner_python": 4
+    }
+  },
+  "input_sha256": {
+    "CHANGELOG.md": "05714e7108d35609f3917b4810a9eadf19887efe8bb84b4b70a2872a412cef7a",
+    "crates/opi-ai/README.md": "2eba5979d576ce732361b4527dc9257f397f995aea76ad05c2873e684fdbfda9",
+    "crates/opi-ai/README.zh.md": "7f7e70624d70b0e2d7014c8cc22cedc1452283e58cf394f2c814c9faf0a49fd9",
+    "crates/opi-ai/src/models.rs": "7cb817797714b3e0d0cb8151c94f11edfbe85bd8fc1a197b17d7c72429d7fd51",
+    "crates/opi-ai/tests/execution_lifecycle.rs": "8348c4a7977e81e26c9c64b8d05f86721b9e4276c7b457b80777a0f3df23712f",
+    "crates/opi-ai/examples/lifecycle_differential.rs": "f19a3c36b8447e88594fb2207aa7408d846a9ab336d39c59e9416d92fd2b048f",
+    "scripts/pi-sdk-conformance/differential/test_rust_driver.py": "4b125bd930500b9fb25d04a14e2eb018d6e2355a06837748b94b4a75b059780a",
+    "scripts/pi-sdk-conformance/differential/README.md": "6c5e2a9054fb3cadc6109b184373ddb3476a39d8b843b336900eb55385bb3ac5",
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": "74038eb44682a825283953871e62b6b525057c764999644713ac45303b3fb47f",
+    "docs/iterations/opi-ai-1-5-alignment/contract-index.json": "33032ebfb70902ce58ed1756564fee4e226b2b65b694152725b601a59818f051",
+    "docs/iterations/opi-ai-1-5-alignment/phase5-supplemented-materials-and-gated-differential.md": "0c13e299367509b0f48a31f21300ffaff5e00766cb20bc180dd0cb5c85dbd010",
+    "docs/iterations/opi-ai-1-5-alignment/phase5-ordinary-source-tail.md": "cc40568676bf5269e92a5ab1ebf98302a7a86bc26f6e215d2ffca740080327c9",
+    "docs/iterations/opi-ai-1-5-alignment/issues/37-ordinary-source-tail-settlement.md": "224f02653a2516b737255f7b67d7a68fa0a94bffc08ecf1a3482c805e9ff9319"
+  },
+  "review": {
+    "status": "complete-findings-disposed",
+    "run_id": "62792725-41ac-44bc-90ec-91d3396613da",
+    "mode": "Read-only independent contract/minimal-fix review. No child builds/tests/writes. Parent is sole writer.",
+    "artifact": "C:\\Users\\Luiz\\.pi\\agent\\sessions\\--D--Luiz-Odradek-opi--\\subagent-artifacts\\outputs\\62792725-41ac-44bc-90ec-91d3396613da\\source-tail-contract-review.md",
+    "sha256": "5a7453c750ea5afd04356c03fd6a00ed9872f91df6d02d27008c669602048524",
+    "conclusion": "Reviewer independently confirmed the cause and minimal fix; no production defect in the fix identified.",
+    "findings": [
+      {
+        "finding": "Combine admitted retry with gated tail at ordinary public entry",
+        "disposition": "addressed",
+        "evidence": "ordinary_admitted_retry_drains_only_the_successful_attempt_tail; entire execution_lifecycle target 29 passed and target Clippy passed."
+      },
+      {
+        "finding": "Missing phase5-source-tail-checks.json link target",
+        "disposition": "not-current",
+        "evidence": "Target exists and was written during concurrent review; final JSON parses and docs check covers links."
+      },
+      {
+        "finding": "README/CHANGELOG paragraphs already committed, contrary to report",
+        "disposition": "disproved",
+        "evidence": "git diff HEAD shows +8 EN README, +6 ZH README and +5 Unreleased lines. git show HEAD confirms each added paragraph is absent from committed files."
+      }
+    ],
+    "limits": "Reviewer did not inspect comparator internals or execute checks. Follow-up test and factual finding dispositions verified by parent, not a second independent review."
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "staged": [],
+    "task_owned_tracked": [
+      "CHANGELOG.md",
+      "crates/opi-ai/README.md",
+      "crates/opi-ai/README.zh.md",
+      "crates/opi-ai/src/models.rs",
+      "crates/opi-ai/tests/execution_lifecycle.rs"
+    ],
+    "carried_in_and_touched": [
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "docs/iterations/opi-ai-1-5-alignment/contract-index.json",
+      "docs/iterations/opi-ai-1-5-alignment/phase5-supplemented-materials-and-gated-differential.md",
+      "crates/opi-ai/examples/lifecycle_differential.rs",
+      "scripts/pi-sdk-conformance/differential/test_rust_driver.py",
+      "scripts/pi-sdk-conformance/differential/README.md"
+    ],
+    "new_untracked": [
+      "issues/37-ordinary-source-tail-settlement.md",
+      "phase5-ordinary-source-tail.md",
+      "evidence/phase5-source-tail-materials.json",
+      "evidence/phase5-source-tail-differential.json",
+      "evidence/phase5-source-tail-checks.json"
+    ],
+    "untouched": "Remaining carried-in tooling, historical JSON evidence, superpowers plan/design and .serena files"
+  },
+  "test_impact": {
+    "add": [
+      "five public gated-tail lifecycle tests, including admitted retry then tail settlement"
+    ],
+    "update": [
+      "two ordinary EOF channel fixtures",
+      "two consumer-Drop EOF assertions",
+      "Rust driver requires source completion"
+    ],
+    "retain": [
+      "retry/admission, first-terminal, raw-start, cleanup and telemetry regressions",
+      "all historical failure evidence"
+    ],
+    "delete": []
+  },
+  "not_run": [
+    "full Cargo workspace",
+    "full provider differential",
+    "features/platform/MSRV/resource matrix",
+    "live provider",
+    "package publication"
+  ],
+  "review_followup_checks": [
+    {
+      "name": "retry-tail-tests",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--test",
+        "execution_lifecycle",
+        "--offline",
+        "-j4"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\retry-tail-tests.log",
+      "sha256": "47638acbeb484dd8ee7dcdd907c302f3accba711985460566c14e42dd566a9f3"
+    },
+    {
+      "name": "retry-tail-clippy",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-ai",
+        "--test",
+        "execution_lifecycle",
+        "--offline",
+        "-j4",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\retry-tail-clippy.log",
+      "sha256": "1b642a8968c1619ce171978146a1cda81f229c666c2bfb69fc33968305fa8d50"
+    }
+  ],
+  "final_metadata_checks": [
+    {
+      "name": "final-format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\final-format.log",
+      "sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    },
+    {
+      "name": "final-docs",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\final-docs.log",
+      "sha256": "edb5e77939f723d839624757163f676eb9a1979432471f22a8fd2902937ff696"
+    },
+    {
+      "name": "final-diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-source-tail-20261108\\final-diff.log",
+      "sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    }
+  ]
+}

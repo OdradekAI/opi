@@ -1,0 +1,221 @@
+{
+  "schemaVersion": 1,
+  "status": "tooling-checks-pass-product-differential-fails",
+  "head": "3f2ff874af08a82108f2326281f579808b6dd25a",
+  "scope": "Worktree-only acceptance tools/example/docs; no production behavior change or full alignment claim.",
+  "environment": {
+    "platform": "Windows 11 x86_64",
+    "rustc": "1.99.1",
+    "cargo": "1.99.1",
+    "node": "24.13.0",
+    "target": "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+  },
+  "checks": [
+    {
+      "name": "materials-python",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "docs/iterations/opi-ai-1-5-alignment/tools/test_acceptance_materials.py",
+        "-v"
+      ],
+      "started_at_utc": "2026-11-08T09:18:22.841139+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\materials-python.log",
+      "log_sha256": "58a7577bdc3c3da3be065c26b4cd14fd4e1b91652c50f3c595f671b2e3b37774"
+    },
+    {
+      "name": "materials-node",
+      "command": [
+        "node",
+        "--experimental-import-meta-resolve",
+        "--test",
+        "docs/iterations/opi-ai-1-5-alignment/tools/test_inspect_acceptance_materials.mjs"
+      ],
+      "started_at_utc": "2026-11-08T09:18:23.332204+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\materials-node.log",
+      "log_sha256": "8a3e4cdce12f4d65109f35a12cd59fad9b02924164ecc55877818421b2f448ce"
+    },
+    {
+      "name": "differential-tests",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance/differential",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "started_at_utc": "2026-11-08T09:18:23.504474+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\differential-tests.log",
+      "log_sha256": "4475498a0b8c7fd1e85a46f134e84a897c1b33f548c0c6bc6d49562d8a557eb7"
+    },
+    {
+      "name": "example-clippy",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-ai",
+        "--example",
+        "lifecycle_differential",
+        "--offline",
+        "-j4",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "started_at_utc": "2026-11-08T09:18:29.141798+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\example-clippy.log",
+      "log_sha256": "c965f3b68c561ebea0ea227c5bb3289b854baa493964aaba199fb8d5d5f420a3"
+    },
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "started_at_utc": "2026-11-08T09:18:34.402505+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\format.log",
+      "log_sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    },
+    {
+      "name": "docs",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-doc-check.py"
+      ],
+      "started_at_utc": "2026-11-08T09:18:38.403296+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\docs.log",
+      "log_sha256": "edb5e77939f723d839624757163f676eb9a1979432471f22a8fd2902937ff696"
+    },
+    {
+      "name": "diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "started_at_utc": "2026-11-08T09:18:38.794332+00:00",
+      "exit_code": 0,
+      "status": "pass",
+      "log": "C:\\Temp\\opi-ai-phase5-hardening-20261108\\diff.log",
+      "log_sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    }
+  ],
+  "reused_checks": [
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --example lifecycle_differential --offline -j4",
+      "exit_code": 0,
+      "observed": "2 Rust example tests passed",
+      "applicability": "Same formatted example, production source, Cargo/toolchain/profile inputs; later edits only affected tools/tests/docs.",
+      "log": "C:/Temp/opi-ai-phase5-hardening-20261108/example-tests.log",
+      "log_sha256": "91bb58cf52fd5e28ba9d9029ae430b2d6905a81656cee84a6321bd185b4ab4c4"
+    }
+  ],
+  "test_counts": {
+    "material_python": 9,
+    "material_node": 4,
+    "differential_python": 13,
+    "rust_example": 2
+  },
+  "acceptance": [
+    {
+      "command": "python docs/iterations/opi-ai-1-5-alignment/tools/freeze_acceptance_materials.py --repo D:/Luiz/Odradek/opi --output docs/iterations/opi-ai-1-5-alignment/evidence/phase5-supplemented-materials.json",
+      "exit_code": 0,
+      "status": "inventory-recorded-with-blockers",
+      "evidence": "phase5-supplemented-materials.json",
+      "blockers": [
+        "frozen upstream source/lock provenance drift",
+        "generated catalog differs from pinned response"
+      ]
+    },
+    {
+      "command": "python scripts/pi-sdk-conformance/differential/run_lifecycle_differential.py --repo D:/Luiz/Odradek/opi --materials docs/iterations/opi-ai-1-5-alignment/evidence/phase5-supplemented-materials.json --output docs/iterations/opi-ai-1-5-alignment/evidence/phase5-gated-lifecycle-differential.json",
+      "exit_code": 1,
+      "status": "FAIL",
+      "evidence": "phase5-gated-lifecycle-differential.json",
+      "observed": "Both completion cases fail source_completed (TS true, Rust false); setup failure remains an unapproved difference. Three TS repetitions per case were consistent."
+    }
+  ],
+  "diagnostic_attempts": [
+    {
+      "command": "python scripts/pi-sdk-conformance/differential/test_rust_driver.py -v",
+      "status": "initial-development-failure",
+      "observed": "Both completion probes exited 101 at the new source_eof && source_dropped assertion. Located the finished branch in drive_resolved_call_registered; switched probe from assuming EOF to recording it. Comparator expected remains true and actual replay remains FAIL."
+    }
+  ],
+  "input_sha256": {
+    "crates/opi-ai/examples/lifecycle_differential.rs": "6e8d9f28a34fe6bc2fa1c660a2a21293c7592692023b180e1c89ed1edccdeee1",
+    "docs/iterations/opi-ai-1-5-alignment/tools/freeze_acceptance_materials.py": "df0b0ff2ad9c8a22a855c432473635c22cca703a88ba3d22bf408b01bf9c1f23",
+    "docs/iterations/opi-ai-1-5-alignment/tools/inspect_acceptance_materials.mjs": "5d08041ee8e483919074ded30ff119c075c438025af7f0fc07bc6f9cfb09c92b",
+    "docs/iterations/opi-ai-1-5-alignment/tools/test_acceptance_materials.py": "aca973b55f3e955f51f802321b1cc5e53b4e3241ee355148aec73788f04e12f2",
+    "docs/iterations/opi-ai-1-5-alignment/tools/test_inspect_acceptance_materials.mjs": "df1fc36a47533e89e3f30274dca388a1b661dac90dee2a3d4b77e084a13d622b",
+    "scripts/pi-sdk-conformance/differential/common.py": "8e54c2a4a68ce9c557df47c2f235320992662071bd02cb66c12e7257d8bef319",
+    "scripts/pi-sdk-conformance/differential/compare_lifecycle.py": "f7dff07ca0700df8d8ebe53e16f925507a790abe2805c1a99c2962583988fb2d",
+    "scripts/pi-sdk-conformance/differential/run_lifecycle_differential.py": "6e573f54f76b927fc914a96cffc74f283b3488e2c050c11aff2b7be7160f0dc6",
+    "scripts/pi-sdk-conformance/differential/test_lifecycle_differential.py": "9bdeca62ac3a129a8df243d4309982e6fa044a95265c6ef1f686b24ae7f7dc79",
+    "scripts/pi-sdk-conformance/differential/test_rust_driver.py": "c54c4f5a2e254a59c32518499d7ca54d8699698949e2f0bba385b4baa133a1c9",
+    "scripts/pi-sdk-conformance/differential/test_runner.py": "af242da61b8485226b3bd04273f5715bd1d679c23deba0434da67f324db5f744",
+    "docs/iterations/opi-ai-1-5-alignment/contract-index.json": "16faf00211f4a0252b4355f6bff47012cb6ab0a928129508f1c86a7c751ee2c9",
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": "011cad89c957f465079667ca3a1549fc34885d440e9ba6310e64b51b79bde01a"
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "staged": "none",
+    "unstaged": [
+      "docs/iterations/opi-ai-1-5-alignment/spec.md (carried-in-and-touched)",
+      "docs/iterations/opi-ai-1-5-alignment/contract-index.json"
+    ],
+    "untracked": "Carried-in differential/freezer/example/report files updated; new inspector/runner tests, issue/report and evidence added. Prior raw evidence, .serena and superpowers plan/design files retained untouched."
+  },
+  "test_impact": {
+    "add": [
+      "inspector/runner negatives",
+      "material drift cases",
+      "gated consumer-Drop cases"
+    ],
+    "update": [
+      "freezer/comparator/Rust trace tests"
+    ],
+    "retain": [
+      "all product regression tests",
+      "historical evidence",
+      "original upstream probe"
+    ],
+    "delete": []
+  },
+  "not_run": [
+    "full Cargo workspace",
+    "full provider differential",
+    "features/platform/MSRV matrix",
+    "resource/performance budget",
+    "live provider",
+    "publish"
+  ]
+}

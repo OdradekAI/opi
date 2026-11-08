@@ -3995,6 +3995,12 @@ fn drive_resolved_call_registered(
         |(prepared, mut current, finished)| async move {
             use futures_util::StreamExt;
             if finished {
+                // A business terminal seals delivery, not source settlement.
+                // Drain only this attempt; tail items must never re-enter retry
+                // admission or replace the collector's first terminal outcome.
+                if let Some(mut source) = current {
+                    while source.next().await.is_some() {}
+                }
                 return None;
             }
             loop {
@@ -4971,6 +4977,11 @@ enum CallOptions {
 /// promise setup has already run when construction returns; the runtime must
 /// keep running until completion. An unfinished call retains an unbounded event
 /// queue until it is consumed, discarded by `result`, or dropped.
+/// After a business terminal, execution drains the source to EOF before forwarding
+/// that terminal, settling telemetry and completing `result`. Tail events cannot
+/// replace the first outcome or trigger another attempt. An unending source tail
+/// therefore keeps the call pending; cooperative request cancellation or explicit
+/// [`abort`](Self::abort) retains its existing interruption contract.
 pub struct ChatCall {
     execution: crate::stream::StartedChatStream,
 }

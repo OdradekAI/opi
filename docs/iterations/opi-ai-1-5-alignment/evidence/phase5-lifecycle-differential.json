@@ -1,0 +1,302 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-11-08T08:31:54.674410+00:00",
+  "repository": "D:\\Luiz\\Odradek\\opi",
+  "scope": "First TS/Rust lifecycle differential slice; no live provider calls.",
+  "materialsEvidence": {
+    "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-acceptance-materials.json",
+    "sha256": "4e733a8bc90e5420bf6a5e8531462b0d8ff87469d0e2c129ad7501428ca0343e",
+    "blocked_gates": [
+      "upstream packaged dist",
+      "upstream runtime dependencies"
+    ]
+  },
+  "drivers": {
+    "upstream_driver": {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+      "sha256": "1fe50d3f64ddbbbba4fc43ceb48ceb06b1a7a5592c1389d7b16ef3b9d3f6cdc2"
+    },
+    "rust_driver": {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\examples\\lifecycle_differential.rs",
+      "sha256": "a2524dd124888fdbe9345a5eb5bc8d26625c24ccefa2bcd8e1911fa8020f2f89"
+    }
+  },
+  "cases": [
+    {
+      "scenario": "lazy-no-consumption",
+      "upstream_command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+        "--snapshot",
+        "D:\\Luiz\\Odradek\\opi\\.pi\\pi-1.5.0",
+        "--case",
+        "lazy-no-consumption"
+      ],
+      "upstream_trace": {
+        "id": "lazy-no-consumption",
+        "status": "observed",
+        "sourceAssertions": "passed",
+        "trace": [
+          {
+            "step": "immediately-after-call",
+            "counters": {
+              "setup": 1,
+              "iterators": 0,
+              "sourceReturn": 0,
+              "sourceTerminal": 0
+            }
+          },
+          {
+            "step": "source-at-gate-without-outer-poll",
+            "counters": {
+              "setup": 1,
+              "iterators": 1,
+              "sourceReturn": 0,
+              "sourceTerminal": 0
+            }
+          },
+          {
+            "step": "source-completed-after-gate",
+            "counters": {
+              "setup": 1,
+              "iterators": 1,
+              "sourceReturn": 0,
+              "sourceTerminal": 1
+            },
+            "resultStop": "stop",
+            "sameResult": true
+          }
+        ]
+      },
+      "rust_trace": {
+        "schemaVersion": 1,
+        "runtime": "rust",
+        "scenario": "lazy-no-consumption",
+        "steps": [
+          {
+            "name": "constructed",
+            "shared": {
+              "consumer_polled": false,
+              "consumer_dropped": false
+            }
+          },
+          {
+            "name": "provider-setup",
+            "shared": {
+              "setup_started": true
+            }
+          },
+          {
+            "name": "source-completed",
+            "shared": {
+              "source_started": true,
+              "source_completed": true
+            }
+          }
+        ],
+        "shared": {
+          "setup_started": true,
+          "source_started": true,
+          "source_completed": true,
+          "consumer_polled": false,
+          "consumer_dropped": true,
+          "terminal_kind": "stop",
+          "error_category": null
+        },
+        "runtimeDetails": {
+          "setup_calls": 1
+        }
+      },
+      "comparison": {
+        "status": "intentional-difference",
+        "reason": "Pi lazyStream starts setup synchronously; Rust ChatCall schedules setup on the current Tokio runtime.",
+        "mismatches": []
+      }
+    },
+    {
+      "scenario": "lazy-stop-consumption",
+      "upstream_command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+        "--snapshot",
+        "D:\\Luiz\\Odradek\\opi\\.pi\\pi-1.5.0",
+        "--case",
+        "lazy-stop-consumption"
+      ],
+      "upstream_trace": {
+        "id": "lazy-stop-consumption",
+        "status": "observed",
+        "sourceAssertions": "passed",
+        "trace": [
+          {
+            "step": "immediately-after-call",
+            "counters": {
+              "setup": 1,
+              "iterators": 0,
+              "sourceReturn": 0,
+              "sourceTerminal": 0
+            }
+          },
+          {
+            "step": "source-at-gate-without-outer-poll",
+            "counters": {
+              "setup": 1,
+              "iterators": 1,
+              "sourceReturn": 0,
+              "sourceTerminal": 0
+            }
+          },
+          {
+            "step": "outer-iterator-return",
+            "stopped": {
+              "done": true
+            },
+            "counters": {
+              "setup": 1,
+              "iterators": 1,
+              "sourceReturn": 0,
+              "sourceTerminal": 0
+            }
+          },
+          {
+            "step": "source-completed-after-gate",
+            "counters": {
+              "setup": 1,
+              "iterators": 1,
+              "sourceReturn": 0,
+              "sourceTerminal": 1
+            },
+            "resultStop": "stop",
+            "sameResult": true
+          }
+        ]
+      },
+      "rust_trace": {
+        "schemaVersion": 1,
+        "runtime": "rust",
+        "scenario": "lazy-stop-consumption",
+        "steps": [
+          {
+            "name": "constructed",
+            "shared": {
+              "consumer_polled": false,
+              "consumer_dropped": false
+            }
+          },
+          {
+            "name": "provider-setup",
+            "shared": {
+              "setup_started": true
+            }
+          },
+          {
+            "name": "first-event",
+            "shared": {
+              "consumer_polled": true,
+              "first_event": "start"
+            }
+          },
+          {
+            "name": "consumer-dropped",
+            "shared": {
+              "consumer_dropped": true
+            }
+          },
+          {
+            "name": "source-completed",
+            "shared": {
+              "source_started": true,
+              "source_completed": true
+            }
+          }
+        ],
+        "shared": {
+          "setup_started": true,
+          "source_started": true,
+          "source_completed": true,
+          "consumer_polled": true,
+          "consumer_dropped": true,
+          "terminal_kind": "stop",
+          "error_category": null
+        },
+        "runtimeDetails": {
+          "first_event": "start"
+        }
+      },
+      "comparison": {
+        "status": "intentional-difference",
+        "reason": "Pi lazyStream starts setup synchronously; Rust ChatCall schedules setup on the current Tokio runtime.",
+        "mismatches": []
+      }
+    },
+    {
+      "scenario": "lazy-setup-failure",
+      "upstream_command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+        "--snapshot",
+        "D:\\Luiz\\Odradek\\opi\\.pi\\pi-1.5.0",
+        "--case",
+        "lazy-setup-failure-phases"
+      ],
+      "upstream_trace": {
+        "id": "lazy-setup-failure-phases",
+        "status": "observed",
+        "sourceAssertions": "passed",
+        "trace": [
+          {
+            "step": "setup-failures",
+            "synchronousError": "synchronous-setup-marker",
+            "rejectedStop": "error",
+            "rejectedMessage": "rejected-setup-marker",
+            "delivered": [
+              "error"
+            ]
+          }
+        ]
+      },
+      "rust_trace": {
+        "schemaVersion": 1,
+        "runtime": "rust",
+        "scenario": "lazy-setup-failure",
+        "steps": [
+          {
+            "name": "constructed",
+            "shared": {
+              "consumer_polled": false
+            }
+          },
+          {
+            "name": "setup-failure",
+            "shared": {
+              "consumer_polled": true,
+              "terminal_kind": "error"
+            }
+          }
+        ],
+        "shared": {
+          "setup_started": true,
+          "source_started": false,
+          "source_completed": false,
+          "consumer_polled": true,
+          "consumer_dropped": true,
+          "terminal_kind": "error",
+          "error_category": "Config(ProviderErrorSummary(\"unknown provider: missing-provider\"))"
+        },
+        "runtimeDetails": {
+          "error_category": "Config(ProviderErrorSummary(\"unknown provider: missing-provider\"))"
+        }
+      },
+      "comparison": {
+        "status": "intentional-difference",
+        "reason": "Pi exposes synchronous setup throws separately from rejected setup; Rust exposes one typed asynchronous CallFailure stream outcome.",
+        "mismatches": []
+      }
+    }
+  ],
+  "blocked_gates": [
+    "upstream packaged dist",
+    "upstream runtime dependencies"
+  ],
+  "verdict": "PASS_WITH_BLOCKED_GATES"
+}

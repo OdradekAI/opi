@@ -258274,6 +258274,90 @@
         "No live provider, complete TS/Rust differential, feature/platform/MSRV, performance or six-gate acceptance",
         "Full package run retains the known model_wire_metadata pending-stop baseline failure"
       ]
+    },
+    {
+      "id": "IMPL-36-SUPPLEMENTED-MATERIALS-GATED-DIFFERENTIAL",
+      "issue": "issues/36-supplemented-materials-and-gated-differential.md",
+      "base_commit": "3f2ff874af08a82108f2326281f579808b6dd25a",
+      "contracts": ["CAP-STREAM", "CAP-MODELS-DISPATCH", "CAP-CATALOG", "CAP-PACKAGE"],
+      "status": "tooling-delivered-lifecycle-fails-material-provenance-blocked",
+      "baseline_policy": "Preserve phase-one inventory and all prior evidence; append observed candidate identities without approving differences.",
+      "primary_tests": [
+        "docs/iterations/opi-ai-1-5-alignment/tools/test_acceptance_materials.py",
+        "docs/iterations/opi-ai-1-5-alignment/tools/test_inspect_acceptance_materials.mjs",
+        "scripts/pi-sdk-conformance/differential/test_lifecycle_differential.py",
+        "scripts/pi-sdk-conformance/differential/test_runner.py",
+        "scripts/pi-sdk-conformance/differential/test_rust_driver.py",
+        "crates/opi-ai/examples/lifecycle_differential.rs::tests"
+      ],
+      "observations": [
+        "Ten installed direct AI dependencies match frozen declarations and selected lock excerpts, including nested package resolution.",
+        "Dist completeness/source-map checks pass; emitted artifact identity is not reproducible-build or npm-consumer acceptance.",
+        "Current root package-lock differs from frozen bytes; full transitive provenance is unproved.",
+        "Generated data is internally valid but differs from pinned catalog in nine providers (1712 pinned vs 1738 actual models).",
+        "Gated no-consumption and stop-consumption traces fail source_completed: ordinary provider wrapper drops source without draining tail to EOF.",
+        "Setup failure preserves different injection/error channels; no exception approval or strict alignment is inferred."
+      ],
+      "evidence": [
+        "evidence/phase5-supplemented-materials.json",
+        "evidence/phase5-gated-lifecycle-differential.json",
+        "evidence/phase5-hardening-checks.json"
+      ],
+      "test_impact": {
+        "add": ["inspector and runner negative cases", "material drift checks", "gated consumer-Drop probes"],
+        "update": ["freezer/comparator/driver tests"],
+        "delete": [],
+        "retain": "Original upstream probe, historical evidence, and all product regression tests"
+      },
+      "remaining": [
+        "Repair ordinary provider source-tail truncation without changing retry/admission or first-terminal semantics.",
+        "Recover original full lock material and hydrate pinned model data in a provenance-preserving working copy.",
+        "True core+Faux minimal features, complete contract differential and six-gate acceptance remain open."
+      ]
+    },
+    {
+      "id": "IMPL-37-ORDINARY-SOURCE-TAIL-SETTLEMENT",
+      "issue": "issues/37-ordinary-source-tail-settlement.md",
+      "base_commit": "3f2ff874af08a82108f2326281f579808b6dd25a",
+      "contracts": ["CAP-STREAM", "CAP-MODELS-DISPATCH", "CAP-TELEMETRY-AI"],
+      "status": "source-tail-repaired-shared-observations-pass-material-gates-blocked",
+      "owner": "crates/opi-ai/src/models.rs::drive_resolved_call_registered",
+      "primary_tests": [
+        "crates/opi-ai/tests/execution_lifecycle.rs::ordinary_business_terminal_waits_for_source_tail_and_settles_once",
+        "crates/opi-ai/tests/execution_lifecycle.rs::ordinary_admitted_retry_drains_only_the_successful_attempt_tail",
+        "crates/opi-ai/tests/execution_lifecycle.rs::ordinary_abort_during_terminal_tail_joins_release_without_fabricating_eof",
+        "crates/opi-ai/tests/execution_lifecycle.rs::ordinary_cooperative_cancellation_in_tail_preserves_first_terminal",
+        "crates/opi-ai/tests/execution_lifecycle.rs::ordinary_transport_failure_releases_without_polling_a_tail",
+        "crates/opi-ai/examples/lifecycle_differential.rs::tests",
+        "scripts/pi-sdk-conformance/differential/test_rust_driver.py"
+      ],
+      "complementary_tests": [
+        "crates/opi-ai/tests/ai_telemetry.rs",
+        "crates/opi-ai/tests/retry_backoff.rs",
+        "crates/opi-ai/tests/stream_events.rs",
+        "crates/opi-ai/tests/external_sdk.rs",
+        "crates/opi-ai/tests/provider_lifecycle.rs",
+        "crates/opi-ai/tests/resource_cleanup.rs",
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "crates/opi-ai/src/stream.rs::tests"
+      ],
+      "evidence": [
+        "evidence/phase5-source-tail-materials.json",
+        "evidence/phase5-source-tail-differential.json",
+        "evidence/phase5-source-tail-checks.json"
+      ],
+      "test_impact": {
+        "add": ["five public gated-tail lifecycle tests, including admitted retry then tail settlement"],
+        "update": ["two ordinary source EOF fixtures", "two consumer-Drop assertions", "Rust driver now requires source completion"],
+        "delete": [],
+        "retain": "Retry/admission, first-terminal, raw-start, resource and telemetry contracts; all historical failure evidence"
+      },
+      "limits": [
+        "Source EOF is not a join of independent custom-provider tasks.",
+        "No full-lock restoration, catalog hydration or upstream mutation was performed.",
+        "All three shared lifecycle observations pass, but material gates stay blocked and differences remain unapproved.",
+        "No full-workspace/provider/features/platform/MSRV/performance or six-gate acceptance claim."
+      ]
     }
   ]
 }

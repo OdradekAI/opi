@@ -1,7 +1,8 @@
 //! Explicit execution owns progress; its handle owns only event consumption.
 
 use std::pin::Pin;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 use std::time::Duration;
 
@@ -564,6 +565,7 @@ async fn ordinary_entries_execute_after_unpolled_call_or_result_is_dropped() {
             bounded(tx.send(Ok(delta(n)))).await.unwrap();
         }
         bounded(tx.send(Ok(done()))).await.unwrap();
+        drop(tx); // Ordinary execution also waits for source EOF after Done.
         bounded(released).await.unwrap();
     }
 }
@@ -686,6 +688,343 @@ impl Provider for ControlledProvider {
     }
 }
 
+struct GatedTail {
+    source: EventStream,
+    entered: oneshot::Receiver<()>,
+    release: oneshot::Sender<()>,
+    eof: oneshot::Receiver<()>,
+    dropped: oneshot::Receiver<()>,
+}
+
+fn gated_tail(terminal: Item, cancel: CancellationToken) -> GatedTail {
+    let (entered, waiting) = oneshot::channel();
+    let (release, proceed) = oneshot::channel();
+    let (eof, reached_eof) = oneshot::channel();
+    let mut eof = Some(eof);
+    let (resource, tx, dropped) = channel_source();
+    drop(tx);
+    let tail = futures_util::stream::once(async move {
+        let _ = entered.send(());
+        tokio::select! {
+            _ = proceed => {},
+            _ = cancel.cancelled() => {},
+        }
+        Ok(delta(999))
+    });
+    let source = futures_util::stream::iter([Ok(delta(0)), terminal])
+        .chain(tail)
+        .chain(futures_util::stream::iter([
+            Err(ProviderError::Timeout),
+            Ok(done()),
+        ]))
+        .chain(resource)
+        .chain(futures_util::stream::poll_fn(move |_| {
+            if let Some(eof) = eof.take() {
+                let _ = eof.send(());
+            }
+            Poll::Ready(None)
+        }));
+    GatedTail {
+        source: Box::pin(source),
+        entered: waiting,
+        release,
+        eof: reached_eof,
+        dropped,
+    }
+}
+
+fn ordinary_call(source: EventStream, request: Request) -> opi_ai::ChatCall {
+    let (entered, _dispatched) = oneshot::channel();
+    let model = MockProvider::new("execution", vec![]).models()[0].clone();
+    let models = single_route_collection(Box::new(ControlledProvider {
+        models: vec![model.clone()],
+        source: Mutex::new(Some(source)),
+        entered: Mutex::new(Some(entered)),
+    }));
+    models.stream_simple(
+        ChatModelRecord::new("execution", model),
+        request,
+        Default::default(),
+    )
+}
+
+#[tokio::test]
+async fn ordinary_business_terminal_waits_for_source_tail_and_settles_once() {
+    for consume in [false, true] {
+        for (reason, legacy) in [
+            (StopReason::Stop, false),
+            (StopReason::Error, false),
+            (StopReason::Aborted, false),
+            (StopReason::Error, true),
+        ] {
+            let mut expected = base_assistant();
+            expected.stop_reason = reason;
+            expected.usage.output_tokens = 17;
+            let terminal = if legacy {
+                AssistantStreamEvent::Error {
+                    reason,
+                    message: expected.clone(),
+                }
+            } else {
+                AssistantStreamEvent::Done {
+                    reason,
+                    message: expected.clone(),
+                }
+            };
+            let GatedTail {
+                source,
+                entered,
+                release,
+                mut eof,
+                mut dropped,
+            } = gated_tail(Ok(terminal), CancellationToken::new());
+            let recorder = Recorder::default();
+            let mut request = request(CancellationToken::new());
+            request.telemetry_context = Some(recorder.context());
+            let mut call = ordinary_call(source, request);
+            if consume {
+                assert!(matches!(
+                    bounded(call.next()).await.unwrap().unwrap(),
+                    AssistantStreamEvent::TextDelta { delta, .. } if delta == "0"
+                ));
+            }
+            bounded(entered)
+                .await
+                .expect("business terminal must not truncate the source tail");
+            assert!(matches!(
+                eof.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+            assert!(matches!(
+                dropped.try_recv(),
+                Err(oneshot::error::TryRecvError::Empty)
+            ));
+            assert_eq!(recorder.spans().len(), 1);
+            assert!(recorder.spans()[0].end_sequence.is_none());
+            let outcome = if consume {
+                assert!(futures_util::poll!(call.next()).is_pending());
+                release.send(()).unwrap();
+                let terminal = bounded(call.next()).await.unwrap();
+                assert_eq!(terminal.is_ok(), reason == StopReason::Stop);
+                assert!(bounded(call.next()).await.is_none());
+                assert!(bounded(call.next()).await.is_none());
+                let outcome = bounded(call.result()).await;
+                match terminal {
+                    Ok(AssistantStreamEvent::Done { message, .. }) => {
+                        assert_eq!(outcome, Ok(message));
+                    }
+                    Err(failure) => assert_eq!(outcome, Err(failure)),
+                    other => panic!("unexpected terminal: {other:?}"),
+                }
+                outcome
+            } else {
+                let mut result = Box::pin(call.result());
+                assert!(futures_util::poll!(&mut result).is_pending());
+                release.send(()).unwrap();
+                bounded(result).await
+            };
+            let actual = match &outcome {
+                Ok(message) => message,
+                Err(failure) => failure.message(),
+            };
+            assert_eq!(outcome.is_ok(), reason == StopReason::Stop);
+            assert_eq!(actual.stop_reason, expected.stop_reason);
+            assert_eq!(actual.content, expected.content);
+            assert_eq!(actual.usage, expected.usage);
+            assert_eq!(eof.try_recv(), Ok(()));
+            assert_eq!(dropped.try_recv(), Ok(()));
+            let spans = recorder.spans();
+            assert_eq!(spans.len(), 1);
+            assert!(spans[0].end_sequence.is_some());
+            assert_eq!(
+                spans[0].attributes.get("stop"),
+                Some(&opi_telemetry::AttributeValue::String(
+                    reason.as_str().into()
+                ))
+            );
+        }
+    }
+}
+
+struct RetryThenTailProvider {
+    inner: ControlledProvider,
+    setups: Arc<AtomicUsize>,
+}
+
+impl Provider for RetryThenTailProvider {
+    fn id(&self) -> &str {
+        self.inner.id()
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        self.inner.models()
+    }
+
+    fn acquisition_policy_default(&self) -> opi_ai::retry::AcquisitionPolicy {
+        opi_ai::retry::AcquisitionPolicy::with_max_retries(1)
+    }
+
+    fn stream_prepared(&self, request: Request, auth: opi_ai::ResolvedAuth) -> EventStream {
+        let attempt = self.setups.fetch_add(1, Ordering::SeqCst) + 1;
+        if attempt == 1 {
+            // No preceding event: response handoff must not seal the retry yet.
+            return Box::pin(futures_util::stream::iter([Err(
+                ProviderError::RateLimited {
+                    retry_after_ms: Some(0),
+                },
+            )]));
+        }
+        assert_eq!(attempt, 2, "tail work must not dispatch a third attempt");
+        self.inner.stream_prepared(request, auth)
+    }
+}
+
+#[tokio::test]
+async fn ordinary_admitted_retry_drains_only_the_successful_attempt_tail() {
+    let mut message = base_assistant();
+    message.stop_reason = StopReason::Length;
+    message.usage.output_tokens = 23;
+    let GatedTail {
+        source,
+        entered,
+        release,
+        mut eof,
+        mut dropped,
+    } = gated_tail(
+        Ok(AssistantStreamEvent::Done {
+            reason: StopReason::Length,
+            message,
+        }),
+        CancellationToken::new(),
+    );
+    let setups = Arc::new(AtomicUsize::new(0));
+    let (dispatched, _dispatch) = oneshot::channel();
+    let model = MockProvider::new("execution", vec![]).models()[0].clone();
+    let models = single_route_collection(Box::new(RetryThenTailProvider {
+        inner: ControlledProvider {
+            models: vec![model.clone()],
+            source: Mutex::new(Some(source)),
+            entered: Mutex::new(Some(dispatched)),
+        },
+        setups: setups.clone(),
+    }));
+    let mut call = models.stream_simple(
+        ChatModelRecord::new("execution", model),
+        request(CancellationToken::new()),
+        Default::default(),
+    );
+    bounded(entered)
+        .await
+        .expect("admitted retry reaches its own source tail");
+    assert_eq!(setups.load(Ordering::SeqCst), 2);
+    assert!(matches!(
+        bounded(call.next()).await.unwrap().unwrap(),
+        AssistantStreamEvent::TextDelta { delta, .. } if delta == "0"
+    ));
+    assert!(futures_util::poll!(call.next()).is_pending());
+    assert!(matches!(
+        eof.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+    assert!(matches!(
+        dropped.try_recv(),
+        Err(oneshot::error::TryRecvError::Empty)
+    ));
+    release.send(()).unwrap();
+    let AssistantStreamEvent::Done { reason, message } =
+        bounded(call.next()).await.unwrap().unwrap()
+    else {
+        panic!("expected second attempt's business terminal");
+    };
+    assert_eq!(reason, StopReason::Length);
+    assert_eq!(message.usage.output_tokens, 23);
+    assert_eq!(eof.try_recv(), Ok(()));
+    assert_eq!(dropped.try_recv(), Ok(()));
+    assert!(call.next().await.is_none());
+    assert_eq!(call.result().await, Ok(message));
+    assert_eq!(setups.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn ordinary_abort_during_terminal_tail_joins_release_without_fabricating_eof() {
+    let cancel = CancellationToken::new();
+    let GatedTail {
+        source,
+        entered,
+        release,
+        mut eof,
+        mut dropped,
+    } = gated_tail(Ok(done()), cancel.clone());
+    let recorder = Recorder::default();
+    let mut request = request(cancel.clone());
+    request.telemetry_context = Some(recorder.context());
+    let mut call = ordinary_call(source, request);
+    bounded(entered)
+        .await
+        .expect("source reaches terminal tail");
+    let failure = bounded(call.abort()).await.unwrap_err();
+    assert!(matches!(failure.cause(), ProviderError::Cancelled));
+    assert_eq!(failure.message().stop_reason, StopReason::Aborted);
+    assert_eq!(dropped.try_recv(), Ok(()));
+    assert!(matches!(
+        eof.try_recv(),
+        Err(oneshot::error::TryRecvError::Closed)
+    ));
+    assert!(release.send(()).is_err());
+    assert!(!cancel.is_cancelled());
+    assert!(call.next().await.is_none());
+    assert_eq!(call.result().await, Err(failure));
+    let spans = recorder.spans();
+    assert_eq!(spans.len(), 1);
+    assert!(spans[0].end_sequence.is_some());
+    assert_eq!(
+        spans[0].attributes.get("stop"),
+        Some(&opi_telemetry::AttributeValue::String("aborted".into()))
+    );
+}
+
+#[tokio::test]
+async fn ordinary_cooperative_cancellation_in_tail_preserves_first_terminal() {
+    let cancel = CancellationToken::new();
+    let GatedTail {
+        source,
+        entered,
+        release: _release,
+        mut eof,
+        mut dropped,
+    } = gated_tail(Ok(done()), cancel.clone());
+    let call = ordinary_call(source, request(cancel.clone()));
+    bounded(entered)
+        .await
+        .expect("source reaches terminal tail");
+    cancel.cancel();
+    assert_eq!(
+        bounded(call.result()).await.unwrap().stop_reason,
+        StopReason::Stop
+    );
+    assert_eq!(eof.try_recv(), Ok(()));
+    assert_eq!(dropped.try_recv(), Ok(()));
+}
+
+#[tokio::test]
+async fn ordinary_transport_failure_releases_without_polling_a_tail() {
+    let GatedTail {
+        source,
+        entered,
+        release,
+        eof,
+        dropped,
+    } = gated_tail(Err(ProviderError::Timeout), CancellationToken::new());
+    let failure = bounded(ordinary_call(source, request(CancellationToken::new())).result())
+        .await
+        .unwrap_err();
+    assert!(matches!(failure.cause(), ProviderError::Timeout));
+    assert!(entered.await.is_err());
+    assert!(eof.await.is_err());
+    assert!(release.send(()).is_err());
+    bounded(dropped).await.unwrap();
+}
+
 #[tokio::test]
 async fn ordinary_and_prepared_calls_retain_execution_after_consumer_drop() {
     for advanced in [false, true] {
@@ -730,6 +1069,7 @@ async fn ordinary_and_prepared_calls_retain_execution_after_consumer_drop() {
             );
         }
         bounded(tx.send(Ok(done()))).await.unwrap();
+        drop(tx); // Ordinary calls drain; raw started attempts still release at Done.
         bounded(released).await.unwrap();
         if let Some(prepared) = &prepared {
             // Terminal delivery releases the slot but seals acquisition: it

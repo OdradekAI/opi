@@ -230,6 +230,14 @@ partial events are followed by one terminal `Done`, `Error` or `Aborted` event;
 `ChatCall::result()` waits for the same final `AssistantMessage` or
 `CallFailure`. `Pending` is not a terminal result.
 
+After a business terminal, ordinary calls drain the provider source to EOF before
+forwarding the terminal, settling request telemetry and completing the result.
+Tail events cannot replace the first outcome or trigger another attempt. Stopping
+consumption or dropping the call does not stop this work. An unending source tail
+keeps the call pending: request-token cancellation requires source cooperation,
+while `ChatCall::abort()` stops and joins the execution task. This does not join
+independent tasks spawned inside a custom provider.
+
 The exact streaming onboarding program is `examples/quick_start_stream.rs`:
 
 ```rust

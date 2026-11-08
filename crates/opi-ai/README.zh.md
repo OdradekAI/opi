@@ -219,6 +219,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 `ChatCall::result()` 等待相同的最终 `AssistantMessage` 或 `CallFailure`。
 `Pending` 不是终态。
 
+收到业务终态后，普通调用会继续驱动 Provider source 到 EOF，再交付终态、结算请求
+telemetry 并完成 result。尾部事件不能替换首个结果或触发另一次 attempt。停止消费或
+丢弃 call 不会停止这项工作。不结束的 source 尾部会使调用保持 pending：请求 token
+取消需要 source 配合，`ChatCall::abort()` 则停止并等待执行任务退出；这不代表等待
+自定义 Provider 内部独立启动的所有任务。
+
 以下是 `examples/quick_start_stream.rs` 的逐字源码：
 
 ```rust
