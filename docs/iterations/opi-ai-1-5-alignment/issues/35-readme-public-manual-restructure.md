@@ -1,6 +1,6 @@
 # Restructure the public opi-ai manuals around developer tasks
 
-Status: claimed
+Status: done
 Owner: Codex for user
 Parent: [opi-ai 对齐 Pi 1.5.0：重构方案与实施交接](../spec.md)
 Depends on: [Remove historical alignment labels from public opi-ai manuals](34-remove-internal-labels-from-public-manuals.md)
@@ -47,6 +47,10 @@ examples. The full conformance suite, `opi-doc-check.py`, `cargo fmt --all --
 --check` and `git diff --check` must pass; the final gate is the offline
 external packaged-consumer proof in
 `scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`.
+
+The final run passed 105 conformance tests, the documentation and formatting
+checks, the packaged file-set check and the external consumer proof in both
+feature profiles. Both localized manuals reported exact example embedding.
 
 ## Limits
 

@@ -69,6 +69,10 @@ future-migration 描述；实施记录见
 公共工具、Provider wire/operation 和测试/包消费细节拆为四对包内专题；三份真实
 onboarding 示例继续与中英文 README 逐字绑定。实施记录见
 [README 公共手册重构票](issues/35-readme-public-manual-restructure.md)。
+该切片的 105 个 conformance tests、文档/格式检查、实际包文件清单和双 feature profile
+外部消费者证明均通过；证据见
+`scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`。这只证明文档与
+独立包接入契约，不代表完整 Pi 或 pi-coding-agent 对齐完成。
 
 ## 目标与范围
 

@@ -72,6 +72,12 @@ stream/result、Context/工具、Provider、图像/分类、reasoning、错误�
 `test_public_topic_references_expose_current_contracts` 固定；实施记录见
 [README 公共手册重构票](issues/35-readme-public-manual-restructure.md)。
 
+最终重构验收运行 105 个 conformance tests、`opi-doc-check.py`、`cargo fmt --all --
+--check`、`git diff --check` 和实际 `cargo package` 文件清单。离线外部消费者证明在
+默认与 `default-features = false` 两种 profile 下均通过，`README.md` 与
+`README.zh.md` 都报告三个示例逐字嵌入；证据见
+[`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。
