@@ -62,6 +62,9 @@ future-migration 描述；实施记录见
 随后把 Provider、Catalog、认证与 Refresh 参考拆成 crate 内双语专题文档，主 README
 保留稳定锚点和 Core API 总览；实施记录见
 [README Provider/Auth 专题票](issues/33-readme-provider-auth-topic.md)。
+随后清理公开手册中的历史任务、阶段和验收快照标签，使 README 与包内专题回到面向
+能力和行为的开发者手册；内部 issue、report、evidence 继续保留完整追溯。实施记录见
+[公开手册历史标签清理票](issues/34-remove-internal-labels-from-public-manuals.md)。
 
 ## 目标与范围
 

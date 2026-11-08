@@ -39,7 +39,7 @@ pub(crate) fn start(
     impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<>,
     Box<dyn std::error::Error>,
 > {
-    // Canonical transcript input (AIR-020): the system prompt and tool
+    // Canonical transcript input: the system prompt and tool
     // declarations fold into one leading system message at normalization.
     let context = transcript::normalize_context(transcript::Context {
         system_prompt: Some("You are concise.".into()),

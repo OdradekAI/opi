@@ -9,11 +9,10 @@
 exporter/runtime 策略。以下内容描述当前 Rust 原生行为，不表示自动登录或启动时
 联网策略。
 
-
 ## 工厂、Catalog 与认证
 
 - 免手写路由的注册：内置 42-profile 工厂
-  （`providers::builtin_provider_profiles`，任务 20.34）注册完成的适配器
+  （`providers::builtin_provider_profiles`）注册完成的适配器
   与 catalog——见「Builtin Provider Factory Layer: 42 Canonical Profiles」。
 - 模型记录：`Models::get_model` 解析 registry 元数据；离线内置 catalog 与
   动态 `ModelsStore` 刷新见「Offline Bundled Model Catalog」与
@@ -36,7 +35,7 @@ exporter/runtime 策略。以下内容描述当前 Rust 原生行为，不表示
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
 | `bedrock` | `bedrock` | AWS Bedrock Converse streaming，支持 SigV4 或 Bearer 认证 |
-| `azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat **与** Responses 双 wire（任务 20.38） |
+| `azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat **与** Responses 双 wire |
 | `vertex` | `vertex` | Google Vertex AI Gemini streaming |
 
 内置模型列表刻意保持有限，主要用于能力校验和模型列表输出。站点专用模型、
@@ -77,7 +76,7 @@ credential-needed/revoked，则 prepared call 以 `CredentialTerminated` 关闭�
 类型化的逐调用 API-key、Bearer 与 SigV4 覆盖互斥，并在访问来源前优先；
 `extra_headers` 会拒绝 Provider 管理的鉴权 header。
 
-### 惰性 AuthContext 与管理结果（AIR-063/AIR-066）
+### 惰性 AuthContext 与管理结果
 
 来源访问是独立的 context 职责：object-safe 的 `AuthContext`（`env`、
 `file_exists`、`process_snapshot`）拥有来源访问，不承载模型或 telemetry 数据。
@@ -109,7 +108,7 @@ resolver 的 `CredentialNeeded` 报告未配置，其他被选来源失败则以
 `register_oauth_route` 注册的 OAuth route 在 `get_auth` 与准备调用时使用
 live resolver，包括必要的刷新。
 
-### Store 拥有的 mutation、ACK 与 mutation barrier（AIR-063 / P20-STORE）
+### Store 拥有的 mutation、ACK 与 mutation barrier
 
 凭据 mutation（login、logout、replace、refresh）由共享 store 拥有，
 而不是提交它的 waiter。`CredentialStore` 新增 `modify` 与
@@ -138,7 +137,7 @@ rotation。没有默认 wait/receipt/admission 上限：调用方自带的界限
 store 继承 inline 默认实现。revision 与 receipt 是进程内视图；
 跨进程串行化仍由 store 自身的锁策略负责。
 
-### 采集重试唯一 owner（AIR-007）
+### 采集重试唯一 owner
 
 `start_attempt` 预留 lease；adapter 及其 producer 只在第一次 poll 时启动。
 丢弃未 poll 的 lease 不发送请求；HTTP 后端的 protocol-NACK retry 已关闭，
@@ -253,7 +252,7 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 （config-driven）。这是 provider breadth 的首选路径；新增 first-class provider 模块
 是保留给这些实质差异的非默认步骤。
 
-`CompatConfig`（任务 20.36，AIR-022/V-11）应用单一归一化规则：每个策略
+`CompatConfig` 应用单一归一化规则：每个策略
 字段都是叠加在适配器冻结 provider 推断（按 provider id 或 base-URL host 推断
 `store`/`instruction_role`/`thinking_format` 与字段默认值）之上的显式值；
 显式配置逐字段胜出，模型级覆盖再胜过 profile：
@@ -322,7 +321,7 @@ thinking 意图与所选 `ModelInfo::thinking_level_map` 是 reasoning wire 输�
 `$var` 值；`string-thinking` 发送 `thinking` 字符串；`ant-ling` 仅在设置了
 effort 时发送 `reasoning: {effort}`。
 
-### Native 与 simple 选项（ONB-03）
+### Native 与 simple 选项
 
 | 选项 | 接受类型 / 单位 | 省略 · 默认 | 优先级 · wire 字段 · 类型化拒绝 |
 |------|----------------|-------------|----------------------------------|
@@ -338,7 +337,7 @@ provider）。静态的按 profile 请求 header（`extra_headers`，用于会�
 路由）是独立的 profile 配置字段，经 `OpenAiChatProvider` 构造传入，不是
 `CompatConfig` 标志。
 
-OpenAI Responses 原生语义（任务 20.37，`OpenAiResponsesOptions`）：
+OpenAI Responses 原生语义（`OpenAiResponsesOptions`）：
 
 | 选项 | 接受的类型/单位 | 省略 · 默认 · null · false/零 | 优先级 · wire · 类型化拒绝 |
 |------|----------------|-------------------------------|----------------------------|
@@ -361,7 +360,7 @@ Chat-Completions 类比构造，因此服务端响应链未被接入。
 显式 Responses model API base 默认追加 `/responses`，仅构造器提供的 root
 默认追加 `/v1/responses`；非默认 compatibility path 保持显式覆盖。
 
-### Azure OpenAI 双 wire（任务 20.38）
+### Azure OpenAI 双 wire
 
 Azure 同时保留两条 wire，并按钉住的源 `azure-openai-config.ts` 显式映射
 deployment/resource/api-version：
@@ -387,11 +386,10 @@ simple 条目就近收敛）、`reasoning_summary`、`tool_choice` 与四个 Azu
 `/openai/deployments/{deployment}/chat/completions` 和 `api-key`。两条源 wire 的
 provider 均为 `azure`，endpoint、deployment 和 API-version 在 acquisition 前冻结一次。
 
-## 离线内置 Model Catalog（DEL-10）
+## 离线内置 Model Catalog
 
 `catalog` 模块把一份真实、带版本的 model catalog 作为离线 crate 资源嵌入：
-`resources/catalog/builtin/catalog.json` 与本地 Pi 树
-（`.repo/pi-1.3.0/nix/model-catalog.json`）所固定 revision 的发布产物逐字节一致，
+`resources/catalog/builtin/catalog.json` 与已验证的发布产物逐字节一致，
 `manifest.json` 记录交付输入溯源——来源 URL 与 revision、artifact SHA-256、
 Pi 包/本地来源关联、data schema 版本 6、bundle schema 版本、完整 provider
 列表与逐操作条目计数，以及 Pi 自有 validator/hydrator 与 opi packer 的摘要。
@@ -414,7 +412,7 @@ revision：`try_install` 完整校验候选后原子换入，因此篡改、过�
 选择/计价的 catalog 元数据；SDK 自身的 image 操作路径归 typed image API
 任务所有。
 
-## 动态 Catalog Store 与 Refresh（V-27/AIR-002/AIR-033）
+## 动态 Catalog Store 与 Refresh
 
 
 `ModelsStore::invalidate_source(id)` 显式撤下该来源发布的记录并持久化失效标记。
@@ -492,7 +490,7 @@ native `Ok(None)` 恢复内置回退，除非该 provider 注册的显式 source
 SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.dev／默认启动
 抓取策略。本地内存凭据存储与目录持久化相互独立。
 
-## 内置 Provider 工厂层：42 个 canonical profile（任务 20.34）
+## 内置 Provider 工厂层：42 个 canonical profile
 
 `providers::builtin_provider_profiles` 携带 pi 1.3.0 能力清单中逐字提
 取的 42 条 profile 表：canonical id（`google`、`google-vertex`、

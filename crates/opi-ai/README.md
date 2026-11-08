@@ -54,8 +54,8 @@ without making the first successful call depend on reading the whole manual.
 | Understand the verification layout | [Test layers and SDK packages](#test-layers-and-sdk-packages) |
 
 The examples in the first five rows are public consumer examples. Sections
-labelled as provider, protocol, or task references document additional surface
-area and its current acceptance status.
+labelled as provider, protocol, or advanced references document additional surface
+area and its current capabilities and limits.
 
 ## Installation
 
@@ -137,7 +137,7 @@ the keychain backend, terminal presenter and host registration policy.
 The public surface is organized around a small set of caller-owned values and
 one execution driver:
 
-| Task | Public entry points | Responsibility |
+| Goal | Public entry points | Responsibility |
 | --- | --- | --- |
 | Register and select models | `Models` / `ProviderRegistry` / `register_builtin` | Build a catalog or explicit route without reading authentication during construction |
 | Describe one call | `Request` / `ChatModelRecord` | Carry normalized context, model identity, limits, cancellation, and optional telemetry |
@@ -162,8 +162,8 @@ navigable while the onboarding path above stays short.
 | Credential enrichment and refresh lifecycle | [Credentials, Request Enrichment, and Refresh](#credentials-request-enrichment-and-refresh); [Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md) |
 | Explicit context and optional tracing | [Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing) |
 | Usage, pricing tiers, cache pricing, and reported cost | [Best-Effort Cost](#best-effort-cost); [Cost and pricing reference](docs/cost-pricing.md) |
-| Strict WebSocket handshake bridge | [WebSocket Upgrade (RDF-24)](#websocket-upgrade-rdf-24) |
-| Deferred generation and polling | [Deferred Responses](#deferred-responses-task-2050) |
+| Strict WebSocket handshake bridge | [WebSocket Upgrade](#websocket-upgrade) |
+| Deferred generation and polling | [Deferred Responses](#deferred-responses) |
 | Verification layers and downstream package proof | [Test layers and SDK packages](#test-layers-and-sdk-packages) |
 
 These links are capability references, not a promise that every provider or
@@ -222,7 +222,7 @@ pub(crate) fn start(
     impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<>,
     Box<dyn std::error::Error>,
 > {
-    // Canonical transcript input (AIR-020): the system prompt and tool
+    // Canonical transcript input: the system prompt and tool
     // declarations fold into one leading system message at normalization.
     let context = transcript::normalize_context(transcript::Context {
         system_prompt: Some("You are concise.".into()),
@@ -286,9 +286,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 Key contracts: SDK construction never reads product configuration - auth is
-injected per route (AIR-021); `ChatModelRecord` is caller-owned and valid
-without catalog membership (AIR-045); `normalize_context` folds the system
-prompt and tool declarations into the canonical chronology (AIR-020);
+injected per route; `ChatModelRecord` is caller-owned and valid
+without catalog membership; `normalize_context` folds the system
+prompt and tool declarations into the canonical chronology;
 `complete_simple` returns one `Ok(AssistantMessage)` or one
 `Err(CallFailure)`.
 
@@ -506,7 +506,7 @@ message; every continuation round replays the full canonical chronology with
 assistant tool-call turns and their `ToolResultMessage` results. The caller
 is the trusted execution boundary: a malformed final argument text is
 recorded as not executed (`ToolNotExecutedReason::NonObjectArguments`),
-never guessed into a call (AIR-048). This is the exact source of
+never guessed into a call. This is the exact source of
 `examples/tool_loop.rs`.
 
 ```rust
@@ -538,7 +538,7 @@ struct ToolOutcome {
     not_executed: Option<ToolNotExecutedReason>,
 }
 
-/// The caller is the trusted execution boundary (AIR-048): a malformed final
+/// The caller is the trusted execution boundary: a malformed final
 /// argument text is recorded as not executed, never guessed into a call.
 fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
     if call.arguments_error.is_some() {
@@ -607,7 +607,7 @@ pub(crate) fn setup(
     let record = ChatModelRecord::new("anthropic", info);
 
     // Tools are declared on the transcript context; normalization folds them
-    // into the leading system message (AIR-020).
+    // into the leading system message.
     let tools = vec![ToolDef {
         name: "get_weather".into(),
         description: "Current weather for one city.".into(),
@@ -719,7 +719,7 @@ The detailed Provider, Catalog, and authentication reference is in the [Provider
 
 - Neutral `SimpleOptions` overrides (tool choice, temperature, output limit,
   timeout, stop sequences) versus typed `NativeOptions<O>` per adapter - see
-  "Native and simple options (ONB-03)".
+  "Native and simple options".
 - Failures: one typed `CallFailure` whose redacted `ProviderError` cause and
   taxonomy are described in "Core API" (`ProviderError`,
   `ProviderErrorCategory`, `ProviderErrorSummary`).
@@ -752,7 +752,7 @@ The provider matrix and compatibility policy are maintained in the [Provider, Ca
 | `ProviderRegistry` | Resolves `provider:model`, registers custom providers, and layers model overrides. |
 | `Models` / `AuthDescriptor` / `AuthCheck` | Unstable-0.x single driver above `ProviderRegistry`: provider+model lookup, redacted auth state, OpenAI-compatible compat metadata, dispatch, and atomic dynamic-catalog refresh. Native/simple/direct and advanced entries share validation and the call lifecycle; native options retain adapter budget semantics, while simple/advanced preparation applies the shared output budget. |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | Typed custom chat adapter registration with its exact API identity and fixed options type; handle-created options carry the API/type tag and stay portable across instances with compatible registrations. |
-| `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments (AIR-048): empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
+| `ToolCall::arguments_error` | Optional final-parse outcome for textual tool arguments: empty input finalizes to `{}`, repairable invalid escapes stay literal, and incomplete/non-object finals keep the owned raw text plus this error, never a partial-prefix success. Historical records without the field keep deserializing. |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | Complete caller-owned chat record (provider id, bare model id, exact wire) usable without catalog membership; neutral simple options; the ordinary consumer that freezes input and schedules execution on Tokio at construction. |
 | `PreparedProviderCall` / `PreparedRoute` | Opaque logical-call state returned by `Models::prepare_call`, plus its public redacted route facts. `route`, `auth_provenance`, and `start_attempt` are the prepared-call lifecycle APIs; `start_attempt_with_telemetry` adds the standard `ChatStream` result/observer seam. |
 | `CredentialStore` / `Credential` / `CredentialSource` | IO-free, object-safe credential persistence and redacted three-state probe contracts. |
@@ -835,7 +835,7 @@ behavior. `previous_response_id` is deferred (see OpenAI-Compatible Profiles);
 compatible profiles may carry static `extra_headers` for routing/session
 pinning. There is no server-side session chain.
 
-## WebSocket Upgrade (RDF-24)
+## WebSocket Upgrade
 
 `ws::upgrade` performs the strict dynamic Upgrade over the shared,
 source-qualified `HttpClient` with its explicit proxy/TLS profile. Classic
@@ -863,9 +863,9 @@ negotiation metadata; Upgrade does not construct the private codec.
 `Negotiation::driver_parameters` returns `Option<NegotiatedPmd>` retaining
 both directions' context-takeover flags and windows. The private codec has
 no production caller yet. Physical consolidation alone does not establish
-Models → real Codex → Upgrade → codec behavior (20.16), continuation/pool/
-cleanup (20.17), or final assembled SDK package acceptance (20.57); those
-proofs now exist. Native platform/MSRV acceptance (20.58) executed on Linux
+Models → real Codex → Upgrade → codec behavior, continuation/pool/
+cleanup, or final assembled SDK package acceptance; those
+proofs now exist. Native platform/MSRV acceptance executed on Linux
 x86_64 (rustc exactly 1.97.1, the declared MSRV) and Windows
 x86_64-pc-windows-msvc with byte-identical packaged file sets; macOS remains
 an explicit CI claim pending an owning host.
@@ -1005,18 +1005,13 @@ targets use the source's false fallback; root null and root/referenced numbers
 or strings fail with `InvalidSchema`, while JSON arrays remain inert.
 Regex and URL operations use upstream crates.io `regress 0.12.0` and `url 2.5.8`.
 Unicode properties, scripts, case mapping and IDNA data follow the supported
-dependency profile, rather than a fixed Unicode version. The permitted data
-differences and upgrade checks are recorded in
-RDF-21 upstream profile review (historical Phase 20 evidence).
+dependency profile rather than a fixed Unicode version; these differences do not
+change schema behavior.
 The workspace lock does not fix every library consumer's graph. Opi disables
 regress default features and enables `std`, `utf16`, `prohibit-unsafe`; ordinary
 external consumers also exercise feature union. These data differences do not
 relax schema guards, admission/ref order, normalization, authorization or the
-no-I/O contract. Full schema conformance closure stays with the
-P20-GAP-SCHEMA scenario and its recorded mechanism owners; package/platform
-acceptance evidence lives in
-the [Phase 20 implementation snapshot](../../docs/snapshots/phase20/opi-impl-state.json)
-(Linux and Windows executed, macOS pending an owning host).
+no-I/O contract. Full schema conformance is checked separately from this onboarding manual.
 
 Upstream profile review (regress, `url`, `idna`, `idna_adapter`, ICU4X
 `icu_*`, `unicode-ident`, and their `yoke`/`zerofrom`/`zerovec` support
@@ -1069,18 +1064,17 @@ type-union primitive coercion in `type`-array order with exact ECMAScript
 `Number`/`String` conversions — `Number("0x10")` is 16, `String(1e21)` is
 `"1e+21"` through the pinned ryu-js 1.0.2), and finally checks the
 normalized root against the original schema (the upstream's return of
-unvalidated raw on a failing coerced root is deliberately not replicated —
-RDF-09). Invalid outcomes carry redacted failures only (instance pointer,
+unvalidated raw on a failing coerced root is deliberately not replicated. Invalid outcomes carry redacted failures only (instance pointer,
 keyword, schema-derived reason); precise JSON integers keep their exact
-decimal digits instead of replicating JavaScript's parse-time precision loss
-(RDF-09). TypeBox `Value.Convert` is a no-op for plain JSON dialect schemas
+decimal digits instead of replicating JavaScript's parse-time precision loss.
+TypeBox `Value.Convert` is a no-op for plain JSON dialect schemas
 (its dispatch reads the non-JSON `~kind` marker), and `~kind` markers in
 JSON schemas stay inert — a documented dialect boundary.
 
 ## Canonical Replay Projection
 
-`replay` turns a canonical chronology into the request-local wire view
-(AIR-010/012/013/014, task 20.7). `project_replay(&[Message], &ReplayRoute,
+`replay` turns a canonical chronology into the request-local wire view.
+`project_replay(&[Message], &ReplayRoute,
 ReplayProjection)` validates tool association by batch position plus source
 ID: a closed batch may reuse an ID, but a duplicate call ID, duplicate
 result, orphan result or result/call name mismatch inside a batch is a
@@ -1106,25 +1100,22 @@ never `{}`, `null` or a fabricated call. Wire IDs are legalized
 request-locally (charset/length, stable bijective, synchronized across
 call/result; canonical untouched). Images keep association, order and
 failure flag on capable routes (Anthropic error-result images split after
-all of the turn's tool results inside one user message, task 20.39);
+all of the turn's tool results inside one user message;
 `details` never serialize and URL sources pass
 through undownloaded. `ReplayProjection::Strict` rejects the same lossy
 transforms with a typed error instead of recording facts. Provider
 adapters consume the projection at the head of request construction
 (`build_request_body` now returns `Result`); the Responses parser packs
 `call_id|fc_item_id` for same-identity dual-ID round-trip and the
-serializer restores both, dropping the item id for foreign history. Pinned
-reference: `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`.
+serializer restores both, dropping the item id for foreign history.
 Loopback regressions capture real Anthropic and Codex terminal output,
 serialize/reload it, then send same-identity, changed-model and foreign-wire
 requests while keeping canonical signed/redacted or encrypted data intact.
-These checks complement, and do not replace, the final SDK package and
-platform matrix; the matrix's executed evidence is recorded in
-the [Phase 20 implementation snapshot](../../docs/snapshots/phase20/opi-impl-state.json).
+These checks complement the final SDK package and platform checks.
 
 ## Canonical Context/Transcript Chronology
 
-`transcript` owns the canonical request chronology (AIR-008/011/020): the
+`transcript` owns the canonical request chronology: the
 public `Context` shorthand (`system_prompt`, `messages`, `tools`) folds
 exactly once into a leading `Message::System` entry through
 `transcript::normalize_context`, returning a typed
@@ -1153,8 +1144,7 @@ position and last value for raw duplicate keys, and validation cannot recover
 discarded duplicates. A rejected append leaves the entire prior transcript
 unchanged. `Request` carries `context: TranscriptContext` instead of
 independent `system`/`tools` runtime fields; every adapter resolves the
-transcript at the head of request construction (the pinned TypeScript
-reference is `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`; the
+transcript at the head of request construction (the corresponding transcript behavior is implemented directly; the
 upstream-deprecated `hasToolRedefinitions` is not ported).
 
 `Request.projection` selects temporal and replay fidelity with
@@ -1198,7 +1188,7 @@ cancellation is observed between operations, owned keys/resources are
 retained until the blocking worker joins, and late results are suppressed
 rather than published.
 
-## Source-Scoped TLS (RDF-23)
+## Source-Scoped TLS
 
 `HttpClientBuilder::tls(TlsOptions)` is the one public entry for source-
 scoped TLS configuration. `TlsOptions` carries the trust selection
@@ -1241,7 +1231,7 @@ host-provider independence), recording the resolved rustls/aws-lc
 versions, registry checksums and native build provenance. Real ADC wiring
 stays with its own owner; this closes only the transport mechanism.
 
-## Source-Scoped HTTP Acquisition Profile (RDF-22)
+## Source-Scoped HTTP Acquisition Profile
 
 `HttpClient` owns the source-qualified HTTP send policy over the unmodified
 crates.io `reqwest 0.12.28` / `Hyper 1.9.0` graph. `HttpClientBuilder::redirects
@@ -1292,11 +1282,11 @@ protected-header stripping, typed redirect-limit and acquisition failures,
 proxy routing with scoped bypass, single-terminal EOF), recording the
 resolved reqwest/hyper/hyper-util/http versions and registry checksums.
 
-## Offline Bundled Model Catalog (DEL-10)
+## Offline Bundled Model Catalog
 
 The bundled Catalog validation and revision contract is maintained in the [Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md).
 
-## Dynamic Catalog Store and Refresh (V-27/AIR-002/AIR-033)
+## Dynamic Catalog Store and Refresh
 
 The dynamic Catalog Store, source invalidation, refresh and publication contract is maintained in the [Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md).
 
@@ -1365,7 +1355,7 @@ attempts can use `start_attempt_with_telemetry` when the host wants equivalent
 observation. Omission captures no implicit ambient context. No carrier is
 serialized or placed on the wire, and no global subscriber, exporter, sampling
 policy or automatic SDK root span is installed. Propagation is closed across
-the SDK's carrier boundaries (task 20.55): the four chat entries
+the SDK's carrier boundaries: the four chat entries
 (native/simple/direct and the advanced `prepare_call` path including
 acquisition retry and the strict-variant rebuild), image generation,
 classifier calls and deferred submit/fetch/cancel all receive the same frozen
@@ -1381,7 +1371,7 @@ The assembled all-operation conformance suite lives at
 `tests/telemetry_operations.rs`; the Codex producer path is additionally
 covered by `tests/codex_telemetry.rs`.
 
-## Instance Resource Generation, Pool Cleanup and Awaited Release (task 20.17)
+## Instance Resource Generation, Pool Cleanup and Awaited Release
 
 The Codex WebSocket family now registers one resource generation per call
 and exposes session-scoped cleanup through the public
@@ -1434,7 +1424,7 @@ tests at `tests/openai_codex_responses.rs` and `tests/resource_cleanup.rs`).
   adapters admit an option only when their simple mapper consumes it.
   `Models` attempts every owner's release and aggregates the results.
 
-## Real Codex WebSocket Transport: Auto/Delta/Continuation (task 20.16, DEL-07)
+## Real Codex WebSocket Transport: Auto/Delta/Continuation
 
 The Codex adapter now owns the real WebSocket production path through the
 strict Upgrade bridge into the private frame/PMD/Close owner
@@ -1508,7 +1498,7 @@ transport, cache, cancellation and timeout inputs remain on `Request`.
   consumer check (external `Models::stream_simple` -> Codex -> Upgrade ->
   private codec against a local scripted peer) in all three feature graphs.
 
-## Scripted Multi-Operation MockProvider Support (task 20.53.8, DEL-11)
+## Scripted Multi-Operation MockProvider Support
 
 `test_support` extends the existing `MockProvider` chat scripts with the
 three shapes pinned to `providers/faux.ts` - no second mock driver, no
@@ -1536,9 +1526,9 @@ public API change:
   remain independent. Panics for `Thinking`/`RedactedThinking` blocks by contract.
   Existing `Events`/`Error`/`EventsThenError` semantics and the
   `stream_prepared` queue-assertion are unchanged; deferred records and
-  their scripts stay with 20.45-50.
+  their scripts stay with the corresponding operations.
 
-## Public Header Merge, Scoped Env, and Cancellable Waits (P20-S53-6, task 20.53.6)
+## Public Header Merge, Scoped Env, and Cancellable Waits
 
 `provider_headers::merge_provider_header_sources`, the new
 `provider_env` module, and the new `cancel` module complete the pinned
@@ -1573,7 +1563,7 @@ public API change:
   drop sentinels for determinism. No new dependency; no executor or
   global timer authority.
 
-## Public shortHash and UUIDv7 Identity Utilities (P20-S53-4, task 20.53.4)
+## Public shortHash and UUIDv7 Identity Utilities
 
 `opi_ai::identity::{short_hash, UuidV7Generator, UuidV7Error}` complete the
 pinned `utils/hash.ts` and `utils/uuid.ts` families:
@@ -1600,7 +1590,7 @@ pinned `utils/hash.ts` and `utils/uuid.ts` families:
   source bit for bit (version `0x7`, variant `0b10`, sequence spread
   across bytes 6-11, random LSB preserved) in 8-4-4-4-12 lowercase hex.
 
-## Public Overflow/Length Predicates and Typed Diagnostics (P20-S53-3, task 20.53.3)
+## Public Overflow/Length Predicates and Typed Diagnostics
 
 `opi_ai::message::{is_context_overflow, is_recoverable_length}` and
 `opi_ai::provider::{extract_diagnostic_error, DiagnosticErrorInfo}`
@@ -1631,7 +1621,7 @@ families:
   wire error name. Raw provider payloads never enter the summary, and
   there is no stack field (no Rust execution-stack analog).
 
-## Public JSON Repair and Portable Schema Utilities (P20-S53-2, task 20.53.2)
+## Public JSON Repair and Portable Schema Utilities
 
 `opi_ai::message::{repair_json, parse_streaming_json,
 finalize_tool_arguments, string_enum}` complete the pinned
@@ -1650,7 +1640,7 @@ finalize_tool_arguments, string_enum}` complete the pinned
   truncated numbers and literals complete conservatively, junk after the
   first complete top-level value is ignored); finally a valid empty
   object. It never fails and never overrides final results.
-- **`finalize_tool_arguments`** is the public AIR-048 contract for a
+- **`finalize_tool_arguments`** is the public contract for a
   finished tool call: empty input finalizes to `{}`; a complete object
   keeps its owned raw text; a complete object repaired only for invalid escapes
   or raw string control characters returns the repaired text; anything else
@@ -1662,7 +1652,7 @@ finalize_tool_arguments, string_enum}` complete the pinned
   deliberately no `anyOf`/`const` and no TypeBox symbols or JavaScript
   ABI; the value is ready for `ToolDef::input_schema`.
 
-## Public Text/System Rendering Utilities (P20-S53-1, task 20.53.1)
+## Public Text/System Rendering Utilities
 
 `opi_ai::message::{content_text, assistant_content_text,
 output_content_text}` extract and join the **visible text** blocks of the
@@ -1683,7 +1673,7 @@ rendered text), and the update render frames each change by name
 content appends join with a blank line, a section replacement keeps its
 position, a delete removes it, and a delete-then-readd moves it to the end.
 
-## Explicit Whole-Call Retry Helper (AIR-065/V-57, task 20.52)
+## Explicit Whole-Call Retry Helper
 
 `opi_ai::retry_assistant_call` wraps a caller-owned `produce` closure with
 bounded whole-call retry on transient failures. Each invocation of the
@@ -1716,7 +1706,7 @@ exactly one call.
   caller's factory) and never wires product recovery; host retry policy
   stays with the host.
 
-## Constrained Sampling: Strict Wire Projection and the Bounded Downgrade Variant (AIR-040/V-34, task 20.11)
+## Constrained Sampling: Strict Wire Projection and the Bounded Downgrade Variant
 
 `ToolDef.constrained_sampling` carries the per-tool intent — `json_schema`
 with `prefer`/`require`, or `grammar` with lark/regex variants — and the
@@ -1766,7 +1756,7 @@ adapters resolve it at body-build time:
 Grammar input property names are literal schema keys, including `/` and `~`;
 the wrapper retains the exact name and leaves the trusted schema unchanged.
 
-## Functional Request Callbacks (AIR-059/V-51 ordinary slice, task 20.51)
+## Functional Request Callbacks
 
 `callbacks::RequestCallbacks` (carried on `Request.callbacks`, default empty)
 attaches four observer families. They fire inside the real direct adapters at
@@ -1799,10 +1789,10 @@ A callback failure is a functional failure of the call:
 `ProviderError::CallbackPhase`, redacted, never retryable, never swallowed by
 telemetry, never triggering a new call. Callbacks are runtime function values,
 not JSON configuration. This slice includes ordinary calls and strict variants;
-new operation APIs (20.43–50) and full AIR-059/V-51 closure (20.57) retain their
+new operation APIs and the full callback surface retain their
 separate acceptance boundaries.
 
-## Estimator, Sampling and Pricing Metadata (V-45/AIR-053/AIR-062, task 20.35)
+## Estimator, Sampling and Pricing Metadata
 
 The detailed estimator, sampling, tier selection, cache-pricing, service-tier,
 and compatibility rules live in the [Cost and pricing reference](docs/cost-pricing.md).
@@ -1897,7 +1887,7 @@ the public offline function. Provider adapters and transport entry points retain
 their current paths.
 
 
-## Anthropic Messages Native Options and Inline-Tools Chronology (task 20.39)
+## Anthropic Messages Native Options and Inline-Tools Chronology
 
 The public direct adapter `anthropic::AnthropicMessagesChatApi` registers
 through `Models::register_chat_api` (api id `anthropic-messages`) with typed
@@ -1962,11 +1952,10 @@ Error-turn image relocation follows the pinned
 with a `(image attached after the tool results)` placeholder text block in
 place of each image run, and the caption plus deferred images follow all of
 the turn's tool results **in the same user message**. The anthropic
-producer now runs under the explicit frozen `TelemetryContext`
-(P20-TELEMETRY).
+producer now runs under the explicit frozen `TelemetryContext`.
 
 
-## Google Generative AI Native Options and Gemini 3 Wire Rules (task 20.40)
+## Google Generative AI Native Options and Gemini 3 Wire Rules
 
 The public direct adapter `gemini::GoogleGenerativeAiChatApi` registers
 through `Models::register_chat_api` (api id `google-generative-ai`) with
@@ -2018,9 +2007,9 @@ stream's first poll to terminal, excluding Models auth/loading; unpolled
 streams start no generation work. These usage and timing rules also apply to
 Vertex. Unmapped finish reasons fail typed carrying the raw reason
 (`Provider stopped with: <raw>`). The Google producer runs under the
-explicit frozen `TelemetryContext` (P20-TELEMETRY).
+explicit frozen `TelemetryContext`.
 
-## pi-messages Direct Adapter (Radius Gateway, task 20.44)
+## pi-messages Direct Adapter
 
 The public direct adapter `pi_messages::PiMessagesChatApi` registers through
 `Models::register_chat_api` (api id `pi-messages`, provider id `radius`)
@@ -2069,11 +2058,11 @@ complete model records through `with_models`; an acknowledged empty stored
 catalog remains authoritative after reopening, while explicit registry model
 overrides retain precedence.
 
-## Builtin Provider Factory Layer: 42 Canonical Profiles (task 20.34)
+## Builtin Provider Factory Layer: 42 Canonical Profiles
 
 The canonical built-in Provider factory contract is maintained in the [Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md).
 
-## OpenAI Decisions Adapter and Four-Protocol Classifier Closure (task 20.49)
+## OpenAI Decisions Adapter and Four-Protocol Classifier Closure
 
 The fourth real classifier protocol: `api::decisions::OpenAiDecisionsApi`
 (api id `openai-decisions`, provider `openai`) serves OpenAI's Decisions
@@ -2106,7 +2095,7 @@ llama.cpp and Decisions register side by side in one `Models` and answer
 through the same public `classify` dispatch while keeping their own wire
 shapes.
 
-## llama.cpp Classification by Label-Token Readout (task 20.48)
+## llama.cpp Classification by Label-Token Readout
 
 The third real classifier protocol needs no dedicated classification
 service at all: `api::llama::LlamaCppClassifyApi` (api id
@@ -2143,7 +2132,7 @@ per-endpoint observer surface is a different transport shape from the
 single-request System One core. Resolved label tokens are cached per
 server root, model and label for the adapter's lifetime.
 
-## Cloudflare Workers AI System One Adapter and Multi-Model Registration (task 20.47)
+## Cloudflare Workers AI System One Adapter and Multi-Model Registration
 
 The second real classifier protocol drives the same shared conformance: the
 `api::cloudflare::CloudflareWorkersAiSystemOneApi` (api id
@@ -2185,7 +2174,7 @@ hosted models' context windows have no pinned evidence (pi's generated
 `data/cloudflare-workers-ai.json` is absent from the pinned source) and
 stay at the generator's `0` fallback. Registrars replace the set wholesale.
 
-## Classifier Operation and TypeSafe System One Direct Adapter (task 20.46)
+## Classifier Operation and TypeSafe System One Direct Adapter
 
 The fixed-`O` classifier operation ships beside the chat and image seams:
 the object-safe `api::ClassifierApi<O>` trait mirrors `ImageApi` (exact
@@ -2253,7 +2242,7 @@ context, text input, zero pricing until registered) replaces wholesale at
 registration; pi's generated `data/typesafe.json` is absent from the pinned
 source.
 
-## Image Operation and OpenRouter Image Direct Adapter (task 20.45)
+## Image Operation and OpenRouter Image Direct Adapter
 
 The fixed-`O` image operation ships in `api`/`images`: the object-safe
 `api::ImageApi<O>` trait mirrors `ChatApi` (exact `ApiId`, provider
@@ -2305,10 +2294,10 @@ cancellation maps to `Aborted`, and HTTP failures format
 (replace-or-keep, once per logical call, frozen across retries) and the
 response observer (status + headers after complete JSON decoding, outside acquisition retry and its timeout) are supported;
 raw-event and header-transform families are rejected typed before dispatch
-(ONB-04). The frozen `TelemetryContext` (P20-TELEMETRY) passes through to
+. The frozen `TelemetryContext` passes through to
 the request path without automatic spans.
 
-## Mistral Conversations Direct Adapter and Native Options (task 20.43)
+## Mistral Conversations Direct Adapter and Native Options
 
 The public direct adapter `mistral::MistralConversationsChatApi` registers
 through `Models::register_chat_api` (api id `mistral-conversations`,
@@ -2364,7 +2353,7 @@ format `Mistral API error (status): body` (4000-char truncation before the
 crate-wide sanitized-summary cap); 429 keeps its retryable rate-limit
 identity.
 
-## Bedrock Converse Stream Direct Adapter and Native Options (task 20.42)
+## Bedrock Converse Stream Direct Adapter and Native Options
 
 The public direct adapter `bedrock::BedrockConverseStreamChatApi` registers
 through `Models::register_chat_api` (api id `bedrock-converse-stream`,
@@ -2383,9 +2372,9 @@ adapter adds the pi content engine on top.
 | `request_metadata` | Rides verbatim as `requestMetadata`; the AWS limits live in pi comments only and the SDK owns validation (no local preflight) |
 | (non-Claude) | gpt-oss models take a flat `reasoning_effort` (low/medium/high); GPT models take nested `reasoning.effort`; other families send no additional fields |
 
-`region`/`profile`/`bearerToken` are resolver-owned inputs (the task 20.20
-AWS chain: explicit/scoped/env keys, profiles, web identity, ECS/ECS
-relative URIs, IMDS, SSO), not options on this struct.
+`region`/`profile`/`bearerToken` are resolver-owned inputs. The AWS chain uses
+explicit/scoped/env keys, profiles, web identity, ECS/ECS relative URIs, IMDS and
+SSO; these are not options on this struct.
 
 Strict tools follow `BedrockConverseStreamCompat.supports_strict_tools`
 (`WireCompat::BedrockConverseStream` became a tuple variant): a strict tool
@@ -2408,12 +2397,12 @@ redacted payload buffering), maps `model_context_window_exceeded` to
 `cache_write_1h_tokens`. The producer runs under the explicit frozen
 `TelemetryContext`.
 
-## Google Vertex Direct Adapter and Native Options (task 20.41)
+## Google Vertex Direct Adapter and Native Options
 
 The public direct adapter `vertex::GoogleVertexChatApi` registers through
 `Models::register_chat_api` (api id `google-vertex`, provider id `vertex`)
 with typed `GoogleVertexOptions`. The tool-choice and thinking intents share
-the Google shapes documented for task 20.40 (no named-tool mode;
+the Google wire shapes (no named-tool mode;
 `budget_tokens` keeps `-1` dynamic and `0` disable untouched; native
 omission sends no `thinkingConfig`), with two Vertex-own extensions:
 
@@ -2431,7 +2420,7 @@ the project/location resource prefix (the prefix is always rebuilt), and
 `location = "global"` pins the shared domain. The content engine, streaming
 parse, independent usage/total accounting and activation-based duration,
 strict tool handling and thought-signature rules
-are inherited from the shared Google engine (task 20.40).
+are inherited from the shared Google engine.
 
 One neutral policy differs per wire: the vertex budget table has no
 dedicated flash-lite entry, and pi's substring match routes
@@ -2439,9 +2428,9 @@ dedicated flash-lite entry, and pi's substring match routes
 wire's dedicated table maps minimal 512). The vertex producer runs under
 the explicit frozen `TelemetryContext`.
 
-## Deferred Responses (task 20.50)
+## Deferred Responses
 
-Deferred submission is a normal generation (AIR-043): a capable backend
+Deferred submission is a normal generation: a capable backend
 returns an assistant message with `StopReason::Deferred`, empty content and
 a `deferred` handle instead of final content — no `submitDeferred` API
 exists. `DeferredHandle` carries source-owned identity
@@ -2468,8 +2457,7 @@ Fetch and cancellation are explicit operations on that handle:
   failures are reported, never guaranteed. Cancelling the fetch call's
   local token aborts only the local attempt (`ProviderError::Cancelled`,
   zero backend work when cancelled before the first poll) and never
-  reaches the remote job — the two cancellation paths are independent
-  (AIR-044).
+  reaches the remote job — the two cancellation paths are independent.
 
 Backends register through `Models::register_deferred_api` (typed
 `DeferredApi` trait: `api_id`/`provider_id`/`model_id`/`default_options`
@@ -2477,7 +2465,7 @@ plus `fetch_prepared`/`cancel_prepared`); a deferred upsert with the same exact 
 replaces the registration wholesale. `Models::validate_deferred_handle`
 exposes the typed pre-auth validation (`RouteMismatch` boxed detail,
 `Expired`, `Unsupported`). Fetch and cancel calls carry an optional frozen
-`TelemetryContext` straight to the backend (AIR-054); submission reuses the
+`TelemetryContext` straight to the backend; submission reuses the
 chat request's existing carrier. Fetch installs `pi.ai.poll`; remote
 `cancel_deferred` does not install a Pi AI span. No real remote deferred
 protocol is claimed: the published seam serves scripted and custom backends, and
@@ -2518,7 +2506,7 @@ timestamp while the frozen credential and payload stay byte-identical;
 source-exchange sends and generation sends are counted separately and the
 quota never spans calls.
 
-### ADC native sources and the Vertex dual-mode wire (P20-S21-1)
+### ADC native sources and the Vertex dual-mode wire
 
 Vertex authentication resolves through the pinned ADC families
 (`auth::adc`): a `service_account` file exchanges an RS256 JWT assertion
@@ -2547,7 +2535,7 @@ domain); the product route prefers a stored credential or
 `GOOGLE_CLOUD_API_KEY`, then the configured access-token env, then the
 ADC chain.
 
-### ADC external-account federation and the executable supplier (P20-S21-2)
+### ADC external-account federation and the executable supplier
 
 `auth::adc` also owns the `external_account` federation families. File and
 URL suppliers keep the raw subject-token text (no trim) or the named JSON
@@ -2576,7 +2564,7 @@ without client authentication. Provenance classifies the supplier through
 source/target mechanism below. The AWS subject supplier uses its ADC-specific
 metadata/environment contract rather than the Bedrock profile/SSO/process chain.
 
-### ADC impersonation, recursive composition and the keyed cache (P20-S21-3)
+### ADC impersonation, recursive composition and the keyed cache
 
 `auth::adc::impersonation` owns the `impersonated_service_account` family:
 `source_credentials` resolves recursively through the same adapter with no
@@ -2606,7 +2594,7 @@ replacement fences late tokens and rotated refresh material together. A
 barrier observes the source operation and ACK without starting auth. The
 product shares this queue with its keychain store.
 
-### SDK OAuth (Anthropic) and store-acknowledged `Models::login` (P20-S23)
+### SDK OAuth (Anthropic) and store-acknowledged `Models::login`
 
 `auth::oauth` owns the Anthropic login mechanism pinned to pi 1.3.0's wire
 shapes: token requests are JSON (`Content-Type`/`Accept: application/json`)
@@ -2632,7 +2620,7 @@ browser launch, keychain read, environment fallback, or remote revocation
 happens. `opi-coding-agent` keeps only host policy (TUI presenter, terminal
 suspension, keychain store) and registers the SDK flow.
 
-### SDK OAuth (OpenAI Codex legacy) (P20-S24)
+### SDK OAuth (OpenAI Codex legacy)
 
 `auth::oauth::codex` owns the Codex login mechanism pinned to pi 1.3.0's
 `openai-codex.ts`: form-encoded token exchange and refresh, and the
@@ -2655,7 +2643,7 @@ registers `openai-codex` with the same store-ACK semantics as Anthropic.
 `opi-coding-agent` cut over compiling: the product Codex protocol duplicate
 was deleted in favor of the SDK mechanism.
 
-### SDK OAuth (OpenAI ChatGPT direct) (P20-S25)
+### SDK OAuth (OpenAI ChatGPT direct)
 
 `auth::oauth::chatgpt` is pinned to pi 1.3.0's `openai-chatgpt.ts`: every
 login registers a dynamic client (`dynamic_agent_client`) and every
@@ -2689,7 +2677,7 @@ subscription credential as an API key. Host call sites map the new field
 through the host envelope: issued `client_id` and the validated `scopes`
 list survive save/reopen and refresh without changing the OAuth credential kind.
 
-### SDK OAuth (GitHub Copilot) (P20-S26)
+### SDK OAuth (GitHub Copilot)
 
 `auth::oauth::copilot` is pinned to pi 1.3.0's `github-copilot.ts`. The
 flow starts with the new `LoginPresenter::prompt_text` asking for a
@@ -2722,7 +2710,7 @@ static catalog as the policy whitelist and derives the Copilot request
 base from the token (a legacy stored `base_url` still wins so
 pre-cutover credentials never change endpoints).
 
-### SDK OAuth (OpenRouter) (P20-S27)
+### SDK OAuth (OpenRouter)
 
 `auth::oauth::openrouter` is pinned to pi 1.3.0's `openrouter.ts`.
 OpenRouter trades an authorization code for a permanent API key: the
@@ -2741,7 +2729,7 @@ network I/O, and the flow never issues the personalization request.
 The shared runner gained `AuthorizeStyle` and an optional post-bind
 progress template; existing flows are unchanged in behavior.
 
-### SDK OAuth (Kimi Coding device flow) (P20-S28)
+### SDK OAuth (Kimi Coding device flow)
 
 `auth::oauth::kimi_coding` is pinned to pi 1.3.0 `kimi-coding.ts` plus the
 shared `device-code.ts` polling state machine. RFC 8628 against
@@ -2759,7 +2747,7 @@ backoff); 401/403 or `invalid_grant` is a typed revoked credential with no
 account fallback. The env OAuth-host override is host policy via
 construction.
 
-### SDK OAuth (Meta device flow and Model API key mint) (P20-S29)
+### SDK OAuth (Meta device flow and Model API key mint)
 
 `auth::oauth::meta` is pinned to pi 1.3.0 `meta.ts` plus the shared
 `device-code.ts` polling machine. RFC 8628 against `auth.meta.com` yields an
@@ -2778,7 +2766,7 @@ switch after its token check. Failure bodies are never echoed; the
 sanctioned exception is a trusted http(s) setup `action_url` from a keyless
 mint response reaching the presenter reason.
 
-### SDK OAuth (xAI device flow and single-pass refresh rotation) (P20-S30)
+### SDK OAuth (xAI device flow and single-pass refresh rotation)
 
 `auth::oauth::xai` is pinned to pi 1.3.0 `xai.ts`. RFC 8628 against
 `auth.x.ai` with form bodies carrying the fixed client id, the xAI scope,
@@ -2797,7 +2785,7 @@ relogin, and nothing retries. The stored expiry is the real service
 lifetime with the single five-minute correction in `needs_refresh`.
 Failure bodies are never echoed; statuses and fixed classes are.
 
-### SDK OAuth (Radius gateway flow and nine-family assembled conformance) (P20-S31)
+### SDK OAuth (Radius gateway flow and nine-family assembled conformance)
 
 `auth::oauth::radius` is pinned to pi 1.3.0 `radius.ts`. The gateway is
 fixed at construction (https-defaulted, trailing slashes stripped).

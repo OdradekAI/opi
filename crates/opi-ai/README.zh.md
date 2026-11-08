@@ -49,7 +49,7 @@ opi-ai = { version = "0.8.3", default-features = false }
 | 使用显式上下文或可选 tracing | [Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing) |
 | 了解测试组织方式 | [测试分层与 SDK 包](#测试分层与-sdk-包) |
 
-前五行对应公共消费者示例；标为 Provider、协议或任务参考的章节用于记录更多
+前五行对应公共消费者示例；标为 Provider、协议或高级参考的章节用于记录更多
 能力及其当前验收状态。
 
 ## 安装
@@ -122,7 +122,7 @@ ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain
 
 公共 surface 围绕少量由调用方持有的值和一个执行 driver 组织：
 
-| 任务 | 公共入口 | 责任 |
+| 目标 | 公共入口 | 责任 |
 | --- | --- | --- |
 | 注册并选择模型 | `Models` / `ProviderRegistry` / `register_builtin` | 构造 catalog 或显式 route，构造阶段不读取认证 |
 | 描述一次调用 | `Request` / `ChatModelRecord` | 携带规范化 Context、模型身份、限制、取消和可选 Telemetry |
@@ -146,8 +146,8 @@ Provider adapter 在这些入口之后实现具体 route；它们不会改变 `R
 | 凭据扩充与 refresh 生命周期 | [凭据、Request 扩充与 Refresh](#凭据request-扩充与-refresh)；[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md) |
 | 显式上下文与可选 tracing | [Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing) |
 | 用量、计价 tier、cache pricing 与 provider 上报成本 | [尽力而为的费用](#尽力而为的费用)；[费用与计价参考](docs/cost-pricing.zh.md) |
-| 严格 WebSocket 握手桥 | [WebSocket Upgrade（RDF-24）](#websocket-upgraderdf-24) |
-| Deferred 生成与轮询 | [Deferred 响应](#deferred-响应任务-2050) |
+| 严格 WebSocket 握手桥 | [WebSocket Upgrade](#websocket-upgrade) |
+| Deferred 生成与轮询 | [Deferred 响应](#deferred-响应) |
 | 测试分层与下游包验收 | [测试分层与 SDK 包](#测试分层与-sdk-包) |
 
 这些链接是能力参考，不表示所有 Provider 或 transport 都由同一 feature
@@ -204,7 +204,7 @@ pub(crate) fn start(
     impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<>,
     Box<dyn std::error::Error>,
 > {
-    // Canonical transcript input (AIR-020): the system prompt and tool
+    // Canonical transcript input: the system prompt and tool
     // declarations fold into one leading system message at normalization.
     let context = transcript::normalize_context(transcript::Context {
         system_prompt: Some("You are concise.".into()),
@@ -267,9 +267,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-关键契约：SDK 构造从不读取产品配置——认证按路由注入（AIR-021）；
-`ChatModelRecord` 由调用方持有，无需 catalog 成员资格（AIR-045）；
-`normalize_context` 将系统提示与工具声明折入规范时间线（AIR-020）；
+关键契约：SDK 构造从不读取产品配置——认证按路由注入；
+`ChatModelRecord` 由调用方持有，无需 catalog 成员资格；
+`normalize_context` 将系统提示与工具声明折入规范时间线；
 `complete_simple` 返回一个 `Ok(AssistantMessage)` 或一个
 `Err(CallFailure)`。
 
@@ -468,7 +468,7 @@ context。
 完整规范时间线（含 assistant 工具调用轮与其 `ToolResultMessage` 结果）。
 调用方是可信执行边界：畸形的最终参数文本记录为未执行
 （`ToolNotExecutedReason::NonObjectArguments`），绝不猜测执行
-（AIR-048）。以下为 `examples/tool_loop.rs` 的逐字源码。
+。以下为 `examples/tool_loop.rs` 的逐字源码。
 
 ```rust
 //! Agent-owned tool loop: declare a tool through the canonical transcript,
@@ -499,7 +499,7 @@ struct ToolOutcome {
     not_executed: Option<ToolNotExecutedReason>,
 }
 
-/// The caller is the trusted execution boundary (AIR-048): a malformed final
+/// The caller is the trusted execution boundary: a malformed final
 /// argument text is recorded as not executed, never guessed into a call.
 fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
     if call.arguments_error.is_some() {
@@ -568,7 +568,7 @@ pub(crate) fn setup(
     let record = ChatModelRecord::new("anthropic", info);
 
     // Tools are declared on the transcript context; normalization folds them
-    // into the leading system message (AIR-020).
+    // into the leading system message.
     let tools = vec![ToolDef {
         name: "get_weather".into(),
         description: "Current weather for one city.".into(),
@@ -680,7 +680,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 - neutral `SimpleOptions` 覆盖（工具选择、温度、输出上限、超时、停止
   序列）与各适配器的 typed `NativeOptions<O>`——见「Native and simple
-  options (ONB-03)」。
+  options」。
 - 失败：单一 typed `CallFailure`，其脱敏 `ProviderError` cause 与分类见
   「Core API」（`ProviderError`、`ProviderErrorCategory`、
   `ProviderErrorSummary`）。
@@ -712,7 +712,7 @@ Provider 矩阵与兼容策略维护在[Provider、Catalog、认证与刷新参�
 | `ProviderRegistry` | 解析 `provider:model`、注册自定义 Provider、叠加模型覆盖。 |
 | `Models` / `AuthDescriptor` / `AuthCheck` | unstable-0.x 唯一 driver，位于 `ProviderRegistry` 之上：Provider+模型查找、脱敏鉴权状态、OpenAI-compatible 兼容性元数据、派发与原子动态目录 refresh。native/simple/direct 与高级入口共用校验及调用生命周期；native options 保留适配器预算语义，simple/高级准备采用共享输出预算。 |
 | `ChatApi` / `ApiId` / `ChatApiHandle` / `NativeOptions` | 类型化自定义 chat adapter 注册，携带精确 API 身份与固定 options 类型；由 handle 创建的 options 携带 API/类型标签，可在具备兼容注册的实例间移植。 |
-| `ToolCall::arguments_error` | 文本 tool 参数的最终解析结果标记（AIR-048）：空输入归一为 `{}`，可修复的非法转义保留字面文本，不完整/非对象最终文本保留自有 raw 并携带该错误，绝不以 partial-prefix 成功执行；缺少该字段的历史记录仍可反序列化。 |
+| `ToolCall::arguments_error` | 文本 tool 参数的最终解析结果标记：空输入归一为 `{}`，可修复的非法转义保留字面文本，不完整/非对象最终文本保留自有 raw 并携带该错误，绝不以 partial-prefix 成功执行；缺少该字段的历史记录仍可反序列化。 |
 | `ChatModelRecord` / `SimpleOptions` / `ChatCall` | 调用方持有的完整 chat record（provider id、裸模型 id、精确 wire），无需目录成员即可调用；中性 simple options；构造时冻结输入并在 Tokio 调度执行的普通消费句柄。 |
 | `PreparedProviderCall` / `PreparedRoute` | `Models::prepare_call` 返回的不透明 logical-call 状态，以及公开的已脱敏 route facts。`route`、`auth_provenance` 与 `start_attempt` 是 prepared-call 生命周期 API；`start_attempt_with_telemetry` 提供标准 `ChatStream` result/observer seam。 |
 | `CredentialStore` / `Credential` / `CredentialSource` | 无 IO、object-safe 的凭据持久化与已脱敏三态探测契约。 |
@@ -789,7 +789,7 @@ header 使用完整传入的 session ID，`prompt_cache_key` 则截断至 64 字
 `previous_response_id` 被推迟（见 OpenAI-Compatible Profile）；兼容 profile
 可携带静态 `extra_headers` 用于路由/会话钉扎。不存在服务端会话链。
 
-## WebSocket Upgrade（RDF-24）
+## WebSocket Upgrade
 
 `ws::upgrade` 在共享的 source-qualified `HttpClient` 上按其显式代理/TLS profile
 执行严格动态 Upgrade。经典 Upgrade 使用该 client 禁用重定向的私有 HTTP/1.1 传输，
@@ -810,8 +810,8 @@ permessage-deflate 参数校验（无重复条目、无未知参数、值域合�
 Upgrade 不构造私有 codec。`Negotiation::driver_parameters` 返回
 `Option<NegotiatedPmd>`，保留两个方向各自的 context-takeover 标志与窗口。
 私有 codec 当前尚无生产调用方。仅物理合并不能证明 Models → 真实 Codex →
-Upgrade → codec（20.16）、continuation/pool/cleanup（20.17）或最终组装 SDK
-包（20.57）；这些证明现已存在。原生平台／MSRV 验收（20.58）已在 Linux
+Upgrade → codec、continuation/pool/cleanup 或最终组装 SDK
+包；这些证明现已存在。原生平台／MSRV 验收已在 Linux
 x86_64（rustc 恰为声明的 MSRV 1.97.1）与 Windows x86_64-pc-windows-msvc 上
 实际执行，两端打包文件集逐字节一致；macOS 仍为显式 CI 声明，等待 owning
 host。
@@ -922,15 +922,11 @@ annotation 对象只有被引用为 schema 时才参与验证。引用目标在�
 回退；根 null 及根或引用目标中的 number/string 以 `InvalidSchema` 失败，JSON
 数组仍保持 inert。regex 与 URL 使用 crates.io 上游 `regress 0.12.0` 和
 `url 2.5.8`。Unicode 属性、脚本、大小写映射和 IDNA 数据随受支持的依赖
-profile，不承诺固定 Unicode 版本。允许的数据差异与升级检查见
-RDF-21 上游 profile 审查（Phase 20 历史证据）。
+profile，不承诺固定 Unicode 版本。依赖 profile 的数据差异不会改变 schema 合同。
 workspace lock 不固定所有库消费者的图。Opi 关闭 regress 默认 features，
 启用 `std`、`utf16`、`prohibit-unsafe`；普通外部消费者也验证 feature union。
 数据差异不放宽 schema guard、admission/ref 顺序、normalization、授权或
-零 I/O 合同。完整 schema conformance 闭合仍由 P20-GAP-SCHEMA 场景及其记录的
-机制归属任务承担；包／平台验收证据见
-[`Phase 20 实现快照`](../../docs/snapshots/phase20/opi-impl-state.json)
-（Linux 与 Windows 已实际执行，macOS 待 owning host）。
+零 I/O 合同。完整 schema conformance 另行执行，不属于接入手册正文。
 
 上游 profile 审查（regress、`url`、`idna`、`idna_adapter`、ICU4X `icu_*`、
 `unicode-ident` 及其 `yoke`／`zerofrom`／`zerovec` 支撑 crate）：workspace
@@ -974,16 +970,16 @@ coercion 语料（allOf 顺序折叠、anyOf/oneOf 原值优先再 clone-per-arm
 `type` 数组顺序的类型联合 primitive coercion，使用精确 ECMAScript
 `Number`／`String` 转换——`Number("0x10")` 为 16，`String(1e21)` 经固定的
 ryu-js 1.0.2 得到 `"1e+21"`），最后用原 schema 检查 normalize 后的根值（上游
-在 coerced 根失败时返回未验证 raw 的行为被有意不复制——RDF-09）。Invalid 结果
+在 coerced 根失败时返回未验证 raw 的行为被有意不复制。Invalid 结果
 只携带脱敏失败信息（实例指针、keyword、来自 schema 的原因）；精确 JSON 整数
-保留精确十进制数字，不复制 JavaScript 解析期的精度丢失（RDF-09）。TypeBox
+保留精确十进制数字，不复制 JavaScript 解析期的精度丢失。TypeBox
 `Value.Convert` 对纯 JSON 方言 schema 是 no-op（其分发读取非 JSON 的 `~kind`
 标记），JSON schema 中的 `~kind` 标记保持 inert——有记录的方言边界。
 
 ## 规范 Replay 投影
 
-`replay` 把规范时序转换为请求局部的 wire 视图（AIR-010/012/013/014，
-任务 20.7）。`project_replay(&[Message], &ReplayRoute, ReplayProjection)` 按
+`replay` 把规范时序转换为请求局部的 wire 视图。
+`project_replay(&[Message], &ReplayRoute, ReplayProjection)` 按
 批次位置＋source ID 校验工具关联：已闭合批次可以复用 ID，但批内重复 call
 ID、重复 result、孤儿 result 或 result／call 名称不匹配都是类型化
 `ReplayError`，在任何请求构造之前（授权与网络之前）失败。无歧义的缺失
@@ -1002,21 +998,18 @@ proposal 在字符串参数 wire（Chat、Responses）上原样发送原始文�
 `{}`、`null` 或伪造调用。wire ID 请求局部合法化（字符集／长度，稳定双射，
 call／result 同步；canonical 不变）。图像在能力路由上保留关联、顺序与失败
 标志（Anthropic 错误 result 的图像拆到该轮全部工具结果之后，并与其同处
-一条 user 消息——任务 20.39）；`details` 绝不进 wire，URL 源原样透传不
+一条 user 消息）；`details` 绝不进 wire，URL 源原样透传不
 下载。`ReplayProjection::Strict` 用类型化错误拒绝同
 批有损转换而不是记录事实。provider adapter 在构造请求体开头消费该投
 影（`build_request_body` 现在返回 `Result`）；Responses 解析器打包
 `call_id|fc_item_id` 支持同身份双 ID 往返，序列化器还原两者，外来历史丢弃
-item id。固定参考：
-`.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts`。
-loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重新加载后实际发送
+item id。loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重新加载后实际发送
 同身份、改模型及跨 wire 请求，同时保持 canonical 的 signed/redacted 或加密数据
-不变。这些检查补充而不替代最终 SDK package 与平台矩阵；矩阵已执行的证据记录在
-[`Phase 20 实现快照`](../../docs/snapshots/phase20/opi-impl-state.json)。
+不变。这些检查补充最终 SDK package 与平台检查。
 
 ## 规范 Context／Transcript 时序
 
-`transcript` 拥有规范的请求时序（AIR-008/011/020）：公共 `Context` 简写
+`transcript` 拥有规范的请求时序：公共 `Context` 简写
 （`system_prompt`、`messages`、`tools`）经 `transcript::normalize_context`
 恰好一次折叠为首条 `Message::System`，该函数返回 typed `Result<TranscriptContext, TranscriptError>`——未归一化的简写无法到达 provider 代码。后续 system 消息修改运行态：
 `content` 追加，具名 `sections` 保序替换（`None` 删除、删除后重加移末尾），
@@ -1035,8 +1028,7 @@ loopback 回归捕获真实 Anthropic 与 Codex 终态输出，序列化／重�
 首次位置与最后值，校验无法恢复已丢弃的重复信息。append 被拒绝时，之前的
 整个 transcript 保持不变。`Request` 以
 `context: TranscriptContext` 携带输入，不再有独立的 `system`／`tools` 运行时
-字段；每个 adapter 在构造请求体开头解析 transcript（固定的 TypeScript 参考
-是 `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts`；上游已废弃的
+字段；每个 adapter 在构造请求体开头解析 transcript（对应的 transcript 行为直接实现；上游已废弃的
 `hasToolRedefinitions` 不移植）。
 
 `Request.projection` 通过 `transcript::ProjectionOptions` 选择时间顺序与 replay
@@ -1073,7 +1065,7 @@ FIPS；未测试的 feature union 与平台不声明支持。同步原生签名�
 硬抢占：取消仅在操作间观察，owned key/资源保留至阻塞 worker join，
 迟到结果被抑制而非发布。
 
-## 源限定 TLS（RDF-23）
+## 源限定 TLS
 
 `HttpClientBuilder::tls(TlsOptions)` 是源限定 TLS 配置的唯一公开入口。
 `TlsOptions` 携带 trust 选择（打包的固定 Node 参考默认 CA bundle、
@@ -1109,7 +1101,7 @@ ALPN、typed 负例、宿主 provider 无关性），记录解析出的 rustls/a
 版本、registry 校验和与原生构建溯源。真实 ADC 接线仍归后续 owner；
 本条只收口传输机制。
 
-## 源限定 HTTP 采集 Profile（RDF-22）
+## 源限定 HTTP 采集 Profile
 
 `HttpClient` 在未修改的 crates.io `reqwest 0.12.28` / `Hyper 1.9.0` 图之上
 持有源限定的 HTTP 发送策略。`HttpClientBuilder::redirects(RedirectPolicy)`
@@ -1147,11 +1139,11 @@ body/事件上限、分配提示或放宽的 content-length/transfer-encoding/EO
 类型化的重定向超限与采集失败、带作用域旁路的代理路由、单终止 EOF），
 记录解析出的 reqwest/hyper/hyper-util/http 版本与 registry 校验和。
 
-## 离线内置 Model Catalog（DEL-10）
+## 离线内置 Model Catalog
 
 内置 Catalog 校验与 revision 合同维护在[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)。
 
-## 动态 Catalog Store 与 Refresh（V-27/AIR-002/AIR-033）
+## 动态 Catalog Store 与 Refresh
 
 动态 Catalog Store、source 失效、Refresh 与发布合同维护在[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)。
 
@@ -1205,7 +1197,7 @@ provider 执行路径都自动埋点。载体
 `start_attempt_with_telemetry` 获得等价观测。省略时不隐式
 捕获 ambient 上下文。载体不序列化、不上 wire，不安装 global
 subscriber、exporter、采样政策或自动 SDK root span。全部 SDK 操作的传播已在
-carrier 边界之间闭合（任务 20.55）：四类 chat 入口
+carrier 边界之间闭合：四类 chat 入口
 （native/simple/direct，以及含 acquisition retry 与 strict 变体重建的 advanced
 `prepare_call` 路径）、图片生成、分类器调用与 deferred submit/fetch/cancel 均经
 各自 producer 与 scoped poll/drop 段接收同一冻结配对；default/`noop` 载体保持被动，
@@ -1216,7 +1208,7 @@ carrier 边界之间闭合（任务 20.55）：四类 chat 入口
 隐式 SDK 词汇。跨操作组装一致性套件位于 `tests/telemetry_operations.rs`；真实
 Codex 路径另由 `tests/codex_telemetry.rs` 覆盖。
 
-## 实例 Resource Generation／Pool 清理／Await 释放（任务 20.17）
+## 实例 Resource Generation／Pool 清理／Await 释放
 
 Codex WebSocket 族现在为每次调用注册一个 resource generation，并通过公共
 `Models::cleanup_session_resources` 入口暴露按 session 的清理
@@ -1260,7 +1252,7 @@ Codex WebSocket 族现在为每次调用注册一个 resource generation，并�
   选项时，适配器才接纳该选项。
   `Models` 尝试所有 owner 的释放并聚合结果。
 
-## 真实 Codex WebSocket 传输：Auto／Delta／续传（任务 20.16，DEL-07）
+## 真实 Codex WebSocket 传输：Auto／Delta／续传
 
 Codex adapter 现持有经严格 Upgrade 桥进入私有 frame/PMD/Close owner 的真实
 WebSocket 生产路径（`openai_codex_responses/ws_transport.rs`；测试位于
@@ -1321,7 +1313,7 @@ provider，也不以 `sampling_params` 承载 native 参数。
   `Models::stream_simple` -> Codex -> Upgrade -> 私有 codec，本地脚本
   peer），三图运行并单独报告。
 
-## MockProvider 多操作脚本测试支撑（任务 20.53.8，DEL-11）
+## MockProvider 多操作脚本测试支撑
 
 `test_support` 按钉定 `providers/faux.ts` 为既有 `MockProvider` chat 脚本补齐
 三种形态——不建第二 mock driver，公共 API 不变：
@@ -1345,9 +1337,9 @@ provider，也不以 `sampling_params` 承载 native 参数。
   先前快照保持独立。按契约对
   `Thinking`/`RedactedThinking` 块 panic。既有
   `Events`/`Error`/`EventsThenError` 语义与 `stream_prepared`
-  队列断言不变；deferred record 及其脚本随 20.45-50 交付。
+  队列断言不变；deferred record 及其脚本随对应操作交付。
 
-## 公共 header 合并、scoped env 与可取消等待（P20-S53-6，任务 20.53.6）
+## 公共 header 合并、scoped env 与可取消等待
 
 `provider_headers::merge_provider_header_sources`、新 `provider_env` 模块与新
 `cancel` 模块补齐锁定 `utils/headers.ts`、`utils/provider-env.ts`、
@@ -1372,7 +1364,7 @@ provider，也不以 `sampling_params` 承载 native 参数。
   暂停的 Tokio 时钟与 Drop 哨兵保证确定性。无新依赖；不建执行器或全局计时
   器权威。
 
-## 公共 shortHash 与 UUIDv7 身份工具（P20-S53-4，任务 20.53.4）
+## 公共 shortHash 与 UUIDv7 身份工具
 
 `opi_ai::identity::{short_hash, UuidV7Generator, UuidV7Error}` 补齐锁定
 `utils/hash.ts` 与 `utils/uuid.ts` 工具族：
@@ -1393,7 +1385,7 @@ provider，也不以 `sampling_params` 承载 native 参数。
   源（版本 `0x7`、变体 `0b10`、序列散布 b6..b11、保随机 LSB），8-4-4-4-12
   小写 hex。
 
-## 公共 overflow/Length 判别与类型化诊断（P20-S53-3，任务 20.53.3）
+## 公共 overflow/Length 判别与类型化诊断
 
 `opi_ai::message::{is_context_overflow, is_recoverable_length}` 与
 `opi_ai::provider::{extract_diagnostic_error, DiagnosticErrorInfo}` 补齐锁定
@@ -1418,7 +1410,7 @@ provider，也不以 `sampling_params` 承载 native 参数。
   `ServiceFault` HTTP 状态与 wire 错误名。原始 provider 载荷永不进入
   summary；无 stack 字段（Rust 无执行栈对应物）。
 
-## 公共 JSON repair 与可移植 schema 工具（P20-S53-2，任务 20.53.2）
+## 公共 JSON repair 与可移植 schema 工具
 
 `opi_ai::message::{repair_json, parse_streaming_json,
 finalize_tool_arguments, string_enum}` 补齐锁定 `utils/json-parse.ts` 与
@@ -1433,7 +1425,7 @@ finalize_tool_arguments, string_enum}` 补齐锁定 `utils/json-parse.ts` 与
   文本做前缀补全（闭合悬挂引号/括号、悬挂 key/value→`null`、截断数字与
   字面量保守补全、忽略首个完整顶层值后的垃圾）；最终兜底为合法空对象。
   永不失败，也永不凌驾终态结果。
-- **`finalize_tool_arguments`** 是完成 tool call 的公共 AIR-048 契约：空输入
+- **`finalize_tool_arguments`** 是完成 tool call 的公共契约：空输入
   终化为 `{}`；完整对象保留其 owned raw 文本；仅修复非法转义或字符串原始控制字符后
   成为完整对象时返回修复文本；
   其余保留 raw 文本并携带 redacted-safe `arguments_error`（绝不回显模型
@@ -1442,7 +1434,7 @@ finalize_tool_arguments, string_enum}` 补齐锁定 `utils/json-parse.ts` 与
   可选 `description`/`default`（空串省略）——刻意不用 `anyOf`/`const`，无
   TypeBox 符号或 JavaScript ABI；返回值可直接用于 `ToolDef::input_schema`。
 
-## 公共 text/system 渲染工具（P20-S53-1，任务 20.53.1）
+## 公共 text/system 渲染工具
 
 `opi_ai::message::{content_text, assistant_content_text,
 output_content_text}` 按块序抽取并拼接消息内容枚举中的**可见文本**块，
@@ -1460,7 +1452,7 @@ system prompt section "n".`）。编年重放
 initial/current 区分：content 追加以空行连接，section 替换保位，删除即移
 除，删后重加移至末尾。
 
-## 显式 whole-call retry helper（AIR-065/V-57，任务 20.52）
+## 显式 whole-call retry helper
 
 `opi_ai::retry_assistant_call` 以有界 whole-call 重试包裹调用方拥有的
 `produce` 闭包。闭包每次调用都是一个**新 logical call**——helper 绝不重派旧
@@ -1486,7 +1478,7 @@ initial/current 区分：content 追加以空行连接，section 替换保位，
 - helper 自身绝不切换 provider/model/auth（那是调用方工厂的事），也绝不接
   产品恢复；host 重试政策仍属 host。
 
-## Anthropic Messages native 选项与 inline-tools 时序（任务 20.39）
+## Anthropic Messages native 选项与 inline-tools 时序
 
 公开 direct adapter `anthropic::AnthropicMessagesChatApi` 经
 `Models::register_chat_api` 注册（api id `anthropic-messages`），携带类型化
@@ -1541,10 +1533,10 @@ native，按值携带 `tool_addition` 定义——同名重定义是新增，绝
 错误回合图像迁移遵循钉住的 `splitErrorToolResultImages` 形状：错误
 `tool_result` 保留其文本并以 `(image attached after the tool results)` 占位
 文本块替换每个图像段；标签加延迟图像跟随该轮**全部**工具结果之后，同处一
-条 user 消息。anthropic producer 现运行于显式冻结的 `TelemetryContext`
-（P20-TELEMETRY）。
+条 user 消息。anthropic producer 现运行于显式冻结的 `TelemetryContext`。
 
-## Google Generative AI native 选项与 Gemini 3 wire 规则（任务 20.40）
+
+## Google Generative AI native 选项与 Gemini 3 wire 规则
 
 公开 direct adapter `gemini::GoogleGenerativeAiChatApi` 经
 `Models::register_chat_api` 注册（api id `google-generative-ai`），携带类型化
@@ -1587,9 +1579,9 @@ reasoning 子集保持 `None`，显式零保持 `Some(0)`）。各 usage 字段�
 首次 poll 计至终态，不计 Models 的 auth/loading；未 poll 的流不启动 generation。
 这些用量与计时规则也适用于 Vertex。未映射的 finish 原因携带原始原因类型化失败
 （`Provider stopped with: <raw>`）。Google producer 运行于显式冻结的
-`TelemetryContext`（P20-TELEMETRY）。
+`TelemetryContext`。
 
-## pi-messages 直接适配器（Radius 网关，任务 20.44）
+## pi-messages 直接适配器
 
 公共直接适配器 `pi_messages::PiMessagesChatApi` 经 `Models::
 register_chat_api` 注册（api id `pi-messages`，provider id `radius`），
@@ -1629,11 +1621,11 @@ payload、response（先于成功检查）、随后每个原始解析事件先�
 `with_models` 提供完整模型记录；已确认写入的空目录在重新打开 store 后仍
 具权威性，显式 registry 模型覆盖仍保持优先级。
 
-## 内置 Provider 工厂层：42 个 canonical profile（任务 20.34）
+## 内置 Provider 工厂层：42 个 canonical profile
 
 canonical 内置 Provider 工厂合同维护在[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)。
 
-## OpenAI Decisions 适配器与四协议分类器闭环（任务 20.49）
+## OpenAI Decisions 适配器与四协议分类器闭环
 
 第四个真实分类器协议：`api::decisions::OpenAiDecisionsApi`（api id
 `openai-decisions`，provider `openai`）服务 OpenAI 的 Decisions API——一次
@@ -1657,7 +1649,7 @@ curated 的 `gpt-6-luna` 记录记载被测模型及其 272K token 以上的长�
 typesafe、Cloudflare、llama.cpp 与 Decisions 在同一个 `Models` 中并列注
 册，经同一公共 `classify` 派发应答，同时保持各自的 wire 形状。
 
-## llama.cpp 标签 token 读出分类（任务 20.48）
+## llama.cpp 标签 token 读出分类
 
 第三个真实分类器协议完全不需要专用分类服务：
 `api::llama::LlamaCppClassifyApi`（api id `llama-cpp-classify`，provider id
@@ -1683,7 +1675,7 @@ body-inclusive 超时、Retry-After 感知延迟）——基于共享策略助�
 的传输形状。已解析的标签 token 按（服务器根、模型、标签）在适配器生命
 期内缓存。
 
-## Cloudflare Workers AI System One 适配器与多模型注册（任务 20.47）
+## Cloudflare Workers AI System One 适配器与多模型注册
 
 第二个真实分类器协议驱动同一条共用 conformance：
 `api::cloudflare::CloudflareWorkersAiSystemOneApi`（api id
@@ -1718,7 +1710,7 @@ fixture 跨宿主沿用）、`@cf/cloudflare/clef`（$0.24/M 输入）与
 窗口无钉住证据（pi 生成的 `data/cloudflare-workers-ai.json` 未随钉住源
 提供），保持生成器的 `0` 回退。注册方整体替换集合。
 
-## 分类器操作与 TypeSafe System One 直接适配器（任务 20.46）
+## 分类器操作与 TypeSafe System One 直接适配器
 
 fixed-`O` 分类器操作与 chat／image seam 并列：object-safe 的
 `api::ClassifierApi<O>` trait 镜像 `ImageApi`（精确 `ApiId`、provider
@@ -1773,7 +1765,7 @@ curated 基线记录（`typesafe/jev-latest`，64000 token 上下文，文本输
 注册前零价）在注册时整体替换；pi 生成的 `data/typesafe.json` 未随钉住
 源提供。
 
-## 图像操作与 OpenRouter 图像直接适配器（任务 20.45）
+## 图像操作与 OpenRouter 图像直接适配器
 
 fixed-`O` 图像操作落在 `api`/`images`：object-safe 的
 `api::ImageApi<O>` trait 镜像 `ChatApi`（精确 `ApiId`、provider 身份、
@@ -1815,10 +1807,10 @@ pi 生成的 `data/openrouter.json` 未随钉住源提供，注册方整体替�
 401/403 → `AuthFailed`、429 → `RateLimited`、408/504 → `Timeout`。回
 调：payload 观察器（替换或保留、每次逻辑调用一次、跨重试冻结）与
 response 观察器（status + headers，在完整 JSON 解码后，位于 acquisition 重试和超时之外）受支持；raw-event
-与 header-transform 族在派发前类型化拒绝（ONB-04）。冻结的
-`TelemetryContext`（P20-TELEMETRY）透传到请求路径，无自动 span。
+与 header-transform 族在派发前类型化拒绝。冻结的
+`TelemetryContext`透传到请求路径，无自动 span。
 
-## Mistral Conversations 直接适配器与 native 选项（任务 20.43）
+## Mistral Conversations 直接适配器与 native 选项
 
 公共直接适配器 `mistral::MistralConversationsChatApi` 经
 `Models::register_chat_api` 注册（api id `mistral-conversations`，
@@ -1864,7 +1856,7 @@ cached`、`cache_read = cached`、`cache_write = 0`、total 回退求和）、�
 `Mistral API error (status): body`（4000 字符截断先于 crate 级 sanitized
 摘要上限）；429 保持可重试限流身份。
 
-## Bedrock Converse Stream 直接适配器与 native 选项（任务 20.42）
+## Bedrock Converse Stream 直接适配器与 native 选项
 
 公共直接适配器 `bedrock::BedrockConverseStreamChatApi` 经
 `Models::register_chat_api` 注册（api id `bedrock-converse-stream`，
@@ -1882,9 +1874,9 @@ provider id `bedrock`），携带类型化的 `BedrockOptions`。AWS 传输层�
 | `request_metadata` | 逐字转发为 `requestMetadata`；AWS 限制仅存在于 pi 注释，校验归 SDK（无本地 preflight） |
 | （非 Claude） | gpt-oss 模型取平面 `reasoning_effort`（low/medium/high）；GPT 模型取嵌套 `reasoning.effort`；其他家族不发送额外字段 |
 
-`region`/`profile`/`bearerToken` 是 resolver 持有的输入（20.20 AWS 链：显
-式/scoped/env 密钥、profile、web identity、ECS 相对 URI、IMDS、SSO），不在
-本结构体上重复。
+`region`/`profile`/`bearerToken` 是 resolver 持有的输入。AWS 链使用
+显式/scoped/env 密钥、profile、web identity、ECS 相对 URI、IMDS 和 SSO；
+这些不是本结构体上的选项。
 
 strict 工具跟随 `BedrockConverseStreamCompat.supports_strict_tools`
 （`WireCompat::BedrockConverseStream` 变为元组变体）：strict toolSpec 携带
@@ -1903,11 +1895,11 @@ thinking 块（signature 累积、redacted 载荷缓冲），把
 `cacheDetails` 求和进 `cache_write_1h_tokens`。producer 运行于显式冻结的
 `TelemetryContext`。
 
-## Google Vertex 直接适配器与 native 选项（任务 20.41）
+## Google Vertex 直接适配器与 native 选项
 
 公共直接适配器 `vertex::GoogleVertexChatApi` 经 `Models::register_chat_api`
 注册（api id `google-vertex`，provider id `vertex`），携带类型化的
-`GoogleVertexOptions`。tool-choice 与 thinking 意图复用任务 20.40 记录的
+`GoogleVertexOptions`。tool-choice 与 thinking 意图复用 记录的
 Google 形态（无 named 工具模式；`budget_tokens` 原样保留 `-1` 动态与 `0`
 禁用；native 省略完全不发 `thinkingConfig`），另有两项 Vertex 专属扩展：
 
@@ -1923,14 +1915,14 @@ Google 形态（无 named 工具模式；`budget_tokens` 原样保留 `-1` 动�
 project/location 资源前缀（前缀总是重建），`location = "global"` 钉住共享
 域名。内容引擎、流式解析、独立的 usage/total 计量与 activation 起算的 duration、
 strict 工具处理与 thought 签名规则继承自共享
-Google 引擎（任务 20.40）。
+Google 引擎。
 
 每 wire 一处 neutral 策略差异：vertex 预算表没有专用 flash-lite 条目，pi
 的子串匹配把 `2.5-flash-lite` 路由进 flash 表（minimal 128；
 generative-ai wire 的专用表映射 minimal 512）。vertex producer 运行于显式
 冻结的 `TelemetryContext`。
 
-## 受限采样：strict wire 投影与有界降级变体（AIR-040/V-34，任务 20.11）
+## 受限采样：strict wire 投影与有界降级变体
 
 `ToolDef.constrained_sampling` 携带逐工具意图——`json_schema` 的
 `prefer`/`require`，或带 lark/regex 变体的 `grammar`——适配器在构体时解析：
@@ -1968,7 +1960,7 @@ generative-ai wire 的专用表映射 minimal 512）。vertex producer 运行于
 grammar 输入属性名按 schema 的 literal key 查找，包括 `/` 与 `~`；包装保留精确
 名称，trusted schema 不变。
 
-## 功能请求回调（AIR-059/V-51 普通切片，任务 20.51）
+## 功能请求回调
 
 `callbacks::RequestCallbacks`（随 `Request.callbacks` 携带，默认为空）附加四类
 观察者，在真实直连适配器内按其源定义的时机触发——绝不从归一化 `EventStream`
@@ -1995,10 +1987,10 @@ wire（Gemini/Vertex）支持 payload、header-transform 及归一化前的已�
 `UnsupportedCapability` 拒绝。回调失败是
 调用的功能失败：`ProviderError::CallbackPhase`，已脱敏、永不重试、不被遥测
 吞掉、不触发新调用。回调是运行时函数值，不是 JSON 配置；本切片包含普通调用及
-strict variant。新操作 API（20.43–50）与完整 AIR-059/V-51 收口（20.57）保留各自
+strict variant。新操作 API 与完整回调能力保留各自
 独立验收边界。
 
-## 估算器、Sampling 与计价元数据（V-45/AIR-053/AIR-062，任务 20.35）
+## 估算器、Sampling 与计价元数据
 
 完整的估算器、sampling、tier 选择、缓存计价、service tier 和兼容规则见[费用与计价参考](docs/cost-pricing.zh.md)。
 这个稳定标题仍保留为旧版 README 的跳转目标；完整表格和优先级规则以专题文档为准。
@@ -2079,9 +2071,9 @@ cleanup 验收。
 均重导出同一定义，混用路径无需转换。`HttpCatalogSource::decode_document`
 委托公共离线函数。Provider 适配器与 transport 入口保持当前路径。
 
-## Deferred 响应（任务 20.50）
+## Deferred 响应
 
-Deferred 提交就是普通生成（AIR-043）：具备能力的后端返回一条
+Deferred 提交就是普通生成：具备能力的后端返回一条
 `StopReason::Deferred`、内容为空并携带 `deferred` handle 的 assistant
 消息，而不是最终内容——不存在 `submitDeferred` API。`DeferredHandle`
 携带 source 拥有的身份（`provider`/`model_id`/`api`/`id`）、可选的过期
@@ -2103,7 +2095,7 @@ camelCase（`expiresAt`、`pollAfterMs`、`data`）序列化。
 - `Models::cancel_deferred(handle, call)` 是尽力而为的远端取消：失败会
   报告，从不保证成功。取消 fetch 调用的本地令牌只中止本地尝试
   （`ProviderError::Cancelled`；首次 poll 前取消则零后端工作），绝不触及
-  远端任务——两条取消路径相互独立（AIR-044）。
+  远端任务——两条取消路径相互独立。
 
 后端经 `Models::register_deferred_api` 注册（类型化 `DeferredApi` trait：
 `api_id`/`provider_id`/`model_id`/`default_options` 加上
@@ -2111,9 +2103,9 @@ camelCase（`expiresAt`、`pollAfterMs`、`data`）序列化。
 注册表；同一精确 `ApiId` 的 upsert 整体替换注册。
 `Models::validate_deferred_handle` 暴露类型化的鉴权前校验（装箱 detail 的
 `RouteMismatch`、`Expired`、`Unsupported`）。fetch/cancel 调用可将可选的
-冻结 `TelemetryContext` 直达后端（AIR-054）；提交复用 chat 请求既有的
+冻结 `TelemetryContext` 直达后端；提交复用 chat 请求既有的
 载体。fetch 会创建 `pi.ai.poll`，远端 `cancel_deferred` 不创建 Pi AI span。
-本任务不声称任何真实远端 deferred 协议：发布的接缝服务于脚本化与
+当前不声称任何真实远端 deferred 协议：发布的接缝服务于脚本化与
 自定义后端，`test_support::ScriptedDeferredBackend` 与
 `MockProvider::with_deferred` 提供确定性的 pi-faux 脚本（pending 倒计时、
 取消记录、可选强制取消失败），`tests/deferred_contract.rs` 中的可重开
@@ -2142,7 +2134,7 @@ CUBIC 客户端限速器（半秒桶 EWMA 实测速率、限流乘性削减、�
 凭据与 payload 保持字节一致；来源交换发送与生成发送分开计数，配额从不
 跨调用。
 
-### ADC 原生来源与 Vertex 双模式 wire（P20-S21-1）
+### ADC 原生来源与 Vertex 双模式 wire
 
 Vertex 认证按锁定的 ADC 家族解析（`auth::adc`）：`service_account`
 文件以 RS256 JWT 断言（仅 alg 头、`exp = iat + 3600`）在 canonical
@@ -2167,7 +2159,7 @@ ADC 路由（需要 project/location，`global` 固定共享域名）；产品�
 依次优先存储凭据/`GOOGLE_CLOUD_API_KEY`、配置的 access-token 环境变
 量、ADC 链。
 
-### ADC external-account 联邦与可执行 supplier（P20-S21-2）
+### ADC external-account 联邦与可执行 supplier
 
 `auth::adc` 同时拥有 `external_account` 联邦家族。file/url supplier 保留
 subject token 原始文本（不 trim）或命名的 JSON 字段；AWS（`aws1`）来源
@@ -2192,7 +2184,7 @@ HTTP Basic，无客户端认证时 workforce user project 进入 `options` form
 `impersonated_service_account` 经下述 source/target 机制组合。AWS subject
 supplier 遵守自身 ADC metadata/环境变量合同，不使用 Bedrock profile/SSO/process 链。
 
-### ADC 模拟、递归组合与分键缓存（P20-S21-3）
+### ADC 模拟、递归组合与分键缓存
 
 `auth::adc::impersonation` 拥有 `impersonated_service_account` 家族：
 `source_credentials` 经同一 adapter 递归解析（不新增深度上限），target
@@ -2216,7 +2208,7 @@ per-call token。可能轮转的 ADC 获取由共享 mutation queue 拥有：等
 不丢弃已开始的刷新；来源替换对晚 token 和轮转的 refresh 材料统一设 fence。
 barrier 观察来源操作与 ACK，不启动鉴权。产品与 keychain store 共用该队列。
 
-### SDK OAuth（Anthropic）与 store-ACK 的 `Models::login`（P20-S23）
+### SDK OAuth（Anthropic）与 store-ACK 的 `Models::login`
 
 `auth::oauth` 拥有钉定 pi 1.3.0 wire 形状的 Anthropic 登录机制：token
 请求为 JSON（`Content-Type`/`Accept: application/json`），在总登录预算内
@@ -2235,7 +2227,7 @@ URI 写 `localhost`），失败退到空闲 loopback 端口，最后退到纯手
 读取、环境回退或远程撤销。`opi-coding-agent` 只保留宿主策略（TUI
 presenter、终端挂起、keychain store）并注册 SDK 流。
 
-### SDK OAuth（OpenAI Codex legacy）（P20-S24）
+### SDK OAuth（OpenAI Codex legacy）
 
 `auth::oauth::codex` 拥有钉定 pi 1.3.0 `openai-codex.ts` 的 Codex 登录机制：
 token 交换与刷新为 form 编码；浏览器路径使用与 Codex CLI 共享的固定
@@ -2257,7 +2249,7 @@ Anthropic 相同的 store-ACK 语义注册 `openai-codex`。`opi-coding-agent`
 在编译期切换：产品 Codex provider、设备轮询与 account id 提取被删除，
 改用 SDK 机制（注册表与测试经 re-export）。
 
-### SDK OAuth（OpenAI ChatGPT direct）（P20-S25）
+### SDK OAuth（OpenAI ChatGPT direct）
 
 `auth::oauth::chatgpt` 钉定 pi 1.3.0 `openai-chatgpt.ts`：每次登录以
 `dynamic_agent_client` 注册动态客户端，回调与手贴 URL 都必须携带
@@ -2283,7 +2275,7 @@ scope 含 direct 标志、`expires_in` 正有限、login 要求 `id_token` 存�
 （Decisions classifier）绝不能把它当 API key 解析。宿主信封持久化签发的
 `client_id` 与校验后的 `scopes` 列表，save/reopen 与刷新后保留 OAuth 类型。
 
-### SDK OAuth（GitHub Copilot）（P20-S26）
+### SDK OAuth（GitHub Copilot）
 
 `auth::oauth::copilot` 钉定 pi 1.3.0 `github-copilot.ts`。流程以新的
 `LoginPresenter::prompt_text` 询问 GitHub Enterprise URL/域名开始
@@ -2307,7 +2299,7 @@ token 留在 refresh 槽。产品 `CopilotOAuthProvider` 协议复制品删除�
 注册 SDK 流并以静态目录为策略白名单，请求 base 从 token 派生（legacy
 存储 `base_url` 仍优先，保证切换前的凭据不换端点）。
 
-### SDK OAuth（OpenRouter）（P20-S27）
+### SDK OAuth（OpenRouter）
 
 `auth::oauth::openrouter` 钉定 pi 1.3.0 `openrouter.ts`。OpenRouter 用
 授权码换永久 API key：authorize URL 只带 `callback_url` + S256 PKCE，
@@ -2322,7 +2314,7 @@ token 留在 refresh 槽。产品 `CopilotOAuthProvider` 协议复制品删除�
 发起 personalization 请求。共享 runner 新增 `AuthorizeStyle` 与可选的
 绑定后进度模板；既有流行为不变。
 
-### SDK OAuth（Kimi Coding 设备流）（P20-S28）
+### SDK OAuth（Kimi Coding 设备流）
 
 `auth::oauth::kimi_coding` 钉定 pi 1.3.0 `kimi-coding.ts` 与共享
 `device-code.ts` 轮询状态机。对 `auth.kimi.com` 的 RFC 8628：一次 form
@@ -2337,7 +2329,7 @@ access/refresh/expires_in 三元组并按真实期限存储。每请求 30s 期�
 退避）；401/403 或 `invalid_grant` 为类型化撤销凭据，绝无账号回退。
 env 的 OAuth host 覆盖归宿主政策，经构造注入。
 
-### SDK OAuth（Meta 设备流与 Model API key 铸造）（P20-S29）
+### SDK OAuth（Meta 设备流与 Model API key 铸造）
 
 `auth::oauth::meta` 钉定 pi 1.3.0 `meta.ts` 与共享 `device-code.ts` 轮询
 状态机。对 `auth.meta.com` 的 RFC 8628 得到的 identity token 不直接用于
@@ -2353,7 +2345,7 @@ verification URI 取可信的 `verification_uri_complete` 回退可信的
 唯一契约允许的例外是无 key 铸造响应中的可信 http(s) `action_url`
 进入 presenter 原因。
 
-### SDK OAuth（xAI 设备流与单遍刷新轮转）（P20-S30）
+### SDK OAuth（xAI 设备流与单遍刷新轮转）
 
 `auth::oauth::xai` 钉定 pi 1.3.0 `xai.ts`。对 `auth.x.ai` 的 RFC 8628：
 form 体携带固定 client id、xAI scope 与 `referrer=pi`。verification URI
@@ -2368,7 +2360,7 @@ token `expires_in` 缺省 3600s。刷新为单遍：响应缺 `refresh_token`
 重试。存储期限为真实服务期限，5 分钟近过期修正在 `needs_refresh`
 单点。失败体永不回显；仅状态与固定错误类。
 
-### SDK OAuth（Radius 网关流与九族组装验收）（P20-S31）
+### SDK OAuth（Radius 网关流与九族组装验收）
 
 `auth::oauth::radius` 钉定 pi 1.3.0 `radius.ts`。gateway 构造期固定
 （缺省 https、去尾斜杠）。`with_identity(id, name)` 捕获 flow 自身的身份与
@@ -2386,7 +2378,6 @@ verification URI 直通（无 scheme 校验，异于 xAI），denial 仅 RFC 单
 组装测试在单 `Models` 注册全部九族、跨两个 `Models` 共享一个 store，
 证明按 id 的 ACK 隔离与跨源 late-write 轮转隔离。
 
-
 ### 将 SDK OAuth 接到实际请求
 
 使用构造器创建的内存凭据存储，或显式接入共享／持久化 `CredentialStore`，再调用
@@ -2403,7 +2394,7 @@ queue/lock 等待和持久化 ACK。
 离线验收沿真实家族流，经公开 login、store ACK 与 `get_auth` 到已有的
 Anthropic、Codex、Chat Completions 与 Responses adapter，包括 Copilot
 token 选择的 HTTPS 端点。Radius 覆盖到 gateway 绑定的登录/刷新与公开鉴权；
-其 pi-messages 生成 adapter 与动态目录仍归后续任务。有限但不可表示的来源
+其 pi-messages 生成 adapter 与动态目录仍归后续工作。有限但不可表示的来源
 时长类型化失败；各流保留各自字段要求、缺省与轮询限制。OpenRouter 永久 key
 及 Anthropic/xAI 缺失 refresh 字段的行为仍各自独立。
 

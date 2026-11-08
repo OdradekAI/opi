@@ -6,6 +6,7 @@ import copy
 import json
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -179,8 +180,8 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "[Credentials, Request Enrichment, and Refresh](#credentials-request-enrichment-and-refresh)",
             "[Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing)",
             "[Best-Effort Cost](#best-effort-cost)",
-            "[WebSocket Upgrade (RDF-24)](#websocket-upgrade-rdf-24)",
-            "[Deferred Responses](#deferred-responses-task-2050)",
+            "[WebSocket Upgrade](#websocket-upgrade)",
+            "[Deferred Responses](#deferred-responses)",
             "[Test layers and SDK packages](#test-layers-and-sdk-packages)",
         ):
             self.assertIn(fragment, english, f"README.md omits reference-map entry: {fragment}")
@@ -191,8 +192,8 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "[凭据、Request 扩充与 Refresh](#凭据request-扩充与-refresh)",
             "[Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing)",
             "[尽力而为的费用](#尽力而为的费用)",
-            "[WebSocket Upgrade（RDF-24）](#websocket-upgraderdf-24)",
-            "[Deferred 响应](#deferred-响应任务-2050)",
+            "[WebSocket Upgrade](#websocket-upgrade)",
+            "[Deferred 响应](#deferred-响应)",
             "[测试分层与 SDK 包](#测试分层与-sdk-包)",
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits reference-map entry: {fragment}")
@@ -276,7 +277,7 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "## Credentials, Request Enrichment, and Refresh",
             "## Provider Behavior Matrix",
             "## OpenAI-Compatible Profiles",
-            "## Offline Bundled Model Catalog (DEL-10)",
+            "## Offline Bundled Model Catalog",
             "## Dynamic Catalog Store and Refresh",
             "Models::refresh",
             "OAuthProvider",
@@ -297,6 +298,34 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "provider_collection::register_builtin",
         ):
             self.assertIn(fragment, chinese_topic, f"provider-auth.zh.md omits detailed rule: {fragment}")
+
+    def test_public_opi_ai_manuals_omit_internal_alignment_labels(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        forbidden = re.compile(
+            r"(?:\b(?:AIR|RDF|DEL|ONB)-[A-Z0-9]+(?:/[A-Z0-9]+)*\b|"
+            r"\bP20(?:-[A-Z0-9]+)+\b|\bV-\d+\b|"
+            r"\b(?:task|Task)\s+20(?:\.\d+)+(?:[–-]\d+)?\b|"
+            r"任务\s*20(?:\.\d+)+(?:[–-]\d+)?|Phase\s+20|phase20|"
+            r"\.repo/pi-|\b20\.\d+(?:[–-]\d+)?\b)",
+            re.IGNORECASE,
+        )
+        for path in (
+            root / "README.md",
+            root / "README.zh.md",
+            root / "docs" / "cost-pricing.md",
+            root / "docs" / "cost-pricing.zh.md",
+            root / "docs" / "provider-auth.md",
+            root / "docs" / "provider-auth.zh.md",
+            root / "examples" / "quick_start.rs",
+            root / "examples" / "quick_start_stream.rs",
+            root / "examples" / "tool_loop.rs",
+        ):
+            source = path.read_text(encoding="utf-8")
+            match = forbidden.search(source)
+            self.assertIsNone(
+                match,
+                f"{path.name} exposes an internal alignment label: {match.group(0)!r}" if match else "",
+            )
 
     def test_telemetry_readmes_describe_current_ai_integration_boundary(self):
         root = Path(__file__).parents[2] / "crates" / "opi-telemetry"

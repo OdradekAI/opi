@@ -16,7 +16,7 @@ network policy.
 ## Factories, Catalog, and Auth
 
 - Registration without hand-written routes: the bundled 42-profile factory
-  (`providers::builtin_provider_profiles`, task 20.34) registers the
+  (`providers::builtin_provider_profiles`) registers the
   completed adapters and catalog - see "Builtin Provider Factory Layer:
   42 Canonical Profiles".
 - Model records: `Models::get_model` resolves registry metadata; the offline
@@ -41,7 +41,7 @@ network policy.
 | `mistral` | `mistral` | OpenAI-compatible Mistral profile |
 | `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
 | `bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 or Bearer authentication |
-| `azure_openai` | `azure` | Azure OpenAI deployment-specific Chat **and** Responses wires (task 20.38) |
+| `azure_openai` | `azure` | Azure OpenAI deployment-specific Chat **and** Responses wires |
 | `vertex` | `vertex` | Google Vertex AI Gemini streaming |
 
 Built-in model lists are finite and intended for capability checks and model
@@ -73,7 +73,7 @@ one lazy `AuthResolver` across all routes; provider/model metadata chooses the
 route before network IO. Unknown models, missing routes, and wire/compatibility
 mismatches are typed non-retryable failures.
 
-### Lazy AuthContext and management results (AIR-063/AIR-066)
+### Lazy AuthContext and management results
 
 Source access is a separate context responsibility: the object-safe
 `AuthContext` (`env`, `file_exists`, `process_snapshot`) owns source access,
@@ -133,7 +133,7 @@ variants. Typed per-call API-key, Bearer and SigV4 overrides are mutually
 exclusive and win before source access; `extra_headers` rejects provider-managed
 auth headers.
 
-### Store-owned mutations, ACKs, and the mutation barrier (AIR-063 / P20-STORE)
+### Store-owned mutations, ACKs, and the mutation barrier
 
 Credential mutations (login, logout, replace, refresh) are owned by the
 shared store, not by the waiter that submitted them. `CredentialStore`
@@ -168,7 +168,7 @@ shared state inherit an inline default. Revisions and receipts are an
 in-process view; cross-process serialization stays the store's own lock
 policy.
 
-### Acquisition retry owner (AIR-007)
+### Acquisition retry owner
 
 `prepare_call_with_policy` freezes an `AcquisitionPolicy` per logical call
 (ordinary `prepare_call` freezes the provider's protocol default: zero extra
@@ -321,7 +321,7 @@ wire/auth/capability difference requires a first-class adapter. This is the
 preferred path for provider breadth; adding a new first-class provider module
 is a non-default step reserved for those material differences.
 
-`CompatConfig` (task 20.36, AIR-022/V-11) applies the single normalization
+`CompatConfig` applies the single normalization
 rule: every policy field is an explicit value layered over the adapter's
 frozen provider inference (`store`/`instruction_role`/`thinking_format` and
 field defaults are inferred per provider id or base-URL host; explicit
@@ -398,7 +398,7 @@ never sends the disable marker); `together` sends `reasoning: {enabled}`;
 `thinking` string; `ant-ling` sends `reasoning: {effort}` only when an effort
 is set.
 
-### Native and simple options (ONB-03)
+### Native and simple options
 
 | Option | Accepted type / unit | Omission · default | Precedence · wire field · typed rejection |
 |--------|----------------------|--------------------|--------------------------------------------|
@@ -415,7 +415,7 @@ is set.
 config field threaded through `OpenAiChatProvider` construction, not a
 `CompatConfig` flag.
 
-OpenAI Responses native semantics (task 20.37, `OpenAiResponsesOptions`):
+OpenAI Responses native semantics (`OpenAiResponsesOptions`):
 
 | Option | Accepted type / unit | Omission · default · null · false/zero | Precedence · wire · typed rejection |
 |--------|----------------------|-----------------------------------------|--------------------------------------|
@@ -438,7 +438,7 @@ A non-default compatibility path remains an explicit override.
 `previous_response_id` is intentionally absent — Responses requests are built
 as Chat-Completions analogues, so server-side response chaining is not wired.
 
-### Azure OpenAI dual wires (task 20.38)
+### Azure OpenAI dual wires
 
 Azure keeps both wires with explicit deployment/resource/api-version
 mapping (pinned source `azure-openai-config.ts`):
@@ -467,12 +467,11 @@ Chat surface retains `/openai/deployments/{deployment}/chat/completions` and
 `api-key`. Both source wires keep provider identity `azure`; endpoint,
 deployment and API-version values freeze once before acquisition attempts.
 
-## Offline Bundled Model Catalog (DEL-10)
+## Offline Bundled Model Catalog
 
 The `catalog` module embeds one authentic, versioned model catalog as offline
 crate resources: `resources/catalog/builtin/catalog.json` is byte-for-byte
-the artifact published at the exact revision pinned by the local Pi tree
-(`.repo/pi-1.3.0/nix/model-catalog.json`), and `manifest.json` records the
+the validated bundled artifact, and `manifest.json` records the
 delivery-input provenance — source URL and revision, artifact SHA-256,
 Pi package/local-origin association, data schema version 6, bundle schema
 version, the full provider list with per-operation entry counts, and the
@@ -501,7 +500,7 @@ independently of any catalog state. Image entries are catalog metadata for
 selection/pricing only; the SDK's own image operation paths are owned by the
 typed image API task.
 
-## Dynamic Catalog Store and Refresh (V-27/AIR-002/AIR-033)
+## Dynamic Catalog Store and Refresh
 
 
 `ModelsStore::invalidate_source(id)` explicitly withdraws the records published
@@ -604,7 +603,7 @@ no dynamic catalog source, attaches no persistent `ModelsStore`, and has no
 pi.dev/default startup fetch policy. Its local memory credential store is
 independent of catalog persistence.
 
-## Builtin Provider Factory Layer: 42 Canonical Profiles (task 20.34)
+## Builtin Provider Factory Layer: 42 Canonical Profiles
 
 `providers::builtin_provider_profiles` carries the 42-entry source-qualified
 profile table from the pi 1.3.0 capability inventory: canonical ids

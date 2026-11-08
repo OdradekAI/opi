@@ -55,6 +55,12 @@ profile、离线与动态 Catalog，以及 canonical built-in factory。主 READ
 标题锚点和短链接，Core API 与具体协议任务仍留在正文。契约由
 `test_readmes_split_provider_catalog_auth_into_package_local_topic_references` 固定。
 
+随后清理公开手册中的历史对齐标签：README 与四份包内专题只保留当前能力、行为、
+公开入口和接入限制，不再把内部任务号、阶段号、验收快照号或仓库私有快照路径暴露给
+下游开发者。原始追溯继续保留在 `docs/iterations/opi-ai-1-5-alignment/` 的 issue、
+report、evidence 和 Git 历史中；契约由
+`test_public_opi_ai_manuals_omit_internal_alignment_labels` 固定。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。

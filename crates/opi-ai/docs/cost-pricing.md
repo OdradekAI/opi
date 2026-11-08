@@ -6,7 +6,7 @@ cache-pricing, service-tier, and compatibility rules for `opi-ai`. The main
 summary; this document is the source of truth for the full tables and
 precedence rules.
 
-## Estimator, Sampling and Pricing Metadata (V-45/AIR-053/AIR-062, task 20.35)
+## Estimator, Sampling and Pricing Metadata
 
 The `context` estimator uses 3.5 UTF-16 code units per token
 (`ceil(chars * 2 / 7)`) and 4,800 equivalent chars per image, rounding up at

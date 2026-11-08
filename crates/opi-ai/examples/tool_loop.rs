@@ -26,7 +26,7 @@ struct ToolOutcome {
     not_executed: Option<ToolNotExecutedReason>,
 }
 
-/// The caller is the trusted execution boundary (AIR-048): a malformed final
+/// The caller is the trusted execution boundary: a malformed final
 /// argument text is recorded as not executed, never guessed into a call.
 fn execute_weather_tool(call: &ToolCall) -> ToolOutcome {
     if call.arguments_error.is_some() {
@@ -95,7 +95,7 @@ pub(crate) fn setup(
     let record = ChatModelRecord::new("anthropic", info);
 
     // Tools are declared on the transcript context; normalization folds them
-    // into the leading system message (AIR-020).
+    // into the leading system message.
     let tools = vec![ToolDef {
         name: "get_weather".into(),
         description: "Current weather for one city.".into(),

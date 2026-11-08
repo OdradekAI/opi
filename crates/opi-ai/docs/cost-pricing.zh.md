@@ -4,7 +4,7 @@
 service tier 和兼容规则。主 [README](../README.zh.md) 保留接入路径和简短的
 best-effort 费用语义；完整表格与优先级规则以本文档为准。
 
-## 估算器、Sampling 与计价元数据（V-45/AIR-053/AIR-062，任务 20.35）
+## 估算器、Sampling 与计价元数据
 
 `context` 估算器按每 token 3.5 个 UTF-16 码元（`ceil(chars * 2 / 7)`）与每图
 4800 等效字符计算，并在消息粒度向上取整：user／toolResult 消息整块聚合取整一次，
