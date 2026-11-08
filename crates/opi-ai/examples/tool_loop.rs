@@ -2,8 +2,8 @@
 //! execute each admitted tool call, close it with a `ToolResultMessage`, and
 //! continue until the assistant produces final text.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example tool_loop`.
+//! Compile: `cargo check --example tool_loop`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example tool_loop`.
 
 use std::sync::Arc;
 

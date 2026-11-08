@@ -67,15 +67,15 @@ cargo add opi-ai
 规范化 transcript，并通过 neutral 入口得到唯一的最终消息。Models 构造、builtins
 注册与静态选择不读取认证来源；调用 `stream*` 或 `complete*` 时立即在当前 Tokio
 runtime 调度认证与执行，无须消费者 poll。以下为
-`examples/quick_start.rs` 的逐字源码；运行：
-`ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`。
+`examples/quick_start.rs` 的逐字源码。请将它复制到你项目的 `examples/` 目录，
+然后运行：`ANTHROPIC_API_KEY=... cargo run --example quick_start`。
 
 ```rust
 //! Complete ordinary quick start: register lazy builtins, select a model,
 //! and drive one chat call to its single final message through the neutral entry.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+//! Compile: `cargo check --example quick_start`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example quick_start`.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -192,8 +192,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! Streaming quick start: iterate the neutral entry's provider-neutral
 //! events as they arrive, then read the terminal event's final message.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start_stream`.
+//! Compile: `cargo check --example quick_start_stream`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example quick_start_stream`.
 
 use std::sync::Arc;
 
@@ -383,8 +383,8 @@ context。
 //! execute each admitted tool call, close it with a `ToolResultMessage`, and
 //! continue until the assistant produces final text.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example tool_loop`.
+//! Compile: `cargo check --example tool_loop`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example tool_loop`.
 
 use std::sync::Arc;
 
@@ -2439,7 +2439,7 @@ Pi Messages simple 透传自己的白名单。`ModelInfo::input_limits` 仅为�
 
 已并入[快速开始](#快速开始)；三个可编译示例位于 `examples/`
 （`quick_start.rs`、`quick_start_stream.rs`、`tool_loop.rs`），编译命令
-`cargo check -p opi-ai --examples`。
+`cargo check --examples`。
 
 ## 测试分层与 SDK 包
 

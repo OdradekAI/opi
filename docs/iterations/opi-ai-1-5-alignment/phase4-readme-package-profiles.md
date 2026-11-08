@@ -11,6 +11,9 @@
 `telemetry-tracing`。三条流程继续验证构造阶段不读取 source/store、调用在
 消费者 poll 前已经启动、最终消息/流终态以及 tool-result continuation。
 外部依赖图没有 `opi-agent`、`opi-coding-agent`、`opi-protocol` 或 `opi-tui`。
+示例中的编译和运行命令也已改为普通消费者项目的
+`cargo check --example ...` / `cargo run --example ...`，不再依赖
+`-p opi-ai` workspace 语境。
 
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和

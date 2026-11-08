@@ -21,6 +21,9 @@ documented default build and with `default-features = false`.
 - Profile metadata must show no `telemetry-tracing` in `defaults-off` and the
   default `telemetry-tracing` feature in `defaults-on`; both profiles must resolve the
   extracted `.crate` artifact rather than workspace source.
+- The onboarding source commands use `cargo check --example ...` and
+  `cargo run --example ...` after copying a source into the consumer's
+  `examples/` directory; they do not require `-p opi-ai` or a workspace member.
 - The English and Chinese README explain the two profiles and point to the
   offline package proof. The exact three example sources remain embedded in
   both manuals and are checked byte-for-byte against the packaged artifact.

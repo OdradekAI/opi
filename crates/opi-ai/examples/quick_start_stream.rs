@@ -1,8 +1,8 @@
 //! Streaming quick start: iterate the neutral entry's provider-neutral
 //! events as they arrive, then read the terminal event's final message.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start_stream`.
+//! Compile: `cargo check --example quick_start_stream`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example quick_start_stream`.
 
 use std::sync::Arc;
 

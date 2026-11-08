@@ -1,8 +1,8 @@
 //! Complete ordinary quick start: register lazy builtins, select a model,
 //! and drive one chat call to its single final message through the neutral entry.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+//! Compile: `cargo check --example quick_start`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example quick_start`.
 
 use std::future::Future;
 use std::sync::Arc;

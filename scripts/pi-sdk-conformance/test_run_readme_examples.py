@@ -76,6 +76,14 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         self.assertIn('opi-ai = { path = "@PACKAGE@", default-features = false }', manifest)
         self.assertIn('[features]\ncaller-default-opi-ai = ["opi-ai/telemetry-tracing"]', manifest)
 
+    def test_packaged_onboarding_sources_use_consumer_commands(self):
+        examples = Path(__file__).parents[2] / "crates" / "opi-ai" / "examples"
+        for name in ("quick_start", "quick_start_stream", "tool_loop"):
+            source = (examples / f"{name}.rs").read_text(encoding="utf-8")
+            self.assertNotIn("-p opi-ai", source)
+            self.assertIn(f"cargo check --example {name}", source)
+            self.assertIn(f"cargo run --example {name}", source)
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

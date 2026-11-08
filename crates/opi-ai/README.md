@@ -77,15 +77,15 @@ a model, normalize the transcript, and drive the neutral entry to its single
 final message. Models construction, builtin registration and static selection read
 no authentication source. Calling `stream*` or `complete*` schedules authentication
 and execution immediately on the current Tokio runtime, independently of consumption. This is the exact source of
-`examples/quick_start.rs`; run it with
-`ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+`examples/quick_start.rs`. Copy it into your project's `examples/` directory, then run
+`ANTHROPIC_API_KEY=... cargo run --example quick_start`.
 
 ```rust
 //! Complete ordinary quick start: register lazy builtins, select a model,
 //! and drive one chat call to its single final message through the neutral entry.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start`.
+//! Compile: `cargo check --example quick_start`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example quick_start`.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -204,8 +204,8 @@ absorbs into permanent EOF. The `Done` event carries the final
 //! Streaming quick start: iterate the neutral entry's provider-neutral
 //! events as they arrive, then read the terminal event's final message.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example quick_start_stream`.
+//! Compile: `cargo check --example quick_start_stream`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example quick_start_stream`.
 
 use std::sync::Arc;
 
@@ -414,8 +414,8 @@ never guessed into a call (AIR-048). This is the exact source of
 //! execute each admitted tool call, close it with a `ToolResultMessage`, and
 //! continue until the assistant produces final text.
 //!
-//! Compile: `cargo check -p opi-ai --examples`.
-//! Run: `ANTHROPIC_API_KEY=... cargo run -p opi-ai --example tool_loop`.
+//! Compile: `cargo check --example tool_loop`.
+//! Run: `ANTHROPIC_API_KEY=... cargo run --example tool_loop`.
 
 use std::sync::Arc;
 
@@ -2341,7 +2341,7 @@ behavior:
 
 Moved into [Quick Start](#quick-start); the three compiling examples live in
 `examples/` (`quick_start.rs`, `quick_start_stream.rs`, `tool_loop.rs`) and
-compile with `cargo check -p opi-ai --examples`.
+compile with `cargo check --examples`.
 
 ## Test layers and SDK packages
 
