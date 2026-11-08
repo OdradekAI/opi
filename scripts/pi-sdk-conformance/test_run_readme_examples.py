@@ -84,6 +84,21 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             self.assertIn(f"cargo check --example {name}", source)
             self.assertIn(f"cargo run --example {name}", source)
 
+    def test_readmes_publish_standalone_consumer_manifest(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        expected = [
+            '[dependencies]\nopi-ai = "0.8.3"',
+            'tokio = { version = "1", features = ["macros", "rt-multi-thread"] }',
+            'tokio-util = "0.7"',
+            'futures-util = "0.3"',
+            'serde_json = "1"',
+            'opi-ai = { version = "0.8.3", default-features = false }',
+        ]
+        for name in ("README.md", "README.zh.md"):
+            source = (root / name).read_text(encoding="utf-8")
+            for fragment in expected:
+                self.assertIn(fragment, source, f"{name} omits consumer manifest fragment: {fragment}")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

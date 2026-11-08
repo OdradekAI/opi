@@ -58,8 +58,28 @@ ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain
 cargo add opi-ai
 ```
 
-下文示例另需 `tokio`（features `macros` 与 `rt-multi-thread`）、`tokio-util`、
-`futures-util` 与 `serde_json`。
+如果要复制下面全部三个 onboarding 示例，可以使用这份完整的消费者清单。
+它只依赖已发布的 `opi-ai` crate 与普通的公开 runtime/serialization crate，
+不要求 `opi-agent`、workspace、仓库路径或隐式产品配置：
+
+```toml
+[dependencies]
+opi-ai = "0.8.3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+serde_json = "1"
+```
+
+默认的 `opi-ai` 依赖会开启 `telemetry-tracing`。需要更小核心能力集合的
+消费者，可以把第一行替换为：
+
+```toml
+opi-ai = { version = "0.8.3", default-features = false }
+```
+
+`quick_start.rs` 只需要 `opi-ai`、`tokio` 与 `tokio-util`；流式示例另外需要
+`futures-util`，`tool_loop.rs` 另外需要 `serde_json`。
 
 ## 快速开始
 

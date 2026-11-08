@@ -27,6 +27,9 @@ documented default build and with `default-features = false`.
 - The English and Chinese README explain the two profiles and point to the
   offline package proof. The exact three example sources remain embedded in
   both manuals and are checked byte-for-byte against the packaged artifact.
+- Both manuals publish a complete standalone consumer `Cargo.toml` for the
+  three onboarding examples, plus the `default-features = false` replacement,
+  so an external developer does not need to guess runtime dependencies.
 
 ## Acceptance
 

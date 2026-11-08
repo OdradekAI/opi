@@ -14,6 +14,9 @@
 示例中的编译和运行命令也已改为普通消费者项目的
 `cargo check --example ...` / `cargo run --example ...`，不再依赖
 `-p opi-ai` workspace 语境。
+两份 README 还提供了三个 onboarding 示例所需的完整外部消费者
+`Cargo.toml`，并明确 `default-features = false` 替代写法，避免接入者猜测
+runtime 依赖。
 
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和

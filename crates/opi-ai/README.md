@@ -66,9 +66,30 @@ the keychain backend, terminal presenter and host registration policy.
 cargo add opi-ai
 ```
 
-The examples below additionally use `tokio` (features `macros` and
-`rt-multi-thread`), `tokio-util`, `futures-util`, and
-`serde_json`.
+For a project that copies all three onboarding examples, use this complete
+consumer manifest. It depends only on the published `opi-ai` crate and normal
+public runtime/serialization crates; it does not require `opi-agent`, the
+workspace, or repository-local configuration:
+
+```toml
+[dependencies]
+opi-ai = "0.8.3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio-util = "0.7"
+futures-util = "0.3"
+serde_json = "1"
+```
+
+The default `opi-ai` dependency enables `telemetry-tracing`. Consumers that
+want the smaller core profile can replace the first line with:
+
+```toml
+opi-ai = { version = "0.8.3", default-features = false }
+```
+
+`quick_start.rs` only needs `opi-ai`, `tokio`, and `tokio-util`; the streaming
+example additionally needs `futures-util`, and `tool_loop.rs` additionally
+needs `serde_json`.
 
 ## Quick Start
 
