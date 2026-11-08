@@ -403,6 +403,14 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             root / "docs" / "cost-pricing.zh.md",
             root / "docs" / "provider-auth.md",
             root / "docs" / "provider-auth.zh.md",
+            root / "docs" / "transport.md",
+            root / "docs" / "transport.zh.md",
+            root / "docs" / "utilities.md",
+            root / "docs" / "utilities.zh.md",
+            root / "docs" / "providers.md",
+            root / "docs" / "providers.zh.md",
+            root / "docs" / "testing.md",
+            root / "docs" / "testing.zh.md",
             root / "examples" / "quick_start.rs",
             root / "examples" / "quick_start_stream.rs",
             root / "examples" / "tool_loop.rs",
@@ -413,6 +421,75 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
                 match,
                 f"{path.name} exposes an internal alignment label: {match.group(0)!r}" if match else "",
             )
+
+    def test_public_topic_references_expose_current_contracts(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai" / "docs"
+        required = {
+            "transport.md": (
+                "# Transport, Protocols and Resource Lifecycle",
+                "## Proxy and Source-Scoped HTTP",
+                "## Source-Scoped TLS",
+                "## WebSocket Upgrade",
+                "## Resource Generation, Pool Cleanup and Awaited Release",
+                "## Deferred Transport Semantics",
+            ),
+            "transport.zh.md": (
+                "# Transport、协议与资源生命周期",
+                "## Proxy 与源限定 HTTP",
+                "## 源限定 TLS",
+                "## WebSocket Upgrade",
+                "## Resource Generation、Pool 清理与 Await 释放",
+                "## Deferred Transport 语义",
+            ),
+            "utilities.md": (
+                "# Public Utilities and Data Contracts",
+                "## Tool-Argument Normalization and Validation",
+                "## Canonical Replay Projection",
+                "## Context and Transcript Chronology",
+                "## Whole-Call Retry and Request Callbacks",
+            ),
+            "utilities.zh.md": (
+                "# 公共工具与数据契约",
+                "## Tool 参数归一化与校验",
+                "## 规范 Replay 投影",
+                "## Context 与 Transcript 时序",
+                "## Whole-Call Retry 与 Request Callback",
+            ),
+            "providers.md": (
+                "# Provider Wire and Operation Reference",
+                "## Native Chat Adapters",
+                "## Image Operation",
+                "## Classification Operation",
+                "## Reasoning and Native Options",
+                "## OpenAI-Compatible Provider Profiles",
+            ),
+            "providers.zh.md": (
+                "# Provider Wire 与操作参考",
+                "## Native Chat Adapter",
+                "## Image 操作",
+                "## Classification 操作",
+                "## Reasoning 与 Native Option",
+                "## OpenAI-Compatible Provider Profile",
+            ),
+            "testing.md": (
+                "# Testing and Package Consumption",
+                "## Faux Provider for External Tests",
+                "## Controlled Provider and Protocol Fixtures",
+                "## Test Layers and Replacement Rules",
+                "## Packaged Consumer Proof",
+            ),
+            "testing.zh.md": (
+                "# 测试与包消费",
+                "## Faux Provider 测试",
+                "## 受控 Provider 与协议 Fixture",
+                "## 测试分层与替代规则",
+                "## 实际包消费者证明",
+            ),
+        }
+        for name, fragments in required.items():
+            source = (root / name).read_text(encoding="utf-8")
+            for fragment in fragments:
+                self.assertIn(fragment, source, f"{name} omits current contract: {fragment}")
 
     def test_telemetry_readmes_describe_current_ai_integration_boundary(self):
         root = Path(__file__).parents[2] / "crates" / "opi-telemetry"
