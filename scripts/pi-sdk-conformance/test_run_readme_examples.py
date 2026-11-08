@@ -218,6 +218,27 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits feature-profile contract: {fragment}")
 
+    def test_telemetry_readmes_describe_current_ai_integration_boundary(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-telemetry"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "ordinary `Models` chat installs an AI-owned",
+            "`pi.ai.request`",
+            "deferred fetch installs `pi.ai.poll`",
+            "Raw `ChatStream` and prepared raw attempts remain manual",
+            "AI schema, token, and cost rules remain in `opi-ai`",
+        ):
+            self.assertIn(fragment, english, f"opi-telemetry README omits AI boundary: {fragment}")
+        for fragment in (
+            "普通 `Models` chat",
+            "会安装由 AI 拥有的 `pi.ai.request`",
+            "deferred fetch 会安装 `pi.ai.poll`",
+            "raw `ChatStream` 与 prepared raw attempt 仍是手动边界",
+            "AI schema、token 和 cost 规则仍由 `opi-ai` 拥有",
+        ):
+            self.assertIn(fragment, chinese, f"opi-telemetry README.zh.md omits AI boundary: {fragment}")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

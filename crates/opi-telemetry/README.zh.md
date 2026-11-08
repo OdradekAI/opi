@@ -87,8 +87,13 @@ disabled span 退化为中立 no-op。
 `telemetry.operation = "finish"` 事件标识逻辑完成；原生 tracing close 可能等待已进入的同步作用域结束。
 这是 tracing 适配，不是完整 exporter。初始化、过滤、采样、脱敏、flush/shutdown 归宿主所有。
 
-`opi-ai::telemetry` 保留旧载体路径的重导出。AI 操作当前传播 tracing 作用域；传入 recorder
-尚不会自动生成 AI request span、schema 事件或用量 metrics；这些埋点属于后续迁移。
+`opi-ai::telemetry` 重导出这些载体路径。调用方传入显式 context 时，普通 `Models` chat
+会安装由 AI 拥有的 `pi.ai.request` observer，deferred fetch 会安装 `pi.ai.poll`；
+因此 memory recorder 会记录经由这个中立载体产生的 AI span、事件和 usage/cost 结算。
+raw `ChatStream` 与 prepared raw attempt 仍是手动边界；image、classifier 和
+deferred-cancel 会透传 context，但有意不安装 AI span。省略 context 不会捕获 ambient
+subscriber。AI schema、token 和 cost 规则仍由 `opi-ai` 拥有；本 crate 只负责中立
+context、backend 与 adapter 契约。
 
 自定义后端实现 `backend` 合同。`tests/support` 的公共场景共同验证 no-op、内存和 tracing，
 后端专项测试验证路由。没有为测试增加生产状态探针。

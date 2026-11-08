@@ -53,6 +53,9 @@ WebSocket、Deferred 与测试包证明集中成入口；实施记录见
 随后补上双语 feature profile 矩阵，固定 `telemetry-tracing` 与
 `default-features = false` 的真实语义；实施记录见
 [README feature profile 票](issues/30-readme-feature-profile-matrix.md)。
+随后同步 `opi-telemetry` 独立 README 的 AI instrumentation 边界，修正过时的
+future-migration 描述；实施记录见
+[telemetry README 边界票](issues/31-telemetry-readme-ai-boundary.md)。
 
 ## 目标与范围
 

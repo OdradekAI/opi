@@ -1,0 +1,974 @@
+{
+  "scope": "packaged public Schema smoke; not final SDK acceptance",
+  "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+  "incremental": "1",
+  "steps": [
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "25760"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.19
+    },
+    {
+      "name": "package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "opi-telemetry",
+        "-p",
+        "opi-ai",
+        "--allow-dirty",
+        "--no-verify",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.62
+    },
+    {
+      "name": "consumer-lock",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-telemetry-proof-20261108-ai-boundary\\candidate-telemetry.toml",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.5
+    },
+    {
+      "name": "defaults-off-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-telemetry-proof-20261108-ai-boundary\\candidate-telemetry.toml",
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.27
+    },
+    {
+      "name": "defaults-off-consumer",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-telemetry-proof-20261108-ai-boundary\\candidate-telemetry.toml",
+        "run",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 29.27
+    },
+    {
+      "name": "caller-defaults-on-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-telemetry-proof-20261108-ai-boundary\\candidate-telemetry.toml",
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked",
+        "--features",
+        "caller-default-regress,caller-default-opi-ai"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.19
+    },
+    {
+      "name": "caller-defaults-on-consumer",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-telemetry-proof-20261108-ai-boundary\\candidate-telemetry.toml",
+        "run",
+        "--offline",
+        "--locked",
+        "--features",
+        "caller-default-regress,caller-default-opi-ai"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 19.06
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "25760"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.22
+    }
+  ],
+  "profiles": [
+    {
+      "name": "defaults-off",
+      "graph": {
+        "opi_ai": {
+          "version": "0.8.3",
+          "source": null,
+          "features": []
+        },
+        "regress": {
+          "version": "0.12.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "prohibit-unsafe",
+            "std",
+            "utf16"
+          ]
+        },
+        "url": {
+          "version": "2.5.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "default",
+            "std"
+          ]
+        },
+        "data_dependencies": [
+          {
+            "name": "icu_collections",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_locale_core",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "zerovec"
+            ]
+          },
+          {
+            "name": "icu_normalizer",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_normalizer_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_properties",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_properties_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_provider",
+            "version": "2.3.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "baked"
+            ]
+          },
+          {
+            "name": "idna",
+            "version": "1.1.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "alloc",
+              "compiled_data",
+              "std"
+            ]
+          },
+          {
+            "name": "idna_adapter",
+            "version": "1.2.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "unicode-ident",
+            "version": "1.0.27",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "unicode-normalization",
+            "version": "0.1.26",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "default",
+              "std"
+            ]
+          }
+        ]
+      },
+      "report": {
+        "verdict": "PASS",
+        "total": 73,
+        "failed": 0,
+        "checks": [
+          {
+            "name": "number-0",
+            "passed": true
+          },
+          {
+            "name": "number-1",
+            "passed": true
+          },
+          {
+            "name": "number-2",
+            "passed": true
+          },
+          {
+            "name": "number-3",
+            "passed": true
+          },
+          {
+            "name": "number-4",
+            "passed": true
+          },
+          {
+            "name": "number-5",
+            "passed": true
+          },
+          {
+            "name": "number-6",
+            "passed": true
+          },
+          {
+            "name": "number-7",
+            "passed": true
+          },
+          {
+            "name": "number-8",
+            "passed": true
+          },
+          {
+            "name": "number-9",
+            "passed": true
+          },
+          {
+            "name": "number-10",
+            "passed": true
+          },
+          {
+            "name": "number-11",
+            "passed": true
+          },
+          {
+            "name": "number-12",
+            "passed": true
+          },
+          {
+            "name": "number-13",
+            "passed": true
+          },
+          {
+            "name": "url-0",
+            "passed": true
+          },
+          {
+            "name": "url-1",
+            "passed": true
+          },
+          {
+            "name": "url-2",
+            "passed": true
+          },
+          {
+            "name": "url-3",
+            "passed": true
+          },
+          {
+            "name": "url-4",
+            "passed": true
+          },
+          {
+            "name": "url-5",
+            "passed": true
+          },
+          {
+            "name": "url-6",
+            "passed": true
+          },
+          {
+            "name": "url-7",
+            "passed": true
+          },
+          {
+            "name": "url-8",
+            "passed": true
+          },
+          {
+            "name": "url-9",
+            "passed": true
+          },
+          {
+            "name": "url-10",
+            "passed": true
+          },
+          {
+            "name": "url-11",
+            "passed": true
+          },
+          {
+            "name": "url-12",
+            "passed": true
+          },
+          {
+            "name": "url-13",
+            "passed": true
+          },
+          {
+            "name": "url-14",
+            "passed": true
+          },
+          {
+            "name": "url-15",
+            "passed": true
+          },
+          {
+            "name": "url-16",
+            "passed": true
+          },
+          {
+            "name": "url-17",
+            "passed": true
+          },
+          {
+            "name": "url-18",
+            "passed": true
+          },
+          {
+            "name": "url-19",
+            "passed": true
+          },
+          {
+            "name": "url-20",
+            "passed": true
+          },
+          {
+            "name": "url-21",
+            "passed": true
+          },
+          {
+            "name": "url-22",
+            "passed": true
+          },
+          {
+            "name": "url-23",
+            "passed": true
+          },
+          {
+            "name": "url-24",
+            "passed": true
+          },
+          {
+            "name": "url-25",
+            "passed": true
+          },
+          {
+            "name": "url-26",
+            "passed": true
+          },
+          {
+            "name": "url-27",
+            "passed": true
+          },
+          {
+            "name": "url-28",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Beria_Erfe}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Sidetic}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tai_Yo}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tolong_Siki}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Adlam}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Ahom}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Anatolian_Hieroglyphs}+$",
+            "passed": true
+          },
+          {
+            "name": "new-letter",
+            "passed": true
+          },
+          {
+            "name": "old-letter",
+            "passed": true
+          },
+          {
+            "name": "non-letter",
+            "passed": true
+          },
+          {
+            "name": "named-backref",
+            "passed": true
+          },
+          {
+            "name": "named-backref-reject",
+            "passed": true
+          },
+          {
+            "name": "lookbehind",
+            "passed": true
+          },
+          {
+            "name": "unvisited-regex-admission",
+            "passed": true
+          },
+          {
+            "name": "inert-annotation",
+            "passed": true
+          },
+          {
+            "name": "no-progress",
+            "passed": true
+          },
+          {
+            "name": "optional-null-after-successful-compile",
+            "passed": true
+          },
+          {
+            "name": "raw-preserved",
+            "passed": true
+          },
+          {
+            "name": "parse-failure-precedes-normalization",
+            "passed": true
+          },
+          {
+            "name": "required-null-rejected",
+            "passed": true
+          },
+          {
+            "name": "final-original-schema-check",
+            "passed": true
+          },
+          {
+            "name": "raw-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ace-to-raw",
+            "passed": true
+          },
+          {
+            "name": "percent-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ordinary-url-canonical-idna",
+            "passed": true
+          },
+          {
+            "name": "invalid-unmapped-ace",
+            "passed": true
+          },
+          {
+            "name": "invalid-url",
+            "passed": true
+          },
+          {
+            "name": "invalid-idna-joiner",
+            "passed": true
+          },
+          {
+            "name": "idn-hostname",
+            "passed": true
+          },
+          {
+            "name": "idn-email",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "caller-defaults-on",
+      "graph": {
+        "opi_ai": {
+          "version": "0.8.3",
+          "source": null,
+          "features": [
+            "telemetry-tracing"
+          ]
+        },
+        "regress": {
+          "version": "0.12.0",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "backend-pikevm",
+            "default",
+            "prohibit-unsafe",
+            "std",
+            "utf16"
+          ]
+        },
+        "url": {
+          "version": "2.5.8",
+          "source": "registry+https://github.com/rust-lang/crates.io-index",
+          "features": [
+            "default",
+            "std"
+          ]
+        },
+        "data_dependencies": [
+          {
+            "name": "icu_collections",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_locale_core",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "zerovec"
+            ]
+          },
+          {
+            "name": "icu_normalizer",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_normalizer_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_properties",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "icu_properties_data",
+            "version": "2.3.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "icu_provider",
+            "version": "2.3.1",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "baked"
+            ]
+          },
+          {
+            "name": "idna",
+            "version": "1.1.0",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "alloc",
+              "compiled_data",
+              "std"
+            ]
+          },
+          {
+            "name": "idna_adapter",
+            "version": "1.2.2",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "compiled_data"
+            ]
+          },
+          {
+            "name": "unicode-ident",
+            "version": "1.0.27",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": []
+          },
+          {
+            "name": "unicode-normalization",
+            "version": "0.1.26",
+            "source": "registry+https://github.com/rust-lang/crates.io-index",
+            "features": [
+              "default",
+              "std"
+            ]
+          }
+        ]
+      },
+      "report": {
+        "verdict": "PASS",
+        "total": 73,
+        "failed": 0,
+        "checks": [
+          {
+            "name": "number-0",
+            "passed": true
+          },
+          {
+            "name": "number-1",
+            "passed": true
+          },
+          {
+            "name": "number-2",
+            "passed": true
+          },
+          {
+            "name": "number-3",
+            "passed": true
+          },
+          {
+            "name": "number-4",
+            "passed": true
+          },
+          {
+            "name": "number-5",
+            "passed": true
+          },
+          {
+            "name": "number-6",
+            "passed": true
+          },
+          {
+            "name": "number-7",
+            "passed": true
+          },
+          {
+            "name": "number-8",
+            "passed": true
+          },
+          {
+            "name": "number-9",
+            "passed": true
+          },
+          {
+            "name": "number-10",
+            "passed": true
+          },
+          {
+            "name": "number-11",
+            "passed": true
+          },
+          {
+            "name": "number-12",
+            "passed": true
+          },
+          {
+            "name": "number-13",
+            "passed": true
+          },
+          {
+            "name": "url-0",
+            "passed": true
+          },
+          {
+            "name": "url-1",
+            "passed": true
+          },
+          {
+            "name": "url-2",
+            "passed": true
+          },
+          {
+            "name": "url-3",
+            "passed": true
+          },
+          {
+            "name": "url-4",
+            "passed": true
+          },
+          {
+            "name": "url-5",
+            "passed": true
+          },
+          {
+            "name": "url-6",
+            "passed": true
+          },
+          {
+            "name": "url-7",
+            "passed": true
+          },
+          {
+            "name": "url-8",
+            "passed": true
+          },
+          {
+            "name": "url-9",
+            "passed": true
+          },
+          {
+            "name": "url-10",
+            "passed": true
+          },
+          {
+            "name": "url-11",
+            "passed": true
+          },
+          {
+            "name": "url-12",
+            "passed": true
+          },
+          {
+            "name": "url-13",
+            "passed": true
+          },
+          {
+            "name": "url-14",
+            "passed": true
+          },
+          {
+            "name": "url-15",
+            "passed": true
+          },
+          {
+            "name": "url-16",
+            "passed": true
+          },
+          {
+            "name": "url-17",
+            "passed": true
+          },
+          {
+            "name": "url-18",
+            "passed": true
+          },
+          {
+            "name": "url-19",
+            "passed": true
+          },
+          {
+            "name": "url-20",
+            "passed": true
+          },
+          {
+            "name": "url-21",
+            "passed": true
+          },
+          {
+            "name": "url-22",
+            "passed": true
+          },
+          {
+            "name": "url-23",
+            "passed": true
+          },
+          {
+            "name": "url-24",
+            "passed": true
+          },
+          {
+            "name": "url-25",
+            "passed": true
+          },
+          {
+            "name": "url-26",
+            "passed": true
+          },
+          {
+            "name": "url-27",
+            "passed": true
+          },
+          {
+            "name": "url-28",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Beria_Erfe}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Sidetic}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tai_Yo}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Tolong_Siki}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Adlam}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Ahom}+$",
+            "passed": true
+          },
+          {
+            "name": "^\\p{Script=Anatolian_Hieroglyphs}+$",
+            "passed": true
+          },
+          {
+            "name": "new-letter",
+            "passed": true
+          },
+          {
+            "name": "old-letter",
+            "passed": true
+          },
+          {
+            "name": "non-letter",
+            "passed": true
+          },
+          {
+            "name": "named-backref",
+            "passed": true
+          },
+          {
+            "name": "named-backref-reject",
+            "passed": true
+          },
+          {
+            "name": "lookbehind",
+            "passed": true
+          },
+          {
+            "name": "unvisited-regex-admission",
+            "passed": true
+          },
+          {
+            "name": "inert-annotation",
+            "passed": true
+          },
+          {
+            "name": "no-progress",
+            "passed": true
+          },
+          {
+            "name": "optional-null-after-successful-compile",
+            "passed": true
+          },
+          {
+            "name": "raw-preserved",
+            "passed": true
+          },
+          {
+            "name": "parse-failure-precedes-normalization",
+            "passed": true
+          },
+          {
+            "name": "required-null-rejected",
+            "passed": true
+          },
+          {
+            "name": "final-original-schema-check",
+            "passed": true
+          },
+          {
+            "name": "raw-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ace-to-raw",
+            "passed": true
+          },
+          {
+            "name": "percent-to-ace",
+            "passed": true
+          },
+          {
+            "name": "ordinary-url-canonical-idna",
+            "passed": true
+          },
+          {
+            "name": "invalid-unmapped-ace",
+            "passed": true
+          },
+          {
+            "name": "invalid-url",
+            "passed": true
+          },
+          {
+            "name": "invalid-idna-joiner",
+            "passed": true
+          },
+          {
+            "name": "idn-hostname",
+            "passed": true
+          },
+          {
+            "name": "idn-email",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ],
+  "verdict": "PASS",
+  "inputs": {
+    "current-profile.json": "43e9ef448412c7be775a1ee1fa561e559609e9320ac4052b15d706151f3f6519",
+    "consumer\\src\\main.rs": "51d6228dc3b69df2a24adab8d32e9fed7283f15a03cf24fa64a9e1f735a76a3f",
+    "frozen\\leaf-cases.json": "2d832035e60e1dc6989ac5d956d39be73352876a5fc22a25199adcfc5d69272a",
+    "frozen\\leaf-expected.json": "bb1dec60edb115827d39fe57343a92524aa01bca1786763ebffbfca6a4135a89",
+    "frozen\\unicode16-probes.json": "e5b4db1c0e8d1605648aa0faec0969e180b02795aa67110b2a29ee19a2c582d4"
+  },
+  "package": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "4777073478648b890b690307966d4fb7847e73538d73b54947d3aa65bd3f5ff9",
+    "dependencies": [
+      {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "96395e9cc75c27e664c58b498eee711f3d2d7dea432e508b5efbfde38768b6c2",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      }
+    ]
+  },
+  "consumer_lock_sha256": "3765f908b042024b22246629822ea6a4cda4e8d24928daa6cb076ffa7ca825fd"
+}

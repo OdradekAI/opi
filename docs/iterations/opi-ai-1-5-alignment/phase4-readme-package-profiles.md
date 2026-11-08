@@ -37,6 +37,12 @@ feature；`default-features = false` 只关闭 `opi-telemetry` tracing carrier�
 不会移除内置 Provider 或网络依赖。契约由
 `test_readmes_describe_feature_profiles_without_overclaiming_minimal_builds` 固定。
 
+最后同步独立 `opi-telemetry` 的双语 README，修正过时的 AI instrumentation 描述，
+明确普通 chat 的 `pi.ai.request`、deferred fetch 的 `pi.ai.poll` 以及 raw/non-chat
+手动边界；契约由 `test_telemetry_readmes_describe_current_ai_integration_boundary`
+固定。两个 crate 的实际打包消费者 smoke proof 见
+[`phase4-telemetry-readme-ai-boundary.json`](evidence/phase4-telemetry-readme-ai-boundary.json)。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。

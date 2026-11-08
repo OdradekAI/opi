@@ -108,9 +108,15 @@ close can wait for an already-entered synchronous scope. This is a tracing
 adapter, not a complete exporter. The host owns initialization, filtering,
 sampling, redaction, flushing and shutdown.
 
-`opi-ai::telemetry` re-exports the existing carrier paths. AI operations currently
-propagate tracing scopes; passing a recorder does not yet add AI request spans,
-schema events or usage metrics. That instrumentation is a separate migration.
+`opi-ai::telemetry` re-exports these carrier paths. When a caller passes an
+explicit context, ordinary `Models` chat installs an AI-owned `pi.ai.request`
+observer and deferred fetch installs `pi.ai.poll`; a memory recorder therefore
+captures the AI span, events, and usage/cost settlement emitted through this
+neutral carrier. Raw `ChatStream` and prepared raw attempts remain manual
+boundaries, while image, classifier, and deferred-cancel operations deliberately
+carry context without installing an AI span. No context captures no ambient
+subscriber. AI schema, token, and cost rules remain in `opi-ai`; this crate owns
+the neutral context, backend, and adapter contracts only.
 
 Custom backends implement the contracts in `backend`. Shared public scenarios in
 `tests/support` exercise no-op, recording and tracing; backend-specific tests
