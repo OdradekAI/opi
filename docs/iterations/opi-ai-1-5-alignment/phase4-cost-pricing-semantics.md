@@ -7,16 +7,19 @@
 有独立回归。OpenAI/Anthropic 的通用解析器不会因为输入中出现同名扩展字段就
 错误覆盖成本；只有 OpenRouter route 应用 provider accounting。
 
-验证结果：cost/pricing 专项 45 项、OpenRouter accounting 与 route gate 6 项、
-AI telemetry 20 项通过；OpenAI Chat fixture 114 项、Anthropic fixture 153 项
-通过。`cargo check -p opi-ai --all-targets`、Clippy（warnings denied）、rustdoc、
-fmt 和 `git diff --check` 均通过。
+验证结果：cost/pricing 专项 47 项、OpenRouter accounting 与 route gate 6 项、
+AI telemetry 20 项通过；其中 2 项直接覆盖 `ModelInfo::apply_response_cost` 的
+终态 catalog 计费与 provider total 保留。OpenAI Chat fixture 114 项、Anthropic
+fixture 153 项、`model_wire_metadata` 24 项通过。后者的 Anthropic fixture 已补齐
+Pi 要求的 `message_delta.delta.stop_reason=end_turn`，生产端仍保持 pending-stop
+严格失败语义。
 
-全量 `cargo test -p opi-ai` 已执行；当前工作区仍有一项既有的
-`model_wire_metadata::sampling_presence_reaches_supported_wires_once_and_other_wires_keep_metadata_only`
-失败，错误为 Anthropic pending stop 状态，与本切片无直接代码关联，单测重跑仍复现，
-因此没有把它计入本切片通过证据。
+`cargo check -p opi-ai --all-targets`、Clippy（warnings denied）、rustdoc、fmt 和
+`git diff --check` 均通过。全量 `cargo test -p opi-ai --offline -j4` 已执行，除
+OAuth browser 测试 `radius_browser_token_non_ok_fails_typed_without_echo` 的一次
+并发时序失败外，其余已运行测试通过；该测试以 `-j1` 单独重跑通过，属于待独立收敛
+的测试稳定性问题，不计入本切片语义证据。
 
 尚未完成：真实 OpenRouter/Anthropic 账单服务、完整 TS/Rust differential、
-feature/platform/MSRV、性能和六门发布验收。外部 `.crate` package proof 需在
-提交后用新的产物重新执行。
+feature/platform/MSRV、性能和六门发布验收。外部 `.crate` package proof 已在
+提交产物上执行并通过。

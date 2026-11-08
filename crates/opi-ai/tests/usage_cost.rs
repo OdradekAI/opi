@@ -1005,3 +1005,56 @@ fn tiered_cost_rejects_unknown_usage_invalid_prices_and_nonfinite_totals() {
         .is_none()
     );
 }
+
+#[test]
+fn model_info_applies_catalog_cost_without_provider_total() {
+    let model = opi_ai::ModelInfo::new(
+        "cost-model",
+        "Cost model",
+        opi_ai::WireApi::OpenAiResponses,
+        opi_ai::ModelCapabilities::new(8_192, 1_024),
+    )
+    .with_pricing(ModelPricing::try_new(rates(1.0), Vec::new()).unwrap())
+    .unwrap();
+    let mut response = opi_ai::test_support::base_assistant();
+    response.model = "cost-model".into();
+    response.usage = Usage::reported(1_000_000, 2_000_000, 3_000_000, 4_000_000, None, None);
+
+    model.apply_response_cost(&mut response);
+
+    assert_eq!(response.usage.cost.input_cost, 1.0);
+    assert_eq!(response.usage.cost.output_cost, 4.0);
+    assert!((response.usage.cost.cache_read_cost - 0.3).abs() < 1e-12);
+    assert_eq!(response.usage.cost.cache_write_cost, 5.0);
+    assert_eq!(response.usage.cost.total, 10.3);
+    assert!(!response.usage.cost.total_from_provider);
+}
+
+#[test]
+fn model_info_applies_catalog_breakdown_while_preserving_provider_total() {
+    let model = opi_ai::ModelInfo::new(
+        "cost-model",
+        "Cost model",
+        opi_ai::WireApi::OpenAiResponses,
+        opi_ai::ModelCapabilities::new(8_192, 1_024),
+    )
+    .with_pricing(ModelPricing::try_new(rates(1.0), Vec::new()).unwrap())
+    .unwrap();
+    let mut response = opi_ai::test_support::base_assistant();
+    response.model = "cost-model".into();
+    response.usage = Usage::reported(1_000_000, 2_000_000, 3_000_000, 4_000_000, None, None);
+    response.usage.cost = CostBreakdown {
+        total: 17.25,
+        total_from_provider: true,
+        ..CostBreakdown::default()
+    };
+
+    model.apply_response_cost(&mut response);
+
+    assert_eq!(response.usage.cost.input_cost, 1.0);
+    assert_eq!(response.usage.cost.output_cost, 4.0);
+    assert!((response.usage.cost.cache_read_cost - 0.3).abs() < 1e-12);
+    assert_eq!(response.usage.cost.cache_write_cost, 5.0);
+    assert_eq!(response.usage.cost.total, 17.25);
+    assert!(response.usage.cost.total_from_provider);
+}

@@ -693,7 +693,7 @@ async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_met
                 WireApi::AnthropicMessages => (
                     "anthropic",
                     "/v1/messages",
-                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"message-1\",\"model\":\"sampling-model\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+                    "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"message-1\",\"model\":\"sampling-model\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
                 ),
                 _ => unreachable!(),
             };

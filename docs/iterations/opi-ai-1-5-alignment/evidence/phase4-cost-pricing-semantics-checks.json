@@ -5,13 +5,15 @@
   "tdd_observations": [
     "Before the cost model implementation, targeted usage and OpenRouter tests failed to compile because Usage had no cost field and the provider accounting types were absent.",
     "Before provider gating, a generic OpenAI parser test observed cost.total=0.004 from OpenRouter fields; after routing the flag, it retains catalog total.",
-    "Before telemetry integration, provider-reported cost emitted the catalog fallback; after integration the span and pi.ai.cost measurement use the reported total."
+    "Before telemetry integration, provider-reported cost emitted the catalog fallback; after integration the span and pi.ai.cost measurement use the reported total.",
+    "Before the direct terminal tests, ModelInfo::apply_response_cost had only indirect fixture coverage; the new tests lock catalog breakdown replacement and provider-total preservation.",
+    "The model-wire metadata fixture initially omitted Anthropic message_delta.stop_reason and failed with the intended pending-stop guard; adding the protocol-required end_turn event restored the test without weakening production validation."
   ],
   "commands": [
     {
       "command": "cargo test -p opi-ai --test usage_cost --test openrouter_cost --test ai_telemetry --offline -j4",
       "status": "passed",
-      "observed": "45 usage-cost, 6 provider-accounting/gating, and 20 AI telemetry tests passed"
+      "observed": "47 usage-cost, 6 provider-accounting/gating, and 20 AI telemetry tests passed"
     },
     {
       "command": "cargo test -p opi-ai --test openai_chat_fixtures --offline -j4",
@@ -22,6 +24,11 @@
       "command": "cargo test -p opi-ai --test anthropic_fixtures --offline -j4",
       "status": "passed",
       "observed": "153 passed"
+    },
+    {
+      "command": "cargo test -p opi-ai --test model_wire_metadata --offline -j4",
+      "status": "passed",
+      "observed": "24 passed after the protocol-complete Anthropic fixture correction"
     },
     {
       "command": "cargo check -p opi-ai --all-targets --offline -j4",
@@ -57,9 +64,14 @@
       "observed": "external package proof PASS for the current crate artifact"
     },
     {
-      "command": "cargo test -p opi-ai --test model_wire_metadata sampling_presence_reaches_supported_wires_once_and_other_wires_keep_metadata_only --offline -j4",
-      "status": "failed-baseline",
-      "observed": "pre-existing Anthropic pending-stop failure; reproduced independently of cost tests"
+      "command": "cargo test -p opi-ai --offline -j4",
+      "status": "flaky-unrelated",
+      "observed": "all reached suites passed except one OAuth browser timing failure; the failing test passed when rerun alone with -j1"
+    },
+    {
+      "command": "cargo test -p opi-ai --test oauth_flows radius_browser_token_non_ok_fails_typed_without_echo --offline -j1",
+      "status": "passed",
+      "observed": "isolated rerun passed"
     }
   ],
   "behavior": {
@@ -73,6 +85,6 @@
   "limits": [
     "No live provider billing or complete TS/Rust differential",
     "No feature/platform/MSRV, performance, or six-gate release acceptance",
-    "Full package run is not green because of the recorded baseline model_wire_metadata failure"
+    "Full package run still needs OAuth browser timing stabilization under parallel execution"
   ]
 }
