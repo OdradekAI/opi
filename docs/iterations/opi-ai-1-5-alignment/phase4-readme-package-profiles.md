@@ -23,6 +23,10 @@ Provider、Telemetry 和测试包证明作为新接入的明确入口；长篇 p
 保留在导航之后。导航契约由 `test_readmes_expose_task_oriented_integration_guide`
 固定。
 
+在导航与 Quick Start 之间又加入双语公共 API 总览，明确 `Models`、`Request`、
+`ChatCall`、Context/工具与 `TelemetryContext` 的责任边界；契约由
+`test_readmes_publish_public_api_at_a_glance` 固定。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。

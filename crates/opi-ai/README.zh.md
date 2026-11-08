@@ -100,6 +100,22 @@ SSO OIDC 与 SignIn ES256 DPoP 流程、单飞来源缓存交换）位于 `auth:
 ADC 来源与全部九种 OAuth 流由 SDK 拥有。coding agent 拥有 keychain backend、
 终端 presenter 与宿主注册策略。
 
+## API 总览
+
+公共 surface 围绕少量由调用方持有的值和一个执行 driver 组织：
+
+| 任务 | 公共入口 | 责任 |
+| --- | --- | --- |
+| 注册并选择模型 | `Models` / `ProviderRegistry` / `register_builtin` | 构造 catalog 或显式 route，构造阶段不读取认证 |
+| 描述一次调用 | `Request` / `ChatModelRecord` | 携带规范化 Context、模型身份、限制、取消和可选 Telemetry |
+| 完成一次调用 | `Models::complete_simple` | 驱动执行直到一个最终 `AssistantMessage` 或类型化 `CallFailure` |
+| 消费流 | `ChatCall` / `AssistantStreamEvent` / `Models::stream_simple` | 观察增量、终态、取消和最终消息 |
+| 组装 Context 与工具 | `normalize_context` / `ToolDef` / `transcript` | 将系统文本、消息和工具声明规范化为 canonical chronology |
+| 观察执行 | `TelemetryContext` / `telemetry-tracing` | 注入显式上下文，可选启用 `opi-telemetry` tracing carrier |
+
+Provider adapter 在这些入口之后实现具体 route；它们不会改变 `Request` 的所有权、
+流终态契约或调用方持有的认证上下文。
+
 ## 快速开始
 
 一次完整的普通调用：在空 `Models` 上注册惰性 builtins、静态选择模型、

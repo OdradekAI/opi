@@ -145,6 +145,29 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             self.assertLess(source.index(installation), source.index(status),
                             f"{name} puts onboarding after status context")
 
+    def test_readmes_publish_public_api_at_a_glance(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "## API at a glance",
+            "`Models` / `ProviderRegistry`",
+            "`Request` / `ChatModelRecord`",
+            "`ChatCall` / `AssistantStreamEvent`",
+            "`normalize_context` / `ToolDef`",
+            "`TelemetryContext` / `telemetry-tracing`",
+        ):
+            self.assertIn(fragment, english, f"README.md omits API map entry: {fragment}")
+        for fragment in (
+            "## API 总览",
+            "`Models` / `ProviderRegistry`",
+            "`Request` / `ChatModelRecord`",
+            "`ChatCall` / `AssistantStreamEvent`",
+            "`normalize_context` / `ToolDef`",
+            "`TelemetryContext` / `telemetry-tracing`",
+        ):
+            self.assertIn(fragment, chinese, f"README.zh.md omits API map entry: {fragment}")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

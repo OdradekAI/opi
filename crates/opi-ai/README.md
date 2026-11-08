@@ -112,6 +112,24 @@ SignIn ES256 DPoP flows, and the single-flight source cache) lives in
 ADC sources and all nine OAuth flows are SDK-owned. The coding agent owns
 the keychain backend, terminal presenter and host registration policy.
 
+## API at a glance
+
+The public surface is organized around a small set of caller-owned values and
+one execution driver:
+
+| Task | Public entry points | Responsibility |
+| --- | --- | --- |
+| Register and select models | `Models` / `ProviderRegistry` / `register_builtin` | Build a catalog or explicit route without reading authentication during construction |
+| Describe one call | `Request` / `ChatModelRecord` | Carry normalized context, model identity, limits, cancellation, and optional telemetry |
+| Complete one call | `Models::complete_simple` | Drive execution to one final `AssistantMessage` or typed `CallFailure` |
+| Consume a stream | `ChatCall` / `AssistantStreamEvent` / `Models::stream_simple` | Observe deltas, terminal state, cancellation, and the final message |
+| Build context and tools | `normalize_context` / `ToolDef` / `transcript` | Normalize system text, messages, and tool declarations into canonical chronology |
+| Observe execution | `TelemetryContext` / `telemetry-tracing` | Inject explicit context; opt into the `opi-telemetry` tracing carrier |
+
+Provider adapters implement the route behind these entries. They do not change
+the ownership of `Request`, the stream terminal contract, or the caller's
+authentication context.
+
 ## Quick Start
 
 One complete ordinary call: register lazy builtins on an empty `Models`, select

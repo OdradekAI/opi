@@ -45,6 +45,8 @@ tool-result continuation 均通过。证据见[独立消费者报告](phase4-rea
 和 `scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`。
 随后补上双语 README 的任务导航，将独立接入路径与后续 provider/协议参考分开；
 实施记录见[README 导航票](issues/27-readme-task-guide.md)。
+随后补上公共 API 总览，固定中立入口与 Provider/Telemetry 的责任边界；实施记录见
+[README API 总览票](issues/28-readme-public-api-map.md)。
 
 ## 目标与范围
 
