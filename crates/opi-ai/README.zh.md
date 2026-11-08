@@ -81,6 +81,24 @@ opi-ai = { version = "0.8.3", default-features = false }
 `quick_start.rs` 只需要 `opi-ai`、`tokio` 与 `tokio-util`；流式示例另外需要
 `futures-util`，`tool_loop.rs` 另外需要 `serde_json`。
 
+## Feature profile
+
+当前 `opi-ai` 只公开一个 feature：`telemetry-tracing`：
+
+| Profile | Cargo 写法 | 增加或移除 |
+| --- | --- | --- |
+| 默认 | `default` / `telemetry-tracing` | 开启 `opi-telemetry` 的可选 tracing carrier，以及 `TelemetryContext::from_span`。 |
+| 核心 context | `default-features = false` | 保留中立 telemetry context、recorder 和 AI request 类型，但不启用可选 tracing carrier。 |
+
+`default-features = false` 不会移除内置 Provider 或网络依赖。它只改变
+`opi-telemetry` 的可选 tracing carrier；Provider catalog、请求生命周期和显式
+注册规则保持不变。因此这个 feature profile 是 telemetry 选择，不是最小
+Provider 构建，也不是运行时插件系统。
+
+独立的 [`opi-telemetry`](../opi-telemetry/README.md) crate 默认不启用 feature。
+它的 `tracing` feature 是 `opi-ai/telemetry-tracing` 使用的底层 carrier；
+exporter、采样、初始化和 shutdown 仍由宿主拥有。
+
 ## 当前状态
 
 当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。

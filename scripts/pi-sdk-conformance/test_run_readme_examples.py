@@ -197,6 +197,27 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits reference-map entry: {fragment}")
 
+    def test_readmes_describe_feature_profiles_without_overclaiming_minimal_builds(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "## Feature profiles",
+            "`default` / `telemetry-tracing`",
+            "`default-features = false`",
+            "does not remove built-in providers or network\ndependencies",
+            "`opi-telemetry`'s optional tracing carrier",
+        ):
+            self.assertIn(fragment, english, f"README.md omits feature-profile contract: {fragment}")
+        for fragment in (
+            "## Feature profile",
+            "`default` / `telemetry-tracing`",
+            "`default-features = false`",
+            "不会移除内置 Provider 或网络依赖",
+            "`opi-telemetry` 的可选 tracing carrier",
+        ):
+            self.assertIn(fragment, chinese, f"README.zh.md omits feature-profile contract: {fragment}")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

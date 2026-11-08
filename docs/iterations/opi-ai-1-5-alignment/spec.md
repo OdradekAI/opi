@@ -50,6 +50,9 @@ tool-result continuation 均通过。证据见[独立消费者报告](phase4-rea
 随后补上双语高级能力参考索引，将 Provider、认证、Telemetry、cost/pricing、
 WebSocket、Deferred 与测试包证明集中成入口；实施记录见
 [README 参考索引票](issues/29-readme-reference-map.md)。
+随后补上双语 feature profile 矩阵，固定 `telemetry-tracing` 与
+`default-features = false` 的真实语义；实施记录见
+[README feature profile 票](issues/30-readme-feature-profile-matrix.md)。
 
 ## 目标与范围
 

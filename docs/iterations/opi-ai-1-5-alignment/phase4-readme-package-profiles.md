@@ -32,6 +32,11 @@ Provider、Telemetry 和测试包证明作为新接入的明确入口；长篇 p
 入口；契约由 `test_readmes_index_advanced_capability_references` 固定。该索引
 只改善导航，不改变 feature profile 或运行时语义。
 
+随后补上双语 feature profile 矩阵，明确当前只有 `telemetry-tracing` 一个公开
+feature；`default-features = false` 只关闭 `opi-telemetry` tracing carrier，
+不会移除内置 Provider 或网络依赖。契约由
+`test_readmes_describe_feature_profiles_without_overclaiming_minimal_builds` 固定。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。

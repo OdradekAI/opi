@@ -88,6 +88,26 @@ opi-ai = { version = "0.8.3", default-features = false }
 example additionally needs `futures-util`, and `tool_loop.rs` additionally
 needs `serde_json`.
 
+## Feature profiles
+
+`opi-ai` currently exposes one public feature, `telemetry-tracing`:
+
+| Profile | Cargo spelling | Adds or removes |
+| --- | --- | --- |
+| Default | `default` / `telemetry-tracing` | Enables `opi-telemetry`'s optional tracing carrier and `TelemetryContext::from_span`. |
+| Core context | `default-features = false` | Keeps the backend-neutral telemetry context, recorder, and AI request types without the optional tracing carrier. |
+
+`default-features = false` does not remove built-in providers or network
+dependencies. It changes only the optional `opi-telemetry` tracing carrier;
+the provider catalog, request lifecycle, and explicit registration rules remain
+the same. The feature profile is therefore a telemetry choice, not a minimal
+provider build or a runtime plugin system.
+
+The standalone [`opi-telemetry`](../opi-telemetry/README.md) crate has no
+default features. Its `tracing` feature is the lower-level carrier used by
+`opi-ai/telemetry-tracing`; exporters, sampling, initialization, and shutdown
+remain host-owned.
+
 ## Status
 
 Current crate version: `0.8.3`, inherited from the workspace package version.
