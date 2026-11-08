@@ -129,6 +129,93 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits guide entry: {fragment}")
 
+    def test_readmes_follow_pi_style_public_task_order(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+
+        def headings(source: str) -> list[str]:
+            return [line[3:].strip() for line in source.splitlines() if line.startswith("## ")]
+
+        expected = (
+            "Installation",
+            "Feature profiles",
+            "Quick Start",
+            "Streaming and the Final Result",
+            "Context, Tools, and Continuation",
+            "Providers",
+            "Image Support",
+            "Classification",
+            "Thinking/Reasoning",
+            "Error Handling",
+            "Telemetry: Explicit Context and Optional Tracing",
+            "Custom Providers",
+            "Faux Provider for Tests",
+            "Deferred Responses",
+            "Migration",
+            "Development",
+        )
+        expected_zh = (
+            "安装",
+            "Feature profile",
+            "快速开始",
+            "流式与最终结果",
+            "Context、工具与续轮",
+            "Provider",
+            "图片支持",
+            "分类器",
+            "思考与推理",
+            "错误处理",
+            "Telemetry：显式上下文与可选 tracing",
+            "自定义 Provider",
+            "Faux Provider 测试",
+            "Deferred 响应",
+            "迁移",
+            "开发",
+        )
+        for name, expected_headings in (("README.md", expected), ("README.zh.md", expected_zh)):
+            source = (root / name).read_text(encoding="utf-8")
+            actual = headings(source)
+            positions = []
+            for heading in expected_headings:
+                self.assertIn(heading, actual, f"{name} omits public task heading: {heading}")
+                positions.append(actual.index(heading))
+            self.assertEqual(positions, sorted(positions),
+                             f"{name} does not follow the Pi-style public task order")
+
+    def test_public_readmes_do_not_expose_private_implementation_sections(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        forbidden = (
+            "Private protocol ownership",
+            "Compression and maintenance boundaries",
+            "Private Schema Dialect Engine",
+            "Private Upstream Crypto Profile",
+            "Scripted Multi-Operation MockProvider Support",
+            "私有协议所有权",
+            "压缩与维护边界",
+            "私有 Schema 方言引擎",
+            "私有上游 Crypto Profile",
+            "MockProvider 多操作脚本测试支撑",
+        )
+        links = {
+            "README.md": (
+                "docs/transport.md",
+                "docs/utilities.md",
+                "docs/providers.md",
+                "docs/testing.md",
+            ),
+            "README.zh.md": (
+                "docs/transport.zh.md",
+                "docs/utilities.zh.md",
+                "docs/providers.zh.md",
+                "docs/testing.zh.md",
+            ),
+        }
+        for name, required_links in links.items():
+            source = (root / name).read_text(encoding="utf-8")
+            for heading in forbidden:
+                self.assertNotIn(heading, source, f"{name} exposes private section: {heading}")
+            for link in required_links:
+                self.assertIn(link, source, f"{name} omits topic reference: {link}")
+
     def test_readmes_keep_license_after_reference_appendices(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
         for name, heading in (("README.md", "## License"), ("README.zh.md", "## 许可证")):
