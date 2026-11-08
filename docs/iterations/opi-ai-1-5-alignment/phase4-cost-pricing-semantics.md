@@ -15,10 +15,10 @@ Pi 要求的 `message_delta.delta.stop_reason=end_turn`，生产端仍保持 pen
 严格失败语义。
 
 `cargo check -p opi-ai --all-targets`、Clippy（warnings denied）、rustdoc、fmt 和
-`git diff --check` 均通过。全量 `cargo test -p opi-ai --offline -j4` 已执行；
-Radius 固定回调端口的并行测试竞争和过时的 feature 契约均已修复，当前唯一剩余
-失败是既有 `schema_engine::encoded_pointer_targets_preserve_selected_resource_identity`，
-与本切片无关。
+`git diff --check` 均通过。全量 `cargo test -p opi-ai --offline -j4` 已通过；
+本轮同时收敛了 Radius 固定回调端口的并行测试竞争、过时的 feature 契约，以及
+schema-engine 的 sibling `$id` resource identity 回归。后两项是独立基线修复，
+不改变本切片的计费语义。
 
 尚未完成：真实 OpenRouter/Anthropic 账单服务、完整 TS/Rust differential、
 feature/platform/MSRV、性能和六门发布验收。外部 `.crate` package proof 已在

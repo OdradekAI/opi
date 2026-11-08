@@ -35,7 +35,6 @@ pub(crate) struct StackFrame<'a> {
     pub(crate) resource_base: Url,
     pub(crate) recursive_anchors: Vec<&'a Value>,
     pub(crate) dynamic_anchors: Vec<&'a Value>,
-    pub(crate) in_retrieved_frame: bool,
 }
 
 /// A `$ref` resolution result (source `ResolveRef` return shape).
@@ -200,7 +199,6 @@ impl<'a> RefStack<'a> {
             resource_base: self.resource_base_url()?,
             recursive_anchors: self.recursive_anchors.clone(),
             dynamic_anchors: self.dynamic_anchors.clone(),
-            in_retrieved_frame: !self.retrieved_frames.is_empty(),
         })
     }
 
@@ -1157,11 +1155,12 @@ fn resolve_ref<'a>(
     frame: &StackFrame<'a>,
     reference: &str,
 ) -> Result<RefResolution<'a>, SchemaError> {
-    let source = if frame.in_retrieved_frame {
-        frame.lexical_schema
-    } else {
-        frame.root
-    };
+    // Relative references keep the active resource base, but the local
+    // document search must retain the root identity. A retrieved lexical
+    // fragment can point at a sibling `$id` resource in the same document;
+    // narrowing the tree to that fragment makes the result depend on which
+    // sibling was visited first.
+    let source = frame.root;
     let ref_root = if reference.starts_with('#') {
         frame.lexical_schema
     } else {
