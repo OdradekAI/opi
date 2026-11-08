@@ -61,6 +61,17 @@ profile、离线与动态 Catalog，以及 canonical built-in factory。主 READ
 report、evidence 和 Git 历史中；契约由
 `test_public_opi_ai_manuals_omit_internal_alignment_labels` 固定。
 
+随后按 Pi 风格任务顺序重构双语主 README：安装、feature profile、Quick Start、
+stream/result、Context/工具、Provider、图像/分类、reasoning、错误、telemetry、
+自定义 Provider、Faux、deferred、迁移和开发成为公共入口。Proxy/TLS/WebSocket/
+资源生命周期迁入 `docs/transport*.md`，schema/replay/transcript/utility 迁入
+`docs/utilities*.md`，Provider wire/operation 迁入 `docs/providers*.md`，Faux、测试
+分层和包证明迁入 `docs/testing*.md`。契约由
+`test_readmes_follow_pi_style_public_task_order`、
+`test_public_readmes_do_not_expose_private_implementation_sections` 和
+`test_public_topic_references_expose_current_contracts` 固定；实施记录见
+[README 公共手册重构票](issues/35-readme-public-manual-restructure.md)。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。
