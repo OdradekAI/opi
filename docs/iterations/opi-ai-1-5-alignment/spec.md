@@ -38,8 +38,15 @@ result/EOF/Drop 观察后，普通 provider 的不消费、停止消费两例均
 消费 Drop，以及获准 retry 后的尾部结算，209 项相关 Rust 测试及 2 项实际 driver 测试通过。新录制的三例共享观察
 全部通过，但整体仍是 `BLOCKED_WITH_RECORDED_OBSERVATIONS` / exit 2：两个材料
 身份阻断未清除，启动时点与 setup 错误通道未获差异批准。旧 FAIL 证据原样保留，
-当前状态见[普通调用尾部修复报告](phase5-ordinary-source-tail.md)，不代表完整 TS/Rust
+该修复的状态见[普通调用尾部修复报告](phase5-ordinary-source-tail.md)，不代表完整 TS/Rust
 差分或六门验收通过。
+
+随后推进[隔离副本中的 pinned catalog 恢复](issues/38-isolated-pinned-catalog-restoration.md)：
+使用已验证的原始响应和上游离线 hydrator，复制冻结清单中的源码，重建 telemetry、
+schema、AI，并实际加载编译后的 catalog。候选的 42 个 provider / 1712 个模型、
+source/dist 数据与运行时导出均匹配 pin；用户原树保持不变。该候选仍沿用发生漂移的
+完整 lock，未证明所有传递依赖来源或 npm 包消费，也尚未接入生命周期 runner 的
+候选材料路径。结果和验证边界见[恢复报告](phase5-isolated-catalog-restoration.md)。
 
 随后修正 AI telemetry `provider_error` 状态消息的长度单位：错误文本现在按
 UTF-16 code unit 限制为 500，非 BMP 文本不会因 Rust `char` 计数而超出 Pi 的
@@ -223,7 +230,7 @@ README 从“安装 → 单 provider 的完整调用 → 离线 Faux → streami
 
 | 待落实项 | 下一步及阻断范围 |
 | --- | --- |
-| pinned 响应已取得，当前生成目录不匹配 | 原始响应已验 hash；在可追溯工作副本中按该响应 hydrate 并核对 source/dist。当前目录/价格的固定快照等价结论仍受阻，不得用最新线上目录替代 |
+| pinned catalog 已在隔离候选中恢复 | 候选 source/dist 和编译后导出均为 42 provider / 1712 model，匹配原始响应；用户原树未覆盖。下一步把候选身份接入材料冻结/差分，并补完整 lock 来源；不能把局部数据匹配当作目录/价格全合同或六门通过 |
 | 原版依赖/dist 已补充，完整 lock 身份漂移 | 直接依赖和 dist 清单已有证据；恢复原始完整 lock bytes 或提交具名基准变更决策，不能用直接版本相同推导传递依赖相同。实际 npm 包消费仍须独立验证 |
 | JS 共享/启动/异常的 Rust 映射 | 优先探证 partial 延后读取/别名、eager 与 first-poll、observer 异常及 pending 等场景；若不能同时满足兼容与工程要求，提出具体差异供用户决策 |
 | 逐符号与消费者迁移 | 形成旧入口→新入口表，覆盖现有 agent/coding-agent 和可确认的外部使用方；不能以仓库无引用推定没有外部消费者 |

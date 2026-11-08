@@ -1,0 +1,365 @@
+{
+  "schemaVersion": 1,
+  "status": "isolated-catalog-restored-full-provenance-open",
+  "head": "69670eadf84352e3583f23799e4c2c288b322d5f",
+  "mode": "worktree-only",
+  "environment": {
+    "python": "3.12.13 | packaged by Anaconda, Inc. | (main, Mar 19 2026, 20:16:45) [MSC v.1942 64 bit (AMD64)]",
+    "platform": "Windows-11-10.0.22631-SP0",
+    "node": "24.13.0 win32/x64",
+    "typescript": "7.0.2"
+  },
+  "scope": "New isolated upstream candidate only. No Rust production/feature changes, no supplied-snapshot mutation, install, live provider, baseline replacement, commit or publication.",
+  "checks": [
+    {
+      "name": "restore-python",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/iterations/opi-ai-1-5-alignment/tools",
+        "-p",
+        "test_restore_pinned_catalog.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore-python.log",
+      "sha256": "4ca76a39caaa86d3048713642a80197c02e4c4e6c1de4244c5514362af653577",
+      "note": "Previously completed successfully; collector console encoding error after Node output did not rerun either suite."
+    },
+    {
+      "name": "runtime-node",
+      "command": [
+        "node",
+        "--test",
+        "docs/iterations/opi-ai-1-5-alignment/tools/test_verify_catalog_runtime.mjs"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\runtime-node.log",
+      "sha256": "5ae4416da8c95bfc07c7e951a71edbbbd846d59508bc91c7c1442d33795e274f",
+      "note": "Previously completed successfully; collector console encoding error after Node output did not rerun either suite."
+    },
+    {
+      "name": "restoration",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "docs/iterations/opi-ai-1-5-alignment/tools/restore_pinned_catalog.py",
+        "--repo",
+        "D:/Luiz/Odradek/opi",
+        "--candidate",
+        "C:/Temp/opi-ai-pinned-catalog-20261108",
+        "--output",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-candidate.json"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restoration.log",
+      "sha256": "c17dc6f469ef0e1603dcf31eb68489c9b426cbb78eac35ab3bd3fdb2f00c2260"
+    },
+    {
+      "name": "restore-python-native",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/iterations/opi-ai-1-5-alignment/tools",
+        "-p",
+        "test_restore_pinned_catalog.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore-python-native.log",
+      "sha256": "2d9e534920cae3fc449f6bb0db075df018acd08fdcc65ff21d710ae4ec5f2fe0"
+    },
+    {
+      "name": "restoration-native",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "docs/iterations/opi-ai-1-5-alignment/tools/restore_pinned_catalog.py",
+        "--repo",
+        "D:/Luiz/Odradek/opi",
+        "--candidate",
+        "C:/Temp/opi-ai-pinned-catalog-native-20261108",
+        "--output",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-native-candidate.json"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restoration-native.log",
+      "sha256": "a7cdb02893db109893da43dccef8339de3e9335735936a4f6bcc16f8f616643f"
+    },
+    {
+      "name": "restore-python-final",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/iterations/opi-ai-1-5-alignment/tools",
+        "-p",
+        "test_restore_pinned_catalog.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore-python-final.log",
+      "sha256": "6f743ae0052af55dc16b15fa01323b3120ef430c4ee8e5c44a703f09af76039b"
+    },
+    {
+      "name": "restoration-final",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "docs/iterations/opi-ai-1-5-alignment/tools/restore_pinned_catalog.py",
+        "--repo",
+        "D:/Luiz/Odradek/opi",
+        "--candidate",
+        "C:/Temp/opi-ai-pinned-catalog-validated-20261108",
+        "--output",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-validated-candidate.json"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restoration-final.log",
+      "sha256": "e4954c19ddac87f4f3d6adf2935f44cda3ea705116ae041c9b393327fb796303"
+    },
+    {
+      "name": "restore-python-reviewed",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/iterations/opi-ai-1-5-alignment/tools",
+        "-p",
+        "test_restore_pinned_catalog.py",
+        "-v"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore-python-reviewed.log",
+      "sha256": "d44c4f2d44c539cb3fb6d899091cfb9401c7236ffcb212bdd8e8ff0ea483d177"
+    },
+    {
+      "name": "restoration-reviewed",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "docs/iterations/opi-ai-1-5-alignment/tools/restore_pinned_catalog.py",
+        "--repo",
+        "D:/Luiz/Odradek/opi",
+        "--candidate",
+        "C:/Temp/opi-ai-pinned-catalog-reviewed-20261108",
+        "--output",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-reviewed-candidate.json"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\restoration-reviewed.log",
+      "sha256": "845ede063bfcc47829aaab99fe7ca776b5d38e3736ca824a1c4663908c86fadd"
+    },
+    {
+      "name": "reviewed-docs",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\envs\\see_through\\python.exe",
+        "-B",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\reviewed-docs.log",
+      "sha256": "edb5e77939f723d839624757163f676eb9a1979432471f22a8fd2902937ff696"
+    },
+    {
+      "name": "reviewed-diff",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-ai-catalog-restore-20261108\\reviewed-diff.log",
+      "sha256": "abc30023955fb1415cb6df613a2f287897377fa4b0a607d322483e2bd51a91d1"
+    }
+  ],
+  "current_test_counts": {
+    "restoration_python": 9,
+    "runtime_node": 2
+  },
+  "reuse": {
+    "runtime_tests": "Node runtime script/test unchanged since the initial 2-test pass; actual generated-module validation ran in all four candidate builds.",
+    "existing_material_tools": "freeze_acceptance_materials.py and inspect_acceptance_materials.mjs unchanged; existing unit proof retained and helpers exercised in actual restoration.",
+    "rust": "No Rust source/build inputs changed; prior 209-test product result retained, no Cargo commands run."
+  },
+  "red_green": [
+    {
+      "name": "Windows lexical backslash alias",
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/iterations/opi-ai-1-5-alignment/tools",
+        "-p",
+        "test_restore_pinned_catalog.py",
+        "-k",
+        "baseline_paths",
+        "-v"
+      ],
+      "red_exit_code": 1,
+      "red": "ValueError not raised for alias resolving back into source",
+      "green": "Full restoration suite passed after canonical POSIX-path enforcement."
+    },
+    {
+      "name": "Dangling Windows directory junction",
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "docs/iterations/opi-ai-1-5-alignment/tools",
+        "-p",
+        "test_restore_pinned_catalog.py",
+        "-k",
+        "dangling_directory",
+        "-v"
+      ],
+      "red_exit_code": 1,
+      "red": "FileExistsError not raised in candidate and output positions",
+      "green": "Both actual subprocess negatives and the 9-test suite passed after os.path.lexists guard."
+    }
+  ],
+  "red_logs": {
+    "C:\\Temp\\opi-ai-catalog-restore-20261108\\path-alias-red.log": "af5bf0436fd1df08fa6e13f7606d85689cef69cf55312871be37725466218c96",
+    "C:\\Temp\\opi-ai-catalog-restore-20261108\\dangling-link-red.log": "7b5cf402e2c51f103005222c3b327e1727404e8c16b0887e70afea3f2c8b2402"
+  },
+  "acceptance": {
+    "current_evidence": "phase5-restored-catalog-reviewed-candidate.json",
+    "candidate": "C:/Temp/opi-ai-pinned-catalog-reviewed-20261108",
+    "exit_code": 0,
+    "verdict": "catalog-restored-full-provenance-not-established",
+    "catalog": {
+      "providers": 42,
+      "models": 1712,
+      "missing": 0,
+      "extra": 0,
+      "changed": 0,
+      "runtime": "pass",
+      "source_dist": "pass"
+    },
+    "source_files_copied": 2949,
+    "dependency_links": 277,
+    "source_output_pairs": {
+      "ai": 204,
+      "schema": 43,
+      "telemetry": 8
+    },
+    "inventory_counts": {
+      "ai_dist": 859,
+      "schema_dist": 172,
+      "telemetry_dist": 32,
+      "ai_data": 43
+    },
+    "same_outputs_across_candidates": true,
+    "blocked_gates": [
+      "frozen upstream source/lock provenance drift"
+    ],
+    "boundaries": [
+      "Supplied tree catalog mismatch is not retroactively cleared. Only the new candidate matches the pin.",
+      "Supplied immutability covers baseline files, AI generated data, three dist trees and successful direct-dependency/material reinspection. All transitive node_modules files and OS-level write protection are excluded.",
+      "Candidate dependency links are writable aliases; do not install/mutate shared node_modules.",
+      "Not yet a schema-v2 material manifest usable by the existing lifecycle runner.",
+      "No clean-install reproducibility, npm consumer, full TS/Rust parity or six-gate claim."
+    ]
+  },
+  "historical_tool_snapshots": {
+    "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore_pinned_catalog.initial.py.txt": "6432e9bff66fd61485c8f1f90548fd450ea91c111b2538c5c725a5915372dd46",
+    "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore_pinned_catalog.native.py.txt": "ff33d5e4f044110ba4af5d31257395b2f3af578819be2ca9a4db8102c78e28c7",
+    "C:\\Temp\\opi-ai-catalog-restore-20261108\\restore_pinned_catalog.validated.py.txt": "408df2c8876216fa614122791c6b426130bcdbba9481e1e609d18c9b20e3b2d8"
+  },
+  "review": {
+    "run_id": "d879302f-f4cf-4c4f-a310-b22452458a70",
+    "artifact": "C:\\Users\\Luiz\\.pi\\agent\\sessions\\--D--Luiz-Odradek-opi--\\subagent-artifacts\\outputs\\d879302f-f4cf-4c4f-a310-b22452458a70\\pinned-catalog-restoration-review.md",
+    "sha256": "4b90197585b164cb7fbd70474ef7f17d43da50c9276f82ac3b321cabff234e60",
+    "mode": "independent read-only static review; no child tests/builds/writes",
+    "status": "complete-findings-addressed",
+    "dispositions": [
+      {
+        "finding": "Dangling junction bypasses early refusal",
+        "action": "Reproduced with actual Windows junctions; os.path.lexists guard plus helper/CLI negatives pass."
+      },
+      {
+        "finding": "Immutability scope does not cover every shared dependency file",
+        "action": "Added supplied_unchanged_scope with explicit included/excluded observations and shared-link warning; no stronger unsupported claim."
+      },
+      {
+        "finding": "CPython private _winapi portability caveat",
+        "action": "Documented CPython-specific Windows dependency and unverified other implementations."
+      }
+    ],
+    "followup": "Parent validated fixes and new candidate; no second independent review claimed."
+  },
+  "metadata_checks": [
+    "All four dist/data inventories match byte-for-byte; not an independent clean-install reproducibility proof.",
+    "Latest candidate tool hashes match current sources; three previous tool revisions preserved with matching digests.",
+    "All pre-existing contract-index fields retained; one implementation slice appended.",
+    "Task JSON, whitespace including new files, documentation, unchanged HEAD and empty staging index checked."
+  ],
+  "input_sha256": {
+    "docs/iterations/opi-ai-1-5-alignment/contract-index.json": "e76e46036b1ab478b0330f3e695781e13d5c3a203f8a969992e66586082a7efd",
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": "550b40407b2f004648e0de7bf6d8191bbc56fb50e8fc4c4124298751c26f4666",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-candidate.json": "e4ed77cd7c0625994d556d34e67fd59667447bcbf6fe333e42d0ce544cabda48",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-native-candidate.json": "894bed6c7c1175f551a3ec8b5bbfce706858b5d46908a4c5ba39fedaf4dc1d97",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-reviewed-candidate.json": "425932b791ec249bba8b730f15435d66a7d7d7a37a5611a2dc67695c5bee6c01",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-validated-candidate.json": "aec2b599f68d5eef3f556cfad116f75a68abe47834a7a5de910971e0222ebb73",
+    "docs/iterations/opi-ai-1-5-alignment/issues/38-isolated-pinned-catalog-restoration.md": "34ab81ac3a87406155c86f251a78b6c771ecb31e86767d5266059696dfeaafa4",
+    "docs/iterations/opi-ai-1-5-alignment/phase5-isolated-catalog-restoration.md": "27b0c4d9e97d80200f973139b08e9467eb351eb2f0a6501223f75c720f809045",
+    "docs/iterations/opi-ai-1-5-alignment/tools/restore_pinned_catalog.py": "6368bf10adad72d42722dcfe6e1d876063e839031e22dd7600afb63e8ad2d24e",
+    "docs/iterations/opi-ai-1-5-alignment/tools/test_restore_pinned_catalog.py": "be143210559c82b35e16adf71bed725f273167ca3f47a440892a2f390da0e6a5",
+    "docs/iterations/opi-ai-1-5-alignment/tools/test_verify_catalog_runtime.mjs": "c7d3f7c58f106aee991e0ef20a78582bff2d26fd3fe9893a7da5823d33e94254",
+    "docs/iterations/opi-ai-1-5-alignment/tools/verify_catalog_runtime.mjs": "dde67e580f815b0005a6f161bc6a37023c338e391975b0b81419470cd170abb8"
+  },
+  "test_impact": {
+    "add": [
+      "restoration path/link/identity/failure tests",
+      "generated-module runtime-value tests"
+    ],
+    "update": [],
+    "retain": [
+      "existing material tools and product regressions",
+      "all prior JSON evidence"
+    ],
+    "delete": []
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "staged": [],
+    "carried_in": [],
+    "unstaged": [
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "docs/iterations/opi-ai-1-5-alignment/contract-index.json"
+    ],
+    "untracked": [
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-candidate.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-native-candidate.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-reviewed-candidate.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-restored-catalog-validated-candidate.json",
+      "docs/iterations/opi-ai-1-5-alignment/issues/38-isolated-pinned-catalog-restoration.md",
+      "docs/iterations/opi-ai-1-5-alignment/phase5-isolated-catalog-restoration.md",
+      "docs/iterations/opi-ai-1-5-alignment/tools/restore_pinned_catalog.py",
+      "docs/iterations/opi-ai-1-5-alignment/tools/test_restore_pinned_catalog.py",
+      "docs/iterations/opi-ai-1-5-alignment/tools/test_verify_catalog_runtime.mjs",
+      "docs/iterations/opi-ai-1-5-alignment/tools/verify_catalog_runtime.mjs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-catalog-restoration-checks.json"
+    ]
+  }
+}

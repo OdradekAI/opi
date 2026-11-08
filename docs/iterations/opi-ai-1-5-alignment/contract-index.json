@@ -258358,6 +258358,42 @@
         "All three shared lifecycle observations pass, but material gates stay blocked and differences remain unapproved.",
         "No full-workspace/provider/features/platform/MSRV/performance or six-gate acceptance claim."
       ]
+    },
+    {
+      "id": "IMPL-38-ISOLATED-PINNED-CATALOG-RESTORATION",
+      "issue": "issues/38-isolated-pinned-catalog-restoration.md",
+      "base_commit": "69670eadf84352e3583f23799e4c2c288b322d5f",
+      "contracts": ["CAP-CATALOG", "CAP-PACKAGE"],
+      "status": "isolated-pinned-catalog-restored-full-provenance-open",
+      "owner": "tools/restore_pinned_catalog.py",
+      "primary_tests": [
+        "tools/test_restore_pinned_catalog.py",
+        "tools/test_verify_catalog_runtime.mjs"
+      ],
+      "complementary_tests": [
+        "tools/test_acceptance_materials.py",
+        "tools/test_inspect_acceptance_materials.mjs"
+      ],
+      "evidence": [
+        "evidence/phase5-restored-catalog-candidate.json",
+        "evidence/phase5-restored-catalog-native-candidate.json",
+        "evidence/phase5-restored-catalog-validated-candidate.json",
+        "evidence/phase5-restored-catalog-reviewed-candidate.json",
+        "evidence/phase5-catalog-restoration-checks.json"
+      ],
+      "test_impact": {
+        "add": ["restoration path/identity/failure tests", "generated-module runtime catalog comparison tests"],
+        "update": [],
+        "delete": [],
+        "retain": "Existing material tools and product regressions; every prior JSON evidence artifact"
+      },
+      "limits": [
+        "The supplied snapshot is unchanged; only a new isolated candidate has restored catalog values.",
+        "Full root-lock identity and installed transitive provenance remain open.",
+        "No upstream npm-consumer or full clean-install/reproducible-build acceptance.",
+        "Candidate is not yet wired into the schema-v2 material/lifecycle runner.",
+        "No Rust production or core+Faux feature changes, full parity or six-gate claim."
+      ]
     }
   ]
 }
