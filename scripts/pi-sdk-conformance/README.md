@@ -40,16 +40,17 @@ existing explicit output before creating scratch or starting Cargo.
   vendor input archive, generation and local-registry tools have been retired.
 - `run_readme_examples.py` (task 20.57, ONB-02) packages `opi-ai`, proves the
   three onboarding examples ship inside the `.crate` byte-exactly as both
-  manuals embed them, and compiles them as the binaries of a fresh
-  workspace-external consumer against only `opi-ai` plus ordinary
-  Tokio/Serde/stream dependencies, offline under an isolated controlled
-  environment. The controlled-peer execution of the same flows lives in
-  `crates/opi-ai/tests/external_sdk.rs`.
+  manuals embed them, and compiles and executes them as the binaries of a
+  fresh workspace-external consumer in both caller build profiles: Cargo's
+  default dependency features and `default-features = false`. The
+  consumer uses only `opi-ai` plus ordinary Tokio/Serde/stream dependencies,
+  offline under an isolated controlled environment. The controlled-peer
+  execution of the same flows lives in `crates/opi-ai/tests/external_sdk.rs`.
 - `consumer-readme/` is that consumer's template; its `src/bin/*.rs` are
   injected by the runner from the extracted package, never authored here.
 - `evidence/readme-examples-proof.json` records each executed run: package
-  hash, per-example hashes, manual containment and the consumer's resolved
-  dependency names.
+  hash, per-example hashes, manual containment, both `opi-ai` feature graphs,
+  and the consumer's resolved dependency names.
 - `test_package_proof.py` covers scratch/cache safety, package extraction,
   metadata/feature validation, failure evidence, lease release and the CLI
   negative path.
@@ -86,6 +87,12 @@ The package step uses `--allow-dirty --no-verify --locked --offline`; the actual
 extracted package is then compiled and exercised by the consumer, without
 relying on the package's own lockfile to constrain downstream resolution.
 The consumer creates its own lockfile offline, then builds with `--locked`.
+The README proof runs the same source and controlled peer once with
+`default-features = false`, then again with Cargo's implicit default features;
+metadata must report the expected absence/presence of `telemetry-tracing`.
+Both runs execute the three onboarding flows and the controlled-peer
+regression. The separate package proof still exercises an explicit caller
+feature union.
 Both caller profiles share the same target and lockfile: `defaults-off` disables
 `opi-ai` default features and the caller-enabled profile explicitly enables
 `opi-ai/telemetry-tracing` alongside the `regress/default` feature union. Opi's required `std`,

@@ -38,6 +38,12 @@ OpenRouter 扩展字段但不应用它们，只有对应 provider route 才进�
 [pricing/cost 切片报告](phase4-cost-pricing-semantics.md)
 和[检查证据](evidence/phase4-cost-pricing-semantics-checks.json)。
 
+随后完成独立消费者补充验收：实际 `opi-ai` `.crate` 在 workspace 外部消费者中
+分别以 `default-features = false` 和显式 `telemetry-tracing` 编译并执行 README
+三条 onboarding 流程；metadata、controlled-peer 回归、执行前启动、最终结果和
+tool-result continuation 均通过。证据见[独立消费者报告](phase4-readme-package-profiles.md)
+和 `scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`。
+
 ## 目标与范围
 
 让第三方 Rust 开发者按 opi-ai 文档，仅依赖 opi-ai 及其声明的库依赖，就能在普通项目中使用与指定 Pi 1.5.0 对应的能力。无需 opi-agent、opi CLI、仓库私有路径或隐式全局初始化；可以保持同一 workspace，不要求独立仓库。

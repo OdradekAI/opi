@@ -72,6 +72,21 @@ def check_packaged_sources(repo: Path, package: Path) -> tuple[dict[str, str], d
     return examples, manuals
 
 
+def check_opi_feature_profile(metadata: dict[str, Any], package: Path,
+                              caller_defaults: bool) -> dict[str, Any]:
+    """Require the packaged consumer to exercise the requested opi-ai profile."""
+    packages = metadata.get("packages", [])
+    sdk = [item for item in packages if item.get("name") == "opi-ai"]
+    if len(sdk) != 1 or Path(sdk[0]["manifest_path"]).resolve() != package / "Cargo.toml":
+        raise ValueError("consumer must execute the actual extracted opi-ai package")
+    nodes = metadata.get("resolve", {}).get("nodes", [])
+    features = {node["id"]: node.get("features", []) for node in nodes}
+    sdk_features = sorted(features.get(sdk[0]["id"], []))
+    if ("telemetry-tracing" in sdk_features) != caller_defaults:
+        raise ValueError("consumer opi-ai default-feature profile was not exercised")
+    return {"version": sdk[0]["version"], "features": sdk_features}
+
+
 def check_report(report: dict[str, Any]) -> None:
     """A compiled source or omitted continuation is never executed acceptance."""
     checks = report.get("checks") if isinstance(report, dict) else None
@@ -685,6 +700,7 @@ def main() -> int:
             text.replace('"@PACKAGE@"', json.dumps(package.as_posix())),
             encoding="utf-8", newline="\n",
         )
+        profile_manifest = manifest.read_text(encoding="utf-8")
         # Modules and runnable standalone bins use the exact packaged sources.
         # The harness calls their shared setup/start/finish functions.
         (consumer / "src" / "bin").mkdir(parents=True)
@@ -699,21 +715,40 @@ def main() -> int:
         for forbidden in ("opi-agent", "opi-coding-agent", "opi-protocol", "opi-tui"):
             if forbidden in root_names:
                 raise ValueError(f"consumer graph must not contain {forbidden}")
-        metadata = json.loads(run("consumer-metadata", ["cargo", "metadata", "--offline", "--locked",
-                                                       "--format-version", "1"], consumer))
-        sdk = [item for item in metadata["packages"] if item["name"] == "opi-ai"]
-        if len(sdk) != 1 or Path(sdk[0]["manifest_path"]).resolve() != package / "Cargo.toml":
-            raise ValueError("consumer must execute the actual extracted opi-ai package")
-        run("consumer-check", ["cargo", "check", "--offline", "--locked", "--bins"], consumer)
-        peer_output = run("consumer-peer-test", ["cargo", "test", "--offline", "--locked", "--bin", "consumer-readme",
-                                                 "controlled_peer_waits_for_bytes_after_accept", "--", "--exact"], consumer)
-        if not re.search(r"test result: ok\. 1 passed; 0 failed; 0 ignored;", peer_output):
-            raise ValueError("controlled peer regression did not execute exactly one passing test")
         evidence["consumer_dependencies"] = sorted(root_names)
-        execution_env, evidence["execution_environment"] = execution_environment(env)
-        evidence["execution"] = parse_execution(run(
-            "consumer-execute", ["cargo", "run", "--offline", "--locked", "--quiet",
-                                 "--bin", "consumer-readme"], consumer, execution_env))
+        evidence["profiles"] = []
+        for profile_name, caller_defaults, profile_text in (
+            ("defaults-off", False, profile_manifest),
+            ("defaults-on", True, profile_manifest.replace(
+                ', default-features = false', '', 1)),
+        ):
+            manifest.write_text(profile_text, encoding="utf-8", newline="\n")
+            metadata = json.loads(run(
+                f"{profile_name}-metadata",
+                ["cargo", "metadata", "--offline", "--locked", "--format-version", "1"],
+                consumer,
+            ))
+            profile = {"name": profile_name,
+                       "opi_ai": check_opi_feature_profile(metadata, package, caller_defaults)}
+            run(f"{profile_name}-consumer-check",
+                ["cargo", "check", "--offline", "--locked", "--bins"], consumer)
+            peer_output = run(
+                f"{profile_name}-consumer-peer-test",
+                ["cargo", "test", "--offline", "--locked", "--bin", "consumer-readme",
+                 "controlled_peer_waits_for_bytes_after_accept", "--", "--exact"],
+                consumer,
+            )
+            if not re.search(r"test result: ok\. 1 passed; 0 failed; 0 ignored;", peer_output):
+                raise ValueError(f"{profile_name} controlled peer regression did not execute exactly one passing test")
+            execution_env, environment_evidence = execution_environment(env)
+            profile["execution_environment"] = environment_evidence
+            profile["execution"] = parse_execution(run(
+                f"{profile_name}-consumer-execute",
+                ["cargo", "run", "--offline", "--locked", "--quiet", "--bin", "consumer-readme"],
+                consumer,
+                execution_env,
+            ))
+            evidence["profiles"].append(profile)
         evidence["verdict"] = "PASS"
         return 0
     except (OSError, ValueError, subprocess.SubprocessError) as exc:

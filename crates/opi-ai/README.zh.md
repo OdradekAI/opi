@@ -27,6 +27,12 @@ opi-ai = { version = "0.8.3", default-features = false }
 `tracing` crate 记录自身诊断。该 feature 只控制 `opi-telemetry` 的适配器，以及
 `TelemetryContext::from_span` 集成。
 
+打包消费者验收会在两种公开构建 profile 下执行 onboarding 示例：Cargo 默认
+依赖 feature，以及 `default-features = false`。两种 profile 使用同一个外部
+消费者和受控 Provider 响应；运行方式是
+`python -B scripts/pi-sdk-conformance/run_readme_examples.py --offline
+--scratch <new-directory> --target-dir <marked-cargo-cache>`。
+
 ## 当前状态
 
 当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。

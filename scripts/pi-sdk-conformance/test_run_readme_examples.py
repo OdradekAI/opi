@@ -71,6 +71,11 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
+    def test_consumer_template_declares_both_opi_ai_feature_profiles(self):
+        manifest = (SCRIPT.parent / "consumer-readme" / "Cargo.toml").read_text(encoding="utf-8")
+        self.assertIn('opi-ai = { path = "@PACKAGE@", default-features = false }', manifest)
+        self.assertIn('[features]\ncaller-default-opi-ai = ["opi-ai/telemetry-tracing"]', manifest)
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

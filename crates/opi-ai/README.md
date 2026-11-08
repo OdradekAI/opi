@@ -30,6 +30,12 @@ This is a smaller telemetry capability set, not a no-`tracing` build:
 feature only controls the `opi-telemetry` adapter and the
 `TelemetryContext::from_span` integration.
 
+The packaged-consumer proof exercises the onboarding examples in both public
+build profiles: Cargo's default dependency features and
+`default-features = false`. Both profiles use the same external consumer and
+controlled provider responses; run it with `python -B scripts/pi-sdk-conformance/run_readme_examples.py
+--offline --scratch <new-directory> --target-dir <marked-cargo-cache>`.
+
 ## Status
 
 Current crate version: `0.8.3`, inherited from the workspace package version.
