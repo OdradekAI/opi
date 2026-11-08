@@ -33,6 +33,25 @@ opi-ai = { version = "0.8.3", default-features = false }
 `python -B scripts/pi-sdk-conformance/run_readme_examples.py --offline
 --scratch <new-directory> --target-dir <marked-cargo-cache>`。
 
+## 使用指南
+
+新接入可以先沿着下面的短路径进行。后续章节是能力参考，保留 Provider 和兼容
+细节，但不要求接入者在第一次成功调用前读完整份手册。
+
+| 目标 | 从这里开始 |
+| --- | --- |
+| 在外部项目加入 crate | [安装](#安装) |
+| 发起一次普通请求 | [快速开始](#快速开始) |
+| 消费增量并取得最终消息 | [流式与最终结果](#流式与最终结果) |
+| 组装 Context、工具与续轮 | [Context、工具与续轮](#context工具与续轮) |
+| 注册模型并注入认证 | [工厂、Catalog 与认证](#工厂catalog-与认证) |
+| 选择内置或兼容 Provider | [Provider](#provider) |
+| 使用显式上下文或可选 tracing | [Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing) |
+| 了解测试组织方式 | [测试分层与 SDK 包](#测试分层与-sdk-包) |
+
+前五行对应公共消费者示例；标为 Provider、协议或任务参考的章节用于记录更多
+能力及其当前验收状态。
+
 ## 当前状态
 
 当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。

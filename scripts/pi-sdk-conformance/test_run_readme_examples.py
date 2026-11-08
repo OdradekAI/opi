@@ -99,6 +99,35 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             for fragment in expected:
                 self.assertIn(fragment, source, f"{name} omits consumer manifest fragment: {fragment}")
 
+    def test_readmes_expose_task_oriented_integration_guide(self):
+        root = Path(__file__).parents[2] / "crates" / "opi-ai"
+        english = (root / "README.md").read_text(encoding="utf-8")
+        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
+        for fragment in (
+            "## Guide",
+            "[Installation](#installation)",
+            "[Quick Start](#quick-start)",
+            "[Streaming and the Final Result](#streaming-and-the-final-result)",
+            "[Context, Tools, and Continuation](#context-tools-and-continuation)",
+            "[Factories, Catalog, and Auth](#factories-catalog-and-auth)",
+            "[Providers](#providers)",
+            "[Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing)",
+            "[Test layers and SDK packages](#test-layers-and-sdk-packages)",
+        ):
+            self.assertIn(fragment, english, f"README.md omits guide entry: {fragment}")
+        for fragment in (
+            "## 使用指南",
+            "[安装](#安装)",
+            "[快速开始](#快速开始)",
+            "[流式与最终结果](#流式与最终结果)",
+            "[Context、工具与续轮](#context工具与续轮)",
+            "[工厂、Catalog 与认证](#工厂catalog-与认证)",
+            "[Provider](#provider)",
+            "[Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing)",
+            "[测试分层与 SDK 包](#测试分层与-sdk-包)",
+        ):
+            self.assertIn(fragment, chinese, f"README.zh.md omits guide entry: {fragment}")
+
     def probe(self, mode: str, *arguments: Path) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, "-c", PROBE, str(SCRIPT), mode,
                                *(str(argument) for argument in arguments)],

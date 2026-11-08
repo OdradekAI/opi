@@ -43,6 +43,8 @@ OpenRouter 扩展字段但不应用它们，只有对应 provider route 才进�
 三条 onboarding 流程；metadata、controlled-peer 回归、执行前启动、最终结果和
 tool-result continuation 均通过。证据见[独立消费者报告](phase4-readme-package-profiles.md)
 和 `scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`。
+随后补上双语 README 的任务导航，将独立接入路径与后续 provider/协议参考分开；
+实施记录见[README 导航票](issues/27-readme-task-guide.md)。
 
 ## 目标与范围
 

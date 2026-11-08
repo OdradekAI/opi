@@ -18,6 +18,11 @@
 `Cargo.toml`，并明确 `default-features = false` 替代写法，避免接入者猜测
 runtime 依赖。
 
+随后增加了双语任务导航，将安装、普通调用、流式、Context/工具、Models/认证、
+Provider、Telemetry 和测试包证明作为新接入的明确入口；长篇 provider/协议参考
+保留在导航之后。导航契约由 `test_readmes_expose_task_oriented_integration_guide`
+固定。
+
 证据见 [`readme-examples-proof.json`](../../../scripts/pi-sdk-conformance/evidence/readme-examples-proof.json)。
 入口文档见 [`opi-ai README`](../../../crates/opi-ai/README.md) 和
 [`pi-sdk-conformance README`](../../../scripts/pi-sdk-conformance/README.md)。

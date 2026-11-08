@@ -36,6 +36,27 @@ build profiles: Cargo's default dependency features and
 controlled provider responses; run it with `python -B scripts/pi-sdk-conformance/run_readme_examples.py
 --offline --scratch <new-directory> --target-dir <marked-cargo-cache>`.
 
+## Guide
+
+Use the short path below for a new integration. The later sections are the
+capability reference; they preserve provider-specific and compatibility details
+without making the first successful call depend on reading the whole manual.
+
+| Goal | Start here |
+| --- | --- |
+| Add the crate to an external project | [Installation](#installation) |
+| Make one ordinary request | [Quick Start](#quick-start) |
+| Consume deltas and the final message | [Streaming and the Final Result](#streaming-and-the-final-result) |
+| Build context, tools, and a continuation | [Context, Tools, and Continuation](#context-tools-and-continuation) |
+| Register models and inject authentication | [Factories, Catalog, and Auth](#factories-catalog-and-auth) |
+| Choose a built-in or compatible provider | [Providers](#providers) |
+| Add explicit context or optional tracing | [Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing) |
+| Understand the verification layout | [Test layers and SDK packages](#test-layers-and-sdk-packages) |
+
+The examples in the first five rows are public consumer examples. Sections
+labelled as provider, protocol, or task references document additional surface
+area and its current acceptance status.
+
 ## Status
 
 Current crate version: `0.8.3`, inherited from the workspace package version.
