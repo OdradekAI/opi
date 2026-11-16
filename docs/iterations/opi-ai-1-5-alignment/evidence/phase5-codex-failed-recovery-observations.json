@@ -1,0 +1,1009 @@
+{
+  "schemaVersion": 1,
+  "scope": "Exact nested Codex recovery codes, request counts, raw status and partial output.",
+  "piRevision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "snapshot": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+  "materialManifest": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-failed-recovery-materials.json",
+    "sha256": "ec9c1903322df7b2ea1a578df6631b97ee774d051274b4d44254fb02543110f0"
+  },
+  "pairedLifecycleReplay": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-failed-recovery-differential.json",
+    "sha256": "4c47f6e30caa55f519b27f2a1f6c7891d81b6e18bd79e2fdd6e26ba2945dd2c4"
+  },
+  "fixture": {
+    "path": "crates/opi-ai/tests/data/codex-failed-recovery.json",
+    "sha256": "0e2d7aaab09e6ca80541298fe7f4a58fb54ef37fb3c12498cb56a805097bf5a7"
+  },
+  "piProbe": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_failed_recovery.mjs",
+    "sha256": "7b8aa93c62bdd3bc755244a3de8c1f2e56168b3ffe08e5a96137199ebfdcad30"
+  },
+  "piSourceFiles": {
+    "package-lock.json": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a",
+    "packages/ai/src/api/openai-codex-responses.ts": "2c9c21a87387e3547ab1095eed73ff3b8cfe43fc26c5964128eb65de9162fdc5",
+    "packages/ai/src/api/openai-responses-shared.ts": "f5198fe8a6438008e0f57b149e4d2db4c93d839d30d904ddee33e44f6560e083",
+    "packages/ai/src/utils/diagnostics.ts": "06fcbc2347f65a43938078094a7118036b5f12e73147affb5c73cd72753443f0",
+    "packages/ai/src/utils/retry.ts": "3316a190562bda1e2a7905a3fb44ec2504fea6f800a85c7bc3396b6546fecea2",
+    "packages/ai/src/utils/transcript.ts": "1a99597907e03b3716de601e3beff5b97698f8b1d5ba67f71f37eeea57b92218",
+    "packages/ai/test/openai-codex-stream.test.ts": "608ccccebafbb0358fde117e8a03e41e06c6d91900ec0acc6ea0f7a5bd2a58e1"
+  },
+  "installedLockSha256": "531723901e7bf5c7a656e71a33d21e6e0b5ed9bc03343f9ed68f671e4b198530",
+  "piProbeRuns": {
+    "identical_runs": 3,
+    "receipt": {
+      "command": [
+        "node",
+        "--conditions=source",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_failed_recovery.mjs",
+        "--snapshot",
+        "C:/Temp/opi-ai-frozen-lock-20261111"
+      ],
+      "exit_code": 0,
+      "stdout": "[{\"name\":\"nested-limit-reconnect\",\"ws\":2,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1},{\"previous\":null,\"items\":1}],\"stop\":\"stop\",\"text\":\"recovered\",\"deliveredText\":\"recovered\",\"responseId\":\"resp_recovered\",\"totalTokens\":8,\"rawStop\":\"completed\",\"publicEvents\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"rawEvents\":[\"response.failed\",\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.output_item.done\",\"response.completed\"]},{\"name\":\"mixed-limit-fallback\",\"ws\":2,\"sse\":1,\"inputs\":[{\"previous\":null,\"items\":1},{\"previous\":null,\"items\":1}],\"stop\":\"stop\",\"text\":\"recovered\",\"deliveredText\":\"recovered\",\"responseId\":\"resp_recovered\",\"totalTokens\":8,\"rawStop\":\"completed\",\"publicEvents\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"rawEvents\":[\"error\",\"response.failed\",\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.output_item.done\",\"response.completed\"]},{\"name\":\"cached-missing-retry\",\"ws\":2,\"sse\":0,\"inputs\":[{\"previous\":\"resp_warm\",\"items\":1},{\"previous\":null,\"items\":2}],\"stop\":\"stop\",\"text\":\"recovered\",\"deliveredText\":\"recovered\",\"responseId\":\"resp_recovered\",\"totalTokens\":8,\"rawStop\":\"completed\",\"publicEvents\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"rawEvents\":[\"response.in_progress\",\"response.failed\",\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.output_item.done\",\"response.completed\"]},{\"name\":\"mixed-missing-exhausted\",\"ws\":2,\"sse\":0,\"inputs\":[{\"previous\":\"resp_warm\",\"items\":1},{\"previous\":null,\"items\":2}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":0,\"rawStop\":null,\"publicEvents\":[\"error\"],\"rawEvents\":[\"error\",\"response.failed\"]},{\"name\":\"limit-after-progress\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":0,\"rawStop\":null,\"publicEvents\":[\"start\",\"error\"],\"rawEvents\":[\"response.in_progress\",\"response.failed\"]},{\"name\":\"missing-after-delta\",\"ws\":2,\"sse\":0,\"inputs\":[{\"previous\":\"resp_warm\",\"items\":1},{\"previous\":null,\"items\":2}],\"stop\":\"stop\",\"text\":\"partialrecovered\",\"deliveredText\":\"partialrecovered\",\"responseId\":\"resp_recovered\",\"totalTokens\":8,\"rawStop\":\"completed\",\"publicEvents\":[\"start\",\"text_start\",\"text_delta\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"rawEvents\":[\"response.created\",\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.failed\",\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.output_item.done\",\"response.completed\"]},{\"name\":\"wrong-envelope-code\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":0,\"rawStop\":null,\"publicEvents\":[\"error\"],\"rawEvents\":[\"response.failed\"]},{\"name\":\"sse-missing-is-terminal\",\"ws\":0,\"sse\":1,\"inputs\":[],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":0,\"rawStop\":null,\"publicEvents\":[\"start\",\"error\"],\"rawEvents\":[\"response.failed\"]},{\"name\":\"completion-before-rejection\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"stop\",\"text\":\"recovered\",\"deliveredText\":\"recovered\",\"responseId\":\"resp_recovered\",\"totalTokens\":8,\"rawStop\":\"completed\",\"publicEvents\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"rawEvents\":[\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.output_item.done\",\"response.completed\"]}]\n",
+      "stderr": "",
+      "stdout_sha256": "b7f421ebc5f641681ee09442b8ba51d848e3232571570d0863e3419be1ad7ce2",
+      "trace": [
+        {
+          "name": "nested-limit-reconnect",
+          "ws": 2,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": null,
+              "items": 1
+            },
+            {
+              "previous": null,
+              "items": 1
+            }
+          ],
+          "stop": "stop",
+          "text": "recovered",
+          "deliveredText": "recovered",
+          "responseId": "resp_recovered",
+          "totalTokens": 8,
+          "rawStop": "completed",
+          "publicEvents": [
+            "start",
+            "text_start",
+            "text_delta",
+            "text_end",
+            "done"
+          ],
+          "rawEvents": [
+            "response.failed",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.completed"
+          ]
+        },
+        {
+          "name": "mixed-limit-fallback",
+          "ws": 2,
+          "sse": 1,
+          "inputs": [
+            {
+              "previous": null,
+              "items": 1
+            },
+            {
+              "previous": null,
+              "items": 1
+            }
+          ],
+          "stop": "stop",
+          "text": "recovered",
+          "deliveredText": "recovered",
+          "responseId": "resp_recovered",
+          "totalTokens": 8,
+          "rawStop": "completed",
+          "publicEvents": [
+            "start",
+            "text_start",
+            "text_delta",
+            "text_end",
+            "done"
+          ],
+          "rawEvents": [
+            "error",
+            "response.failed",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.completed"
+          ]
+        },
+        {
+          "name": "cached-missing-retry",
+          "ws": 2,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": "resp_warm",
+              "items": 1
+            },
+            {
+              "previous": null,
+              "items": 2
+            }
+          ],
+          "stop": "stop",
+          "text": "recovered",
+          "deliveredText": "recovered",
+          "responseId": "resp_recovered",
+          "totalTokens": 8,
+          "rawStop": "completed",
+          "publicEvents": [
+            "start",
+            "text_start",
+            "text_delta",
+            "text_end",
+            "done"
+          ],
+          "rawEvents": [
+            "response.in_progress",
+            "response.failed",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.completed"
+          ]
+        },
+        {
+          "name": "mixed-missing-exhausted",
+          "ws": 2,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": "resp_warm",
+              "items": 1
+            },
+            {
+              "previous": null,
+              "items": 2
+            }
+          ],
+          "stop": "error",
+          "text": "",
+          "deliveredText": "",
+          "responseId": null,
+          "totalTokens": 0,
+          "rawStop": null,
+          "publicEvents": [
+            "error"
+          ],
+          "rawEvents": [
+            "error",
+            "response.failed"
+          ]
+        },
+        {
+          "name": "limit-after-progress",
+          "ws": 1,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": null,
+              "items": 1
+            }
+          ],
+          "stop": "error",
+          "text": "",
+          "deliveredText": "",
+          "responseId": null,
+          "totalTokens": 0,
+          "rawStop": null,
+          "publicEvents": [
+            "start",
+            "error"
+          ],
+          "rawEvents": [
+            "response.in_progress",
+            "response.failed"
+          ]
+        },
+        {
+          "name": "missing-after-delta",
+          "ws": 2,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": "resp_warm",
+              "items": 1
+            },
+            {
+              "previous": null,
+              "items": 2
+            }
+          ],
+          "stop": "stop",
+          "text": "partialrecovered",
+          "deliveredText": "partialrecovered",
+          "responseId": "resp_recovered",
+          "totalTokens": 8,
+          "rawStop": "completed",
+          "publicEvents": [
+            "start",
+            "text_start",
+            "text_delta",
+            "text_start",
+            "text_delta",
+            "text_end",
+            "done"
+          ],
+          "rawEvents": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.failed",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.completed"
+          ]
+        },
+        {
+          "name": "wrong-envelope-code",
+          "ws": 1,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": null,
+              "items": 1
+            }
+          ],
+          "stop": "error",
+          "text": "",
+          "deliveredText": "",
+          "responseId": null,
+          "totalTokens": 0,
+          "rawStop": null,
+          "publicEvents": [
+            "error"
+          ],
+          "rawEvents": [
+            "response.failed"
+          ]
+        },
+        {
+          "name": "sse-missing-is-terminal",
+          "ws": 0,
+          "sse": 1,
+          "inputs": [],
+          "stop": "error",
+          "text": "",
+          "deliveredText": "",
+          "responseId": null,
+          "totalTokens": 0,
+          "rawStop": null,
+          "publicEvents": [
+            "start",
+            "error"
+          ],
+          "rawEvents": [
+            "response.failed"
+          ]
+        },
+        {
+          "name": "completion-before-rejection",
+          "ws": 1,
+          "sse": 0,
+          "inputs": [
+            {
+              "previous": null,
+              "items": 1
+            }
+          ],
+          "stop": "stop",
+          "text": "recovered",
+          "deliveredText": "recovered",
+          "responseId": "resp_recovered",
+          "totalTokens": 8,
+          "rawStop": "completed",
+          "publicEvents": [
+            "start",
+            "text_start",
+            "text_delta",
+            "text_end",
+            "done"
+          ],
+          "rawEvents": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.completed"
+          ]
+        }
+      ]
+    },
+    "missing_snapshot": {
+      "command": [
+        "node",
+        "--conditions=source",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_failed_recovery.mjs"
+      ],
+      "exit_code": 2,
+      "stderr": "node --conditions=source observe_codex_failed_recovery.mjs --snapshot <path>\n"
+    }
+  },
+  "applicablePriorPiTests": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-connection-limit-observations.json",
+    "sha256": "9f63409e0db9321b507cf6e238ec64a5c8755f276a6b76917e449d80af386f1f"
+  },
+  "rustInputs": [
+    {
+      "path": "crates/opi-ai/src/openai_codex_responses/ws_transport.rs",
+      "sha256": "01401793c751949a63a15dceb878d238b445d6fd6f20b47d01edf9d59480773e"
+    },
+    {
+      "path": "crates/opi-ai/src/openai_codex_responses.rs",
+      "sha256": "65e932d0d4e94af90b3584fddd047ee12559af2ab64f5615050cb5143ad44068"
+    },
+    {
+      "path": "crates/opi-ai/src/openai_responses_shared.rs",
+      "sha256": "11f0ac26d913a6799595d2581f82543abf61ecb374d8241a5493ae890c1d6ab3"
+    },
+    {
+      "path": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+      "sha256": "30591a3b7eb085f0699fb882d3af3a1a7af47dac93924b65f7d0b5e83dacd655"
+    },
+    {
+      "path": "crates/opi-ai/tests/codex_native_options.rs",
+      "sha256": "8b664346ce448063db3e4121675cbbd76b7e93445d1e543eb7bd7ceccd9c8194"
+    },
+    {
+      "path": "crates/opi-ai/tests/openai_codex_responses.rs",
+      "sha256": "6577f3a33dc45bddc3a8f87da80d7956057b35fa9faf1fa2657ee77d18cf3894"
+    },
+    {
+      "path": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+      "sha256": "757797306dd9f61cbeac4518bc5e42f46d81f31cace99e5532cef248dcd61261"
+    },
+    {
+      "path": "crates/opi-ai/tests/whole_call_retry.rs",
+      "sha256": "6bf156727912fb3ac050b3cecb50556dca1f0d32a606accf67c169729b22aabe"
+    }
+  ],
+  "rustBaseline": {
+    "command": "$env:CARGO_TARGET_DIR='E:/opi/cargo-targets/opi-72fa37a0fa044958'\npython -B scripts/opi-cargo-cache.py run --target $env:CARGO_TARGET_DIR -- test -p opi-ai --test openai_codex_responses --locked --offline -j4 response_failed_uses_the_codex_recovery_budgets -- --nocapture | Where-Object { $_ -notmatch '^\\{\"reason\":' }\nexit $LASTEXITCODE",
+    "exitCode": 101,
+    "output": "   Compiling opi-ai v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-ai)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 43.38s\n     Running tests\\openai_codex_responses.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe)\n\r\nrunning 1 test\r\ncodex_failed_recovery {\"name\":\"nested-limit-reconnect\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"mixed-limit-fallback\",\"ws\":2,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1},{\"previous\":null,\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"error\",\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"cached-missing-retry\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":\"resp_warm\",\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"response.in_progress\",\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"mixed-missing-exhausted\",\"ws\":2,\"sse\":0,\"inputs\":[{\"previous\":\"resp_warm\",\"items\":1},{\"previous\":null,\"items\":2}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"error\",\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"limit-after-progress\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"response.in_progress\",\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"missing-after-delta\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":\"resp_warm\",\"items\":1}],\"stop\":\"error\",\"text\":\"partial\",\"deliveredText\":\"partial\",\"responseId\":\"resp_partial\",\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"start\",\"text_start\",\"text_delta\",\"error\"],\"rawEvents\":[\"response.created\",\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"wrong-envelope-code\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\ncodex_failed_recovery {\"name\":\"sse-missing-is-terminal\",\"ws\":0,\"sse\":1,\"inputs\":[],\"stop\":\"error\",\"text\":\"\",\"deliveredText\":\"\",\"responseId\":null,\"totalTokens\":null,\"rawStop\":\"failed\",\"publicEvents\":[\"error\"],\"rawEvents\":[\"response.failed\"],\"diagnostic\":\"stream error: openai responses stream error: upstream request failed\"}\r\n\nthread 'ws_branches::response_failed_uses_the_codex_recovery_budgets' (52640) panicked at crates\\opi-ai\\tests\\openai_codex_responses.rs:2616:9:\nCodex recovery send counts: [\"nested-limit-reconnect: 1 WS and 0 SSE sends\", \"mixed-limit-fallback: 2 WS and 0 SSE sends\", \"cached-missing-retry: 1 WS and 0 SSE sends\"]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\ncodex_failed_recovery {\"name\":\"completion-before-rejection\",\"ws\":1,\"sse\":0,\"inputs\":[{\"previous\":null,\"items\":1}],\"stop\":\"stop\",\"text\":\"recovered\",\"deliveredText\":\"recovered\",\"responseId\":\"resp_recovered\",\"totalTokens\":8,\"rawStop\":\"completed\",\"publicEvents\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"rawEvents\":[\"response.output_item.added\",\"response.content_part.added\",\"response.output_text.delta\",\"response.output_item.done\",\"response.completed\"],\"diagnostic\":null}\r\ntest ws_branches::response_failed_uses_the_codex_recovery_budgets ... FAILED\r\n\r\nfailures:\r\n\r\nfailures:\r\n    ws_branches::response_failed_uses_the_codex_recovery_budgets\r\n\r\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 79 filtered out; finished in 15.14s\r\n\r\nerror: test failed, to rerun pass `-p opi-ai --test openai_codex_responses`\n",
+    "outputSha256": "d54c1800fcaf23805d83fd22342993a6082f37465324d8c43d0f355d9de4ec90",
+    "observations": [
+      {
+        "name": "nested-limit-reconnect",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "mixed-limit-fallback",
+        "ws": 2,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          },
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "error",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "cached-missing-retry",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": "resp_warm",
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.in_progress",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "mixed-missing-exhausted",
+        "ws": 2,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": "resp_warm",
+            "items": 1
+          },
+          {
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "error",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "limit-after-progress",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.in_progress",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "missing-after-delta",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": "resp_warm",
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "partial",
+        "deliveredText": "partial",
+        "responseId": "resp_partial",
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "start",
+          "text_start",
+          "text_delta",
+          "error"
+        ],
+        "rawEvents": [
+          "response.created",
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "wrong-envelope-code",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "sse-missing-is-terminal",
+        "ws": 0,
+        "sse": 1,
+        "inputs": [],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "completion-before-rejection",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "stop",
+        "text": "recovered",
+        "deliveredText": "recovered",
+        "responseId": "resp_recovered",
+        "totalTokens": 8,
+        "rawStop": "completed",
+        "publicEvents": [
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "rawEvents": [
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.output_item.done",
+          "response.completed"
+        ],
+        "diagnostic": null
+      }
+    ]
+  },
+  "rustVerified": {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "-B",
+      "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--locked",
+      "--offline",
+      "-j4",
+      "--no-fail-fast",
+      "--test",
+      "whole_call_retry",
+      "--test",
+      "openai_responses_fixtures",
+      "--test",
+      "openai_codex_responses",
+      "--test",
+      "azure_openai_fixtures",
+      "--test",
+      "codex_native_options",
+      "--",
+      "--nocapture"
+    ],
+    "exitCode": 0,
+    "executables": {
+      "openai_codex_responses": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe",
+        "sha256": "5f83da7ce2d1dd3d7c5c69d4b99192367b93e93f698c33fa14a5c6f7330cd1a6"
+      },
+      "whole_call_retry": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\whole_call_retry-a7c3eee005c83051.exe",
+        "sha256": "8b02ad85480d71263c39f10f16d9b9c4c2795d0eaf6c8a0f12748dd83ac43fa5"
+      },
+      "codex_native_options": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\codex_native_options-6fbc9fdf4569c64e.exe",
+        "sha256": "0e5fe7a4606a8cddccbe46506384d4c12933ba4453d4b4ec9589cf2c8505ab66"
+      },
+      "azure_openai_fixtures": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\azure_openai_fixtures-412cc9ec06ee1167.exe",
+        "sha256": "f50ebf6e9c15587f308bf5e1d0fa1d4690740882b830dd1395254d38a79ca606"
+      },
+      "openai_responses_fixtures": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_responses_fixtures-1e7d23860cf65056.exe",
+        "sha256": "377f3c3723cac47f2d5440e69e1021fc7115a3470f4293f1008421c79968c55f"
+      }
+    },
+    "passedTests": {
+      "azure_openai_fixtures": 45,
+      "codex_native_options": 21,
+      "openai_codex_responses": 80,
+      "openai_responses_fixtures": 84,
+      "whole_call_retry": 23
+    },
+    "stdoutSha256": "320ff27c7b4e57799bffe4a6635810c4c32fd9b84e3692654b0667eb236754f9",
+    "observations": [
+      {
+        "name": "nested-limit-reconnect",
+        "ws": 2,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          },
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "stop",
+        "text": "recovered",
+        "deliveredText": "recovered",
+        "responseId": "resp_recovered",
+        "totalTokens": 8,
+        "rawStop": "completed",
+        "publicEvents": [
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "rawEvents": [
+          "response.failed",
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.output_item.done",
+          "response.completed"
+        ],
+        "diagnostic": null
+      },
+      {
+        "name": "mixed-limit-fallback",
+        "ws": 2,
+        "sse": 1,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          },
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "stop",
+        "text": "recovered",
+        "deliveredText": "recovered",
+        "responseId": "resp_recovered",
+        "totalTokens": 8,
+        "rawStop": "completed",
+        "publicEvents": [
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "rawEvents": [
+          "error",
+          "response.failed",
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.output_item.done",
+          "response.completed"
+        ],
+        "diagnostic": null
+      },
+      {
+        "name": "cached-missing-retry",
+        "ws": 2,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": "resp_warm",
+            "items": 1
+          },
+          {
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "stop": "stop",
+        "text": "recovered",
+        "deliveredText": "recovered",
+        "responseId": "resp_recovered",
+        "totalTokens": 8,
+        "rawStop": "completed",
+        "publicEvents": [
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "rawEvents": [
+          "response.in_progress",
+          "response.failed",
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.output_item.done",
+          "response.completed"
+        ],
+        "diagnostic": null
+      },
+      {
+        "name": "mixed-missing-exhausted",
+        "ws": 2,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": "resp_warm",
+            "items": 1
+          },
+          {
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "error",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "limit-after-progress",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.in_progress",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "missing-after-delta",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": "resp_warm",
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "partial",
+        "deliveredText": "partial",
+        "responseId": "resp_partial",
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "start",
+          "text_start",
+          "text_delta",
+          "error"
+        ],
+        "rawEvents": [
+          "response.created",
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "wrong-envelope-code",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "sse-missing-is-terminal",
+        "ws": 0,
+        "sse": 1,
+        "inputs": [],
+        "stop": "error",
+        "text": "",
+        "deliveredText": "",
+        "responseId": null,
+        "totalTokens": null,
+        "rawStop": "failed",
+        "publicEvents": [
+          "error"
+        ],
+        "rawEvents": [
+          "response.failed"
+        ],
+        "diagnostic": "stream error: openai responses stream error: upstream request failed"
+      },
+      {
+        "name": "completion-before-rejection",
+        "ws": 1,
+        "sse": 0,
+        "inputs": [
+          {
+            "previous": null,
+            "items": 1
+          }
+        ],
+        "stop": "stop",
+        "text": "recovered",
+        "deliveredText": "recovered",
+        "responseId": "resp_recovered",
+        "totalTokens": 8,
+        "rawStop": "completed",
+        "publicEvents": [
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "rawEvents": [
+          "response.output_item.added",
+          "response.content_part.added",
+          "response.output_text.delta",
+          "response.output_item.done",
+          "response.completed"
+        ],
+        "diagnostic": null
+      }
+    ],
+    "additionalTestResults": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 369 filtered out; finished in 0.00s",
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 369 filtered out; finished in 0.02s",
+      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s",
+      "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+      "test result: ok. 80 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.14s",
+      "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+      "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s"
+    ],
+    "additionalChecks": {
+      "exitCode": 0,
+      "output": "    Finished `dev` profile [unoptimized + debuginfo] target(s) in 7.26s\n Documenting opi-ai v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-ai)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.23s\n   Generated E:/opi/cargo-targets/opi-72fa37a0fa044958\\doc\\opi_ai\\index.html\n",
+      "commands": [
+        "python -B scripts/opi-cargo-cache.py run --target $env:CARGO_TARGET_DIR -- test -p opi-ai --lib --locked --offline -j4 -- openai_responses_shared::tests | Where-Object { $_ -notmatch '^\\{\"reason\":' }",
+        "python -B scripts/opi-cargo-cache.py run --target $env:CARGO_TARGET_DIR -- test -p opi-ai --lib --locked --offline -j4 -- openai_codex_responses::ws_transport::close_deadline_tests | Where-Object { $_ -notmatch '^\\{\"reason\":' }",
+        "python -B scripts/opi-cargo-cache.py run --target $env:CARGO_TARGET_DIR -- test -p opi-ai --no-default-features --test openai_responses_fixtures --test azure_openai_fixtures --test openai_codex_responses --test codex_native_options --test whole_call_retry --locked --offline -j4 --no-fail-fast | Where-Object { $_ -notmatch '^\\{\"reason\":' }",
+        "python -B scripts/opi-cargo-cache.py run --target $env:CARGO_TARGET_DIR -- clippy -p opi-ai --test openai_responses_fixtures --test azure_openai_fixtures --test openai_codex_responses --test codex_native_options --test whole_call_retry --locked --offline -j4 -- -D warnings | Where-Object { $_ -notmatch '^\\{\"reason\":' }",
+        "python -B scripts/opi-cargo-cache.py lease start --target $env:CARGO_TARGET_DIR --pid $PID",
+        "  cargo doc -p opi-ai --no-deps --locked --offline -j4"
+      ]
+    }
+  },
+  "recovered": [
+    "nested-limit-reconnect",
+    "mixed-limit-fallback",
+    "cached-missing-retry"
+  ],
+  "matchedSendCountsCallbacksAndResults": [
+    "nested-limit-reconnect",
+    "mixed-limit-fallback",
+    "cached-missing-retry",
+    "mixed-missing-exhausted",
+    "limit-after-progress",
+    "wrong-envelope-code",
+    "sse-missing-is-terminal",
+    "completion-before-rejection"
+  ],
+  "retainedPostDeltaDifference": {
+    "case": "missing-after-delta",
+    "pi": {
+      "ws": 2,
+      "stop": "stop",
+      "text": "partialrecovered"
+    },
+    "opi": {
+      "ws": 1,
+      "stop": "error",
+      "text": "partial"
+    }
+  },
+  "priorMaterialReplay": {
+    "exitCode": 2,
+    "verdict": "STALE_MATERIALS",
+    "drift": [
+      "tree drift: crates/opi-ai/src"
+    ],
+    "cases": 0
+  }
+}

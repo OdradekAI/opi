@@ -9,6 +9,27 @@
 exporter/runtime 策略。以下内容描述当前 Rust 原生行为，不表示自动登录或启动时
 联网策略。
 
+Feature 所有权：`oauth-store` 独立启用具体 SDK OAuth flow 及其 Store-backed
+login/refresh bridge；中立的 `OAuthProvider`、`OAuthCredential`、
+`CredentialStore`、mutation 和 `auth::store_oauth` 合同继续属于 core。
+Provider collection 与 AWS/ADC/Vertex credential-source factory 仍要求
+`builtins`。
+
+独立的 `cloud-auth` feature 拥有协议无关的 AWS source chain/STS、GCP ADC、
+共享 SigV4 以及固定 query/XML/DPoP codec 闭包。它传递选择共享 HTTP/TLS，
+不选择 provider wire、内嵌 catalog 或 WebSocket compression；Bedrock 和
+Vertex 调用方通过 `protocol-adapters` 传递选择它。
+
+协议所有权：`protocol-adapters` 继续作为兼容性组合，同时可以独立选择以下具体
+owner：`provider-anthropic`、`provider-azure-openai`、`provider-bedrock`、
+`provider-gemini`、`provider-mistral`、`provider-openai-chat`、
+`provider-openai-codex-responses`、`provider-openai-responses`、
+`provider-openrouter`、`provider-pi-messages` 与 `provider-vertex`。
+`provider-protocol-common` 和 `provider-openrouter-usage` 是内部共享 owner。
+Bedrock 与 Vertex 传递保留 `cloud-auth`，Codex Responses 传递保留
+`websocket-compression`；`builtins` 继续承载历史 provider collection 与 credential factory。
+
+
 ## 工厂、Catalog 与认证
 
 - 免手写路由的注册：内置 42-profile 工厂
@@ -161,20 +182,23 @@ attempt 记录为
 因此成功不再重开 prepared call：重试按 admission 调度，新逻辑调用需重新 prepare。主循环消费方
 读取 admission、可取消地等待并再次进入 `start_attempt`；无法重置计数、跳过等待或在冻结预算之外叠加 send。
 
-`prepare_call` 与中性 simple 调用在鉴权前把省略的 `Request.max_tokens` 解析为所选
-完整 model record 的 `max_output_tokens` 容量，包含适用的 model override 和刷新后的
-catalog。显式 request 上限
-仍作为上限。若已启用 thinking 的 budget 大于或等于该默认输出上限，preparation 会在
+Pi Messages 透传原有选项。其余协议的 `prepare_call` 与中性 simple 调用在鉴权前把
+省略的 `Request.max_tokens` 解析为所选完整 model record 的 `max_output_tokens` 容量，
+包含适用的 model override 和刷新后的 catalog。显式 request 上限仍作为上限。
+若已启用 thinking 的 budget 大于或等于该默认输出上限，preparation 会在
 鉴权和派发前返回类型化 capability 错误。每次 attempt 都复用解析后的上限。
-隐式与显式上限都会按估算的剩余上下文收缩，预留 4096 token 安全余量，最少保留一个
-输出 token。无法装入收缩后上限的 thinking 会缩小，尽可能留出 1024 token 回答空间。
+隐式与显式上限都会按扣除 4096 token 余量后的剩余上下文估算值收缩。可用空间的估算值
+最低为一个 token。显式零值经过此步骤仍为零，由 adapter 解释。无法装入收缩后上限的
+thinking 会缩小，尽可能留出 1024 token 回答空间。
 非 adaptive Anthropic 按 thinking 等级解析省略的预算；无法同时容纳最小 thinking
 预算和回答空间的上限会在鉴权前被拒绝。adaptive effort 不使用该数字预算下限。
 `context` 模块估算原始 canonical 消息编年，包含后续 System 变更及工具声明；最后一个适用的正向成功 usage
 （非 Error／Aborted、时间戳不早于前缀、不限模型身份）充当锚点，只估算锚点之后的
-消息，不再有同模型／全文下界。类型化 native `ChatApi` 调用仍校验 route 与能力，
-但保留 native 的省略及显式上限，不应用 simple 预算默认值或夹取。直接调用 provider
-adapter 保留其 wire 默认值。这些是每个 request 的输出上限，与产品的轮数预算相互独立。
+消息，不再有同模型／全文下界。`Models::stream` 和 `Models::stream_direct` 校验 route 与
+类型化选项，然后把调用方的输出上限交给 adapter 生成请求。OpenAI Chat 的 native 和 direct
+调用在未设置上限时省略字段。显式零值也省略该字段，包括 `Models::stream_simple` 调用。
+正值使用 Chat 兼容配置选择的字段。直接调用 provider adapter 时应用其协议默认值。
+这些上限按请求生效，与产品的轮数预算相互独立。
 
 `ProviderError::AccountIdMissing { provider_id }` 是独立且不可重试的情形：凭据存在，
 但缺少所选 wire 要求的 account identity。产品层通过显式 `/login <provider>` 修复；

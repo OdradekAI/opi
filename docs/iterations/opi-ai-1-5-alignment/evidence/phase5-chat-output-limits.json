@@ -1,0 +1,3676 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-11-13T09:38:19.431153+00:00",
+  "scope": "OpenAI Chat output limits for native, simple and injected-auth calls with thinking disabled",
+  "snapshot": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+  "upstream_revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "pi_sources": {
+    "packages/ai/package.json": "9bac9281776095c8cb1597b706e6cc43c1e082d77189c666b02d068d3c6b9aca",
+    "packages/ai/src/models.ts": "de226bcd332fc660129f87b8c02a12c4862b620201a407998c2cdeacc4f2044a",
+    "packages/ai/src/api/openai-completions.ts": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a",
+    "packages/ai/src/api/simple-options.ts": "4fc3131c480cb5c16506037195c5d9668b7b85ce7cf8117ecc77bd81188494ef",
+    "packages/ai/src/utils/transcript.ts": "1a99597907e03b3716de601e3beff5b97698f8b1d5ba67f71f37eeea57b92218",
+    "packages/ai/src/utils/estimate.ts": "b1fb184f293167b9f270567a09bf43e296ff7dd809e26fa4bc5c1f968946eaed",
+    "packages/ai/test/openai-completions-empty-tools.test.ts": "6646beeecdafb7577ce104e005e5ca7a33e98972d243f0a5024515c0de32389c"
+  },
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-chat-interleaving-materials.json": "b4f69829ef45eabf1fb982723badbdd5135da51bacffdd7fcfa5fc20a229917c",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_chat_output_limits.mjs": "3f8373c80469e16c3ad6fde8823db45dcc00d97bbecfe47d5284723e640f93de",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\openai_chat_output_limits.rs": "0f0a24cdcc52a0e2227b20a8d26df570d1ccae4c609c15b1216430621e661a1a",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-chat-output-limits.json": "508da63289c54914eb4cbd53d8f6c6d02f907ad67e501187e0c71229f7f164f6",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\replay_chat_output_limits.py": "abba0dffe92d981f0faa00490023cd8e56fae8da21f31c079cea41094d903d2e",
+    "C:\\Temp\\opi-105-chat-output-verified-build.json": "4fc06a48dc451c19c24951498ec0aae86aec6982d76a034ae2401d6664341edb",
+    "C:\\Temp\\opi-ai-chat-output-executables\\c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451\\openai_chat_output_limits-a25022af8a6d2f33.exe": "c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\package.json": "9bac9281776095c8cb1597b706e6cc43c1e082d77189c666b02d068d3c6b9aca",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\models.ts": "de226bcd332fc660129f87b8c02a12c4862b620201a407998c2cdeacc4f2044a",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\openai-completions.ts": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\simple-options.ts": "4fc3131c480cb5c16506037195c5d9668b7b85ce7cf8117ecc77bd81188494ef",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\utils\\transcript.ts": "1a99597907e03b3716de601e3beff5b97698f8b1d5ba67f71f37eeea57b92218",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\utils\\estimate.ts": "b1fb184f293167b9f270567a09bf43e296ff7dd809e26fa4bc5c1f968946eaed",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\test\\openai-completions-empty-tools.test.ts": "6646beeecdafb7577ce104e005e5ca7a33e98972d243f0a5024515c0de32389c"
+  },
+  "build": {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "-B",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--test",
+      "openai_chat_output_limits",
+      "--locked",
+      "--offline",
+      "-j4",
+      "--no-run"
+    ],
+    "executable": "C:\\Temp\\opi-ai-chat-output-executables\\c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451\\openai_chat_output_limits-a25022af8a6d2f33.exe",
+    "executable_sha256": "c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451",
+    "inputs": {
+      "crates/opi-ai/tests/openai_chat_output_limits.rs": "0f0a24cdcc52a0e2227b20a8d26df570d1ccae4c609c15b1216430621e661a1a",
+      "crates/opi-ai/tests/data/openai-chat-output-limits.json": "508da63289c54914eb4cbd53d8f6c6d02f907ad67e501187e0c71229f7f164f6"
+    },
+    "receipt": "C:\\Temp\\opi-105-chat-output-verified-build.json",
+    "receipt_sha256": "4fc06a48dc451c19c24951498ec0aae86aec6982d76a034ae2401d6664341edb",
+    "build_stderr": "   Compiling opi-ai v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-ai)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.24s\n"
+  },
+  "comparison": {
+    "matched_pairs": 42,
+    "output_limits": {
+      "max_completion_tokens": {
+        "omitted": {
+          "native": null,
+          "simple": 4096,
+          "direct": null
+        },
+        "explicit": {
+          "native": 1024,
+          "simple": 1024,
+          "direct": 1024
+        },
+        "above_model_default": {
+          "native": 5000,
+          "simple": 5000,
+          "direct": 5000
+        },
+        "omitted_near_context": {
+          "native": null,
+          "simple": 3618,
+          "direct": null
+        },
+        "explicit_near_context": {
+          "native": 7000,
+          "simple": 3618,
+          "direct": 7000
+        },
+        "context_floor": {
+          "native": null,
+          "simple": 1,
+          "direct": null
+        },
+        "explicit_zero": {
+          "native": null,
+          "simple": null,
+          "direct": null
+        }
+      },
+      "max_tokens": {
+        "omitted": {
+          "native": null,
+          "simple": 4096,
+          "direct": null
+        },
+        "explicit": {
+          "native": 1024,
+          "simple": 1024,
+          "direct": 1024
+        },
+        "above_model_default": {
+          "native": 5000,
+          "simple": 5000,
+          "direct": 5000
+        },
+        "omitted_near_context": {
+          "native": null,
+          "simple": 3618,
+          "direct": null
+        },
+        "explicit_near_context": {
+          "native": 7000,
+          "simple": 3618,
+          "direct": 7000
+        },
+        "context_floor": {
+          "native": null,
+          "simple": 1,
+          "direct": null
+        },
+        "explicit_zero": {
+          "native": null,
+          "simple": null,
+          "direct": null
+        }
+      }
+    }
+  },
+  "pi": {
+    "first": {
+      "command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_chat_output_limits.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-chat-output-limits.json"
+      ],
+      "exit_code": 0,
+      "stdout": "[{\"field\":\"max_completion_tokens\",\"case\":\"omitted\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":4096}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"above_model_default\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"above_model_default\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"above_model_default\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"context_floor\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"context_floor\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1}},\"result\":{\"text\":\"o\",\"stop\":\"length\",\"raw_stop\":\"length\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":1,\"total_tokens\":11,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"context_floor\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_zero\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_zero\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_zero\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":4096}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"above_model_default\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"above_model_default\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"above_model_default\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"context_floor\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"context_floor\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1}},\"result\":{\"text\":\"o\",\"stop\":\"length\",\"raw_stop\":\"length\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":1,\"total_tokens\":11,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"context_floor\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_zero\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_zero\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_zero\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream\":true,\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}}]\n",
+      "stderr": "",
+      "stdout_sha256": "de073170da6777a5f001d35a7877862318bbc3dd64f790695c89f842fc272898",
+      "trace": [
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 4096
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "above_model_default",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "above_model_default",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "above_model_default",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "context_floor",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "context_floor",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1
+            }
+          },
+          "result": {
+            "text": "o",
+            "stop": "length",
+            "raw_stop": "length",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 1,
+            "total_tokens": 11,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "context_floor",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_zero",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_zero",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_zero",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 4096
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "above_model_default",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "above_model_default",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "above_model_default",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "context_floor",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "context_floor",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1
+            }
+          },
+          "result": {
+            "text": "o",
+            "stop": "length",
+            "raw_stop": "length",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 1,
+            "total_tokens": 11,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "context_floor",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_zero",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_zero",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_zero",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream": true,
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        }
+      ]
+    },
+    "repeated": [
+      {
+        "command": [
+          "node",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_chat_output_limits.mjs",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111",
+          "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-chat-output-limits.json"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "de073170da6777a5f001d35a7877862318bbc3dd64f790695c89f842fc272898",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "node",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_chat_output_limits.mjs",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111",
+          "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-chat-output-limits.json"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "de073170da6777a5f001d35a7877862318bbc3dd64f790695c89f842fc272898",
+        "stderr": ""
+      }
+    ]
+  },
+  "opi": {
+    "first": {
+      "command": [
+        "C:\\Temp\\opi-ai-chat-output-executables\\c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451\\openai_chat_output_limits-a25022af8a6d2f33.exe",
+        "--exact",
+        "observe_chat_output_limits",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n[{\"field\":\"max_completion_tokens\",\"case\":\"omitted\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":4096}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"above_model_default\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"above_model_default\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"above_model_default\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"context_floor\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"context_floor\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_completion_tokens\":1}},\"result\":{\"text\":\"o\",\"stop\":\"length\",\"raw_stop\":\"length\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":1,\"total_tokens\":11,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"context_floor\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_zero\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_zero\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_completion_tokens\",\"case\":\"explicit_zero\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":4096}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1024}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"above_model_default\",\"entry\":\"native\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"above_model_default\",\"entry\":\"simple\",\"estimate\":2,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"above_model_default\",\"entry\":\"direct\",\"estimate\":2,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":5000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"omitted_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"native\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"simple\",\"estimate\":2286,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":3618}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_near_context\",\"entry\":\"direct\",\"estimate\":2286,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":7000}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"context_floor\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"context_floor\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false,\"max_tokens\":1}},\"result\":{\"text\":\"o\",\"stop\":\"length\",\"raw_stop\":\"length\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":1,\"total_tokens\":11,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"context_floor\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_zero\",\"entry\":\"native\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_zero\",\"entry\":\"simple\",\"estimate\":6002,\"resolver_calls\":1,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-route-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}},{\"field\":\"max_tokens\",\"case\":\"explicit_zero\",\"entry\":\"direct\",\"estimate\":6002,\"resolver_calls\":0,\"request\":{\"method\":\"POST\",\"path\":\"/v1/chat/completions\",\"authorization\":\"Bearer fixture-direct-key\",\"body\":{\"model\":\"gpt-4o\",\"stream\":true,\"messages\":[{\"role\":\"user\",\"content\":\"earlier\"},{\"role\":\"assistant\",\"content\":\"previous\"},{\"role\":\"user\",\"content\":\"hello\"}],\"stream_options\":{\"include_usage\":true},\"store\":false}},\"result\":{\"text\":\"ok\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"response_id\":\"chat-limit\",\"input_tokens\":10,\"output_tokens\":2,\"total_tokens\":12,\"error\":null}}]\ntest observe_chat_output_limits ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s\n\n",
+      "stdout_sha256": "999216d0f88fb7c6fc40bc101f21f2ebb68b9073de13fc94982f1a27174a1baf",
+      "stderr": "",
+      "trace": [
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 4096
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "above_model_default",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "above_model_default",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "above_model_default",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "omitted_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "context_floor",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "context_floor",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_completion_tokens": 1
+            }
+          },
+          "result": {
+            "text": "o",
+            "stop": "length",
+            "raw_stop": "length",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 1,
+            "total_tokens": 11,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "context_floor",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_zero",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_zero",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_completion_tokens",
+          "case": "explicit_zero",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 4096
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1024
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "above_model_default",
+          "entry": "native",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "above_model_default",
+          "entry": "simple",
+          "estimate": 2,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "above_model_default",
+          "entry": "direct",
+          "estimate": 2,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 5000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "omitted_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_near_context",
+          "entry": "native",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_near_context",
+          "entry": "simple",
+          "estimate": 2286,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 3618
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_near_context",
+          "entry": "direct",
+          "estimate": 2286,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 7000
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "context_floor",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "context_floor",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false,
+              "max_tokens": 1
+            }
+          },
+          "result": {
+            "text": "o",
+            "stop": "length",
+            "raw_stop": "length",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 1,
+            "total_tokens": 11,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "context_floor",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_zero",
+          "entry": "native",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_zero",
+          "entry": "simple",
+          "estimate": 6002,
+          "resolver_calls": 1,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-route-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        },
+        {
+          "field": "max_tokens",
+          "case": "explicit_zero",
+          "entry": "direct",
+          "estimate": 6002,
+          "resolver_calls": 0,
+          "request": {
+            "method": "POST",
+            "path": "/v1/chat/completions",
+            "authorization": "Bearer fixture-direct-key",
+            "body": {
+              "model": "gpt-4o",
+              "stream": true,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": "earlier"
+                },
+                {
+                  "role": "assistant",
+                  "content": "previous"
+                },
+                {
+                  "role": "user",
+                  "content": "hello"
+                }
+              ],
+              "stream_options": {
+                "include_usage": true
+              },
+              "store": false
+            }
+          },
+          "result": {
+            "text": "ok",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "response_id": "chat-limit",
+            "input_tokens": 10,
+            "output_tokens": 2,
+            "total_tokens": 12,
+            "error": null
+          }
+        }
+      ]
+    },
+    "repeated": [
+      {
+        "command": [
+          "C:\\Temp\\opi-ai-chat-output-executables\\c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451\\openai_chat_output_limits-a25022af8a6d2f33.exe",
+          "--exact",
+          "observe_chat_output_limits",
+          "--nocapture"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "999216d0f88fb7c6fc40bc101f21f2ebb68b9073de13fc94982f1a27174a1baf",
+        "stderr": ""
+      },
+      {
+        "command": [
+          "C:\\Temp\\opi-ai-chat-output-executables\\c6365e30ead65580d34fd9beb5e044675fe56307fb150bddcd22d8624c45d451\\openai_chat_output_limits-a25022af8a6d2f33.exe",
+          "--exact",
+          "observe_chat_output_limits",
+          "--nocapture"
+        ],
+        "exit_code": 0,
+        "stdout_sha256": "999216d0f88fb7c6fc40bc101f21f2ebb68b9073de13fc94982f1a27174a1baf",
+        "stderr": ""
+      }
+    ]
+  }
+}

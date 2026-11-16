@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "issue": "#123",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "snapshot": "D:/Luiz/Odradek/opi/.pi/pi-1.5.0",
+  "contract": [
+    "the first pi-messages done/error event is the terminal publication boundary",
+    "terminal responseModel is preserved with responseId, provider thinking level and usage",
+    "raw observer failure before normalization yields typed partial failure without Done and releases the response for the next call"
+  ],
+  "sources": {
+    "crates/opi-ai/src/pi_messages.rs": "f503dcb470ed5387b451f12e263d5ccdf98597351a17aed006528feb8f58f03e",
+    "crates/opi-ai/Cargo.toml": "3e60fa69167347e9a2aeedf3a30fbea6e4aabfa33efbc4693197121a85fc7749",
+    "crates/opi-ai/tests/chat_pi_messages.rs": "b71d1c69ddb892c57b42e74d304bb496a620ad2a1ac62192bab452abf9e12f93",
+    "crates/opi-ai/tests/pi_messages_terminal.rs": "09c69c4f87cb5b7d47bb92a6594e388e20c5af6b509748ae89ec802038f3711c",
+    "crates/opi-ai/tests/data/pi-messages-terminal.json": "52fe75f78088f5b5ee79f4fc5f604a7399d7d0ed4c1f70bb1a4fd9a46d685d97",
+    "docs/iterations/opi-ai-1-5-alignment/issues/123-pi-messages-terminal-metadata-observer.md": "6c56f54942e9481e045602c0ee52af1ccf9196728be0aeff876f221d41daed4d",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_pi_messages_terminal.mjs": "a25681d208716d5745f5f806f739630f7808e2dbc0d5f48dfb6843bb8821dbe2",
+    "scripts/pi-sdk-conformance/differential/compare_pi_messages_terminal.py": "5a727b0bac71eb63e1c5dedbc0aa91d71bec9cc51dedda34074dfb963f71003d",
+    "scripts/pi-sdk-conformance/differential/test_pi_messages_terminal.py": "332e9b6a07f6b75e164ebd4f5290bfc8d5ef16d9674aa0b6067e6af02af35401",
+    "scripts/pi-sdk-conformance/run_pi_messages_terminal_package.py": "dd247f7c042d795d20a74b6248f49e5608d0ef439825ea8676dcbde4c0ee765e",
+    "scripts/pi-sdk-conformance/test_pi_messages_terminal_package.py": "5d55abfb2d6ec77812f916b0a54908c8da53508719391ca7163ea8b76fa2046d"
+  },
+  "frozen_pi_source_sha256": {
+    ".pi/pi-1.5.0/packages/ai/src/api/pi-messages.ts": "d521d2227b622fc624a75124c56c730c07a8d33a42b2f920a5dedc5a47ce9907"
+  },
+  "rust_executable": {
+    "path": "E:/opi/cargo-targets/opi-72fa37a0fa044958/debug/deps/pi_messages_terminal-763c5af00a530e3b.exe",
+    "sha256": "c7688df6b7de06cb3f8e71ce2c975fb4142990f6dc77783b928e688b7f2ac301"
+  },
+  "evidence": {
+    "differential": "evidence/phase7-pi-messages-terminal-differential.json",
+    "historical_differential_v1": "evidence/phase7-pi-messages-terminal-differential-v1.json",
+    "differential_v2": "evidence/phase7-pi-messages-terminal-differential-v2.json",
+    "package": "evidence/phase7-pi-messages-terminal-package.json",
+    "historical_package_v1": "evidence/phase7-pi-messages-terminal-package-v1.json",
+    "package_v2": "evidence/phase7-pi-messages-terminal-package-v2.json",
+    "checks": "evidence/phase7-pi-messages-terminal-checks.json"
+  },
+  "observed_trace": {
+    "routes": [
+      "simple",
+      "direct"
+    ],
+    "stop": "stop",
+    "response_model": "radius-final",
+    "usage": {
+      "input": 10,
+      "output": 5,
+      "total": 15
+    },
+    "done_count": 1,
+    "event_types": [
+      "start",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "done"
+    ],
+    "raw_events": [
+      "start",
+      "text_start",
+      "text_delta",
+      "text_end",
+      "done"
+    ],
+    "repeated_terminal_ignored": true,
+    "terminal_observer_failure": {
+      "typed_cause": "CallbackPhase",
+      "done_count": 0,
+      "sequential_requests": 2,
+      "second_done": true
+    }
+  },
+  "approved_differences": [
+    "Pi exposes provider events while Rust records the raw event type before its normalized stream projection.",
+    "Pi represents observer failures through its AssistantMessage error path; Rust exposes typed ProviderError and owned partial state.",
+    "No EOF or pending-terminal flush is added because pi-messages publishes done/error as the protocol terminal boundary."
+  ],
+  "history": {
+    "prior_receipts_untouched": true,
+    "mistral_gemini_anthropic_responses_bedrock_evidence_retained": true
+  },
+  "test_impact": {
+    "add": [
+      "Pi Messages terminal metadata, repeated boundary, observer failure/release regression",
+      "Frozen Pi probe/comparator",
+      "Actual archive consumer"
+    ],
+    "update": [
+      "Pi Messages terminal responseModel mapping and Cargo test target",
+      "Existing terminal usage/rewrite fixture assertion"
+    ],
+    "delete": [],
+    "retain": "All prior adapter, observer, Chat terminal/preview, usage, numeric, cancellation, deferred and package evidence"
+  }
+}

@@ -546,8 +546,10 @@ fn resolve_temporal(
 
 pub(crate) struct RequestProjection<'a> {
     pub transcript: Cow<'a, TranscriptContext>,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub replay: crate::replay::ReplayOutput,
     pub facts: ProjectionFacts,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub tools: TranscriptTools,
 }
 
@@ -602,6 +604,7 @@ pub(crate) fn compile_request_projection<'a>(
         },
     };
     let temporal = resolve_temporal(&request.context, caps, request.projection.temporal)?;
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     let tools =
         resolve_transcript_tools(temporal.context.messages(), caps.tools != NativeTools::None);
     let replay = if wire == crate::WireApi::PiMessages {
@@ -653,8 +656,10 @@ pub(crate) fn compile_request_projection<'a>(
     };
     Ok(RequestProjection {
         transcript: temporal.context,
+        #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
         replay,
         facts,
+        #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
         tools,
     })
 }

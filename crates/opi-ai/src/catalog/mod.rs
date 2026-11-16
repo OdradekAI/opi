@@ -18,13 +18,17 @@
 //! This surface is part of the **unstable 0.x extension substrate**. Breaking
 //! changes may occur between minor versions without a major version bump.
 
+#[cfg(feature = "catalog-bundled")]
 mod builtin;
 mod values;
 pub use values::{CatalogOperation, CatalogRecord, ModelsStoreEntry};
 mod document;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod http_source;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod openrouter;
 mod source;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub use openrouter::personalize_openrouter_catalog;
 pub mod store;
 mod store_contract;
@@ -32,6 +36,7 @@ pub(crate) use store_contract::CatalogPublisher;
 pub(crate) mod wire;
 
 pub use document::{CatalogDocumentError, decode_document};
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub use http_source::HttpCatalogSource;
 pub use source::{CatalogRefreshContext, DynamicCatalogSource};
 pub use store::{
@@ -311,7 +316,8 @@ impl ProviderCatalog {
 
 /// An immutable, fully validated catalog revision.
 ///
-/// Built only through [`Catalog::builtin`] or [`Catalog::from_bytes`]; every
+/// Built only through `Catalog::builtin` (with `catalog-bundled`) or
+/// [`Catalog::from_bytes`]; every
 /// construction re-verifies digest, schema, provider set, structure digest,
 /// and each entry, so a `Catalog` value always reflects authentic packaged
 /// data.

@@ -1,0 +1,40 @@
+{
+  "content": {
+    "text": [
+      {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"in_progress","content":[]}},
+      {"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}},
+      {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"partial"},
+      {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"partial"}]}}
+    ],
+    "tool": [
+      {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":""}},
+      {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"path\":\"README.md\"}"},
+      {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"read","arguments":"{\"path\":\"README.md\"}"}}
+    ]
+  },
+  "response": {
+    "id":"resp_terminal",
+    "model":"gpt-5.4-terminal",
+    "output":[],
+    "usage":{"input_tokens":9,"output_tokens":4,"total_tokens":13,"input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":1}}
+  },
+  "late": {"type":"response.failed","response":{"id":"resp_late","status":"failed","error":{"code":"websocket_connection_limit_reached","message":"late failure"}}},
+  "cases": [
+    {"name":"done_with_false","type":"response.done","fields":{"status":"completed","end_turn":false},"stop":"stop","rawStop":"completed","endTurn":false},
+    {"name":"completed_stops_before_late_frame","type":"response.completed","fields":{"status":"completed","end_turn":true},"stop":"stop","rawStop":"completed","endTurn":true,"late":true},
+    {"name":"done_with_length","type":"response.done","fields":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"end_turn":true},"stop":"length","rawStop":"incomplete.max_output_tokens","endTurn":true},
+    {"name":"incomplete_with_length","type":"response.incomplete","fields":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}},"stop":"length","rawStop":"incomplete.max_output_tokens"},
+    {"name":"completed_with_length_and_tool","type":"response.completed","fields":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}},"stop":"length","rawStop":"incomplete.max_output_tokens","content":"tool"},
+    {"name":"done_with_completed_tool","type":"response.done","fields":{"status":"completed","end_turn":false},"stop":"tool_use","rawStop":"completed","endTurn":false,"content":"tool"},
+    {"name":"incomplete_with_content_filter","type":"response.incomplete","fields":{"status":"incomplete","incomplete_details":{"reason":"content_filter"},"end_turn":true},"stop":"error","rawStop":"incomplete.content_filter","endTurn":true,"diagnostic":"Codex response incomplete: content_filter"},
+    {"name":"incomplete_without_reason","type":"response.incomplete","fields":{"status":"incomplete"},"stop":"error","rawStop":"incomplete","diagnostic":"Codex response incomplete without a provider reason"},
+    {"name":"incomplete_with_unknown_reason","type":"response.done","fields":{"status":"incomplete","incomplete_details":{"reason":"unknown_503"}},"stop":"error","rawStop":"incomplete.unknown_503","diagnostic":"Codex response incomplete: unrecognized provider reason"},
+    {"name":"completed_with_failed_status","type":"response.completed","fields":{"status":"failed"},"stop":"error","rawStop":"failed","diagnostic":"Codex response failed"},
+    {"name":"done_with_cancelled_status","type":"response.done","fields":{"status":"cancelled","end_turn":false},"stop":"error","rawStop":"cancelled","endTurn":false,"diagnostic":"Codex response cancelled"},
+    {"name":"completed_without_status","type":"response.completed","fields":{"end_turn":"false"},"stop":"stop"},
+    {"name":"done_with_unknown_status","type":"response.done","fields":{"status":"future_status"},"stop":"stop"},
+    {"name":"done_with_nonstring_status","type":"response.done","fields":{"status":42},"stop":"stop"},
+    {"name":"done_with_queued_status","type":"response.done","fields":{"status":"queued"},"stop":"stop","rawStop":"queued"},
+    {"name":"done_with_in_progress_status","type":"response.done","fields":{"status":"in_progress"},"stop":"stop","rawStop":"in_progress"}
+  ]
+}

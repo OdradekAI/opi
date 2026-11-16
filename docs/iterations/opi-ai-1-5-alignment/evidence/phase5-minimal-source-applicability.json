@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "package_sha256": "fbc8771b874ca608a7e0700eacbf83f472200d2a83c60260151f388517d98d2c",
+  "changed_files": [
+    {
+      "crate": "opi-ai",
+      "path": "tests/tool_result_wire.rs",
+      "before": "0ddacce9d6aac195d4230be5ed244161fd6198a647ffcb37fdf75102c5e8820c",
+      "after": "3f16ef91817d2b116cd9c08bcc9028b9dae53fdd0886e53886fac0ae2127aa5a"
+    }
+  ],
+  "unchanged_files": 335,
+  "scope": "Source applicability only: the sole post-package change repairs a metadata-only test guard. All SDK/telemetry production, manifests, examples, fixtures and copied consumer tests retain exact bytes. Test execution outcomes are recorded separately in the final checks receipt."
+}

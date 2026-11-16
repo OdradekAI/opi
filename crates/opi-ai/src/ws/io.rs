@@ -1,4 +1,5 @@
 //! Borrowed operations retain all partial frame, PMD, write and Close state in this owner.
+#![cfg_attr(not(feature = "provider-protocol-common"), allow(dead_code))]
 //! Caller queues every masked Close; only `finish_close` drives transport shutdown.
 use super::{frame, pmd};
 use std::{
@@ -266,6 +267,18 @@ impl Core {
         Poll::Ready(Ok(Some(message)))
     }
 
+    fn has_incomplete_input(&self) -> bool {
+        self.pending.is_some()
+            || self
+                .frame
+                .as_ref()
+                .is_some_and(frame::Decoder::has_incomplete_message)
+            || self
+                .messages
+                .as_ref()
+                .is_some_and(frame::Messages::has_incomplete_message)
+    }
+
     pub(super) fn eof(&mut self) -> Result<(), Fault> {
         if self.closed {
             return Ok(());
@@ -326,6 +339,13 @@ impl Default for PmdParameters {
             client_max_window_bits: 15,
         }
     }
+}
+
+pub(crate) enum AvailableRead {
+    Idle,
+    Incomplete,
+    Closed,
+    Message(frame::Message),
 }
 
 pub(crate) struct Driver<S> {
@@ -416,6 +436,31 @@ impl<S: AsyncRead + AsyncWrite + Unpin> Driver<S> {
         }
         poll_fn(|cx| self.poll_event(cx)).await
     }
+
+    /// Poll once without waiting for the peer. A partial frame, fragment or
+    /// pending decode prevents a caller from treating Pending as an idle boundary.
+    pub(crate) async fn read_available(&mut self) -> Result<AvailableRead, Fault> {
+        if let Some(message) = self.ready.pop_front() {
+            return Ok(AvailableRead::Message(message));
+        }
+        poll_fn(|cx| {
+            Poll::Ready(match self.poll_event(cx) {
+                Poll::Ready(result) => result.map(|message| match message {
+                    Some(message) => AvailableRead::Message(message),
+                    None => AvailableRead::Closed,
+                }),
+                Poll::Pending
+                    if self.read_offset < self.read_count
+                        || self.core.as_ref().is_some_and(Core::has_incomplete_input) =>
+                {
+                    Ok(AvailableRead::Incomplete)
+                }
+                Poll::Pending => Ok(AvailableRead::Idle),
+            })
+        })
+        .await
+    }
+
     fn poll_event(&mut self, cx: &mut Context<'_>) -> Poll<Result<Option<frame::Message>, Fault>> {
         if self.terminal.is_some() || self.peer_close {
             return Poll::Ready(Ok(None));

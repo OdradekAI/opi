@@ -389,6 +389,31 @@ fn partial_completion_fills_dangling_structures() {
 }
 
 #[test]
+fn streaming_preview_keeps_complete_trailing_literals() {
+    // A delimiter may arrive in a later chunk. A complete literal must keep
+    // its value both before that chunk and after the container closes.
+    for literal in ["true", "false", "null"] {
+        let value: serde_json::Value = serde_json::from_str(literal).unwrap();
+        for (prefix, suffix, expected) in [
+            (
+                format!("{{\"a\":{literal}"),
+                "}",
+                serde_json::json!({"a": value}),
+            ),
+            (format!("[1,{literal}"), "]", serde_json::json!([1, value])),
+            (
+                format!("{{\"a\":[{literal}"),
+                "]}",
+                serde_json::json!({"a": [value]}),
+            ),
+        ] {
+            assert_eq!(parse_streaming_json(&prefix), expected, "{prefix}");
+            assert_eq!(parse_streaming_json(&(prefix + suffix)), expected);
+        }
+    }
+}
+
+#[test]
 fn finalize_tool_arguments_keeps_final_contract_public_and_authoritative() {
     // Empty and whitespace finalize to {} without an error.
     assert_eq!(
@@ -538,6 +563,7 @@ fn context_overflow_matches_pinned_provider_error_messages() {
         "Your input exceeds the context window of this model",
         "Requested token count exceeds the model's maximum context length of 131072 tokens",
         "Input length (265330) exceeds maximum context length (262144).",
+        "400: litellm.ContextWindowExceededError: Context Window exceeded for given call.",
         "The input token count (1196265) exceeds the maximum number of tokens allowed (1048575)",
         "This model's maximum prompt length is 131072 but the request contains 537812 tokens",
         "Please reduce the length of the messages or completion",
@@ -574,12 +600,57 @@ fn context_overflow_matches_pinned_provider_error_messages() {
 }
 
 #[test]
+fn context_overflow_uses_the_leading_http_413_status() {
+    for (diagnostic, expected) in [
+        ("413", true),
+        ("413: Payload Too Large", true),
+        (r#"413 {"message":"failed to parse request"}"#, true),
+        ("413 (no body)", true),
+        ("413\u{FEFF}Payload Too Large", true),
+        (
+            "github-copilot API error (413): failed to parse request",
+            true,
+        ),
+        ("Custom_Provider-2 API ERROR (413): Payload Too Large", true),
+        ("github-copilot API error (400): invalid value 413", false),
+        (
+            "custom-provider API error (400): upstream mentioned OpenAI API error (413): invalid input",
+            false,
+        ),
+        ("custom-provider API error (4130): invalid input", false),
+        ("4130 failed to parse request", false),
+        ("413\u{0085}Payload Too Large", false),
+        ("ÅI API error (413): Payload Too Large", false),
+    ] {
+        let message = diagnostic_message(
+            "openai",
+            StopReason::Error,
+            Some(diagnostic),
+            Usage::unknown(),
+        );
+        assert_eq!(
+            is_context_overflow(&message, None),
+            expected,
+            "{diagnostic:?}"
+        );
+    }
+
+    for stop in [StopReason::Aborted, StopReason::Stop] {
+        let message = diagnostic_message("openai", stop, Some("413"), Usage::unknown());
+        assert!(!is_context_overflow(&message, None), "stop={stop:?}");
+    }
+}
+
+#[test]
 fn context_overflow_excludes_non_overflow_patterns() {
     let excluded = [
         "Throttling error: Too many tokens, please wait before trying again.",
         "Service unavailable: too many tokens",
         "rate limit hit while checking too many tokens",
         "Too many requests: token limit exceeded",
+        "Throttling error: Context Window exceeded for given call.",
+        "413: rate limit reached",
+        "github-copilot API error (413): Too many requests",
     ];
     for error_message in excluded {
         let message = diagnostic_message(
@@ -607,27 +678,25 @@ fn context_overflow_excludes_non_overflow_patterns() {
 
 #[test]
 fn context_overflow_cerebras_bodyless_pattern_is_provider_gated() {
-    let bodyless = diagnostic_message(
-        "cerebras",
-        StopReason::Error,
-        Some("413 (no body)"),
-        Usage::unknown(),
-    );
-    assert!(is_context_overflow(&bodyless, None));
-    let bodyless_status = diagnostic_message(
-        "cerebras",
-        StopReason::Error,
-        Some("400 status code (no body)"),
-        Usage::unknown(),
-    );
-    assert!(is_context_overflow(&bodyless_status, None));
-    let other_provider = diagnostic_message(
-        "openai",
-        StopReason::Error,
-        Some("413 (no body)"),
-        Usage::unknown(),
-    );
-    assert!(!is_context_overflow(&other_provider, None));
+    for diagnostic in ["400 status code (no body)", "413(no body)"] {
+        let bodyless = diagnostic_message(
+            "cerebras",
+            StopReason::Error,
+            Some(diagnostic),
+            Usage::unknown(),
+        );
+        assert!(is_context_overflow(&bodyless, None), "{diagnostic:?}");
+        let other_provider = diagnostic_message(
+            "openai",
+            StopReason::Error,
+            Some(diagnostic),
+            Usage::unknown(),
+        );
+        assert!(
+            !is_context_overflow(&other_provider, None),
+            "{diagnostic:?}"
+        );
+    }
     let other_status = diagnostic_message(
         "cerebras",
         StopReason::Error,

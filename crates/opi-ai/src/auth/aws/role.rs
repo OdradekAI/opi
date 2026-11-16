@@ -18,10 +18,10 @@ use secrecy::{ExposeSecret, SecretString};
 use time::OffsetDateTime;
 
 use crate::auth::AwsSigV4Credentials;
+use crate::auth::aws::sigv4::{SignedRequest, sign_request};
 use crate::auth::aws::source_http::{
     AwsSourceTransport, SourceHttpError, SourceHttpMethod, SourceHttpRequest,
 };
-use crate::bedrock::sigv4::{SignedRequest, sign_request};
 
 /// Default `RoleSessionName` when no profile/explicit session name is set.
 /// The fixed corpus does not pin a default; this owned constant keeps

@@ -52,22 +52,74 @@ serde_json = "1"
 
 ## Feature profile
 
-当前 `opi-ai` 只公开一个 feature：`telemetry-tracing`：
+`catalog-bundled`、`http-transport`、`tls-backend`、`cloud-auth`、`websocket-compression`、`protocol-adapters`、`oauth-store` 与
+`telemetry-tracing` 可独立选择。为保持兼容，`builtins` 包含 catalog、共享
+HTTP transport、provider protocol adapters 和 provider OAuth flow，默认配置仍
+保留原有完整 surface。
 
-| Profile | Cargo 写法 | 增加或移除 |
+Provider protocol surface 还提供独立的 source owner：
+`provider-anthropic`、`provider-azure-openai`、`provider-bedrock`、
+`provider-gemini`、`provider-mistral`、`provider-openai-chat`、
+`provider-openai-codex-responses`、`provider-openai-responses`、
+`provider-openrouter`、`provider-pi-messages` 与 `provider-vertex`。
+`provider-protocol-common` 与 `provider-openrouter-usage` 是内部共享 owner；
+直接调用方应选择实际使用的 provider feature。
+
+| Profile | Cargo 写法 | 可用范围 |
 | --- | --- | --- |
-| 默认 | `default` / `telemetry-tracing` | 开启 `opi-telemetry` 的可选 tracing carrier，以及 `TelemetryContext::from_span`。 |
-| 核心 context | `default-features = false` | 保留中立 context、recorder 和 AI request 类型，但不启用可选 tracing carrier。 |
-
-需要核心 profile 的消费者可以使用：
+| 默认 | `opi-ai = "0.8.3"` | 核心、内置适配器/认证、内嵌 catalog 和 tracing carrier。 |
+| 最小 | `default-features = false` | 核心值、Models/自定义 API、凭据 Store/自定义 OAuth、中立 telemetry、工具与脚本化 Faux 测试支持。 |
+| 仅内嵌 catalog | `default-features = false, features = ["catalog-bundled"]` | 核心 catalog 值与经过校验的 Pi 内嵌 catalog，不启用网络适配器或内置认证。 |
+| 仅共享 HTTP transport | `default-features = false, features = ["http-transport"]` | 公共 `HttpClient`、代理/重定向策略和 source-scoped TLS wiring，不启用具体 provider protocol 或内置认证。 |
+| 仅 TLS backend | `default-features = false, features = ["tls-backend"]` | 固定 rustls/AWS-LC/native-certs backend 与公共 source-scoped `opi_ai::tls` 配置，不启用 reqwest 或 provider transport。 |
+| 仅云认证 | `default-features = false, features = ["cloud-auth"]` | AWS source chain/STS、GCP ADC、共享 SigV4 与固定云 codec，并传递选择共享 HTTP/TLS，不启用 provider wire adapter 或 compression。 |
+| 仅 WebSocket/compression | `default-features = false, features = ["websocket-compression"]` | 公共严格 Upgrade bridge 与私有 RFC 6455/permessage-deflate owner，并传递选择共享 HTTP/TLS，不启用 provider adapter。 |
+| 仅 Provider protocol adapters | `default-features = false, features = ["protocol-adapters"]` | 所有 provider wire owner 与共享协议依赖的兼容性组合；不启用内嵌 catalog 或 provider collection/auth factory。 |
+| 单个 Provider protocol | `default-features = false, features = ["provider-anthropic"]`（替换为对应 provider owner） | 单个 provider wire/source owner 及其声明的共享协议依赖；完整的十一项 owner 见能力矩阵。 |
+| 仅 Provider OAuth/store | `default-features = false, features = ["oauth-store"]` | Provider 自有 OAuth flow 与 Store-backed login/refresh 接线，并传递选择共享 HTTP transport；中立 credential、mutation、Store 和 OAuth 合同仍在 core。 |
+| 内置后端无 tracing | `default-features = false, features = ["builtins"]` | 内置网络适配器、云认证与 catalog，不启用可选 tracing carrier。 |
 
 ```toml
 opi-ai = { version = "0.8.3", default-features = false }
 ```
 
-`default-features = false` 不会移除内置 Provider 或网络依赖，只改变可选的
-`opi-telemetry` tracing carrier；Provider 注册、catalog、请求生命周期和显式认证保持不变。
-exporter、sampling、初始化和 shutdown 仍由宿主拥有。
+最小配置的依赖图排除 reqwest、TLS、云签名/协议 codec 和 WebSocket 压缩后端；
+保留 Tokio、HTTP 值类型，以及现有 `MockProvider`/`ScriptedDeferredBackend`，不声称
+完整 Pi Faux 对等。`http-transport` 拥有 `HttpClient`、代理/重定向合同和
+source-scoped TLS/crypto wiring，但不启用具体 provider protocol 模块。
+`tls-backend` 拥有固定的 rustls/AWS-LC/native-certs backend 与公共
+source-scoped `opi_ai::tls` 配置，不选择 reqwest；`http-transport` 为了
+`HttpClient` 传递选择 `tls-backend`，同时保留原有 `opi_ai::http` TLS re-export。
+`protocol-adapters` 是覆盖所有 provider wire owner 的兼容性组合，并传递选择
+`http-transport`、`cloud-auth` 与 `websocket-compression`，但不启用内嵌 catalog。中立的 `auth::store_oauth` 合同和
+credential value 保留在 core。`oauth-store` 拥有具体 provider OAuth flow 与
+Store-backed login/refresh bridge，并传递选择 `http-transport`；内置
+OAuth/AWS/Vertex credential factory 及 provider collection 因注册内嵌 catalog
+和 provider credential source，仍属于 `builtins`。
+`cloud-auth` 拥有协议无关的 AWS source chain/STS、GCP ADC、共享 SigV4 与云
+codec 闭包，并传递选择共享 HTTP/TLS，不选择具体 provider wire 或 compression。
+`Catalog::from_bytes` 与自定义 catalog source 仍可用；
+`Catalog::builtin` 要求 `catalog-bundled`，HTTP catalog source 和 provider
+collection 要求 `builtins`，具体 Provider 模块要求对应的 `provider-*` feature
+（或兼容性组合 `protocol-adapters`/`builtins`）。关闭 feature 时，归档中仍可能包含内嵌 catalog 数据文件。
+
+已有 no-default 网络消费者须增加 `features = ["builtins"]`；只使用固定 source-scoped
+TLS 配置的调用方可选择 `features = ["tls-backend"]`，需要 `HttpClient` 的调用方
+可选择 `features = ["http-transport"]`；只需要公共 WebSocket Upgrade/PMD bridge
+的调用方可选择 `features = ["websocket-compression"]`，它会传递选择共享 HTTP/TLS。
+需要自行提供 provider wire 但使用 AWS/GCP source resolution 或 signing 的调用方可选择
+`features = ["cloud-auth"]`，它会传递选择共享 HTTP/TLS，不启用 provider protocol/compression。
+直接提供自身 model/auth/catalog
+接线的 protocol 调用方可选择 `features = ["protocol-adapters"]`；provider
+collection 与内置 OAuth/AWS/Vertex credential factory 仍要求 `builtins`；自行
+提供 provider registry 的调用方可选择 `features = ["oauth-store"]` 使用 SDK
+OAuth flow 和 Store-backed refresh bridge。只使用一个具体 wire 的调用方可从上面的
+owner 列表选择对应的 `provider-*` feature；`provider-vertex`/`provider-bedrock`
+保留传递选择 cloud-auth，`provider-openai-codex-responses` 保留 WebSocket/compression
+依赖。三个 onboarding 示例要求 `builtins`。最小消费者若需要
+`TelemetryContext::from_span`，可独立开启 `telemetry-tracing`。exporter、sampling、
+初始化和 shutdown 仍由宿主拥有。配对/高阶组合覆盖和原生 macOS 仍在 capability V
+矩阵中待验收。
 
 ## API 总览
 
@@ -215,9 +267,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## 流式与最终结果
 
 `Models::stream_simple` 返回 `ChatCall`。构造时调度执行，consumer 控制 event poll。
-`TextDelta` 等 partial event 之后会有一个终态 `Done`、`Error` 或 `Aborted`；
-`ChatCall::result()` 等待相同的最终 `AssistantMessage` 或 `CallFailure`。
-`Pending` 不是终态。
+`TextDelta` 等 partial event 之后会交付一个终态 `Done` event 或一个
+`Err(CallFailure)`。`ChatCall::result()` 等待同一个最终结果。普通聊天调用在准备阶段
+合成错误消息时，会从冻结的 `ChatModelRecord` 取得 provider 和 model ID。
+
+每个 partial 都是该事件独立拥有的快照。进度展示读取最新事件的 partial。保留旧事件时，
+其内容和用量保持在原事件时点。工具预览为每个工具保留一个
+`streaming_json::ToolCallArgumentsStream`，逐条追加原始 `ToolCallDelta`，在渲染时请求
+独立快照。详见[预览与最终校验契约](docs/utilities.zh.md#tool-参数归一化与校验)。
+
+OpenAI Chat 的一次 completion 使用一个文本块。该块的文本增量之间可以收到工具增量。
+按事件顺序更新进度，并用 `content_index` 将增量归到各自的块。completion 关闭内容块时，
+`TextEnd` 携带该块的完整正文。
 
 收到业务终态后，普通调用会继续驱动 Provider source 到 EOF，再交付终态、结算请求
 telemetry 并完成 result。尾部事件不能替换首个结果或触发另一次 attempt。停止消费或
@@ -600,7 +661,19 @@ Provider、protocol、认证、schema、callback 和 cancellation failure 通过
 context 和 recorder。exporter、sampling、初始化和 flush 由宿主持有。
 
 普通 chat request 产生 `pi.ai.request`；deferred fetch 产生 `pi.ai.poll`。Pending 和
-Deferred poll 不累计 token 或 cost。raw stream 和 prepared raw attempt 仍可在无隐式
+Deferred poll 不累计 token 或 cost。
+
+自动观察器在首次交付规范化流项时记录 `pi.ai.first_chunk` 与
+`pi.ai.first_chunk.duration`。首项为类型化失败时也记录，包括 provider 派发前的准备失败。
+
+AI 观察器先创建所需指标，再启动 span。指标工厂返回错误时，自动观察器通过宿主 tracing
+报告错误，业务调用继续执行。手动调用 `AiRequestTelemetry::start` 会直接收到后端错误。
+
+当 `pi.ai.request` 以 `Stop`、`Length` 或 `ToolUse` 完成时，若最终属性写入或请求时长
+记录失败，自动观察器通过宿主 tracing 报告该错误，并尝试结束请求 span 一次。已写入的属性
+保留，剩余的结果指标跳过。结束操作若返回错误，会单独发出一条警告。调用仍交付成功的模型结果。
+
+raw stream 和 prepared raw attempt 仍可在无隐式
 ambient context 下使用。完整生命周期见[Transport、协议与资源生命周期](docs/transport.zh.md)。
 
 ## 自定义 Provider
@@ -622,14 +695,25 @@ response、stream、tool call、pending 和 failure。Faux 测试证明调用方
 ## Deferred 响应
 
 Deferred submit 可能返回带 `StopReason::Deferred`、空 content 和类型化 handle 的消息。
-`Models::fetch_deferred` 将后续 `ChatStream` 推进到一个 ready result 或类型化 failure；
-`cancel_deferred` 是 best-effort 远端取消，与本地 fetch 取消独立。`poll_after_ms` 是 Provider
-hint，不是隐式 sleep policy。
+有效的 fetch 使用 `wait_ms = 0` 时，请求后端进行一次状态检查。
+`Models::fetch_deferred` 会返回仍待定的 `StopReason::Deferred` 及 handle、就绪消息或类型化失败。
+收到成功终态后，它会把 fetch 流读到 EOF 再返回。在 Tokio runtime 内迁移 Pi 的结果式
+`Models.fetchDeferred` 调用时，可等待 `Models::fetch_deferred_ready`。它返回首个规范化结果，
+任务继续排空源流并结算 poll。待定响应仍带有 handle，供调用方发起下次 fetch。
+从 Pi 的 `Models.streamDeferred` 迁移时，
+在 Tokio runtime 内调用 `Models::stream_deferred(...).start()`。任务独立于事件读取推进
+fetch，丢弃消费句柄后仍继续执行。成功 `Done` 可在收尾前交付，公开 EOF 和 `result()`
+等到源流释放及 poll 结算。`cancel_deferred` 是 best-effort 远端取消，与本地
+fetch 取消独立。`poll_after_ms` 是 Provider 提供给调用方的调度提示。
 
 确定性的 Faux route 不代表 startup fetch、全局 deferred worker 或真实远端服务。
 详见[Transport、协议与资源生命周期](docs/transport.zh.md)。
 
 ## 迁移
+
+低层 mapper 调用方现在使用 `anthropic::AnthropicUsageDelta`，而非 `Usage`，构造
+`AnthropicEvent::MessageDelta.usage`。已上报的 token 字段使用 `Some(value)`，包括
+清零的 `Some(0)`；`None` 保留原值，不变字段可通过 `..Default::default()` 省略。
 
 公共 Rust surface 处于 unstable 0.x。优先使用当前的 `Models`、`Request`、`ChatCall`、
 `ProviderRegistry`、`AuthContext`、`TelemetryContext` 和类型化 operation 契约。从内部

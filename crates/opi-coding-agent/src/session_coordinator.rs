@@ -1020,6 +1020,11 @@ impl SessionCoordinator {
     /// Compute the cost summary from the accumulated usage and the model
     /// pricing table. Returns `None` if any turn has unknown usage or if no
     /// pricing is known for the model.
+    ///
+    /// This estimate is recomputed with the session's current pricing; it is
+    /// neither persisted nor a sum of message-level `Usage.cost` snapshots.
+    /// Persisted messages retain their original accounting, including any
+    /// provider-reported total, independently of this estimate.
     pub fn cost_summary(&self) -> Option<opi_ai::stream::CostBreakdown> {
         self.cost_for_usage(&self.usage)
     }
@@ -1145,6 +1150,8 @@ impl SessionCoordinator {
     }
 }
 
+// Preserve response accounting as part of the canonical message. Session
+// cost summaries are derived separately from cumulative tokens and pricing.
 fn message_for_session(message: &Message) -> Message {
     match message {
         Message::Assistant(assistant) => {

@@ -1,17 +1,18 @@
 //! Wire-neutral OpenAI Responses message conversion and SSE event mapping.
 
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::message::{
-    AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
+    AssistantContent, AssistantMessage, CODEX_END_TURN_DIAGNOSTIC, OutputContent,
+    TOOL_ERROR_MARKER, ToolCall,
 };
+use crate::model_info::WireApi;
 use crate::provider::{ProviderError, ProviderErrorSummary};
-use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::retry::{CallErrorClassification, classify_whole_call_error};
+use crate::stream::{AssistantDiagnostic, AssistantStreamEvent, StopReason, Usage};
 
-/// Neutral public text substituted for the raw upstream Responses
-/// `error.message`. A proxy may echo credential material or request fragments
-/// in an error frame, so the raw value is never placed in a persisted session
-/// or a public event. Mirrors the dedicated Anthropic path.
+/// Default public diagnostic for a Responses stream error.
 const OPENAI_RESPONSES_STREAM_ERROR: &str = "openai responses stream error";
 
 /// One parsed Server-Sent Events frame.
@@ -103,7 +104,9 @@ struct RawResponseEvent {
     item: Option<RawOutputItem>,
     delta: Option<String>,
     text: Option<String>,
-    message: Option<String>,
+    code: Option<Value>,
+    message: Option<Value>,
+    error: Option<Value>,
     /// The final raw input of a grammar custom-tool call
     /// (`response.custom_tool_call_input.done`).
     #[serde(default)]
@@ -117,8 +120,20 @@ struct RawResponse {
     output: Option<Vec<RawOutputItem>>,
     usage: Option<RawUsage>,
     service_tier: Option<String>,
-    status: Option<String>,
+    status: Option<Value>,
     incomplete_details: Option<serde_json::Value>,
+    end_turn: Option<Value>,
+    error: Option<serde_json::Value>,
+}
+
+impl RawResponse {
+    fn incomplete_reason(&self) -> Option<&str> {
+        self.incomplete_details
+            .as_ref()
+            .and_then(|details| details.get("reason"))
+            .and_then(Value::as_str)
+            .filter(|reason| !reason.is_empty())
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -174,7 +189,6 @@ struct RawOutputTokenDetails {
     reasoning_tokens: Option<u64>,
 }
 
-#[derive(Debug, Clone)]
 pub(crate) enum ResponsesEvent {
     Created {
         model: Option<String>,
@@ -226,6 +240,8 @@ pub(crate) enum ResponsesEvent {
     Completed {
         usage: Option<Usage>,
         raw_stop_reason: Option<String>,
+        completion: ResponseCompletion,
+        end_turn: Option<bool>,
         model: Option<String>,
         id: Option<String>,
         output: Vec<RawOutputItemOwned>,
@@ -240,11 +256,14 @@ pub(crate) enum ResponsesEvent {
     Ignore,
     Error {
         raw_stop_reason: Option<String>,
-        // Raw upstream error text is captured only to classify the event; it
-        // is deliberately never propagated (C6 redaction).
-        #[expect(dead_code)]
-        message: String,
+        summary: &'static str,
     },
+}
+
+pub(crate) enum ResponseCompletion {
+    Stop,
+    Length,
+    Error(&'static str),
 }
 
 #[derive(Debug, Clone)]
@@ -312,33 +331,29 @@ fn owned_item(item: RawOutputItem) -> RawOutputItemOwned {
 }
 
 impl ResponsesEvent {
-    /// Shared event-decoding entry (task 20.16): the WebSocket transport
-    /// decodes each text frame's payload through exactly the SSE frame
-    /// classifier, so both transports publish identical public events.
-    pub(crate) fn try_from_json_str(data: &str) -> ParsedEvent {
-        Self::try_from_frame(&SseFrame {
-            event: String::new(),
-            data: data.to_owned(),
-        })
-    }
-
-    pub(crate) fn try_from_frame(frame: &SseFrame) -> ParsedEvent {
+    fn decode(
+        payload: &str,
+        sse_event: &str,
+        provider: &str,
+        wire: Option<WireApi>,
+    ) -> ParsedEvent {
         // Real Responses/Codex streams terminate with the `data: [DONE]`
         // sentinel, which carries no JSON payload and is redundant with the
         // `response.completed`/`response.incomplete` terminal frame. Treat it
         // as a no-op rather than a malformed frame.
-        if frame.data.trim() == "[DONE]" {
+        if payload.trim() == "[DONE]" {
             return ParsedEvent::Valid(Self::Ignore);
         }
-        let data: RawResponseEvent = match serde_json::from_str(&frame.data) {
+        let data: RawResponseEvent = match serde_json::from_str(payload) {
             Ok(data) => data,
             Err(error) => {
                 return ParsedEvent::Malformed {
-                    data: frame.data.clone(),
+                    data: payload.to_owned(),
                     error: error.to_string(),
                 };
             }
         };
+        let codex = wire == Some(WireApi::OpenAiCodexResponses);
         // Canonical Responses/Codex SSE is data-only (the event type lives in
         // the JSON `type` field). Prefer it and fall back to the SSE `event:`
         // name only when the server emits one. The parser defaults an absent
@@ -348,7 +363,31 @@ impl ResponsesEvent {
             .r#type
             .as_deref()
             .filter(|name| !name.is_empty())
-            .unwrap_or(frame.event.as_str());
+            .unwrap_or(sse_event);
+        let codex_terminal = codex
+            && matches!(
+                event_name,
+                "response.done" | "response.completed" | "response.incomplete"
+            );
+        let response = data.response.as_ref();
+        let status_value = response.and_then(|response| response.status.as_ref());
+        let status = status_value.and_then(Value::as_str);
+        // Only Codex's three completion envelopes normalize non-string statuses.
+        if !codex_terminal && status_value.is_some() && status.is_none() {
+            return ParsedEvent::Malformed {
+                data: payload.to_owned(),
+                error: "expected a string response status".into(),
+            };
+        }
+        // The Responses SDK treats a named error or an error envelope as a
+        // failure before dispatching the JSON event type. Codex uses its own
+        // decoder and only reads the envelope fields on a typed error.
+        if !codex && (sse_event == "error" || data.error.as_ref().is_some_and(Value::is_object)) {
+            return ParsedEvent::Valid(Self::Error {
+                raw_stop_reason: None,
+                summary: sdk_error_summary(provider, &data),
+            });
+        }
         match event_name {
             "response.created" => ParsedEvent::Valid(Self::Created {
                 model: data
@@ -366,7 +405,7 @@ impl ResponsesEvent {
                     item: owned_item(item),
                 }),
                 None => ParsedEvent::Malformed {
-                    data: frame.data.clone(),
+                    data: payload.to_owned(),
                     error: "missing 'item' field in output_item.added".into(),
                 },
             },
@@ -430,8 +469,26 @@ impl ResponsesEvent {
                     encrypted_content: None,
                 }),
             }),
-            "response.completed" => {
-                let raw_stop_reason = Self::raw_stop_reason(&data);
+            "response.completed" | "response.incomplete" | "response.done"
+                if codex_terminal || event_name == "response.completed" =>
+            {
+                if codex_terminal && response.is_none() {
+                    return ParsedEvent::Malformed {
+                        data: payload.to_owned(),
+                        error: "missing response on Codex terminal event".into(),
+                    };
+                }
+                let reason = response.and_then(RawResponse::incomplete_reason);
+                let (status, completion) = if codex_terminal {
+                    Self::codex_completion(status, reason)
+                } else {
+                    (status, ResponseCompletion::Stop)
+                };
+                let raw_stop_reason = Self::raw_stop_reason(status, reason);
+                let end_turn = response
+                    .and_then(|response| response.end_turn.as_ref())
+                    .and_then(Value::as_bool)
+                    .filter(|_| codex_terminal);
                 let usage = match Self::parse_response_usage(&data) {
                     Ok(usage) => usage,
                     Err(error) => {
@@ -456,6 +513,8 @@ impl ResponsesEvent {
                 ParsedEvent::Valid(Self::Completed {
                     usage,
                     raw_stop_reason,
+                    completion,
+                    end_turn,
                     model,
                     id,
                     output,
@@ -470,40 +529,87 @@ impl ResponsesEvent {
                 };
                 ParsedEvent::Valid(Self::Incomplete {
                     usage,
-                    raw_stop_reason: Self::raw_stop_reason(&data),
+                    raw_stop_reason: Self::raw_stop_reason(
+                        status,
+                        response.and_then(RawResponse::incomplete_reason),
+                    ),
                 })
             }
-            "response.failed" => ParsedEvent::Valid(Self::Error {
-                message: "response.failed".into(),
-                raw_stop_reason: data.response.and_then(|response| response.status),
-            }),
-            "error" => ParsedEvent::Valid(Self::Error {
-                message: data.message.unwrap_or_else(|| "unknown error".into()),
-                raw_stop_reason: None,
-            }),
+            "response.failed" => {
+                let error = data
+                    .response
+                    .as_ref()
+                    .and_then(|response| response.error.as_ref());
+                let summary = failed_response_summary(provider, codex, error);
+                ParsedEvent::Valid(Self::Error {
+                    raw_stop_reason: status.map(str::to_owned),
+                    summary,
+                })
+            }
+            "error" => {
+                let summary = match (codex, data.r#type.as_deref()) {
+                    (true, Some("error")) => {
+                        let (_, summary) = codex_stream_error(
+                            provider,
+                            data.code.as_ref(),
+                            data.message.as_ref(),
+                            data.error.as_ref(),
+                        );
+                        summary
+                    }
+                    (true, _) => OPENAI_RESPONSES_STREAM_ERROR,
+                    (false, _) => {
+                        let code = data
+                            .code
+                            .as_ref()
+                            .and_then(Value::as_str)
+                            .unwrap_or("undefined");
+                        let message = data
+                            .message
+                            .as_ref()
+                            .and_then(Value::as_str)
+                            .unwrap_or("undefined");
+                        stream_error_summary(provider, &format!("Error Code {code}: {message}"))
+                    }
+                };
+                ParsedEvent::Valid(Self::Error {
+                    raw_stop_reason: None,
+                    summary,
+                })
+            }
             // Benign lifecycle, reasoning, function-call-finalization, and any
             // future protocol-extension events must NOT terminate the stream.
-            // Genuine errors arrive only via the `error` and `response.failed`
-            // types above; an SSE `event:` name is never trusted as an error
-            // signal on its own.
+            // Recognized error envelopes and event types are handled above.
             _ => ParsedEvent::Valid(Self::Ignore),
         }
     }
 
-    fn raw_stop_reason(data: &RawResponseEvent) -> Option<String> {
-        let response = data.response.as_ref()?;
-        let reason = response
-            .incomplete_details
-            .as_ref()
-            .and_then(|details| details.get("reason"))
-            .and_then(serde_json::Value::as_str)
-            .filter(|reason| !reason.is_empty());
+    fn raw_stop_reason(status: Option<&str>, reason: Option<&str>) -> Option<String> {
         match reason {
-            Some(reason) => Some(format!(
-                "{}.{reason}",
-                response.status.as_deref().unwrap_or("undefined")
-            )),
-            None => response.status.clone(),
+            Some(reason) => Some(format!("{}.{reason}", status.unwrap_or("undefined"))),
+            None => status.map(str::to_owned),
+        }
+    }
+
+    fn codex_completion<'a>(
+        status: Option<&'a str>,
+        reason: Option<&str>,
+    ) -> (Option<&'a str>, ResponseCompletion) {
+        use ResponseCompletion::{Error, Length, Stop};
+        match status {
+            Some("completed" | "queued" | "in_progress") => (status, Stop),
+            Some("incomplete") => {
+                let completion = match reason {
+                    Some("max_output_tokens") => Length,
+                    Some("content_filter") => Error("Codex response incomplete: content_filter"),
+                    Some(_) => Error("Codex response incomplete: unrecognized provider reason"),
+                    None => Error("Codex response incomplete without a provider reason"),
+                };
+                (status, completion)
+            }
+            Some("failed") => (status, Error("Codex response failed")),
+            Some("cancelled") => (status, Error("Codex response cancelled")),
+            _ => (None, Stop),
         }
     }
 
@@ -563,6 +669,83 @@ impl ResponsesEvent {
             usage = usage.with_service_tier(tier);
         }
         Ok(Some(usage))
+    }
+}
+
+fn sdk_error_summary(provider: &str, data: &RawResponseEvent) -> &'static str {
+    let (code, message, kind) = match &data.error {
+        Some(error) => (
+            error.get("code"),
+            error.get("message"),
+            error.get("type").and_then(Value::as_str),
+        ),
+        None => (
+            data.code.as_ref(),
+            data.message.as_ref(),
+            data.r#type.as_deref(),
+        ),
+    };
+    if let Some(message) = message
+        .and_then(Value::as_str)
+        .filter(|message| !message.is_empty())
+    {
+        return stream_error_summary(provider, message);
+    }
+    // The SDK's message fallback is JSON. Restrict it to the scalar fields
+    // that describe the error so unrelated payload fields cannot cause a retry.
+    let code = code.filter(|code| code.is_string() || code.is_number());
+    let diagnostic = serde_json::json!({ "code": code, "type": kind }).to_string();
+    stream_error_summary(provider, &diagnostic)
+}
+
+/// Select the Codex error code for transport recovery and the redacted
+/// diagnostic for the eventual public stream failure.
+pub(crate) fn codex_stream_error<'a>(
+    provider: &str,
+    code: Option<&'a Value>,
+    message: Option<&'a Value>,
+    error: Option<&'a Value>,
+) -> (Option<&'a str>, &'static str) {
+    let field = |flat: Option<&'a Value>, key: &str| {
+        flat.and_then(Value::as_str)
+            .or_else(|| error?.get(key)?.as_str())
+    };
+    let code = field(code, "code");
+    let detail = field(message, "message")
+        .filter(|message| !message.is_empty())
+        .or(code.filter(|code| !code.is_empty()));
+    let summary = detail.map_or(OPENAI_RESPONSES_STREAM_ERROR, |detail| {
+        stream_error_summary(provider, &format!("Codex error: {detail}"))
+    });
+    (code, summary)
+}
+
+fn failed_response_summary(provider: &str, codex: bool, error: Option<&Value>) -> &'static str {
+    let Some(error) = error.filter(|error| error.is_object()) else {
+        return OPENAI_RESPONSES_STREAM_ERROR;
+    };
+    let message = error["message"].as_str().unwrap_or_default();
+    if codex {
+        return stream_error_summary(provider, message);
+    }
+    let code = error["code"]
+        .as_str()
+        .filter(|code| !code.is_empty())
+        .unwrap_or("unknown");
+    stream_error_summary(provider, &format!("{code}: {message}"))
+}
+
+fn stream_error_summary(provider: &str, diagnostic: &str) -> &'static str {
+    // Only locally defined summaries reach the cause, transcript and telemetry.
+    match classify_whole_call_error(provider, diagnostic) {
+        CallErrorClassification::ContextOverflow => {
+            "openai responses stream error: context window exceeded"
+        }
+        CallErrorClassification::Quota => "openai responses stream error: quota exceeded",
+        CallErrorClassification::Transient => {
+            "openai responses stream error: upstream request failed"
+        }
+        CallErrorClassification::Terminal => OPENAI_RESPONSES_STREAM_ERROR,
     }
 }
 
@@ -769,6 +952,8 @@ pub(crate) struct ResponsesMapper {
     partial: AssistantMessage,
     requested_service_tier: Option<crate::stream::ServiceTier>,
     pub(crate) saw_done: bool,
+    defer_terminal: bool,
+    pending_terminal: Option<StopReason>,
     text_started: bool,
     text_content_index: Option<usize>,
     tool_calls: Vec<ToolCallState>,
@@ -784,6 +969,19 @@ pub(crate) struct ResponsesMapper {
 }
 
 impl ResponsesMapper {
+    pub(crate) fn decode_frame(&self, frame: &SseFrame) -> ParsedEvent {
+        ResponsesEvent::decode(
+            &frame.data,
+            &frame.event,
+            &self.partial.provider,
+            self.partial.wire,
+        )
+    }
+
+    pub(crate) fn decode_json(&self, data: &str) -> ParsedEvent {
+        ResponsesEvent::decode(data, "", &self.partial.provider, self.partial.wire)
+    }
+
     pub(crate) fn with_requested_service_tier(
         mut self,
         tier: Option<crate::stream::ServiceTier>,
@@ -792,8 +990,39 @@ impl ResponsesMapper {
         self
     }
 
+    /// Hold a successful terminal until the provider source reaches EOF.
+    ///
+    /// Pi invokes the provider observer for every item yielded by the source,
+    /// including items after `response.completed`. The HTTP adapters use this
+    /// mode so a tail observer failure cannot be hidden behind an already
+    /// published Done event.
+    pub(crate) fn with_deferred_terminal(mut self) -> Self {
+        self.defer_terminal = true;
+        self
+    }
+
+    pub(crate) fn has_pending_terminal(&self) -> bool {
+        self.pending_terminal.is_some()
+    }
+
+    /// Publish the single deferred Done after the source has reached EOF.
+    pub(crate) fn flush_pending_terminal(
+        &mut self,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if self.saw_done {
+            return Vec::new();
+        }
+        let Some(reason) = self.pending_terminal.take() else {
+            return Vec::new();
+        };
+        self.saw_done = true;
+        vec![Ok(AssistantStreamEvent::Done {
+            reason,
+            message: self.partial.clone(),
+        })]
+    }
+
     fn record_usage(&mut self, mut usage: Usage) {
-        use crate::model_info::WireApi;
         use crate::stream::ServiceTier;
         usage.effective_service_tier = match self.partial.wire {
             Some(WireApi::OpenAiCodexResponses)
@@ -875,12 +1104,26 @@ impl ResponsesMapper {
             .failure(cause.with_partial(self.partial.clone()))
     }
 
-    pub(crate) fn new(provider: &str, wire: crate::model_info::WireApi, model: &str) -> Self {
+    /// Carry the terminal's wire status on this attempt's partial result.
+    pub(crate) fn stream_failure(
+        &mut self,
+        raw_stop_reason: Option<String>,
+        summary: &'static str,
+    ) -> ProviderError {
+        self.partial.raw_stop_reason = raw_stop_reason;
+        self.failure(ProviderError::StreamError(
+            ProviderErrorSummary::attested_static(summary),
+        ))
+    }
+
+    pub(crate) fn new(provider: &str, wire: WireApi, model: &str) -> Self {
         Self {
             snapshot: crate::stream::ProducerSnapshot::default(),
             partial: empty_assistant_message(provider, wire, model),
             requested_service_tier: None,
             saw_done: false,
+            defer_terminal: false,
+            pending_terminal: None,
             text_started: false,
             text_content_index: None,
             tool_calls: Vec::new(),
@@ -895,6 +1138,16 @@ impl ResponsesMapper {
         event: ResponsesEvent,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         if self.saw_done {
+            return Vec::new();
+        }
+        if self.pending_terminal.is_some()
+            && !matches!(
+                event,
+                ResponsesEvent::Completed { .. }
+                    | ResponsesEvent::Incomplete { .. }
+                    | ResponsesEvent::Error { .. }
+            )
+        {
             return Vec::new();
         }
         match event {
@@ -1224,6 +1477,10 @@ impl ResponsesMapper {
                     self.record_usage(usage);
                 }
                 self.partial.stop_reason = StopReason::Length;
+                if self.defer_terminal {
+                    self.pending_terminal = Some(StopReason::Length);
+                    return events;
+                }
                 self.saw_done = true;
                 events.push(Ok(AssistantStreamEvent::Done {
                     reason: StopReason::Length,
@@ -1234,6 +1491,8 @@ impl ResponsesMapper {
             ResponsesEvent::Completed {
                 usage,
                 raw_stop_reason,
+                completion,
+                end_turn,
                 model,
                 id,
                 output,
@@ -1244,28 +1503,35 @@ impl ResponsesMapper {
                 // Terminal-output backfill (task 20.37) before Done: patch
                 // reasoning signatures the per-item frames omitted.
                 self.backfill_reasoning_signatures(&output);
-                for (output_index, item) in output.iter().enumerate() {
-                    if item.item_type == "custom_tool_call" {
-                        events.extend(self.process_inner(ResponsesEvent::OutputItemDone {
-                            output_index,
-                            item: item.clone(),
-                        }));
-                    } else if item.item_type == "function_call" {
-                        self.update_tool_call(output_index, item);
+                match completion {
+                    ResponseCompletion::Stop => {
+                        for (output_index, item) in output.iter().enumerate() {
+                            if item.item_type == "custom_tool_call" {
+                                events.extend(self.process_inner(ResponsesEvent::OutputItemDone {
+                                    output_index,
+                                    item: item.clone(),
+                                }));
+                            } else if item.item_type == "function_call" {
+                                self.update_tool_call(output_index, item);
+                            }
+                        }
+                        if events.iter().any(Result::is_err) {
+                            return events;
+                        }
+                        let unfinished: Vec<usize> = self
+                            .tool_calls
+                            .iter()
+                            .filter(|state| !state.ended)
+                            .map(|state| state.output_index)
+                            .collect();
+                        for output_index in unfinished {
+                            if let Some(event) = self.finish_tool_call(output_index) {
+                                events.push(Ok(event));
+                            }
+                        }
                     }
-                }
-                if events.iter().any(Result::is_err) {
-                    return events;
-                }
-                let unfinished: Vec<usize> = self
-                    .tool_calls
-                    .iter()
-                    .filter(|state| !state.ended)
-                    .map(|state| state.output_index)
-                    .collect();
-                for output_index in unfinished {
-                    if let Some(event) = self.finish_tool_call(output_index) {
-                        events.push(Ok(event));
+                    ResponseCompletion::Length | ResponseCompletion::Error(_) => {
+                        events.extend(self.end_thinking_all().into_iter().map(Ok));
                     }
                 }
                 if let Some(model) = model {
@@ -1277,34 +1543,48 @@ impl ResponsesMapper {
                 if let Some(usage) = usage {
                     self.record_usage(usage);
                 }
-                self.partial.stop_reason = if self
-                    .partial
-                    .content
-                    .iter()
-                    .any(|content| matches!(content, AssistantContent::ToolCall { .. }))
-                {
-                    StopReason::ToolUse
-                } else {
-                    StopReason::Stop
+                if let Some(end_turn) = end_turn {
+                    self.partial.diagnostics.push(AssistantDiagnostic {
+                        kind: CODEX_END_TURN_DIAGNOSTIC.into(),
+                        reason: end_turn.to_string(),
+                        detail: None,
+                    });
+                }
+                let reason = match completion {
+                    ResponseCompletion::Stop
+                        if self.partial.content.iter().any(|content| {
+                            matches!(content, AssistantContent::ToolCall { .. })
+                        }) =>
+                    {
+                        StopReason::ToolUse
+                    }
+                    ResponseCompletion::Stop => StopReason::Stop,
+                    ResponseCompletion::Length => StopReason::Length,
+                    ResponseCompletion::Error(summary) => {
+                        events.push(Err(self.failure(ProviderError::StreamError(
+                            ProviderErrorSummary::attested_static(summary),
+                        ))));
+                        return events;
+                    }
                 };
+                self.partial.stop_reason = reason;
+                if self.defer_terminal {
+                    self.pending_terminal = Some(reason);
+                    return events;
+                }
                 self.saw_done = true;
                 events.push(Ok(AssistantStreamEvent::Done {
-                    reason: self.partial.stop_reason,
+                    reason,
                     message: self.partial.clone(),
                 }));
                 events
             }
             ResponsesEvent::Error {
-                message: _,
                 raw_stop_reason,
+                summary,
             } => {
-                self.partial.raw_stop_reason = raw_stop_reason;
-                // Preserve state that did not produce a public event (usage,
-                // opaque content or signatures), alongside the typed cause.
                 self.saw_done = true;
-                vec![Err(self.failure(ProviderError::StreamError(
-                    ProviderErrorSummary::attested_static(OPENAI_RESPONSES_STREAM_ERROR),
-                )))]
+                vec![Err(self.stream_failure(raw_stop_reason, summary))]
             }
         }
     }
@@ -1633,11 +1913,7 @@ impl ResponsesMapper {
     }
 }
 
-fn empty_assistant_message(
-    provider: &str,
-    wire: crate::model_info::WireApi,
-    model: &str,
-) -> AssistantMessage {
+fn empty_assistant_message(provider: &str, wire: WireApi, model: &str) -> AssistantMessage {
     AssistantMessage {
         projection: None,
         content: Vec::new(),
@@ -1974,7 +2250,31 @@ pub(crate) fn drain_sse_frames(buffer: &mut String) -> Vec<SseFrame> {
 
 #[cfg(test)]
 mod tests {
-    use super::drain_sse_frames;
+    use super::{ParsedEvent, ResponsesEvent, ResponsesMapper, WireApi, drain_sse_frames};
+
+    #[test]
+    fn codex_terminal_normalization_is_wire_scoped_and_requires_a_response() {
+        let responses = ResponsesMapper::new("openai", WireApi::OpenAiResponses, "gpt-5.4");
+        assert!(matches!(
+            responses.decode_json(r#"{"type":"response.done","response":{"status":"completed"}}"#),
+            ParsedEvent::Valid(ResponsesEvent::Ignore)
+        ));
+        assert!(matches!(
+            responses.decode_json(r#"{"type":"response.completed","response":{"status":42}}"#),
+            ParsedEvent::Malformed { .. }
+        ));
+        assert!(matches!(
+            responses.decode_json(
+                r#"{"type":"response.completed","response":{"status":"completed","end_turn":true}}"#
+            ),
+            ParsedEvent::Valid(ResponsesEvent::Completed { end_turn: None, .. })
+        ));
+        let codex = ResponsesMapper::new("openai-codex", WireApi::OpenAiCodexResponses, "gpt-5.4");
+        assert!(matches!(
+            codex.decode_json(r#"{"type":"response.done"}"#),
+            ParsedEvent::Malformed { .. }
+        ));
+    }
 
     #[test]
     fn split_sse_frame_is_retained_until_the_blank_line_arrives() {

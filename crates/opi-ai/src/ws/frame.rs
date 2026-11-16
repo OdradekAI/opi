@@ -1,4 +1,5 @@
 //! Isolated client receive codec. No HTTP, IO, PMD inflater, or provider policy.
+#![cfg_attr(not(feature = "provider-protocol-common"), allow(dead_code))]
 //! Header storage is fixed; payload allocation follows actual supplied bytes.
 
 use std::collections::TryReserveError;
@@ -262,13 +263,17 @@ impl Decoder {
         })
     }
 
+    pub(super) fn has_incomplete_message(&self) -> bool {
+        self.header_len != 0 || self.current.is_some() || self.fragmented
+    }
+
     /// Permanent EOF. It cannot reset this owner for a different connection.
     pub(super) fn eof(&mut self) -> Result<(), Fault> {
         if self.terminal {
             return Err(Fault::Closed);
         }
         self.terminal = true;
-        if self.header_len != 0 || self.current.is_some() || self.fragmented {
+        if self.has_incomplete_message() {
             self.failed = true;
             self.body = Vec::new();
             return Err(Fault::Protocol("EOF during frame or fragmented message"));
@@ -475,6 +480,10 @@ impl Messages {
             std::str::from_utf8(&message.payload).map_err(|_| Fault::Utf8)?;
         }
         Ok(Some(message))
+    }
+
+    pub(super) fn has_incomplete_message(&self) -> bool {
+        self.pending.is_some() || self.append.is_some()
     }
 
     pub(super) fn eof(&mut self) -> Result<(), Fault> {

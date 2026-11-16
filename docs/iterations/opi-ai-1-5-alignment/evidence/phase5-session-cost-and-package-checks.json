@@ -1,0 +1,3395 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-11-13T20:29:24.360594+00:00",
+  "scope": "Current session cost contract regressions and actual packaged README/Schema consumers on Windows; not full SDK or six-gate acceptance.",
+  "head": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "runtime_behavior_change": false,
+  "source_bindings": [
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent\\tests\\session_runtime.rs",
+      "sha256": "3bca658ea8412e652cac376ba6404646a62b3c82707ef626371cebb995e6b9b8",
+      "bytes": 173132
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent\\src\\session_coordinator.rs",
+      "sha256": "a7296e52adbdef4eae2f4ef4e28d8c822be22e1f0b2594bf4877f4a6e3e9f467",
+      "bytes": 76751
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent\\README.md",
+      "sha256": "3bb0da338fa553d5dd01aaf1bee610146d04722ac8ef0f734fcd97327d7f120d",
+      "bytes": 39111
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-coding-agent\\README.zh.md",
+      "sha256": "a660ff944f6420633d6033d4c6efb2f1be03a55a4d5689dd930459964e2d98b4",
+      "bytes": 37280
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\docs\\cost-pricing.md",
+      "sha256": "3f8e1d6acdb0f9d61435b1c1ce9b32e14ebeaca6cc98d847807725a541e4b9be",
+      "bytes": 5867
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\docs\\cost-pricing.zh.md",
+      "sha256": "a3c1ea0e2bfa879fec9b9c9e2415e933a9842b0aafbcefe990d4a76d2dddf7b8",
+      "bytes": 5373
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\Cargo.toml",
+      "sha256": "4f139268a288b0f9ef42d45235c7d9d8b1851897732b77838fab355571e6b152",
+      "bytes": 6166
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\Cargo.lock",
+      "sha256": "78499c6681d06e72fc05659bc4cd18d72aae687a174c750435285838cde6dbe5",
+      "bytes": 124257
+    }
+  ],
+  "checks": [
+    {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-coding-agent",
+        "--test",
+        "session_runtime",
+        "phase14_usage_subsets_survive_session_resume",
+        "--",
+        "--exact"
+      ],
+      "outcome": "expected-red",
+      "exit": 101,
+      "passed": 0,
+      "failed": 1,
+      "log": {
+        "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-cost-contract-5ee0b5ec6bbd47e3a009754fb6069af6\\red.log",
+        "sha256": "ad0d24586ac77bd134dd08d01480dce701e55250262c72782e1b69513ba21957",
+        "bytes": 308011
+      },
+      "test_source": {
+        "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-cost-contract-5ee0b5ec6bbd47e3a009754fb6069af6\\session_runtime.rs.before",
+        "sha256": "e18a7a6725186532a7be7cb87a9f1db83e1f9b946376ae788088bc1536ceac0d",
+        "bytes": 170676
+      }
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-coding-agent",
+        "--test",
+        "session_runtime"
+      ],
+      "outcome": "pass",
+      "exit": 0,
+      "passed": 64,
+      "failed": 0,
+      "ignored": 0,
+      "log": {
+        "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-cost-contract-5ee0b5ec6bbd47e3a009754fb6069af6\\session-runtime-green.log",
+        "sha256": "b541d9aca9d74d665ff05f899afb229cc137578b18f79744e512ec386d2b025f",
+        "bytes": 311928
+      }
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-coding-agent",
+        "--lib",
+        "--test",
+        "session_runtime",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "outcome": "pass",
+      "exit": 0,
+      "log": {
+        "path": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-cost-contract-5ee0b5ec6bbd47e3a009754fb6069af6\\clippy.log",
+        "sha256": "61afa6054abcdfc67f58286425716370e418c0309ccd443c26ea7a73f374457c",
+        "bytes": 283641
+      }
+    }
+  ],
+  "package_runs": [
+    {
+      "run": "readme",
+      "receipt": {
+        "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\evidence.json",
+        "sha256": "3db501b15a9f793ec9fcaf0b1cc81f4de3c292cad0efc931b28d238022176d92",
+        "bytes": 33688
+      },
+      "archives": [
+        {
+          "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\opi-ai-0.8.3.crate",
+          "sha256": "1385e87ecc491d1590002bb6294fdfc40393f079afba671ed14d68791ad8cd68",
+          "bytes": 3254542,
+          "package": "opi-ai",
+          "matched_files": 309,
+          "matching_workspace_files": [
+            {
+              "path": "crates/opi-ai/Cargo.toml",
+              "sha256": "ea4705671e8d7b769026ae5c62e074995470ae4b65ab53f6fe96bcf837a542f5"
+            },
+            {
+              "path": "crates/opi-ai/LICENSE",
+              "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+            },
+            {
+              "path": "crates/opi-ai/NOTICE",
+              "sha256": "8cbc1535e82da35da21b705fea2007fca51226c787b21ec7fbe9a7e59a199b20"
+            },
+            {
+              "path": "crates/opi-ai/README.md",
+              "sha256": "234ec9da5588288789d504b94c9aef03daded2ad0036a7ca52dcd101e794543f"
+            },
+            {
+              "path": "crates/opi-ai/README.zh.md",
+              "sha256": "15252f25e96801d2b2b0df62c8d73de3e85ac5f1fd2cc3666ca14b90b4dead46"
+            },
+            {
+              "path": "crates/opi-ai/docs/cost-pricing.md",
+              "sha256": "3f8e1d6acdb0f9d61435b1c1ce9b32e14ebeaca6cc98d847807725a541e4b9be"
+            },
+            {
+              "path": "crates/opi-ai/docs/cost-pricing.zh.md",
+              "sha256": "a3c1ea0e2bfa879fec9b9c9e2415e933a9842b0aafbcefe990d4a76d2dddf7b8"
+            },
+            {
+              "path": "crates/opi-ai/docs/provider-auth.md",
+              "sha256": "b981217352b9b9c3e98135c2c0b22f747050d806d3602ad9c5de9cc24650fee8"
+            },
+            {
+              "path": "crates/opi-ai/docs/provider-auth.zh.md",
+              "sha256": "0a0e2fc2815310126bd44c57c600600e162cef025af647250a281b44f5b9be73"
+            },
+            {
+              "path": "crates/opi-ai/docs/providers.md",
+              "sha256": "dd31c9c80c7245dae816d352a6426bc010401ba3c40c357ae5486d5c181a1c38"
+            },
+            {
+              "path": "crates/opi-ai/docs/providers.zh.md",
+              "sha256": "992bb3451ea4d02d8c8ced895d615dc6268fe038172fdcabd92ca9cadf0d0216"
+            },
+            {
+              "path": "crates/opi-ai/docs/testing.md",
+              "sha256": "20a5ca1c98e82709e7cba6076308cb9a49663919c662c70166ed3f2d5031a8a0"
+            },
+            {
+              "path": "crates/opi-ai/docs/testing.zh.md",
+              "sha256": "838c61f8092f7f7122b3ba3beccfc8908aabfac910cc0fbb5addb8953b4b5268"
+            },
+            {
+              "path": "crates/opi-ai/docs/transport.md",
+              "sha256": "1420a7d2f11d306c982a1c1f827a3f4f6a80ddfb73afdbb159bd37ef3d335968"
+            },
+            {
+              "path": "crates/opi-ai/docs/transport.zh.md",
+              "sha256": "58966c80014a4acbc8228211a9813ef4f774b378a11620caac49d4c2d6ae3787"
+            },
+            {
+              "path": "crates/opi-ai/docs/utilities.md",
+              "sha256": "04519b06720b72762b75257d432e0be4a652f745643973392f81746a9a73e99a"
+            },
+            {
+              "path": "crates/opi-ai/docs/utilities.zh.md",
+              "sha256": "e805df161f0f594a9eb1be73791298268e0cf581d88a90790528494d5c7e0c6d"
+            },
+            {
+              "path": "crates/opi-ai/examples/lifecycle_differential.rs",
+              "sha256": "020d3ae330144ead0399fb447afceea99495ed27ba38a40b4dd4169955bbb3f0"
+            },
+            {
+              "path": "crates/opi-ai/examples/quick_start.rs",
+              "sha256": "0fcf6143fdafd66d9934e53645d3150fcc470470753d5a3d7ed128d93d1fd481"
+            },
+            {
+              "path": "crates/opi-ai/examples/quick_start_stream.rs",
+              "sha256": "83e464c8bca4e30bfcc5e43697620bb3823a99bc8035a301a1c69b62f7aa356d"
+            },
+            {
+              "path": "crates/opi-ai/examples/tool_loop.rs",
+              "sha256": "494575a7272e91d953e5c3a63b817d556c1e39be46487f4d1224d99e41d47e2a"
+            },
+            {
+              "path": "crates/opi-ai/resources/catalog/builtin/catalog.json",
+              "sha256": "ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678"
+            },
+            {
+              "path": "crates/opi-ai/resources/catalog/builtin/manifest.json",
+              "sha256": "c37e9f7caaa121d6975400a773c3a937acb44a9e2129fa75db302d7e862e44e9"
+            },
+            {
+              "path": "crates/opi-ai/src/anthropic.rs",
+              "sha256": "dab8b89d08cd1b1ba7aba5c91fd453ec664fb1a122e9b7141baae7366dd46de1"
+            },
+            {
+              "path": "crates/opi-ai/src/api/cloudflare.rs",
+              "sha256": "09a0969fda934e995d6a4771c83ef763307f6af4dfc589d4eaac515a7a173337"
+            },
+            {
+              "path": "crates/opi-ai/src/api/decisions.rs",
+              "sha256": "4b4fe00b0b94b3a3447379263f6e737234e0cc683f7defced3aa2ecc0a6da113"
+            },
+            {
+              "path": "crates/opi-ai/src/api/llama.rs",
+              "sha256": "2c551c540271c81e4381fbfda0fc0b99b03f992ddc63d9ec52a155bcc5e01b2c"
+            },
+            {
+              "path": "crates/opi-ai/src/api/openrouter_images.rs",
+              "sha256": "ba13b31027fa385d1aeeb77ad19d6e214ca37b44587830e71eb0786afad8ad38"
+            },
+            {
+              "path": "crates/opi-ai/src/api/system_one.rs",
+              "sha256": "2f1694d6fc8af0c607eabf55c1d233d496fdaa220eb2dceabb29e4b2dfb3a475"
+            },
+            {
+              "path": "crates/opi-ai/src/api.rs",
+              "sha256": "9dffa5a9d7b783682c998ec8f8530f6aa65622d652adb19bfa0b47dc1aedfc56"
+            },
+            {
+              "path": "crates/opi-ai/src/api_mapped.rs",
+              "sha256": "da87669c98b6f722079e0d694cc4d619883dc74aeae9328ec5e32b83e387a9af"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/cache.rs",
+              "sha256": "8fcc0d2df751ef05b1e480be4efbffc27f1d442ed8cede8f3a15769b9fad150e"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/executable.rs",
+              "sha256": "72ed337ecd7c9c0b5611f9ce1a00f8c149a5ef8d8b6e934977b86d85e1a07317"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/external.rs",
+              "sha256": "91166b2483d3abd7559c0086bb8eb828023978dc0a597524cdc9041605419104"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/impersonation.rs",
+              "sha256": "242e1f0a1b104c72947d7367bd75f97f556f0f45be59ff95d432287438dbf0d4"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/metadata.rs",
+              "sha256": "3dc9854b98c054c3a053411d00f30d7d15346078812ca0e2bb520a9967020ed5"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/native.rs",
+              "sha256": "ee4a688608e406e673495f1b47e192909bc85c1b27c493138c28fe47a17aad94"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/subject.rs",
+              "sha256": "dcc26ecb21404e695899385f13b75d1e6c8874f8181a1809032e7afbf53538b5"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/ambient.rs",
+              "sha256": "20eaf6e3adf1da2593636759151770c5be4fb2632b8cdf1f20d9ba9c66db75a6"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/anthropic_federation.rs",
+              "sha256": "cdfc130ea17e9db0b3ece1f36d109e63f00ac216682a48844f1752b6ab69170f"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/cache.rs",
+              "sha256": "cdd0565cf4d519b93207482e1dcda720599d2b0513b2d18c4c25ddd959333b50"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/endpoint.rs",
+              "sha256": "9a3afc171fe859843159257235812aa1dcd5d2cbec73173e55cb8218f8ef75ae"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/local.rs",
+              "sha256": "e6cc868edff9db3b5c1782e3085e1ee99d7214f898ce57f8f34435539cde6ec2"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/login.rs",
+              "sha256": "aad5627d8c990040738c5faf48bd08ebbcc382412f6404415688986af50ebe73"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/metadata.rs",
+              "sha256": "b8f4ae849eb656650dd1d92da4dd4a21a4c676b599ea2f2e5fc7b4b1f85f02c2"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/process/windows.rs",
+              "sha256": "e11ef915cf57b26b29a07ba0af146518ab85bfe2142d9ea88850befb3ec83305"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/process.rs",
+              "sha256": "564fc239de9e249d524cb40b6fc073651e561719c5985fa3b98afffcbacc2cde"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/role.rs",
+              "sha256": "f3c0cfb04be9c9ecefbaac4e7d35f065e9f6c7b7f5b2dc5756031e909ed8109c"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/source_http.rs",
+              "sha256": "c85ca4622520e755bb91e05ee04a7a33d9787a9fba01fe8e2f102b927afd897b"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/sso.rs",
+              "sha256": "f2a4bbfe7e07fb77f4139efb7d5fde75713ccd60b8575c1978d7bb7e14c2f2b1"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/web_identity.rs",
+              "sha256": "fe8c0f71bff342e1276b6caff82f828b4769f90ea9a036ab927c5a82dd8428b8"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/builtin.rs",
+              "sha256": "8d6e5957f0b34d483a3271915bc5bfe036de5123d2dd439c73843c017aa81897"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/builtin_aws.rs",
+              "sha256": "4017f7c14c83ddcae5348b825b8ea6ce3e3b70c0056c43269e1010e1e3ea947a"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/builtin_vertex.rs",
+              "sha256": "3fa0ad7fb2932548f8297c59c1579b111e4ca54d88810df269a0535b3765d7ea"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/context.rs",
+              "sha256": "0de9e13d93060b64b4ab56bcc8287f616823bb35ef3c7089fdc3b06d1000abed"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/credential.rs",
+              "sha256": "bd1b4df88061e480e8b8edac92308df521c3e8daf22f8537ebd58c827f2815ec"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/mutation.rs",
+              "sha256": "fdad6bcd7824b84927bd4f94668c755b019cdadf6d6f5a641be5cae74dcadc82"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/anthropic.rs",
+              "sha256": "2dbe09b3724d18d5be8f9a5a7bcc31e4ccb09ca03cf7950f394386f4792b144e"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/chatgpt.rs",
+              "sha256": "5de88bcdafd302e6fb4bbd74ad11668a5fdeb959ccc9ddb15846ab6ac6b659fd"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/codex.rs",
+              "sha256": "052aef0d1eac94e3d4d217477c8d82bb913e0e4b5668d2bfa0dc865ce5e0d264"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/copilot.rs",
+              "sha256": "fd3eb40f8b7862e1aca919e98604cca458dd00bca592a5635f2c2b38135a70df"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/kimi_coding.rs",
+              "sha256": "1e81bbbb2371351832f82673670704b1e3bcb6f14f379ba855ef9d2a91cd1e3b"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/meta.rs",
+              "sha256": "fb36d3e5177f4f792f5c1e2c4451d5d2d4f85624fc720cb27c1d6fa3941996ce"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/mod.rs",
+              "sha256": "f7ea6f5eb07a54601d549ef714228ab51c9d998a0819e7d96f451bee4b538bcd"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/openrouter.rs",
+              "sha256": "16a26a03a049802d9598c02db3eac796d709186063512dbd3efb5207e7189b51"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/radius.rs",
+              "sha256": "07f483d756e9ed2b00f09c072f992eecbae52cffc98a310314a8e46d300a646a"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/xai.rs",
+              "sha256": "7ba3bf84cd628e276f1b133240104ec05a4d27d5401360d4672e13782903e9cb"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth_contract.rs",
+              "sha256": "4427793945aa040ef307f28b2c7c8a93e9d671128d059648ddf2bffcc0ecab5d"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/resolver.rs",
+              "sha256": "21e4cfe38b149eb54f462cddcffbf609275d0882e6d4c43df266af5854fbbd25"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/store_oauth.rs",
+              "sha256": "ede148b6ccf172e1ffc26fc2ff75848f56cb7da03e101863b093fb7c2381a55a"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/values.rs",
+              "sha256": "b5883b161d87d9ae4088e050119214ba17c1338a68a650d6f9ecc16c11f51fe2"
+            },
+            {
+              "path": "crates/opi-ai/src/auth.rs",
+              "sha256": "b89f298dcd7425bb3e72bfd7b68a36b0ffabf9a027b63e8fc24af04955b6c5b8"
+            },
+            {
+              "path": "crates/opi-ai/src/azure_openai.rs",
+              "sha256": "e367a678f835833616fac0e4ac50d51877172b939bc265cd29582e19ebd53048"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/event_stream.rs",
+              "sha256": "8ab364a2270fa169840e85abaa37d765b6a9f0dfeff3015e95394c9d991e5748"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/mod.rs",
+              "sha256": "9f9d0812d290eb91bf65edc47050b35c1fb90a844a6036dd126fe8d76a3f6a38"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/retry.rs",
+              "sha256": "14caeeb0a11868b49dbae10609223f611b608e0f63de61a75fe20211dc2fe36c"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/sigv4.rs",
+              "sha256": "1c5f30287ce578622afeb6c3116d2d86aa8453dc9bbda71b0a13da62949619fe"
+            },
+            {
+              "path": "crates/opi-ai/src/callbacks.rs",
+              "sha256": "29189c6c2c33016ff85cc99212e2f6027f1a689624cd35952dc69b84be5df4f8"
+            },
+            {
+              "path": "crates/opi-ai/src/cancel.rs",
+              "sha256": "f23cfdcb4f78cdc2dfccf0e31c46174afbabc7cb4d78f79425fba0b7cebfd230"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/builtin.rs",
+              "sha256": "b06d48d52cfb66c3038149598e277c0a376d1fe997bd89508b3389dbcfa653d3"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/document.rs",
+              "sha256": "9018dd6248f2ceeb1cdfb96fe1a6cf46bbba05b987436a63dc8cac9ea4f69519"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/http_source.rs",
+              "sha256": "b0a45c9cb19884716fbc654769835b6d34868a152b3101b2e92b67cbc76cedfa"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/mod.rs",
+              "sha256": "335a96f2350db14fea5782df8962603b3b774f1b0706ead4735588e04203b3f9"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/openrouter.rs",
+              "sha256": "cba9e06eb073eee2dca85678cf355df1d9ac8e1d08303209219d7b91a7d1bb0c"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/source.rs",
+              "sha256": "e269a38fdd737a7c4380df10ee62350df35557a0d1aae2070daf19ae14acbd4f"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/store.rs",
+              "sha256": "12c2c00af4ea9b73e63eb58feb0210cb5cc367a5a38d506b0a8b08097ddfc84d"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/store_contract.rs",
+              "sha256": "ab2359857a813829f5f2070121cde174b194f9ce617a13e3d818f2769e8ebafb"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/values.rs",
+              "sha256": "6348c980131ceb0e398a2aa831e06f612d6261958bc91e5f1424db20aa51982d"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/wire.rs",
+              "sha256": "ac2eb697634a882462ec946091bf14f4b3060bef216244bb7cf64ef35a1ae4bb"
+            },
+            {
+              "path": "crates/opi-ai/src/classifier.rs",
+              "sha256": "bd7d4aded51a6de9da384ff6e1761e85a02e5f5f27685bc8fc458b1570da7445"
+            },
+            {
+              "path": "crates/opi-ai/src/codex_resources.rs",
+              "sha256": "bda5772be7b8d75a95037041f731767e9de3e2130b804ec68146949b64581a7d"
+            },
+            {
+              "path": "crates/opi-ai/src/constrained_sampling.rs",
+              "sha256": "3f69e7fb5aa7298fc477d7e33ce40a3df7d61ae622995e1437b531e7ed2cc6f5"
+            },
+            {
+              "path": "crates/opi-ai/src/context.rs",
+              "sha256": "800984e0b24068bd8b6d3829345a74efaba03f8593a6c1240ff298eda06b5198"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/fixtures.rs",
+              "sha256": "a49e80494451dd1867840ef220ec98d023f571d7d60a193774707a2ca8bae156"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/mod.rs",
+              "sha256": "59c3f45c154e484e4dc20c9ccd0b8453d4cfde375657d1bf3dbc0b93da8ba39c"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/admission.rs",
+              "sha256": "88580df3454630be222e8868c2f65b05ece3988c33dbc09452e9e523e451db4a"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/jwt.rs",
+              "sha256": "53e8d4e22dc6a8eed66beabf1d424fa52c5d929bc1e6affbdd449e33292e12b9"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/mod.rs",
+              "sha256": "8c21862e4bbcf4d95eb94eed134250130405864d11f37aecfd1260d87bc7f555"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/signing.rs",
+              "sha256": "d192e015bea353e6872d4779ff3090b4df990a2d12b109da3da9c4b1d27c9b56"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/worker.rs",
+              "sha256": "39c334a3295d5ef9f6f58e107e10605668d74296f237cd50f12d2aeb25b1b03b"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/verify.rs",
+              "sha256": "7ab6a2ae3f304446ede088f4568e7ffb921060e7ecdd3775516c8dc996314efa"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/worker.rs",
+              "sha256": "5254045dea97be5181b8b80936cb3706ddc9fa17b60805e89b63ac6ec31c5b3c"
+            },
+            {
+              "path": "crates/opi-ai/src/deferred.rs",
+              "sha256": "5c9a7eb220f839c7cfa7bd04d8c1849aeacc01be47e8dd2c8f98f39a23245e62"
+            },
+            {
+              "path": "crates/opi-ai/src/endpoint.rs",
+              "sha256": "c871b964e961d58ba8cea9c4bfec3d0ea58b7b0afd9f9619d278e016aea11361"
+            },
+            {
+              "path": "crates/opi-ai/src/errors/redaction.rs",
+              "sha256": "ece4fef4c67e71e870f4e978b57307f69d76d882d5192995704e4921a9625bf1"
+            },
+            {
+              "path": "crates/opi-ai/src/errors/service_fault.rs",
+              "sha256": "9683c8071249b9f78c147f6ef089bd27e8e704986597c756a5d7d927a32248e2"
+            },
+            {
+              "path": "crates/opi-ai/src/errors.rs",
+              "sha256": "67427be45151208a4af47dec547f86115b638618c7e541d82dbf1438b250d4da"
+            },
+            {
+              "path": "crates/opi-ai/src/execution.rs",
+              "sha256": "53620060c07724e5cc64cc2952f5546e340f70dd40a54df9c850e7dbefc1f072"
+            },
+            {
+              "path": "crates/opi-ai/src/gemini.rs",
+              "sha256": "3afc2b2e89b8581465c5e13d5dbc6bf1a392fc4638443f521939bd8e475b5e0d"
+            },
+            {
+              "path": "crates/opi-ai/src/http.rs",
+              "sha256": "3593b2d1ff3a7caf677c4f738835520d456246f267884b2ef06cbcb750bf3641"
+            },
+            {
+              "path": "crates/opi-ai/src/identity.rs",
+              "sha256": "5ddc204df7ffb05151211b7dfb33c195a7357a55d2986ce0c52d234c739801ca"
+            },
+            {
+              "path": "crates/opi-ai/src/images.rs",
+              "sha256": "cd9ee680913b7095dd7b42f2cca0ffb86f2ca058655c4152d404dcd655839543"
+            },
+            {
+              "path": "crates/opi-ai/src/lib.rs",
+              "sha256": "ddae2b36bff5cbc037536011d6715625d0f506d9f62e3980f2672a96eb7bbef3"
+            },
+            {
+              "path": "crates/opi-ai/src/mistral.rs",
+              "sha256": "d90053000baef069f4aa8277f7baa822c968fa1e7cec4345b19d9a4ee76a013f"
+            },
+            {
+              "path": "crates/opi-ai/src/models.rs",
+              "sha256": "4efcaa16e206031ad05406999dbcb6f43815d76e0360c43f381164563695dfce"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_chat.rs",
+              "sha256": "3f45cdabb2f0eca26f6f5e4c5af5474e7e144f537cc5ff67f07ce1411d38d431"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_codex_responses/native.rs",
+              "sha256": "3b801b83f310d7a577818a7195cc64105a57cc1c34883ef7585ee19db218cf10"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_codex_responses/ws_transport.rs",
+              "sha256": "9f77b1cf5c93a843f5bb079fac91a1120b1fd5d8d9179a866983bb8dba7e7580"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_codex_responses.rs",
+              "sha256": "2d1ba13ffa90661f8adf02311b4a56d096de2819aa4f7b2c9dd233cde59b062c"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_responses.rs",
+              "sha256": "610c33aebf41d192d6a9b0f0682caf8bd55e98159e02a5aef83501cf4c2a80fd"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_responses_shared.rs",
+              "sha256": "79e41f7d4c58d7f240b37914d4a729cb5e1c7b8fedea6af39a7e3ecde7f2917a"
+            },
+            {
+              "path": "crates/opi-ai/src/openrouter.rs",
+              "sha256": "4d03016291c319312ce49ee59c3f6461b844accd6ff583480512d98ec4bd8f74"
+            },
+            {
+              "path": "crates/opi-ai/src/pi_messages.rs",
+              "sha256": "d10ca7e449cb2afcd0a840f8b4d38a949c70ad879188b2f6d7d324d7ff29a834"
+            },
+            {
+              "path": "crates/opi-ai/src/provider.rs",
+              "sha256": "fd3957d84f9b00f7a79c96d233d046d99f8a254dd83dfdc5e1b023f069a1ea65"
+            },
+            {
+              "path": "crates/opi-ai/src/provider_collection.rs",
+              "sha256": "fce9b8186f864933ce0cf54e30a1c9612625845c7e3419ca05ffc7fecf51de32"
+            },
+            {
+              "path": "crates/opi-ai/src/provider_env.rs",
+              "sha256": "7398bb718b503fd4f93fb4ac08129d93f82667662a9a441e50cefd97ad8f6b71"
+            },
+            {
+              "path": "crates/opi-ai/src/provider_headers.rs",
+              "sha256": "5f10eec9b741ec62068304efd55dc74ee675c6aeb78b7541f34f4d4fd18f599e"
+            },
+            {
+              "path": "crates/opi-ai/src/providers/mod.rs",
+              "sha256": "a8ca80084bb44e4910c8c72a98fd2ea4fc223e3291b83fe22772621652e6142f"
+            },
+            {
+              "path": "crates/opi-ai/src/registry.rs",
+              "sha256": "a9a81c2703d10d1f55c8529b41c0f1acb2c8ad31b7bb31ac67ebd041dfb8b7aa"
+            },
+            {
+              "path": "crates/opi-ai/src/replay.rs",
+              "sha256": "2848fc21568e1ec65ef015eb9cf320a0a3de861c4b6223a2259d690f1e0223b0"
+            },
+            {
+              "path": "crates/opi-ai/src/retry.rs",
+              "sha256": "7a9e308962ca7a6a4c4e2e8c3fab08ba397c9f3c623a9e0bf1feb0422e276fee"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/admission.rs",
+              "sha256": "adba8bcfa77a5852db9ec52a915906430443496c870ee765150844f6f998fd8e"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/ecma_number.rs",
+              "sha256": "bcbbcfde7b56062a89b7e810f0504690b2dc4d19aeeb55add065f2eb71b88a64"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/eval.rs",
+              "sha256": "60ae4e2aa91e85b28f3f5281fda05f9feb77a87729467ec586e7fb95e716fa75"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/format_patterns.rs",
+              "sha256": "50ca0dd075df5303140178b88bbef684980d7fd41606a925be90ed38bd155c06"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/formats.rs",
+              "sha256": "a7f00daf4f9da0a47e76ff48db1351204d8c5900cbe03a56b9915b4bd547ee6c"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/grapheme.rs",
+              "sha256": "dbd5da5dfd11e9c9b2fd878448fd14ade80e8c9dd06ea0b10880d7d1900aacde"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/guards.rs",
+              "sha256": "f9dbf667677fa3d3aa36a19ced7dde1cd1bfe02af943f7103ed854e21fe5a452"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/hashing.rs",
+              "sha256": "50b2e11f5f0b4d3a3293fe82c1cbfecdba3a4bbc3f783ffb87034e577cde10d7"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/ir.rs",
+              "sha256": "c4aee8ca7342ad8c31647b5de66a55bc18ec8d0d85cf87f17f302c63411a9ebe"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/js.rs",
+              "sha256": "3af39d356d312550aaf07f9e2d6885a5204fcacb4c2eba1ef2a11947dac12842"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/mod.rs",
+              "sha256": "816f780293f0426f0e063fae63111baf6a050d60999d99c1bad52be204d8af70"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/normalize.rs",
+              "sha256": "54ffa72432c5392caeddde81ab036144f2a119b12b1962d5faffcb2f2328a83f"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/proof.rs",
+              "sha256": "16dd4587878f1ce69e3855ede1f67d2973dde3fbe4c798e78655da26ec4680ac"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/pump.rs",
+              "sha256": "f173ddd332d1dbadd439241ae9ca6825fc780cc879c89c6ef57d020563ccb046"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/punycode.rs",
+              "sha256": "47865203882d96b7e141a944b4ac57b366e60cf49b4702e9f468fc49b0b83c7c"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/refs.rs",
+              "sha256": "44ddac33def9aac2561fda73971682d110a051294fc0abf3f8d2d1c0a01f2613"
+            },
+            {
+              "path": "crates/opi-ai/src/stream.rs",
+              "sha256": "99174e6e895cc55575c3a0da7164ee51e27288f70629b9116fed218fefe392f4"
+            },
+            {
+              "path": "crates/opi-ai/src/telemetry.rs",
+              "sha256": "a0553b42413f0cccc29d9da04181338b08977a78ba65a570eb8f0f4f9ddf68a3"
+            },
+            {
+              "path": "crates/opi-ai/src/test_support.rs",
+              "sha256": "29865e2416701ac5bdde68a5df9c4c820a230d91c20f48854677f73aff158a0e"
+            },
+            {
+              "path": "crates/opi-ai/src/text_decode.rs",
+              "sha256": "12a9eee7da5b68d20884549bcf7a97f9b2d5668f9ded2cf93a3a6ae7047a588e"
+            },
+            {
+              "path": "crates/opi-ai/src/time.rs",
+              "sha256": "a669a598ba3add7822111b1c54051ebcc4aaf7f02854431afe0e760de80d80aa"
+            },
+            {
+              "path": "crates/opi-ai/src/tls/mod.rs",
+              "sha256": "ba96a12a89ae10faeefc42385d37277eefee10bbc1a406e7ad0e22ad029b3090"
+            },
+            {
+              "path": "crates/opi-ai/src/tls/node_trust.rs",
+              "sha256": "185e4485809139c2d574d5fa377e6aeea91d82b204cc460e82f6e1e7b4e514d9"
+            },
+            {
+              "path": "crates/opi-ai/src/transcript.rs",
+              "sha256": "233f176479b37c02b277621c4291c56a863aa3c01bc06e7edfb42dfcdea2157f"
+            },
+            {
+              "path": "crates/opi-ai/src/types/catalog.rs",
+              "sha256": "66c2bbd3a29aacb4f626a001e37fbd4a4e2a5f475a0dd8ad2dc590f61a59ff69"
+            },
+            {
+              "path": "crates/opi-ai/src/types/chat.rs",
+              "sha256": "e480bce914d0ab0d19957ff95eaa201f5be3fd010d58465b57da21a23cdcabd7"
+            },
+            {
+              "path": "crates/opi-ai/src/types/classifier.rs",
+              "sha256": "19185349edde11ab5e80fe81cac7d7d1de56a4b8399b131149e79bbfc1add0d6"
+            },
+            {
+              "path": "crates/opi-ai/src/types/deferred.rs",
+              "sha256": "bef77dbab66b581a632183f1f6eccfca17d50906cf3d1c875f36b2215bd9e9b9"
+            },
+            {
+              "path": "crates/opi-ai/src/types/headers.rs",
+              "sha256": "941381db966bd67123cf971c2d58f80b135484edd75331bb2152093c2237b563"
+            },
+            {
+              "path": "crates/opi-ai/src/types/identity.rs",
+              "sha256": "26ee72480f84dfe7c948d2bc1d906f8c174d4abd80e2a3918a6b8b85554d026d"
+            },
+            {
+              "path": "crates/opi-ai/src/types/images.rs",
+              "sha256": "ffff70792d20570b28ee21b2f76587ebcd35c4bda124dd7dc7e5fef71652e29f"
+            },
+            {
+              "path": "crates/opi-ai/src/types/message.rs",
+              "sha256": "d500c1fd9b4fbacfafb2d782ce0a41a69d859366b963506ba721a894e5496aa7"
+            },
+            {
+              "path": "crates/opi-ai/src/types/mod.rs",
+              "sha256": "d129c042c4d0f437888528c828be66629edf81495e91d584219c81f1d555eba6"
+            },
+            {
+              "path": "crates/opi-ai/src/types/model.rs",
+              "sha256": "c48c8029edd1fc8abc11bbb257b369919229d6b6bf679676cdc5b506b4a98044"
+            },
+            {
+              "path": "crates/opi-ai/src/types/replay.rs",
+              "sha256": "d4c1b82590a10ae39bb83739c1abc2fd51f2d3c6a37198adca7f058627177b6d"
+            },
+            {
+              "path": "crates/opi-ai/src/types/tools.rs",
+              "sha256": "e30c23f5b1ece48cdf5da868d50c3a1d749a844aa9301edffdf2f8f4f751b9e3"
+            },
+            {
+              "path": "crates/opi-ai/src/types/transcript.rs",
+              "sha256": "4f46f66892b2e2926cd6e9faedb1a25dcb422073364cae32aecd49f45b9c905f"
+            },
+            {
+              "path": "crates/opi-ai/src/types/usage.rs",
+              "sha256": "4ff24daf390a809d1b441222f046c20b82999e49116e6f5d2c71fed28c8c91f1"
+            },
+            {
+              "path": "crates/opi-ai/src/vertex.rs",
+              "sha256": "54bee130a52166e38510e3f74ff52f6784cf05dfde44f153b736a7beaf66373c"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/frame.rs",
+              "sha256": "f3337d624c6d680a42a79a73c52f885cbf38745bb8ac84966fe24496d005b5bf"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/io.rs",
+              "sha256": "3c2f5911ad7145d7bb8a7ef222bc9a8ae05ac9298cdf5b3ebec10ac5d1478ca7"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/pmd.rs",
+              "sha256": "594aa045edcca66d8c8d60ddb886da0b58a090aa1d136aaf8420ec3710a535bf"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/boundary.rs",
+              "sha256": "5babd6d8e5683a99e0a07bfd46326eaeca2f33601a1217fb2d2407a403ec64ce"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/close.rs",
+              "sha256": "73a5d5a791681e7aea5f0cba58da81958941ced7aa539da60907bb02763cfbe3"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/deflate_audit.rs",
+              "sha256": "be3bedcd5c6f31de9ba6ce5c36e60b3f1865ae713b7691b93f8619c62d10bbfb"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/boundary-expectations.json",
+              "sha256": "901d7df084b6fa2236e5e2acb9ea877ee84dfbb2fb27690248f4980bf865e2e4"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/boundary-seeds.json",
+              "sha256": "929af9406b2eeaf76ec6bb676a58a123803abbcd3424a87c3fabe38d1461355f"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/extract-boundary-fixtures.py",
+              "sha256": "9147224efc0883afff60aecbe1a7f3c81bee2b56130e47e957bdfb46d38d1712"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/memory-codec-cases.json",
+              "sha256": "93e6c9d160d40d5b8a7f6754fc961e25f418276b4745a83c21572e4965bdfa62"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/pmd-context-fixtures.json",
+              "sha256": "a883f8c8e147f7d197bf53065f55ee8f2bd6ea05ac62f33c6c3d5f66a5f5d4d7"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/python-pmd-fixtures.json",
+              "sha256": "a310ddb24f11a227f881064e042a1f098629ac9afe6b3e2bc068bdd772026df2"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/frame.rs",
+              "sha256": "4a3924b54ec7cf4e938e1010e975d5fc863ae18b0e27220d6f125c4fb32a5428"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/gaps.rs",
+              "sha256": "bd714cf7076cf93da2c81be6ad318dae769f7632571783d9017c2d3a8b5567b8"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/io.rs",
+              "sha256": "074256806acbcf43009b961442acf03a2ae1d2c4ff5f809dce17d2cb165cf63e"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/logical_cancel_probe.rs",
+              "sha256": "7c8d86bf8fc6ffdca24b95b4c7c266b058747b8cdce3594212c18dd8ba242ec2"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/mod.rs",
+              "sha256": "75d7132276d574fb0048e06fa2749a72e7ce70026502883b4377066da9a275ac"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/packaged_cases.rs",
+              "sha256": "dbfd6c75692888971b2f4c5d5b148a52541e5c69f7fb02f91a8211a558a01dfc"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/pmd.rs",
+              "sha256": "559c6c2415ca650c7538bec81cb80f858168e6cefb23658e1eefeb98ec345d1a"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/pmd_async.rs",
+              "sha256": "3dde5a69ab8c83e0b2d58fdf7a7a7bbe72369fc3e8058f732e3bf789e7777c47"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/pmd_red.rs",
+              "sha256": "a0eab63ced1a50ba2c39ce5996389dbfd31b449249d59ce02a5c095886160cb5"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/replay.rs",
+              "sha256": "2ba529356508b836124ca9aca28a54b002aee9ffcb3cf78bc79f36efce6eb14b"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/upgrade.rs",
+              "sha256": "0cf91ada8936e9a851d0a84eb63c7198a3937c9a47968a0f4ff15c9ca3d11812"
+            },
+            {
+              "path": "crates/opi-ai/src/ws.rs",
+              "sha256": "c7f416ce886a590fd752ca8113c1fe7f1e7a0536497b3daa028bb95ebbca0254"
+            },
+            {
+              "path": "crates/opi-ai/tests/README.md",
+              "sha256": "ed9294489ee6762872250260e9ad5551c436213b5261a38e392f284690b572e4"
+            },
+            {
+              "path": "crates/opi-ai/tests/README.zh.md",
+              "sha256": "724cbd55b0b96ca8b79086ed15e69e13d3754f6f54155bb9fe51531eb8a5cbf7"
+            },
+            {
+              "path": "crates/opi-ai/tests/adc_owner_regressions.rs",
+              "sha256": "6d2366e71653ff38180456618d61d31009b93e844140ddb749b5554b06b4c8c1"
+            },
+            {
+              "path": "crates/opi-ai/tests/ai_telemetry.rs",
+              "sha256": "f50aa72bf194cee457c0d89e35db150ccbee1d3ce73a59579fc278131784f8c7"
+            },
+            {
+              "path": "crates/opi-ai/tests/anthropic_fixtures.rs",
+              "sha256": "6042e52955fc22368d41413c857a0f74f072ea879da5d7a7ae26b7062c9c17ea"
+            },
+            {
+              "path": "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+              "sha256": "10cedf35d01f265041e9873bb2b3467635379b31961ae70c90573ead91ccebc3"
+            },
+            {
+              "path": "crates/opi-ai/tests/api_mapped_provider.rs",
+              "sha256": "0e7815045d2b720e9fd2d37da61e52bc92a721c00df383cdea50897c44440de6"
+            },
+            {
+              "path": "crates/opi-ai/tests/auth_contracts.rs",
+              "sha256": "9f4fd99d188a22a6dc7f3e1810f2e919e2506c377be2e85175466cad98b53c5d"
+            },
+            {
+              "path": "crates/opi-ai/tests/auth_process_lifecycle.rs",
+              "sha256": "9288070bfe8de2062a35c236a2ce20bdd577f7296605f4a5f37bacbd14781215"
+            },
+            {
+              "path": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+              "sha256": "30591a3b7eb085f0699fb882d3af3a1a7af47dac93924b65f7d0b5e83dacd655"
+            },
+            {
+              "path": "crates/opi-ai/tests/bedrock_fixtures.rs",
+              "sha256": "d43850690f6779b6f2aa0cf37878a51e31e762c9c97ced79d6d2c354bf1e8ab8"
+            },
+            {
+              "path": "crates/opi-ai/tests/builtin_auth_ownership.rs",
+              "sha256": "ced383571beb4b03341bf99000d286fc86871f043368e88c5cf76d05935c4527"
+            },
+            {
+              "path": "crates/opi-ai/tests/builtin_native_scoped.rs",
+              "sha256": "6c470fc5cb97c8a0a1878949065f036dbd1c3d351028fcaece183dd3090f5034"
+            },
+            {
+              "path": "crates/opi-ai/tests/builtin_scoped_env.rs",
+              "sha256": "3f402a1198adbcde23bb9e6e740b498fd78775e3ebc9c5329e4878fa80697066"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_artifact.rs",
+              "sha256": "cb7fcaebbffb082b01531fa73e7820de3ad553da2242a8e7d7a993576b00ed1c"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_lifecycle.rs",
+              "sha256": "3e3d20a56683f592a1f961cf0da6527b95f8fbee505b6888fe5742ff61ce980a"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_operations.rs",
+              "sha256": "c77543c4510e77b1351f51037aaf3fa5ce7352bf1b4427b0003e64c92c1f4101"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_personalization.rs",
+              "sha256": "3e1280f7c20eba96dbd16fe66b1767208e293dcb2fb7b8258a11a4433b3a13b2"
+            },
+            {
+              "path": "crates/opi-ai/tests/chat_capture_replay.rs",
+              "sha256": "045a0b58b6ad52053a742533c8f252066fb252439b6c75c5f8eecf210923ac27"
+            },
+            {
+              "path": "crates/opi-ai/tests/chat_pi_messages.rs",
+              "sha256": "c8aa90608b4fb6d2ed5d258d2cf184018b4d07f392b159302f227446dd2fdc51"
+            },
+            {
+              "path": "crates/opi-ai/tests/classifier_contract.rs",
+              "sha256": "120d4cbe6cc9bc20cee97caf13882162cc39b346006cb6e81ca577db7d74c01b"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_native_options/deadlines.rs",
+              "sha256": "f9951738a5a55bcfd1bf8a3baeb185a9de28ef8668a71d04ca9ec1d732a4ee5d"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_native_options/lifetimes.rs",
+              "sha256": "6fc2aff5f726d9e4f422d4923424d6ec464217473716817ff418755db38aa7a2"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_native_options.rs",
+              "sha256": "8b664346ce448063db3e4121675cbbd76b7e93445d1e543eb7bd7ceccd9c8194"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_telemetry.rs",
+              "sha256": "147130bbf0acbfdfcfb935ec37fb1700ccf7eeb460b8fde6c88475cf6d4990e4"
+            },
+            {
+              "path": "crates/opi-ai/tests/connection_pooling.rs",
+              "sha256": "eca11b16b2806c82338511e4a9b18a085c2cb40c6cc7aedbd6f7433c51828736"
+            },
+            {
+              "path": "crates/opi-ai/tests/context_budget.rs",
+              "sha256": "925f23a4551bf0bb504b1b76f3f77cec191daeb49d1226993e02c89481631622"
+            },
+            {
+              "path": "crates/opi-ai/tests/custom_provider_registration.rs",
+              "sha256": "e4b8a8192a7fe7a82b2f5b57ad9e69f277651acd469f2b96f6a8ce32797425f3"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-connection-limit.json",
+              "sha256": "35a5149b770a05769e36e0f4b786ea6164290db2008869d37641a67086a4e43a"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-failed-recovery.json",
+              "sha256": "0e2d7aaab09e6ca80541298fe7f4a58fb54ef37fb3c12498cb56a805097bf5a7"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-terminal.json",
+              "sha256": "eae16d6c39b28621d6a7de96edf8a256837b43ae7da2bec6c36a5a9a91fc8fad"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-websocket-identity.json",
+              "sha256": "109be4014426242b07c38943f7df0a1f58f9133b798ec48cf5f61d9a1b086a07"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-websocket-idle-timeout.json",
+              "sha256": "d10dc187449f740169ceeb2a6bdac4ade70e71facfbd4450f7a2184888ae7655"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-websocket-idle.json",
+              "sha256": "3b2b2d8146386892dc6954c71c091d019278655dadbebeb4f8d858f2b0292a20"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/openai-chat-interleaved.sse",
+              "sha256": "9efaeed49e406cae08fea80898f3009442bc6104d2c856fdd36fbfd81fd568a3"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/openai-chat-output-limits.json",
+              "sha256": "508da63289c54914eb4cbd53d8f6c6d02f907ad67e501187e0c71229f7f164f6"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/partial-aliases.sse",
+              "sha256": "1d3ae42967ef25bcfb9eebc476a4eb4f51390be146e34d17f0723609e089a2e5"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/responses-error.json",
+              "sha256": "84be5049df33a7e2f04c66416fc004fdc5185a75952e7af0b0aaafa34e77c6df"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/responses-failed.json",
+              "sha256": "41c2afe242e30749c35021080c5d6335fb071f936fbf9d8f64550fdbd11390fd"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/schema-cases.jsonl",
+              "sha256": "e0cd5ace2c1d385b425b0c8a53a55909e6be43c0328872928c859bee92d56329"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/schema-expected.json",
+              "sha256": "8f98d8e0ad0bc149b7b644d17fda97944ef20063b62096ffde9053a87c7e5f8f"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/schema-public-expected.json",
+              "sha256": "1a46d2e1f3aa00f687021a139fc4e1f01e19e573597dd2bde7cf2b5cdedc0a52"
+            },
+            {
+              "path": "crates/opi-ai/tests/deferred_contract.rs",
+              "sha256": "402acc886c56ae3e9c9539cac4a7f032fc59328d9182de3bcde9266b84feb452"
+            },
+            {
+              "path": "crates/opi-ai/tests/execution_lifecycle.rs",
+              "sha256": "5520880514be2035259debb66937dc6dc092748c0faf42fd1571dff6fb32b5aa"
+            },
+            {
+              "path": "crates/opi-ai/tests/external_sdk.rs",
+              "sha256": "83a59976cede8cb2b1b98987e88f7468bfb5e0e686290c5f46daed0fc6cce4a8"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/ca.pem",
+              "sha256": "3125eaa1a87a05b27ae7a90006a28c6fbc42adca4078eb3789a343924fe90e7c"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/client-leaf.key",
+              "sha256": "504a12095d629d779052f79c8b8ca647963d3193cfe0901f9f39730fbf1452b3"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/client-leaf.pem",
+              "sha256": "08b9c9ec86d174013b8c86d2bd3a45c58ef932f9b3f6ef060a85db24adaed000"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/other-leaf.pem",
+              "sha256": "02949167ea7db837f2358e1420688b176e5b0279ec11f519971bb11f53219e34"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/server.key",
+              "sha256": "58337f7bf4f7707a177060ec9930d3ab5c0b189ff44ecdb58d2cedaeb65aaa8d"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/server.pem",
+              "sha256": "1e8364691a64c9cf270c232bea57f4f2b0fb0c642901350a3d8b22cf716687cd"
+            },
+            {
+              "path": "crates/opi-ai/tests/gemini_fixtures.rs",
+              "sha256": "7237b7028a070dc86c6b5490c3d49e309fb6bff142d006b0c531dcbe5f7f602c"
+            },
+            {
+              "path": "crates/opi-ai/tests/gemini_lifecycle.rs",
+              "sha256": "ab0fa5995197671959c9f9ee0452a10ca5cc6ff7a046855189f4d673de23773c"
+            },
+            {
+              "path": "crates/opi-ai/tests/http_acceptance.rs",
+              "sha256": "07927041db446df96751241ebad060c07289c9de4e4693f2f21239f42059c05a"
+            },
+            {
+              "path": "crates/opi-ai/tests/image_input.rs",
+              "sha256": "889696798fd6c56fcae0429b0c9da30b7fc4f13cdaaa3a1024e50c7ce6333f2d"
+            },
+            {
+              "path": "crates/opi-ai/tests/image_provider_serialization.rs",
+              "sha256": "0ef141e4f7388948c9a119af2425005b683aaf8692ac810cf09972bcb0130729"
+            },
+            {
+              "path": "crates/opi-ai/tests/mistral_fixtures.rs",
+              "sha256": "663ff89b13de70e51bd5ad2589a568e27985c0db4106b2cec260eda9a612a7a6"
+            },
+            {
+              "path": "crates/opi-ai/tests/model_capabilities_migration.rs",
+              "sha256": "1bf339cd49338348f49637342851f062961357e36cd84bf83454f595fd8ba7f0"
+            },
+            {
+              "path": "crates/opi-ai/tests/model_wire_metadata.rs",
+              "sha256": "4ae1d67a5261bf9d46d5feceb2fce86f55f3bf3a4adc0d9a7627b11bf3e858ac"
+            },
+            {
+              "path": "crates/opi-ai/tests/node4_preparation.rs",
+              "sha256": "d73034b18ed960ec88217aa242d22ee3478e0b68f282c065d6236ffed6c80f10"
+            },
+            {
+              "path": "crates/opi-ai/tests/oauth_flows.rs",
+              "sha256": "7da4e83bff17b827747e62dc66ad56891c7e86b64763f3abcd2015ccb09ce7db"
+            },
+            {
+              "path": "crates/opi-ai/tests/oauth_store_integration.rs",
+              "sha256": "28433030baeda41688f7eaf970047c8a52e08e786e5eba96a5cfc20fbf0ba307"
+            },
+            {
+              "path": "crates/opi-ai/tests/oauth_wire_shape.rs",
+              "sha256": "df8936bf09dc46c1ba27f5595d167e111a72f8df33e50effcafdf90dfae6423f"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+              "sha256": "74b6524912e97af9f319fd6904796a46c1f82d74b56fcd9938b74a2015c697e4"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_chat_interleaved.rs",
+              "sha256": "0bf3d7ad06b64d87b83799185835be3c37fb1e5a8db7a3a82045e776f853580b"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_chat_output_limits.rs",
+              "sha256": "0f0a24cdcc52a0e2227b20a8d26df570d1ccae4c609c15b1216430621e661a1a"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/deflate_audit.rs",
+              "sha256": "9abe47caeebca1013d138f0c78fb0f69611e089bb2014f5a076ce6b3307cf798"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+              "sha256": "fbef1b7aee28a65e5a1ba6df4f1bc9a856e9e3141d740b38c9f25965bf74d513"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/session_fallback_cleanup.rs",
+              "sha256": "0bd37fa9f68e39c6c6d13b48c07284a6355b2132793386e8db7d3cbc47316744"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/terminal.rs",
+              "sha256": "ae5878bb6bf77407d8c150d97b5527e45de14fa8eb7f87787b3542312e1d8b55"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/websocket_idle.rs",
+              "sha256": "fd65d3d56e1c0c0e86a134e00d877ad6859eefab5379327a6c40de8338fd335c"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/websocket_idle_timeout.rs",
+              "sha256": "240960d0a57acb032a7d9d79fcdbefd1dd33b8191c927f59e76dee25619b4f89"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses.rs",
+              "sha256": "455cca540e3030f1f7fa2f697cfeaf7c25c56fd1f9968a4106ccd48a5b729702"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_compat_lifecycle.rs",
+              "sha256": "4fd20030ae643d7c762bb55d537026d7b88a2fa2369c96ccb832e43a3afd75c2"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+              "sha256": "757797306dd9f61cbeac4518bc5e42f46d81f31cace99e5532cef248dcd61261"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+              "sha256": "39fcf6982c9ba0afa97f5a2f81cc1d2e2b371a85d6de4b59810bf277abc0f377"
+            },
+            {
+              "path": "crates/opi-ai/tests/openrouter_cost.rs",
+              "sha256": "43278ed667cbc661f5bda81a93b3bff71b6f9508e03ad6fc32674e748ad3ac0c"
+            },
+            {
+              "path": "crates/opi-ai/tests/openrouter_fixtures.rs",
+              "sha256": "8a206468786615d87de1ac36649957df502f5329c8650abd2148df45d5e43056"
+            },
+            {
+              "path": "crates/opi-ai/tests/output_content_image.rs",
+              "sha256": "18ec32aea1e444fb8f4d68df3b2c46f15d618690750da45426dc26f9b81cffb4"
+            },
+            {
+              "path": "crates/opi-ai/tests/partial_aliases.rs",
+              "sha256": "8df310b361948878415c561071105c9876b0e53eec808db4e61f2c965f67c5d9"
+            },
+            {
+              "path": "crates/opi-ai/tests/per_request_auth.rs",
+              "sha256": "843abc6fea970d7d74afa3852e124beb9c6204054bdb3d7ce5afcaecb01c8b10"
+            },
+            {
+              "path": "crates/opi-ai/tests/platform_delivery.rs",
+              "sha256": "95a1e8e695fb04eac20ffb34b4adf7d273a993772a703f47b7850d38ffead0df"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_collection.rs",
+              "sha256": "8cb9e540f54250d789a81b2901ab9a5380a080961274d1047665d5fece8e872b"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_diagnostics.rs",
+              "sha256": "b1da86b857e36f8579d6e95c8980f3298eedc659ddb7e3a05b17601dc7f3bf28"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_error_classes.rs",
+              "sha256": "80d14bebc794c935d04c98c4b089f08055bb1cd77b7e7322d76ab8e5b49f2198"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_lifecycle.rs",
+              "sha256": "fb56a02864322ea36b7a1bf92d146e7729166ad9ddfaa53cb9a61954d917f2be"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_trait.rs",
+              "sha256": "4d1e3a8a687485b8698fa61bd171314ee4480a401bf68bff3853aae1a22daa87"
+            },
+            {
+              "path": "crates/opi-ai/tests/proxy_support.rs",
+              "sha256": "31ceed3919c436d99ec47b9d8f5916383b63a53cbe2ca907f3ac11b7bbe41b6d"
+            },
+            {
+              "path": "crates/opi-ai/tests/public_utilities.rs",
+              "sha256": "1b478408c59e07f28e508b67e6ac079806d434081a92eceb3de83f421912ac97"
+            },
+            {
+              "path": "crates/opi-ai/tests/registry.rs",
+              "sha256": "620e57ee744c82e832f9a46d9a6c2e1d3284b20f7fd13f0f49963c3e43709b09"
+            },
+            {
+              "path": "crates/opi-ai/tests/replay_contract/object_wire.rs",
+              "sha256": "821811d68453f4ab93b141bca94553e00ab07367f38936a5f1d026098054c360"
+            },
+            {
+              "path": "crates/opi-ai/tests/replay_contract.rs",
+              "sha256": "1fe960ece25282857450f7b24bf299cf3d5eb21a0194cee05958c8d10bd3ea4d"
+            },
+            {
+              "path": "crates/opi-ai/tests/request_enrichment.rs",
+              "sha256": "9ea3cd9d8826ab8ec5eeb2827885f61cd9072d36d2021a7335d72eb90fc7fa29"
+            },
+            {
+              "path": "crates/opi-ai/tests/resource_cleanup.rs",
+              "sha256": "b28046fcf05726d7ae0b871ce70f3d8890e14f216a0c75580fe36f5456e5c4a7"
+            },
+            {
+              "path": "crates/opi-ai/tests/retry_backoff.rs",
+              "sha256": "7f5fd6c7e7065c00fab511145c4a41e4d56b4380c4e4b30171439bdc900ddc5d"
+            },
+            {
+              "path": "crates/opi-ai/tests/schema_engine.rs",
+              "sha256": "03c44f1d11da122d1566b37a74dbc44cab18f84ac51292646e02c6983873bb87"
+            },
+            {
+              "path": "crates/opi-ai/tests/schema_public.rs",
+              "sha256": "ec659724ee84e1643fe166f2c578ff509a9475f93d3a0248ab2c8780a1cf29ac"
+            },
+            {
+              "path": "crates/opi-ai/tests/service_tier_cost.rs",
+              "sha256": "45c818e4ea4b43515e19c737b1a81de83b540bef9f3900b9330457a870899c20"
+            },
+            {
+              "path": "crates/opi-ai/tests/stream_events.rs",
+              "sha256": "e324445470f698827c4172b670a7407ce202776fd40b3852184f33f95f9c0fbb"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/catalog_store.rs",
+              "sha256": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/pending_auth.rs",
+              "sha256": "3e213329091e66a5a79f8691744de66bde68ba8326d48b8cdc01e289f81a101e"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/tls_fixtures.rs",
+              "sha256": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/ws_peer.rs",
+              "sha256": "a4efab5bb1b8b388683240ee2d74a14120fa92c8f080742ce2e61f2955456329"
+            },
+            {
+              "path": "crates/opi-ai/tests/telemetry_carrier.rs",
+              "sha256": "b46f4f85f3b7ae8b862c652862ca6cfbd16094248878edbc184110ce8d1723a3"
+            },
+            {
+              "path": "crates/opi-ai/tests/telemetry_operations.rs",
+              "sha256": "31851d9f1d695818451094f596c68f378388047dfd7ed45d50fa92cc3b631c1e"
+            },
+            {
+              "path": "crates/opi-ai/tests/test_support_tests.rs",
+              "sha256": "c51ce53fd82954d6dac35fa9affe2b3f1d8f86644446b4fcb76d489c63fe7a2e"
+            },
+            {
+              "path": "crates/opi-ai/tests/tls_contract.rs",
+              "sha256": "eac6a06be00fe7d06c44b8d93fc7cb976e91f16af3fe19ed3502257eb110b04a"
+            },
+            {
+              "path": "crates/opi-ai/tests/tool_result_no_leak.rs",
+              "sha256": "a583d47b6d961b82cb51103796c0c619e0f59ae6638ee83b22488a872e70acf1"
+            },
+            {
+              "path": "crates/opi-ai/tests/tool_result_wire.rs",
+              "sha256": "86d960d90110d7333b9d7edd919d4dfa0152038ef48dc571b17606ac1f1d1e21"
+            },
+            {
+              "path": "crates/opi-ai/tests/transcript_contract/provider_projection.rs",
+              "sha256": "8e193591ed4a953a5d1e01f8d75e855028922496d2d12bbacdeb53f7dc6ea341"
+            },
+            {
+              "path": "crates/opi-ai/tests/transcript_contract.rs",
+              "sha256": "ddcd4810b374ff294971fef3a39f18639bc8893b676b07482577e2c2a39d1cb6"
+            },
+            {
+              "path": "crates/opi-ai/tests/usage_cost.rs",
+              "sha256": "90bcb760d5ad442795956c75e0a2b7299bf75479b1a4cdfe87542cb54e1455da"
+            },
+            {
+              "path": "crates/opi-ai/tests/vertex_fixtures.rs",
+              "sha256": "def51b4a5f1c896ac05733c41b931e3904c0d3d1a3ca3788daa10ea853558a0c"
+            },
+            {
+              "path": "crates/opi-ai/tests/whole_call_retry.rs",
+              "sha256": "6bf156727912fb3ac050b3cecb50556dca1f0d32a606accf67c169729b22aabe"
+            },
+            {
+              "path": "crates/opi-ai/tests/ws_upgrade.rs",
+              "sha256": "37e1370b02ad0776f70e29080ff6ac5661459e18182eebfc3174b19735cf7625"
+            }
+          ],
+          "cargo_generated_files": [
+            ".cargo_vcs_info.json",
+            "Cargo.lock",
+            "Cargo.toml"
+          ]
+        },
+        {
+          "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\opi-telemetry-0.8.3.crate",
+          "sha256": "54ffe66285c677661c4f64991b53fa580f69fe8f0a9e370588bc6af285d2fd7a",
+          "bytes": 21933,
+          "package": "opi-telemetry",
+          "matched_files": 17,
+          "matching_workspace_files": [
+            {
+              "path": "crates/opi-telemetry/Cargo.toml",
+              "sha256": "2bce94982f0a30767e4141538026ed9c06272318785784f0c7a40b58b41f8018"
+            },
+            {
+              "path": "crates/opi-telemetry/LICENSE",
+              "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+            },
+            {
+              "path": "crates/opi-telemetry/README.md",
+              "sha256": "8cc5baab42d95209ffc2b1e56dedcb04ee0dcdd0def3d621aeb057366d1855a0"
+            },
+            {
+              "path": "crates/opi-telemetry/README.zh.md",
+              "sha256": "a2be952d14f8813969af5e7796327eb1dc6fa9c4b61ae5e2d81085af1bdf3c91"
+            },
+            {
+              "path": "crates/opi-telemetry/examples/record_request.rs",
+              "sha256": "3a7dac72ff0498e5292edcb28bddbe83ffe49bb195dfa2c9f23dcc3626f30a8b"
+            },
+            {
+              "path": "crates/opi-telemetry/src/backend.rs",
+              "sha256": "7b85f239a656f7d82fb06a12221b956d8c744a80c590ccd1bff83cd26fe37861"
+            },
+            {
+              "path": "crates/opi-telemetry/src/context.rs",
+              "sha256": "00ee0c4cff3fb8a971c0e2ba64955871ba7178570ddb9d6202097b7a1c9d7ace"
+            },
+            {
+              "path": "crates/opi-telemetry/src/lib.rs",
+              "sha256": "4ca90cc68dbfe7fc01ff1071fba72a36fda04c165a05f8bf4ae31647630b52ba"
+            },
+            {
+              "path": "crates/opi-telemetry/src/memory.rs",
+              "sha256": "72093d6ef684b1ad444bb818bcaabf2a7619d9eb6fec8f2ea39eeae24aa29f3b"
+            },
+            {
+              "path": "crates/opi-telemetry/src/metrics.rs",
+              "sha256": "d22d4607bfc6a9a00b5e13f878a8b68af3115ac81bf96d7cc8590efad7f40b26"
+            },
+            {
+              "path": "crates/opi-telemetry/src/noop.rs",
+              "sha256": "9d9beb8f57cd8b0a385b3ef6db6c3fa7f3d98142487ba06c6db983cf81a30f7c"
+            },
+            {
+              "path": "crates/opi-telemetry/src/schema.rs",
+              "sha256": "2b6eac2b45df4b58bf66894d3ebe3fd627c315d43a016b473200486258823aec"
+            },
+            {
+              "path": "crates/opi-telemetry/src/tracing.rs",
+              "sha256": "6bc139aee78cbb80b116a171f85b2acfc08045798baa48eaa90773e62c7155ba"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/contracts.rs",
+              "sha256": "7a7aed623fcafbd969f3544e842fda9366a68e071d2b8666391ca45587028816"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/failures.rs",
+              "sha256": "d04fe955980932c4ad7ada409b98d35b85dae2d9303b896f02094b274d8ef2fd"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/support/mod.rs",
+              "sha256": "94f542f886aa30dbd39afa52b78d4ccc1fbcfb90b6e2fe478f08c0dfc7248615"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/tracing_adapter.rs",
+              "sha256": "aad9f6924dad9b0650de5cbd834f40045554809731b41e55e03c735a1560e902"
+            }
+          ],
+          "cargo_generated_files": [
+            ".cargo_vcs_info.json",
+            "Cargo.lock",
+            "Cargo.toml"
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "name": "defaults-off",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0
+        },
+        {
+          "name": "defaults-on",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0
+        }
+      ],
+      "steps": [
+        {
+          "name": "rustc-version",
+          "command": [
+            "rustc",
+            "-vV"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\rustc-version.stdout",
+            "sha256": "2a9ba90ddc1895fc7b4d94baee548ac7947533b6ef348fc9f010ab5d9f3d7898",
+            "bytes": 201
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\rustc-version.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "cargo-version",
+          "command": [
+            "cargo",
+            "-vV"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\cargo-version.stdout",
+            "sha256": "f1bd358f06a9ce032236e2ba498f33d3c9449b1b4db9763b66d29081127798f9",
+            "bytes": 321
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\cargo-version.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "lease-start",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "lease",
+            "start",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--pid",
+            "69800"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\lease-start.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\lease-start.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "package",
+          "command": [
+            "cargo",
+            "package",
+            "-p",
+            "opi-telemetry",
+            "-p",
+            "opi-ai",
+            "--allow-dirty",
+            "--no-verify",
+            "--offline",
+            "--locked"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\package.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\package.stderr",
+            "sha256": "9e5192bfd2d9bc7558748625963b9061d027f52ed6030b5fec08377810bab96b",
+            "bytes": 248
+          }
+        },
+        {
+          "name": "consumer-lock",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "generate-lockfile",
+            "--offline"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\consumer-lock.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\consumer-lock.stderr",
+            "sha256": "fa7634eea6f8b165d801a96efa5979287335dd468d83f0ee2b8b2390eeb1e906",
+            "bytes": 495
+          }
+        },
+        {
+          "name": "defaults-off-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "metadata",
+            "--offline",
+            "--locked",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-metadata.stdout",
+            "sha256": "d1b1b82768a5c90afa7bb3544da0c27276d74d2c5465eac4eeb91cc2ebc3403f",
+            "bytes": 1168625
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-metadata.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "defaults-off-consumer-check",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "check",
+            "--offline",
+            "--locked",
+            "--bins"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-consumer-check.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-consumer-check.stderr",
+            "sha256": "45b34804257981409742660f22a5f81cd67bc3f7aa2f251dd9cb0415771026b0",
+            "bytes": 382
+          }
+        },
+        {
+          "name": "defaults-off-consumer-peer-test",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "test",
+            "--offline",
+            "--locked",
+            "--bin",
+            "consumer-readme",
+            "controlled_peer_waits_for_bytes_after_accept",
+            "--",
+            "--exact"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-consumer-peer-test.stdout",
+            "sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
+            "bytes": 175
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-consumer-peer-test.stderr",
+            "sha256": "fdaf5045a8c3b91991ca242b5590ab79dc210a8c6f992efcf96e7d07393d299a",
+            "bytes": 511
+          }
+        },
+        {
+          "name": "defaults-off-consumer-execute",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "run",
+            "--offline",
+            "--locked",
+            "--quiet",
+            "--bin",
+            "consumer-readme"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-consumer-execute.stdout",
+            "sha256": "35d0af25b973aa6b040093a867f0507f2482013ea32b0162f5ceb441227b0884",
+            "bytes": 3733
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-off-consumer-execute.stderr",
+            "sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9",
+            "bytes": 22
+          }
+        },
+        {
+          "name": "defaults-on-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "metadata",
+            "--offline",
+            "--locked",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-metadata.stdout",
+            "sha256": "e7d765b7deb0983918c511fdfa87899ce69b6beb0fc195b67afa482eda871cc6",
+            "bytes": 1172371
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-metadata.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "defaults-on-consumer-check",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "check",
+            "--offline",
+            "--locked",
+            "--bins"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-consumer-check.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-consumer-check.stderr",
+            "sha256": "cc854ba429c210f8f09203f08522ae550a232c188421cb9b68c38094203a0a8c",
+            "bytes": 381
+          }
+        },
+        {
+          "name": "defaults-on-consumer-peer-test",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "test",
+            "--offline",
+            "--locked",
+            "--bin",
+            "consumer-readme",
+            "controlled_peer_waits_for_bytes_after_accept",
+            "--",
+            "--exact"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-consumer-peer-test.stdout",
+            "sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
+            "bytes": 175
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-consumer-peer-test.stderr",
+            "sha256": "5d1f0d012d3c556620649e69b109ee769ce4df57d98df6673066ad0d5d1b61f6",
+            "bytes": 511
+          }
+        },
+        {
+          "name": "defaults-on-consumer-execute",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "run",
+            "--offline",
+            "--locked",
+            "--quiet",
+            "--bin",
+            "consumer-readme"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-consumer-execute.stdout",
+            "sha256": "c12b83d6bc147a19a9ea78432185df211cc98758baab4c31e109465e38d86d2c",
+            "bytes": 3733
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\defaults-on-consumer-execute.stderr",
+            "sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9",
+            "bytes": 22
+          }
+        },
+        {
+          "name": "lease-end",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "lease",
+            "end",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--pid",
+            "69800"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\lease-end.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-readme-proof-20261114-cost-contract\\lease-end.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        }
+      ]
+    },
+    {
+      "run": "schema",
+      "receipt": {
+        "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\evidence.json",
+        "sha256": "4cf461ffb798e36350500ad9f3e9fc3247cce182bfc2e627a1fa168cb1fddb88",
+        "bytes": 24630
+      },
+      "archives": [
+        {
+          "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\opi-ai-0.8.3.crate",
+          "sha256": "1385e87ecc491d1590002bb6294fdfc40393f079afba671ed14d68791ad8cd68",
+          "bytes": 3254542,
+          "package": "opi-ai",
+          "matched_files": 309,
+          "matching_workspace_files": [
+            {
+              "path": "crates/opi-ai/Cargo.toml",
+              "sha256": "ea4705671e8d7b769026ae5c62e074995470ae4b65ab53f6fe96bcf837a542f5"
+            },
+            {
+              "path": "crates/opi-ai/LICENSE",
+              "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+            },
+            {
+              "path": "crates/opi-ai/NOTICE",
+              "sha256": "8cbc1535e82da35da21b705fea2007fca51226c787b21ec7fbe9a7e59a199b20"
+            },
+            {
+              "path": "crates/opi-ai/README.md",
+              "sha256": "234ec9da5588288789d504b94c9aef03daded2ad0036a7ca52dcd101e794543f"
+            },
+            {
+              "path": "crates/opi-ai/README.zh.md",
+              "sha256": "15252f25e96801d2b2b0df62c8d73de3e85ac5f1fd2cc3666ca14b90b4dead46"
+            },
+            {
+              "path": "crates/opi-ai/docs/cost-pricing.md",
+              "sha256": "3f8e1d6acdb0f9d61435b1c1ce9b32e14ebeaca6cc98d847807725a541e4b9be"
+            },
+            {
+              "path": "crates/opi-ai/docs/cost-pricing.zh.md",
+              "sha256": "a3c1ea0e2bfa879fec9b9c9e2415e933a9842b0aafbcefe990d4a76d2dddf7b8"
+            },
+            {
+              "path": "crates/opi-ai/docs/provider-auth.md",
+              "sha256": "b981217352b9b9c3e98135c2c0b22f747050d806d3602ad9c5de9cc24650fee8"
+            },
+            {
+              "path": "crates/opi-ai/docs/provider-auth.zh.md",
+              "sha256": "0a0e2fc2815310126bd44c57c600600e162cef025af647250a281b44f5b9be73"
+            },
+            {
+              "path": "crates/opi-ai/docs/providers.md",
+              "sha256": "dd31c9c80c7245dae816d352a6426bc010401ba3c40c357ae5486d5c181a1c38"
+            },
+            {
+              "path": "crates/opi-ai/docs/providers.zh.md",
+              "sha256": "992bb3451ea4d02d8c8ced895d615dc6268fe038172fdcabd92ca9cadf0d0216"
+            },
+            {
+              "path": "crates/opi-ai/docs/testing.md",
+              "sha256": "20a5ca1c98e82709e7cba6076308cb9a49663919c662c70166ed3f2d5031a8a0"
+            },
+            {
+              "path": "crates/opi-ai/docs/testing.zh.md",
+              "sha256": "838c61f8092f7f7122b3ba3beccfc8908aabfac910cc0fbb5addb8953b4b5268"
+            },
+            {
+              "path": "crates/opi-ai/docs/transport.md",
+              "sha256": "1420a7d2f11d306c982a1c1f827a3f4f6a80ddfb73afdbb159bd37ef3d335968"
+            },
+            {
+              "path": "crates/opi-ai/docs/transport.zh.md",
+              "sha256": "58966c80014a4acbc8228211a9813ef4f774b378a11620caac49d4c2d6ae3787"
+            },
+            {
+              "path": "crates/opi-ai/docs/utilities.md",
+              "sha256": "04519b06720b72762b75257d432e0be4a652f745643973392f81746a9a73e99a"
+            },
+            {
+              "path": "crates/opi-ai/docs/utilities.zh.md",
+              "sha256": "e805df161f0f594a9eb1be73791298268e0cf581d88a90790528494d5c7e0c6d"
+            },
+            {
+              "path": "crates/opi-ai/examples/lifecycle_differential.rs",
+              "sha256": "020d3ae330144ead0399fb447afceea99495ed27ba38a40b4dd4169955bbb3f0"
+            },
+            {
+              "path": "crates/opi-ai/examples/quick_start.rs",
+              "sha256": "0fcf6143fdafd66d9934e53645d3150fcc470470753d5a3d7ed128d93d1fd481"
+            },
+            {
+              "path": "crates/opi-ai/examples/quick_start_stream.rs",
+              "sha256": "83e464c8bca4e30bfcc5e43697620bb3823a99bc8035a301a1c69b62f7aa356d"
+            },
+            {
+              "path": "crates/opi-ai/examples/tool_loop.rs",
+              "sha256": "494575a7272e91d953e5c3a63b817d556c1e39be46487f4d1224d99e41d47e2a"
+            },
+            {
+              "path": "crates/opi-ai/resources/catalog/builtin/catalog.json",
+              "sha256": "ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678"
+            },
+            {
+              "path": "crates/opi-ai/resources/catalog/builtin/manifest.json",
+              "sha256": "c37e9f7caaa121d6975400a773c3a937acb44a9e2129fa75db302d7e862e44e9"
+            },
+            {
+              "path": "crates/opi-ai/src/anthropic.rs",
+              "sha256": "dab8b89d08cd1b1ba7aba5c91fd453ec664fb1a122e9b7141baae7366dd46de1"
+            },
+            {
+              "path": "crates/opi-ai/src/api/cloudflare.rs",
+              "sha256": "09a0969fda934e995d6a4771c83ef763307f6af4dfc589d4eaac515a7a173337"
+            },
+            {
+              "path": "crates/opi-ai/src/api/decisions.rs",
+              "sha256": "4b4fe00b0b94b3a3447379263f6e737234e0cc683f7defced3aa2ecc0a6da113"
+            },
+            {
+              "path": "crates/opi-ai/src/api/llama.rs",
+              "sha256": "2c551c540271c81e4381fbfda0fc0b99b03f992ddc63d9ec52a155bcc5e01b2c"
+            },
+            {
+              "path": "crates/opi-ai/src/api/openrouter_images.rs",
+              "sha256": "ba13b31027fa385d1aeeb77ad19d6e214ca37b44587830e71eb0786afad8ad38"
+            },
+            {
+              "path": "crates/opi-ai/src/api/system_one.rs",
+              "sha256": "2f1694d6fc8af0c607eabf55c1d233d496fdaa220eb2dceabb29e4b2dfb3a475"
+            },
+            {
+              "path": "crates/opi-ai/src/api.rs",
+              "sha256": "9dffa5a9d7b783682c998ec8f8530f6aa65622d652adb19bfa0b47dc1aedfc56"
+            },
+            {
+              "path": "crates/opi-ai/src/api_mapped.rs",
+              "sha256": "da87669c98b6f722079e0d694cc4d619883dc74aeae9328ec5e32b83e387a9af"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/cache.rs",
+              "sha256": "8fcc0d2df751ef05b1e480be4efbffc27f1d442ed8cede8f3a15769b9fad150e"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/executable.rs",
+              "sha256": "72ed337ecd7c9c0b5611f9ce1a00f8c149a5ef8d8b6e934977b86d85e1a07317"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/external.rs",
+              "sha256": "91166b2483d3abd7559c0086bb8eb828023978dc0a597524cdc9041605419104"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/impersonation.rs",
+              "sha256": "242e1f0a1b104c72947d7367bd75f97f556f0f45be59ff95d432287438dbf0d4"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/metadata.rs",
+              "sha256": "3dc9854b98c054c3a053411d00f30d7d15346078812ca0e2bb520a9967020ed5"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/native.rs",
+              "sha256": "ee4a688608e406e673495f1b47e192909bc85c1b27c493138c28fe47a17aad94"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/adc/subject.rs",
+              "sha256": "dcc26ecb21404e695899385f13b75d1e6c8874f8181a1809032e7afbf53538b5"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/ambient.rs",
+              "sha256": "20eaf6e3adf1da2593636759151770c5be4fb2632b8cdf1f20d9ba9c66db75a6"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/anthropic_federation.rs",
+              "sha256": "cdfc130ea17e9db0b3ece1f36d109e63f00ac216682a48844f1752b6ab69170f"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/cache.rs",
+              "sha256": "cdd0565cf4d519b93207482e1dcda720599d2b0513b2d18c4c25ddd959333b50"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/endpoint.rs",
+              "sha256": "9a3afc171fe859843159257235812aa1dcd5d2cbec73173e55cb8218f8ef75ae"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/local.rs",
+              "sha256": "e6cc868edff9db3b5c1782e3085e1ee99d7214f898ce57f8f34435539cde6ec2"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/login.rs",
+              "sha256": "aad5627d8c990040738c5faf48bd08ebbcc382412f6404415688986af50ebe73"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/metadata.rs",
+              "sha256": "b8f4ae849eb656650dd1d92da4dd4a21a4c676b599ea2f2e5fc7b4b1f85f02c2"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/process/windows.rs",
+              "sha256": "e11ef915cf57b26b29a07ba0af146518ab85bfe2142d9ea88850befb3ec83305"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/process.rs",
+              "sha256": "564fc239de9e249d524cb40b6fc073651e561719c5985fa3b98afffcbacc2cde"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/role.rs",
+              "sha256": "f3c0cfb04be9c9ecefbaac4e7d35f065e9f6c7b7f5b2dc5756031e909ed8109c"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/source_http.rs",
+              "sha256": "c85ca4622520e755bb91e05ee04a7a33d9787a9fba01fe8e2f102b927afd897b"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/sso.rs",
+              "sha256": "f2a4bbfe7e07fb77f4139efb7d5fde75713ccd60b8575c1978d7bb7e14c2f2b1"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/aws/web_identity.rs",
+              "sha256": "fe8c0f71bff342e1276b6caff82f828b4769f90ea9a036ab927c5a82dd8428b8"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/builtin.rs",
+              "sha256": "8d6e5957f0b34d483a3271915bc5bfe036de5123d2dd439c73843c017aa81897"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/builtin_aws.rs",
+              "sha256": "4017f7c14c83ddcae5348b825b8ea6ce3e3b70c0056c43269e1010e1e3ea947a"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/builtin_vertex.rs",
+              "sha256": "3fa0ad7fb2932548f8297c59c1579b111e4ca54d88810df269a0535b3765d7ea"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/context.rs",
+              "sha256": "0de9e13d93060b64b4ab56bcc8287f616823bb35ef3c7089fdc3b06d1000abed"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/credential.rs",
+              "sha256": "bd1b4df88061e480e8b8edac92308df521c3e8daf22f8537ebd58c827f2815ec"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/mutation.rs",
+              "sha256": "fdad6bcd7824b84927bd4f94668c755b019cdadf6d6f5a641be5cae74dcadc82"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/anthropic.rs",
+              "sha256": "2dbe09b3724d18d5be8f9a5a7bcc31e4ccb09ca03cf7950f394386f4792b144e"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/chatgpt.rs",
+              "sha256": "5de88bcdafd302e6fb4bbd74ad11668a5fdeb959ccc9ddb15846ab6ac6b659fd"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/codex.rs",
+              "sha256": "052aef0d1eac94e3d4d217477c8d82bb913e0e4b5668d2bfa0dc865ce5e0d264"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/copilot.rs",
+              "sha256": "fd3eb40f8b7862e1aca919e98604cca458dd00bca592a5635f2c2b38135a70df"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/kimi_coding.rs",
+              "sha256": "1e81bbbb2371351832f82673670704b1e3bcb6f14f379ba855ef9d2a91cd1e3b"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/meta.rs",
+              "sha256": "fb36d3e5177f4f792f5c1e2c4451d5d2d4f85624fc720cb27c1d6fa3941996ce"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/mod.rs",
+              "sha256": "f7ea6f5eb07a54601d549ef714228ab51c9d998a0819e7d96f451bee4b538bcd"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/openrouter.rs",
+              "sha256": "16a26a03a049802d9598c02db3eac796d709186063512dbd3efb5207e7189b51"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/radius.rs",
+              "sha256": "07f483d756e9ed2b00f09c072f992eecbae52cffc98a310314a8e46d300a646a"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth/xai.rs",
+              "sha256": "7ba3bf84cd628e276f1b133240104ec05a4d27d5401360d4672e13782903e9cb"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/oauth_contract.rs",
+              "sha256": "4427793945aa040ef307f28b2c7c8a93e9d671128d059648ddf2bffcc0ecab5d"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/resolver.rs",
+              "sha256": "21e4cfe38b149eb54f462cddcffbf609275d0882e6d4c43df266af5854fbbd25"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/store_oauth.rs",
+              "sha256": "ede148b6ccf172e1ffc26fc2ff75848f56cb7da03e101863b093fb7c2381a55a"
+            },
+            {
+              "path": "crates/opi-ai/src/auth/values.rs",
+              "sha256": "b5883b161d87d9ae4088e050119214ba17c1338a68a650d6f9ecc16c11f51fe2"
+            },
+            {
+              "path": "crates/opi-ai/src/auth.rs",
+              "sha256": "b89f298dcd7425bb3e72bfd7b68a36b0ffabf9a027b63e8fc24af04955b6c5b8"
+            },
+            {
+              "path": "crates/opi-ai/src/azure_openai.rs",
+              "sha256": "e367a678f835833616fac0e4ac50d51877172b939bc265cd29582e19ebd53048"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/event_stream.rs",
+              "sha256": "8ab364a2270fa169840e85abaa37d765b6a9f0dfeff3015e95394c9d991e5748"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/mod.rs",
+              "sha256": "9f9d0812d290eb91bf65edc47050b35c1fb90a844a6036dd126fe8d76a3f6a38"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/retry.rs",
+              "sha256": "14caeeb0a11868b49dbae10609223f611b608e0f63de61a75fe20211dc2fe36c"
+            },
+            {
+              "path": "crates/opi-ai/src/bedrock/sigv4.rs",
+              "sha256": "1c5f30287ce578622afeb6c3116d2d86aa8453dc9bbda71b0a13da62949619fe"
+            },
+            {
+              "path": "crates/opi-ai/src/callbacks.rs",
+              "sha256": "29189c6c2c33016ff85cc99212e2f6027f1a689624cd35952dc69b84be5df4f8"
+            },
+            {
+              "path": "crates/opi-ai/src/cancel.rs",
+              "sha256": "f23cfdcb4f78cdc2dfccf0e31c46174afbabc7cb4d78f79425fba0b7cebfd230"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/builtin.rs",
+              "sha256": "b06d48d52cfb66c3038149598e277c0a376d1fe997bd89508b3389dbcfa653d3"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/document.rs",
+              "sha256": "9018dd6248f2ceeb1cdfb96fe1a6cf46bbba05b987436a63dc8cac9ea4f69519"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/http_source.rs",
+              "sha256": "b0a45c9cb19884716fbc654769835b6d34868a152b3101b2e92b67cbc76cedfa"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/mod.rs",
+              "sha256": "335a96f2350db14fea5782df8962603b3b774f1b0706ead4735588e04203b3f9"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/openrouter.rs",
+              "sha256": "cba9e06eb073eee2dca85678cf355df1d9ac8e1d08303209219d7b91a7d1bb0c"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/source.rs",
+              "sha256": "e269a38fdd737a7c4380df10ee62350df35557a0d1aae2070daf19ae14acbd4f"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/store.rs",
+              "sha256": "12c2c00af4ea9b73e63eb58feb0210cb5cc367a5a38d506b0a8b08097ddfc84d"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/store_contract.rs",
+              "sha256": "ab2359857a813829f5f2070121cde174b194f9ce617a13e3d818f2769e8ebafb"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/values.rs",
+              "sha256": "6348c980131ceb0e398a2aa831e06f612d6261958bc91e5f1424db20aa51982d"
+            },
+            {
+              "path": "crates/opi-ai/src/catalog/wire.rs",
+              "sha256": "ac2eb697634a882462ec946091bf14f4b3060bef216244bb7cf64ef35a1ae4bb"
+            },
+            {
+              "path": "crates/opi-ai/src/classifier.rs",
+              "sha256": "bd7d4aded51a6de9da384ff6e1761e85a02e5f5f27685bc8fc458b1570da7445"
+            },
+            {
+              "path": "crates/opi-ai/src/codex_resources.rs",
+              "sha256": "bda5772be7b8d75a95037041f731767e9de3e2130b804ec68146949b64581a7d"
+            },
+            {
+              "path": "crates/opi-ai/src/constrained_sampling.rs",
+              "sha256": "3f69e7fb5aa7298fc477d7e33ce40a3df7d61ae622995e1437b531e7ed2cc6f5"
+            },
+            {
+              "path": "crates/opi-ai/src/context.rs",
+              "sha256": "800984e0b24068bd8b6d3829345a74efaba03f8593a6c1240ff298eda06b5198"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/fixtures.rs",
+              "sha256": "a49e80494451dd1867840ef220ec98d023f571d7d60a193774707a2ca8bae156"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/mod.rs",
+              "sha256": "59c3f45c154e484e4dc20c9ccd0b8453d4cfde375657d1bf3dbc0b93da8ba39c"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/admission.rs",
+              "sha256": "88580df3454630be222e8868c2f65b05ece3988c33dbc09452e9e523e451db4a"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/jwt.rs",
+              "sha256": "53e8d4e22dc6a8eed66beabf1d424fa52c5d929bc1e6affbdd449e33292e12b9"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/mod.rs",
+              "sha256": "8c21862e4bbcf4d95eb94eed134250130405864d11f37aecfd1260d87bc7f555"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/signing.rs",
+              "sha256": "d192e015bea353e6872d4779ff3090b4df990a2d12b109da3da9c4b1d27c9b56"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/tests/worker.rs",
+              "sha256": "39c334a3295d5ef9f6f58e107e10605668d74296f237cd50f12d2aeb25b1b03b"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/verify.rs",
+              "sha256": "7ab6a2ae3f304446ede088f4568e7ffb921060e7ecdd3775516c8dc996314efa"
+            },
+            {
+              "path": "crates/opi-ai/src/crypto/worker.rs",
+              "sha256": "5254045dea97be5181b8b80936cb3706ddc9fa17b60805e89b63ac6ec31c5b3c"
+            },
+            {
+              "path": "crates/opi-ai/src/deferred.rs",
+              "sha256": "5c9a7eb220f839c7cfa7bd04d8c1849aeacc01be47e8dd2c8f98f39a23245e62"
+            },
+            {
+              "path": "crates/opi-ai/src/endpoint.rs",
+              "sha256": "c871b964e961d58ba8cea9c4bfec3d0ea58b7b0afd9f9619d278e016aea11361"
+            },
+            {
+              "path": "crates/opi-ai/src/errors/redaction.rs",
+              "sha256": "ece4fef4c67e71e870f4e978b57307f69d76d882d5192995704e4921a9625bf1"
+            },
+            {
+              "path": "crates/opi-ai/src/errors/service_fault.rs",
+              "sha256": "9683c8071249b9f78c147f6ef089bd27e8e704986597c756a5d7d927a32248e2"
+            },
+            {
+              "path": "crates/opi-ai/src/errors.rs",
+              "sha256": "67427be45151208a4af47dec547f86115b638618c7e541d82dbf1438b250d4da"
+            },
+            {
+              "path": "crates/opi-ai/src/execution.rs",
+              "sha256": "53620060c07724e5cc64cc2952f5546e340f70dd40a54df9c850e7dbefc1f072"
+            },
+            {
+              "path": "crates/opi-ai/src/gemini.rs",
+              "sha256": "3afc2b2e89b8581465c5e13d5dbc6bf1a392fc4638443f521939bd8e475b5e0d"
+            },
+            {
+              "path": "crates/opi-ai/src/http.rs",
+              "sha256": "3593b2d1ff3a7caf677c4f738835520d456246f267884b2ef06cbcb750bf3641"
+            },
+            {
+              "path": "crates/opi-ai/src/identity.rs",
+              "sha256": "5ddc204df7ffb05151211b7dfb33c195a7357a55d2986ce0c52d234c739801ca"
+            },
+            {
+              "path": "crates/opi-ai/src/images.rs",
+              "sha256": "cd9ee680913b7095dd7b42f2cca0ffb86f2ca058655c4152d404dcd655839543"
+            },
+            {
+              "path": "crates/opi-ai/src/lib.rs",
+              "sha256": "ddae2b36bff5cbc037536011d6715625d0f506d9f62e3980f2672a96eb7bbef3"
+            },
+            {
+              "path": "crates/opi-ai/src/mistral.rs",
+              "sha256": "d90053000baef069f4aa8277f7baa822c968fa1e7cec4345b19d9a4ee76a013f"
+            },
+            {
+              "path": "crates/opi-ai/src/models.rs",
+              "sha256": "4efcaa16e206031ad05406999dbcb6f43815d76e0360c43f381164563695dfce"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_chat.rs",
+              "sha256": "3f45cdabb2f0eca26f6f5e4c5af5474e7e144f537cc5ff67f07ce1411d38d431"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_codex_responses/native.rs",
+              "sha256": "3b801b83f310d7a577818a7195cc64105a57cc1c34883ef7585ee19db218cf10"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_codex_responses/ws_transport.rs",
+              "sha256": "9f77b1cf5c93a843f5bb079fac91a1120b1fd5d8d9179a866983bb8dba7e7580"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_codex_responses.rs",
+              "sha256": "2d1ba13ffa90661f8adf02311b4a56d096de2819aa4f7b2c9dd233cde59b062c"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_responses.rs",
+              "sha256": "610c33aebf41d192d6a9b0f0682caf8bd55e98159e02a5aef83501cf4c2a80fd"
+            },
+            {
+              "path": "crates/opi-ai/src/openai_responses_shared.rs",
+              "sha256": "79e41f7d4c58d7f240b37914d4a729cb5e1c7b8fedea6af39a7e3ecde7f2917a"
+            },
+            {
+              "path": "crates/opi-ai/src/openrouter.rs",
+              "sha256": "4d03016291c319312ce49ee59c3f6461b844accd6ff583480512d98ec4bd8f74"
+            },
+            {
+              "path": "crates/opi-ai/src/pi_messages.rs",
+              "sha256": "d10ca7e449cb2afcd0a840f8b4d38a949c70ad879188b2f6d7d324d7ff29a834"
+            },
+            {
+              "path": "crates/opi-ai/src/provider.rs",
+              "sha256": "fd3957d84f9b00f7a79c96d233d046d99f8a254dd83dfdc5e1b023f069a1ea65"
+            },
+            {
+              "path": "crates/opi-ai/src/provider_collection.rs",
+              "sha256": "fce9b8186f864933ce0cf54e30a1c9612625845c7e3419ca05ffc7fecf51de32"
+            },
+            {
+              "path": "crates/opi-ai/src/provider_env.rs",
+              "sha256": "7398bb718b503fd4f93fb4ac08129d93f82667662a9a441e50cefd97ad8f6b71"
+            },
+            {
+              "path": "crates/opi-ai/src/provider_headers.rs",
+              "sha256": "5f10eec9b741ec62068304efd55dc74ee675c6aeb78b7541f34f4d4fd18f599e"
+            },
+            {
+              "path": "crates/opi-ai/src/providers/mod.rs",
+              "sha256": "a8ca80084bb44e4910c8c72a98fd2ea4fc223e3291b83fe22772621652e6142f"
+            },
+            {
+              "path": "crates/opi-ai/src/registry.rs",
+              "sha256": "a9a81c2703d10d1f55c8529b41c0f1acb2c8ad31b7bb31ac67ebd041dfb8b7aa"
+            },
+            {
+              "path": "crates/opi-ai/src/replay.rs",
+              "sha256": "2848fc21568e1ec65ef015eb9cf320a0a3de861c4b6223a2259d690f1e0223b0"
+            },
+            {
+              "path": "crates/opi-ai/src/retry.rs",
+              "sha256": "7a9e308962ca7a6a4c4e2e8c3fab08ba397c9f3c623a9e0bf1feb0422e276fee"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/admission.rs",
+              "sha256": "adba8bcfa77a5852db9ec52a915906430443496c870ee765150844f6f998fd8e"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/ecma_number.rs",
+              "sha256": "bcbbcfde7b56062a89b7e810f0504690b2dc4d19aeeb55add065f2eb71b88a64"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/eval.rs",
+              "sha256": "60ae4e2aa91e85b28f3f5281fda05f9feb77a87729467ec586e7fb95e716fa75"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/format_patterns.rs",
+              "sha256": "50ca0dd075df5303140178b88bbef684980d7fd41606a925be90ed38bd155c06"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/formats.rs",
+              "sha256": "a7f00daf4f9da0a47e76ff48db1351204d8c5900cbe03a56b9915b4bd547ee6c"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/grapheme.rs",
+              "sha256": "dbd5da5dfd11e9c9b2fd878448fd14ade80e8c9dd06ea0b10880d7d1900aacde"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/guards.rs",
+              "sha256": "f9dbf667677fa3d3aa36a19ced7dde1cd1bfe02af943f7103ed854e21fe5a452"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/hashing.rs",
+              "sha256": "50b2e11f5f0b4d3a3293fe82c1cbfecdba3a4bbc3f783ffb87034e577cde10d7"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/ir.rs",
+              "sha256": "c4aee8ca7342ad8c31647b5de66a55bc18ec8d0d85cf87f17f302c63411a9ebe"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/js.rs",
+              "sha256": "3af39d356d312550aaf07f9e2d6885a5204fcacb4c2eba1ef2a11947dac12842"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/mod.rs",
+              "sha256": "816f780293f0426f0e063fae63111baf6a050d60999d99c1bad52be204d8af70"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/normalize.rs",
+              "sha256": "54ffa72432c5392caeddde81ab036144f2a119b12b1962d5faffcb2f2328a83f"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/proof.rs",
+              "sha256": "16dd4587878f1ce69e3855ede1f67d2973dde3fbe4c798e78655da26ec4680ac"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/pump.rs",
+              "sha256": "f173ddd332d1dbadd439241ae9ca6825fc780cc879c89c6ef57d020563ccb046"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/punycode.rs",
+              "sha256": "47865203882d96b7e141a944b4ac57b366e60cf49b4702e9f468fc49b0b83c7c"
+            },
+            {
+              "path": "crates/opi-ai/src/schema/refs.rs",
+              "sha256": "44ddac33def9aac2561fda73971682d110a051294fc0abf3f8d2d1c0a01f2613"
+            },
+            {
+              "path": "crates/opi-ai/src/stream.rs",
+              "sha256": "99174e6e895cc55575c3a0da7164ee51e27288f70629b9116fed218fefe392f4"
+            },
+            {
+              "path": "crates/opi-ai/src/telemetry.rs",
+              "sha256": "a0553b42413f0cccc29d9da04181338b08977a78ba65a570eb8f0f4f9ddf68a3"
+            },
+            {
+              "path": "crates/opi-ai/src/test_support.rs",
+              "sha256": "29865e2416701ac5bdde68a5df9c4c820a230d91c20f48854677f73aff158a0e"
+            },
+            {
+              "path": "crates/opi-ai/src/text_decode.rs",
+              "sha256": "12a9eee7da5b68d20884549bcf7a97f9b2d5668f9ded2cf93a3a6ae7047a588e"
+            },
+            {
+              "path": "crates/opi-ai/src/time.rs",
+              "sha256": "a669a598ba3add7822111b1c54051ebcc4aaf7f02854431afe0e760de80d80aa"
+            },
+            {
+              "path": "crates/opi-ai/src/tls/mod.rs",
+              "sha256": "ba96a12a89ae10faeefc42385d37277eefee10bbc1a406e7ad0e22ad029b3090"
+            },
+            {
+              "path": "crates/opi-ai/src/tls/node_trust.rs",
+              "sha256": "185e4485809139c2d574d5fa377e6aeea91d82b204cc460e82f6e1e7b4e514d9"
+            },
+            {
+              "path": "crates/opi-ai/src/transcript.rs",
+              "sha256": "233f176479b37c02b277621c4291c56a863aa3c01bc06e7edfb42dfcdea2157f"
+            },
+            {
+              "path": "crates/opi-ai/src/types/catalog.rs",
+              "sha256": "66c2bbd3a29aacb4f626a001e37fbd4a4e2a5f475a0dd8ad2dc590f61a59ff69"
+            },
+            {
+              "path": "crates/opi-ai/src/types/chat.rs",
+              "sha256": "e480bce914d0ab0d19957ff95eaa201f5be3fd010d58465b57da21a23cdcabd7"
+            },
+            {
+              "path": "crates/opi-ai/src/types/classifier.rs",
+              "sha256": "19185349edde11ab5e80fe81cac7d7d1de56a4b8399b131149e79bbfc1add0d6"
+            },
+            {
+              "path": "crates/opi-ai/src/types/deferred.rs",
+              "sha256": "bef77dbab66b581a632183f1f6eccfca17d50906cf3d1c875f36b2215bd9e9b9"
+            },
+            {
+              "path": "crates/opi-ai/src/types/headers.rs",
+              "sha256": "941381db966bd67123cf971c2d58f80b135484edd75331bb2152093c2237b563"
+            },
+            {
+              "path": "crates/opi-ai/src/types/identity.rs",
+              "sha256": "26ee72480f84dfe7c948d2bc1d906f8c174d4abd80e2a3918a6b8b85554d026d"
+            },
+            {
+              "path": "crates/opi-ai/src/types/images.rs",
+              "sha256": "ffff70792d20570b28ee21b2f76587ebcd35c4bda124dd7dc7e5fef71652e29f"
+            },
+            {
+              "path": "crates/opi-ai/src/types/message.rs",
+              "sha256": "d500c1fd9b4fbacfafb2d782ce0a41a69d859366b963506ba721a894e5496aa7"
+            },
+            {
+              "path": "crates/opi-ai/src/types/mod.rs",
+              "sha256": "d129c042c4d0f437888528c828be66629edf81495e91d584219c81f1d555eba6"
+            },
+            {
+              "path": "crates/opi-ai/src/types/model.rs",
+              "sha256": "c48c8029edd1fc8abc11bbb257b369919229d6b6bf679676cdc5b506b4a98044"
+            },
+            {
+              "path": "crates/opi-ai/src/types/replay.rs",
+              "sha256": "d4c1b82590a10ae39bb83739c1abc2fd51f2d3c6a37198adca7f058627177b6d"
+            },
+            {
+              "path": "crates/opi-ai/src/types/tools.rs",
+              "sha256": "e30c23f5b1ece48cdf5da868d50c3a1d749a844aa9301edffdf2f8f4f751b9e3"
+            },
+            {
+              "path": "crates/opi-ai/src/types/transcript.rs",
+              "sha256": "4f46f66892b2e2926cd6e9faedb1a25dcb422073364cae32aecd49f45b9c905f"
+            },
+            {
+              "path": "crates/opi-ai/src/types/usage.rs",
+              "sha256": "4ff24daf390a809d1b441222f046c20b82999e49116e6f5d2c71fed28c8c91f1"
+            },
+            {
+              "path": "crates/opi-ai/src/vertex.rs",
+              "sha256": "54bee130a52166e38510e3f74ff52f6784cf05dfde44f153b736a7beaf66373c"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/frame.rs",
+              "sha256": "f3337d624c6d680a42a79a73c52f885cbf38745bb8ac84966fe24496d005b5bf"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/io.rs",
+              "sha256": "3c2f5911ad7145d7bb8a7ef222bc9a8ae05ac9298cdf5b3ebec10ac5d1478ca7"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/pmd.rs",
+              "sha256": "594aa045edcca66d8c8d60ddb886da0b58a090aa1d136aaf8420ec3710a535bf"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/boundary.rs",
+              "sha256": "5babd6d8e5683a99e0a07bfd46326eaeca2f33601a1217fb2d2407a403ec64ce"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/close.rs",
+              "sha256": "73a5d5a791681e7aea5f0cba58da81958941ced7aa539da60907bb02763cfbe3"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/deflate_audit.rs",
+              "sha256": "be3bedcd5c6f31de9ba6ce5c36e60b3f1865ae713b7691b93f8619c62d10bbfb"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/boundary-expectations.json",
+              "sha256": "901d7df084b6fa2236e5e2acb9ea877ee84dfbb2fb27690248f4980bf865e2e4"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/boundary-seeds.json",
+              "sha256": "929af9406b2eeaf76ec6bb676a58a123803abbcd3424a87c3fabe38d1461355f"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/extract-boundary-fixtures.py",
+              "sha256": "9147224efc0883afff60aecbe1a7f3c81bee2b56130e47e957bdfb46d38d1712"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/memory-codec-cases.json",
+              "sha256": "93e6c9d160d40d5b8a7f6754fc961e25f418276b4745a83c21572e4965bdfa62"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/pmd-context-fixtures.json",
+              "sha256": "a883f8c8e147f7d197bf53065f55ee8f2bd6ea05ac62f33c6c3d5f66a5f5d4d7"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/fixtures/python-pmd-fixtures.json",
+              "sha256": "a310ddb24f11a227f881064e042a1f098629ac9afe6b3e2bc068bdd772026df2"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/frame.rs",
+              "sha256": "4a3924b54ec7cf4e938e1010e975d5fc863ae18b0e27220d6f125c4fb32a5428"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/gaps.rs",
+              "sha256": "bd714cf7076cf93da2c81be6ad318dae769f7632571783d9017c2d3a8b5567b8"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/io.rs",
+              "sha256": "074256806acbcf43009b961442acf03a2ae1d2c4ff5f809dce17d2cb165cf63e"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/logical_cancel_probe.rs",
+              "sha256": "7c8d86bf8fc6ffdca24b95b4c7c266b058747b8cdce3594212c18dd8ba242ec2"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/mod.rs",
+              "sha256": "75d7132276d574fb0048e06fa2749a72e7ce70026502883b4377066da9a275ac"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/packaged_cases.rs",
+              "sha256": "dbfd6c75692888971b2f4c5d5b148a52541e5c69f7fb02f91a8211a558a01dfc"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/pmd.rs",
+              "sha256": "559c6c2415ca650c7538bec81cb80f858168e6cefb23658e1eefeb98ec345d1a"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/pmd_async.rs",
+              "sha256": "3dde5a69ab8c83e0b2d58fdf7a7a7bbe72369fc3e8058f732e3bf789e7777c47"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/pmd_red.rs",
+              "sha256": "a0eab63ced1a50ba2c39ce5996389dbfd31b449249d59ce02a5c095886160cb5"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/replay.rs",
+              "sha256": "2ba529356508b836124ca9aca28a54b002aee9ffcb3cf78bc79f36efce6eb14b"
+            },
+            {
+              "path": "crates/opi-ai/src/ws/tests/upgrade.rs",
+              "sha256": "0cf91ada8936e9a851d0a84eb63c7198a3937c9a47968a0f4ff15c9ca3d11812"
+            },
+            {
+              "path": "crates/opi-ai/src/ws.rs",
+              "sha256": "c7f416ce886a590fd752ca8113c1fe7f1e7a0536497b3daa028bb95ebbca0254"
+            },
+            {
+              "path": "crates/opi-ai/tests/README.md",
+              "sha256": "ed9294489ee6762872250260e9ad5551c436213b5261a38e392f284690b572e4"
+            },
+            {
+              "path": "crates/opi-ai/tests/README.zh.md",
+              "sha256": "724cbd55b0b96ca8b79086ed15e69e13d3754f6f54155bb9fe51531eb8a5cbf7"
+            },
+            {
+              "path": "crates/opi-ai/tests/adc_owner_regressions.rs",
+              "sha256": "6d2366e71653ff38180456618d61d31009b93e844140ddb749b5554b06b4c8c1"
+            },
+            {
+              "path": "crates/opi-ai/tests/ai_telemetry.rs",
+              "sha256": "f50aa72bf194cee457c0d89e35db150ccbee1d3ce73a59579fc278131784f8c7"
+            },
+            {
+              "path": "crates/opi-ai/tests/anthropic_fixtures.rs",
+              "sha256": "6042e52955fc22368d41413c857a0f74f072ea879da5d7a7ae26b7062c9c17ea"
+            },
+            {
+              "path": "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+              "sha256": "10cedf35d01f265041e9873bb2b3467635379b31961ae70c90573ead91ccebc3"
+            },
+            {
+              "path": "crates/opi-ai/tests/api_mapped_provider.rs",
+              "sha256": "0e7815045d2b720e9fd2d37da61e52bc92a721c00df383cdea50897c44440de6"
+            },
+            {
+              "path": "crates/opi-ai/tests/auth_contracts.rs",
+              "sha256": "9f4fd99d188a22a6dc7f3e1810f2e919e2506c377be2e85175466cad98b53c5d"
+            },
+            {
+              "path": "crates/opi-ai/tests/auth_process_lifecycle.rs",
+              "sha256": "9288070bfe8de2062a35c236a2ce20bdd577f7296605f4a5f37bacbd14781215"
+            },
+            {
+              "path": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+              "sha256": "30591a3b7eb085f0699fb882d3af3a1a7af47dac93924b65f7d0b5e83dacd655"
+            },
+            {
+              "path": "crates/opi-ai/tests/bedrock_fixtures.rs",
+              "sha256": "d43850690f6779b6f2aa0cf37878a51e31e762c9c97ced79d6d2c354bf1e8ab8"
+            },
+            {
+              "path": "crates/opi-ai/tests/builtin_auth_ownership.rs",
+              "sha256": "ced383571beb4b03341bf99000d286fc86871f043368e88c5cf76d05935c4527"
+            },
+            {
+              "path": "crates/opi-ai/tests/builtin_native_scoped.rs",
+              "sha256": "6c470fc5cb97c8a0a1878949065f036dbd1c3d351028fcaece183dd3090f5034"
+            },
+            {
+              "path": "crates/opi-ai/tests/builtin_scoped_env.rs",
+              "sha256": "3f402a1198adbcde23bb9e6e740b498fd78775e3ebc9c5329e4878fa80697066"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_artifact.rs",
+              "sha256": "cb7fcaebbffb082b01531fa73e7820de3ad553da2242a8e7d7a993576b00ed1c"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_lifecycle.rs",
+              "sha256": "3e3d20a56683f592a1f961cf0da6527b95f8fbee505b6888fe5742ff61ce980a"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_operations.rs",
+              "sha256": "c77543c4510e77b1351f51037aaf3fa5ce7352bf1b4427b0003e64c92c1f4101"
+            },
+            {
+              "path": "crates/opi-ai/tests/catalog_personalization.rs",
+              "sha256": "3e1280f7c20eba96dbd16fe66b1767208e293dcb2fb7b8258a11a4433b3a13b2"
+            },
+            {
+              "path": "crates/opi-ai/tests/chat_capture_replay.rs",
+              "sha256": "045a0b58b6ad52053a742533c8f252066fb252439b6c75c5f8eecf210923ac27"
+            },
+            {
+              "path": "crates/opi-ai/tests/chat_pi_messages.rs",
+              "sha256": "c8aa90608b4fb6d2ed5d258d2cf184018b4d07f392b159302f227446dd2fdc51"
+            },
+            {
+              "path": "crates/opi-ai/tests/classifier_contract.rs",
+              "sha256": "120d4cbe6cc9bc20cee97caf13882162cc39b346006cb6e81ca577db7d74c01b"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_native_options/deadlines.rs",
+              "sha256": "f9951738a5a55bcfd1bf8a3baeb185a9de28ef8668a71d04ca9ec1d732a4ee5d"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_native_options/lifetimes.rs",
+              "sha256": "6fc2aff5f726d9e4f422d4923424d6ec464217473716817ff418755db38aa7a2"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_native_options.rs",
+              "sha256": "8b664346ce448063db3e4121675cbbd76b7e93445d1e543eb7bd7ceccd9c8194"
+            },
+            {
+              "path": "crates/opi-ai/tests/codex_telemetry.rs",
+              "sha256": "147130bbf0acbfdfcfb935ec37fb1700ccf7eeb460b8fde6c88475cf6d4990e4"
+            },
+            {
+              "path": "crates/opi-ai/tests/connection_pooling.rs",
+              "sha256": "eca11b16b2806c82338511e4a9b18a085c2cb40c6cc7aedbd6f7433c51828736"
+            },
+            {
+              "path": "crates/opi-ai/tests/context_budget.rs",
+              "sha256": "925f23a4551bf0bb504b1b76f3f77cec191daeb49d1226993e02c89481631622"
+            },
+            {
+              "path": "crates/opi-ai/tests/custom_provider_registration.rs",
+              "sha256": "e4b8a8192a7fe7a82b2f5b57ad9e69f277651acd469f2b96f6a8ce32797425f3"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-connection-limit.json",
+              "sha256": "35a5149b770a05769e36e0f4b786ea6164290db2008869d37641a67086a4e43a"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-failed-recovery.json",
+              "sha256": "0e2d7aaab09e6ca80541298fe7f4a58fb54ef37fb3c12498cb56a805097bf5a7"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-terminal.json",
+              "sha256": "eae16d6c39b28621d6a7de96edf8a256837b43ae7da2bec6c36a5a9a91fc8fad"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-websocket-identity.json",
+              "sha256": "109be4014426242b07c38943f7df0a1f58f9133b798ec48cf5f61d9a1b086a07"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-websocket-idle-timeout.json",
+              "sha256": "d10dc187449f740169ceeb2a6bdac4ade70e71facfbd4450f7a2184888ae7655"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/codex-websocket-idle.json",
+              "sha256": "3b2b2d8146386892dc6954c71c091d019278655dadbebeb4f8d858f2b0292a20"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/openai-chat-interleaved.sse",
+              "sha256": "9efaeed49e406cae08fea80898f3009442bc6104d2c856fdd36fbfd81fd568a3"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/openai-chat-output-limits.json",
+              "sha256": "508da63289c54914eb4cbd53d8f6c6d02f907ad67e501187e0c71229f7f164f6"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/partial-aliases.sse",
+              "sha256": "1d3ae42967ef25bcfb9eebc476a4eb4f51390be146e34d17f0723609e089a2e5"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/responses-error.json",
+              "sha256": "84be5049df33a7e2f04c66416fc004fdc5185a75952e7af0b0aaafa34e77c6df"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/responses-failed.json",
+              "sha256": "41c2afe242e30749c35021080c5d6335fb071f936fbf9d8f64550fdbd11390fd"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/schema-cases.jsonl",
+              "sha256": "e0cd5ace2c1d385b425b0c8a53a55909e6be43c0328872928c859bee92d56329"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/schema-expected.json",
+              "sha256": "8f98d8e0ad0bc149b7b644d17fda97944ef20063b62096ffde9053a87c7e5f8f"
+            },
+            {
+              "path": "crates/opi-ai/tests/data/schema-public-expected.json",
+              "sha256": "1a46d2e1f3aa00f687021a139fc4e1f01e19e573597dd2bde7cf2b5cdedc0a52"
+            },
+            {
+              "path": "crates/opi-ai/tests/deferred_contract.rs",
+              "sha256": "402acc886c56ae3e9c9539cac4a7f032fc59328d9182de3bcde9266b84feb452"
+            },
+            {
+              "path": "crates/opi-ai/tests/execution_lifecycle.rs",
+              "sha256": "5520880514be2035259debb66937dc6dc092748c0faf42fd1571dff6fb32b5aa"
+            },
+            {
+              "path": "crates/opi-ai/tests/external_sdk.rs",
+              "sha256": "83a59976cede8cb2b1b98987e88f7468bfb5e0e686290c5f46daed0fc6cce4a8"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/ca.pem",
+              "sha256": "3125eaa1a87a05b27ae7a90006a28c6fbc42adca4078eb3789a343924fe90e7c"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/client-leaf.key",
+              "sha256": "504a12095d629d779052f79c8b8ca647963d3193cfe0901f9f39730fbf1452b3"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/client-leaf.pem",
+              "sha256": "08b9c9ec86d174013b8c86d2bd3a45c58ef932f9b3f6ef060a85db24adaed000"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/other-leaf.pem",
+              "sha256": "02949167ea7db837f2358e1420688b176e5b0279ec11f519971bb11f53219e34"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/server.key",
+              "sha256": "58337f7bf4f7707a177060ec9930d3ab5c0b189ff44ecdb58d2cedaeb65aaa8d"
+            },
+            {
+              "path": "crates/opi-ai/tests/fixtures/adc-external/server.pem",
+              "sha256": "1e8364691a64c9cf270c232bea57f4f2b0fb0c642901350a3d8b22cf716687cd"
+            },
+            {
+              "path": "crates/opi-ai/tests/gemini_fixtures.rs",
+              "sha256": "7237b7028a070dc86c6b5490c3d49e309fb6bff142d006b0c531dcbe5f7f602c"
+            },
+            {
+              "path": "crates/opi-ai/tests/gemini_lifecycle.rs",
+              "sha256": "ab0fa5995197671959c9f9ee0452a10ca5cc6ff7a046855189f4d673de23773c"
+            },
+            {
+              "path": "crates/opi-ai/tests/http_acceptance.rs",
+              "sha256": "07927041db446df96751241ebad060c07289c9de4e4693f2f21239f42059c05a"
+            },
+            {
+              "path": "crates/opi-ai/tests/image_input.rs",
+              "sha256": "889696798fd6c56fcae0429b0c9da30b7fc4f13cdaaa3a1024e50c7ce6333f2d"
+            },
+            {
+              "path": "crates/opi-ai/tests/image_provider_serialization.rs",
+              "sha256": "0ef141e4f7388948c9a119af2425005b683aaf8692ac810cf09972bcb0130729"
+            },
+            {
+              "path": "crates/opi-ai/tests/mistral_fixtures.rs",
+              "sha256": "663ff89b13de70e51bd5ad2589a568e27985c0db4106b2cec260eda9a612a7a6"
+            },
+            {
+              "path": "crates/opi-ai/tests/model_capabilities_migration.rs",
+              "sha256": "1bf339cd49338348f49637342851f062961357e36cd84bf83454f595fd8ba7f0"
+            },
+            {
+              "path": "crates/opi-ai/tests/model_wire_metadata.rs",
+              "sha256": "4ae1d67a5261bf9d46d5feceb2fce86f55f3bf3a4adc0d9a7627b11bf3e858ac"
+            },
+            {
+              "path": "crates/opi-ai/tests/node4_preparation.rs",
+              "sha256": "d73034b18ed960ec88217aa242d22ee3478e0b68f282c065d6236ffed6c80f10"
+            },
+            {
+              "path": "crates/opi-ai/tests/oauth_flows.rs",
+              "sha256": "7da4e83bff17b827747e62dc66ad56891c7e86b64763f3abcd2015ccb09ce7db"
+            },
+            {
+              "path": "crates/opi-ai/tests/oauth_store_integration.rs",
+              "sha256": "28433030baeda41688f7eaf970047c8a52e08e786e5eba96a5cfc20fbf0ba307"
+            },
+            {
+              "path": "crates/opi-ai/tests/oauth_wire_shape.rs",
+              "sha256": "df8936bf09dc46c1ba27f5595d167e111a72f8df33e50effcafdf90dfae6423f"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+              "sha256": "74b6524912e97af9f319fd6904796a46c1f82d74b56fcd9938b74a2015c697e4"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_chat_interleaved.rs",
+              "sha256": "0bf3d7ad06b64d87b83799185835be3c37fb1e5a8db7a3a82045e776f853580b"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_chat_output_limits.rs",
+              "sha256": "0f0a24cdcc52a0e2227b20a8d26df570d1ccae4c609c15b1216430621e661a1a"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/deflate_audit.rs",
+              "sha256": "9abe47caeebca1013d138f0c78fb0f69611e089bb2014f5a076ce6b3307cf798"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+              "sha256": "fbef1b7aee28a65e5a1ba6df4f1bc9a856e9e3141d740b38c9f25965bf74d513"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/session_fallback_cleanup.rs",
+              "sha256": "0bd37fa9f68e39c6c6d13b48c07284a6355b2132793386e8db7d3cbc47316744"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/terminal.rs",
+              "sha256": "ae5878bb6bf77407d8c150d97b5527e45de14fa8eb7f87787b3542312e1d8b55"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/websocket_idle.rs",
+              "sha256": "fd65d3d56e1c0c0e86a134e00d877ad6859eefab5379327a6c40de8338fd335c"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses/websocket_idle_timeout.rs",
+              "sha256": "240960d0a57acb032a7d9d79fcdbefd1dd33b8191c927f59e76dee25619b4f89"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_codex_responses.rs",
+              "sha256": "455cca540e3030f1f7fa2f697cfeaf7c25c56fd1f9968a4106ccd48a5b729702"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_compat_lifecycle.rs",
+              "sha256": "4fd20030ae643d7c762bb55d537026d7b88a2fa2369c96ccb832e43a3afd75c2"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+              "sha256": "757797306dd9f61cbeac4518bc5e42f46d81f31cace99e5532cef248dcd61261"
+            },
+            {
+              "path": "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+              "sha256": "39fcf6982c9ba0afa97f5a2f81cc1d2e2b371a85d6de4b59810bf277abc0f377"
+            },
+            {
+              "path": "crates/opi-ai/tests/openrouter_cost.rs",
+              "sha256": "43278ed667cbc661f5bda81a93b3bff71b6f9508e03ad6fc32674e748ad3ac0c"
+            },
+            {
+              "path": "crates/opi-ai/tests/openrouter_fixtures.rs",
+              "sha256": "8a206468786615d87de1ac36649957df502f5329c8650abd2148df45d5e43056"
+            },
+            {
+              "path": "crates/opi-ai/tests/output_content_image.rs",
+              "sha256": "18ec32aea1e444fb8f4d68df3b2c46f15d618690750da45426dc26f9b81cffb4"
+            },
+            {
+              "path": "crates/opi-ai/tests/partial_aliases.rs",
+              "sha256": "8df310b361948878415c561071105c9876b0e53eec808db4e61f2c965f67c5d9"
+            },
+            {
+              "path": "crates/opi-ai/tests/per_request_auth.rs",
+              "sha256": "843abc6fea970d7d74afa3852e124beb9c6204054bdb3d7ce5afcaecb01c8b10"
+            },
+            {
+              "path": "crates/opi-ai/tests/platform_delivery.rs",
+              "sha256": "95a1e8e695fb04eac20ffb34b4adf7d273a993772a703f47b7850d38ffead0df"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_collection.rs",
+              "sha256": "8cb9e540f54250d789a81b2901ab9a5380a080961274d1047665d5fece8e872b"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_diagnostics.rs",
+              "sha256": "b1da86b857e36f8579d6e95c8980f3298eedc659ddb7e3a05b17601dc7f3bf28"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_error_classes.rs",
+              "sha256": "80d14bebc794c935d04c98c4b089f08055bb1cd77b7e7322d76ab8e5b49f2198"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_lifecycle.rs",
+              "sha256": "fb56a02864322ea36b7a1bf92d146e7729166ad9ddfaa53cb9a61954d917f2be"
+            },
+            {
+              "path": "crates/opi-ai/tests/provider_trait.rs",
+              "sha256": "4d1e3a8a687485b8698fa61bd171314ee4480a401bf68bff3853aae1a22daa87"
+            },
+            {
+              "path": "crates/opi-ai/tests/proxy_support.rs",
+              "sha256": "31ceed3919c436d99ec47b9d8f5916383b63a53cbe2ca907f3ac11b7bbe41b6d"
+            },
+            {
+              "path": "crates/opi-ai/tests/public_utilities.rs",
+              "sha256": "1b478408c59e07f28e508b67e6ac079806d434081a92eceb3de83f421912ac97"
+            },
+            {
+              "path": "crates/opi-ai/tests/registry.rs",
+              "sha256": "620e57ee744c82e832f9a46d9a6c2e1d3284b20f7fd13f0f49963c3e43709b09"
+            },
+            {
+              "path": "crates/opi-ai/tests/replay_contract/object_wire.rs",
+              "sha256": "821811d68453f4ab93b141bca94553e00ab07367f38936a5f1d026098054c360"
+            },
+            {
+              "path": "crates/opi-ai/tests/replay_contract.rs",
+              "sha256": "1fe960ece25282857450f7b24bf299cf3d5eb21a0194cee05958c8d10bd3ea4d"
+            },
+            {
+              "path": "crates/opi-ai/tests/request_enrichment.rs",
+              "sha256": "9ea3cd9d8826ab8ec5eeb2827885f61cd9072d36d2021a7335d72eb90fc7fa29"
+            },
+            {
+              "path": "crates/opi-ai/tests/resource_cleanup.rs",
+              "sha256": "b28046fcf05726d7ae0b871ce70f3d8890e14f216a0c75580fe36f5456e5c4a7"
+            },
+            {
+              "path": "crates/opi-ai/tests/retry_backoff.rs",
+              "sha256": "7f5fd6c7e7065c00fab511145c4a41e4d56b4380c4e4b30171439bdc900ddc5d"
+            },
+            {
+              "path": "crates/opi-ai/tests/schema_engine.rs",
+              "sha256": "03c44f1d11da122d1566b37a74dbc44cab18f84ac51292646e02c6983873bb87"
+            },
+            {
+              "path": "crates/opi-ai/tests/schema_public.rs",
+              "sha256": "ec659724ee84e1643fe166f2c578ff509a9475f93d3a0248ab2c8780a1cf29ac"
+            },
+            {
+              "path": "crates/opi-ai/tests/service_tier_cost.rs",
+              "sha256": "45c818e4ea4b43515e19c737b1a81de83b540bef9f3900b9330457a870899c20"
+            },
+            {
+              "path": "crates/opi-ai/tests/stream_events.rs",
+              "sha256": "e324445470f698827c4172b670a7407ce202776fd40b3852184f33f95f9c0fbb"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/catalog_store.rs",
+              "sha256": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/pending_auth.rs",
+              "sha256": "3e213329091e66a5a79f8691744de66bde68ba8326d48b8cdc01e289f81a101e"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/tls_fixtures.rs",
+              "sha256": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1"
+            },
+            {
+              "path": "crates/opi-ai/tests/support/ws_peer.rs",
+              "sha256": "a4efab5bb1b8b388683240ee2d74a14120fa92c8f080742ce2e61f2955456329"
+            },
+            {
+              "path": "crates/opi-ai/tests/telemetry_carrier.rs",
+              "sha256": "b46f4f85f3b7ae8b862c652862ca6cfbd16094248878edbc184110ce8d1723a3"
+            },
+            {
+              "path": "crates/opi-ai/tests/telemetry_operations.rs",
+              "sha256": "31851d9f1d695818451094f596c68f378388047dfd7ed45d50fa92cc3b631c1e"
+            },
+            {
+              "path": "crates/opi-ai/tests/test_support_tests.rs",
+              "sha256": "c51ce53fd82954d6dac35fa9affe2b3f1d8f86644446b4fcb76d489c63fe7a2e"
+            },
+            {
+              "path": "crates/opi-ai/tests/tls_contract.rs",
+              "sha256": "eac6a06be00fe7d06c44b8d93fc7cb976e91f16af3fe19ed3502257eb110b04a"
+            },
+            {
+              "path": "crates/opi-ai/tests/tool_result_no_leak.rs",
+              "sha256": "a583d47b6d961b82cb51103796c0c619e0f59ae6638ee83b22488a872e70acf1"
+            },
+            {
+              "path": "crates/opi-ai/tests/tool_result_wire.rs",
+              "sha256": "86d960d90110d7333b9d7edd919d4dfa0152038ef48dc571b17606ac1f1d1e21"
+            },
+            {
+              "path": "crates/opi-ai/tests/transcript_contract/provider_projection.rs",
+              "sha256": "8e193591ed4a953a5d1e01f8d75e855028922496d2d12bbacdeb53f7dc6ea341"
+            },
+            {
+              "path": "crates/opi-ai/tests/transcript_contract.rs",
+              "sha256": "ddcd4810b374ff294971fef3a39f18639bc8893b676b07482577e2c2a39d1cb6"
+            },
+            {
+              "path": "crates/opi-ai/tests/usage_cost.rs",
+              "sha256": "90bcb760d5ad442795956c75e0a2b7299bf75479b1a4cdfe87542cb54e1455da"
+            },
+            {
+              "path": "crates/opi-ai/tests/vertex_fixtures.rs",
+              "sha256": "def51b4a5f1c896ac05733c41b931e3904c0d3d1a3ca3788daa10ea853558a0c"
+            },
+            {
+              "path": "crates/opi-ai/tests/whole_call_retry.rs",
+              "sha256": "6bf156727912fb3ac050b3cecb50556dca1f0d32a606accf67c169729b22aabe"
+            },
+            {
+              "path": "crates/opi-ai/tests/ws_upgrade.rs",
+              "sha256": "37e1370b02ad0776f70e29080ff6ac5661459e18182eebfc3174b19735cf7625"
+            }
+          ],
+          "cargo_generated_files": [
+            ".cargo_vcs_info.json",
+            "Cargo.lock",
+            "Cargo.toml"
+          ]
+        },
+        {
+          "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\opi-telemetry-0.8.3.crate",
+          "sha256": "54ffe66285c677661c4f64991b53fa580f69fe8f0a9e370588bc6af285d2fd7a",
+          "bytes": 21933,
+          "package": "opi-telemetry",
+          "matched_files": 17,
+          "matching_workspace_files": [
+            {
+              "path": "crates/opi-telemetry/Cargo.toml",
+              "sha256": "2bce94982f0a30767e4141538026ed9c06272318785784f0c7a40b58b41f8018"
+            },
+            {
+              "path": "crates/opi-telemetry/LICENSE",
+              "sha256": "0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+            },
+            {
+              "path": "crates/opi-telemetry/README.md",
+              "sha256": "8cc5baab42d95209ffc2b1e56dedcb04ee0dcdd0def3d621aeb057366d1855a0"
+            },
+            {
+              "path": "crates/opi-telemetry/README.zh.md",
+              "sha256": "a2be952d14f8813969af5e7796327eb1dc6fa9c4b61ae5e2d81085af1bdf3c91"
+            },
+            {
+              "path": "crates/opi-telemetry/examples/record_request.rs",
+              "sha256": "3a7dac72ff0498e5292edcb28bddbe83ffe49bb195dfa2c9f23dcc3626f30a8b"
+            },
+            {
+              "path": "crates/opi-telemetry/src/backend.rs",
+              "sha256": "7b85f239a656f7d82fb06a12221b956d8c744a80c590ccd1bff83cd26fe37861"
+            },
+            {
+              "path": "crates/opi-telemetry/src/context.rs",
+              "sha256": "00ee0c4cff3fb8a971c0e2ba64955871ba7178570ddb9d6202097b7a1c9d7ace"
+            },
+            {
+              "path": "crates/opi-telemetry/src/lib.rs",
+              "sha256": "4ca90cc68dbfe7fc01ff1071fba72a36fda04c165a05f8bf4ae31647630b52ba"
+            },
+            {
+              "path": "crates/opi-telemetry/src/memory.rs",
+              "sha256": "72093d6ef684b1ad444bb818bcaabf2a7619d9eb6fec8f2ea39eeae24aa29f3b"
+            },
+            {
+              "path": "crates/opi-telemetry/src/metrics.rs",
+              "sha256": "d22d4607bfc6a9a00b5e13f878a8b68af3115ac81bf96d7cc8590efad7f40b26"
+            },
+            {
+              "path": "crates/opi-telemetry/src/noop.rs",
+              "sha256": "9d9beb8f57cd8b0a385b3ef6db6c3fa7f3d98142487ba06c6db983cf81a30f7c"
+            },
+            {
+              "path": "crates/opi-telemetry/src/schema.rs",
+              "sha256": "2b6eac2b45df4b58bf66894d3ebe3fd627c315d43a016b473200486258823aec"
+            },
+            {
+              "path": "crates/opi-telemetry/src/tracing.rs",
+              "sha256": "6bc139aee78cbb80b116a171f85b2acfc08045798baa48eaa90773e62c7155ba"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/contracts.rs",
+              "sha256": "7a7aed623fcafbd969f3544e842fda9366a68e071d2b8666391ca45587028816"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/failures.rs",
+              "sha256": "d04fe955980932c4ad7ada409b98d35b85dae2d9303b896f02094b274d8ef2fd"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/support/mod.rs",
+              "sha256": "94f542f886aa30dbd39afa52b78d4ccc1fbcfb90b6e2fe478f08c0dfc7248615"
+            },
+            {
+              "path": "crates/opi-telemetry/tests/tracing_adapter.rs",
+              "sha256": "aad9f6924dad9b0650de5cbd834f40045554809731b41e55e03c735a1560e902"
+            }
+          ],
+          "cargo_generated_files": [
+            ".cargo_vcs_info.json",
+            "Cargo.lock",
+            "Cargo.toml"
+          ]
+        }
+      ],
+      "profiles": [
+        {
+          "name": "defaults-off",
+          "verdict": "PASS",
+          "total": 73,
+          "failed": 0
+        },
+        {
+          "name": "caller-defaults-on",
+          "verdict": "PASS",
+          "total": 73,
+          "failed": 0
+        }
+      ],
+      "steps": [
+        {
+          "name": "lease-start",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "lease",
+            "start",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--pid",
+            "63848"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\lease-start.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\lease-start.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "package",
+          "command": [
+            "cargo",
+            "package",
+            "-p",
+            "opi-telemetry",
+            "-p",
+            "opi-ai",
+            "--allow-dirty",
+            "--no-verify",
+            "--offline",
+            "--locked"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\package.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\package.stderr",
+            "sha256": "9e5192bfd2d9bc7558748625963b9061d027f52ed6030b5fec08377810bab96b",
+            "bytes": 248
+          }
+        },
+        {
+          "name": "consumer-lock",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "generate-lockfile",
+            "--offline"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\consumer-lock.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\consumer-lock.stderr",
+            "sha256": "8a8e8523573ac527964e1f391f3d40c52e0b1aff7c59cbbdf1381b5b050d12e7",
+            "bytes": 223
+          }
+        },
+        {
+          "name": "defaults-off-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "metadata",
+            "--format-version",
+            "1",
+            "--offline",
+            "--locked"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\defaults-off-metadata.stdout",
+            "sha256": "e6e0be730ead1b191129b10b52b7d384aae0bf003564424019f09ae15789f03b",
+            "bytes": 1172894
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\defaults-off-metadata.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "defaults-off-consumer",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "run",
+            "--offline",
+            "--locked"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\defaults-off-consumer.stdout",
+            "sha256": "5b7a796069a42b1d8c9e07e8fb5bf316e0c60516e6a25ae21d72217a224bfd54",
+            "bytes": 5009
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\defaults-off-consumer.stderr",
+            "sha256": "2fe384913e894799848862c476d2c038bb08243fa032a1d63e07752dc2478684",
+            "bytes": 480
+          }
+        },
+        {
+          "name": "caller-defaults-on-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "metadata",
+            "--format-version",
+            "1",
+            "--offline",
+            "--locked",
+            "--features",
+            "caller-default-regress,caller-default-opi-ai"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\caller-defaults-on-metadata.stdout",
+            "sha256": "dd74ea31b21be7a5b0c232745ba71829d3b164c7eefdbdd772e1c60ea5a743cc",
+            "bytes": 1176706
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\caller-defaults-on-metadata.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        },
+        {
+          "name": "caller-defaults-on-consumer",
+          "command": [
+            "cargo",
+            "--config",
+            "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\candidate-telemetry.toml",
+            "run",
+            "--offline",
+            "--locked",
+            "--features",
+            "caller-default-regress,caller-default-opi-ai"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\caller-defaults-on-consumer.stdout",
+            "sha256": "5b7a796069a42b1d8c9e07e8fb5bf316e0c60516e6a25ae21d72217a224bfd54",
+            "bytes": 5009
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\caller-defaults-on-consumer.stderr",
+            "sha256": "a070f544191241a19dc5cde0ddede141fd3c251ebf41f9dd777990815350d0b7",
+            "bytes": 480
+          }
+        },
+        {
+          "name": "lease-end",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "lease",
+            "end",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--pid",
+            "63848"
+          ],
+          "exit": 0,
+          "stdout": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\lease-end.stdout",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          },
+          "stderr": {
+            "path": "C:\\Temp\\opi-schema-proof-20261114-cost-contract\\lease-end.stderr",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "bytes": 0
+          }
+        }
+      ]
+    }
+  ],
+  "historical_reports_unchanged": [
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\evidence\\readme-examples-proof.json",
+      "sha256": "c1e23fdeb235830a3b15e0160044d91a2dd42980ad5c6ce3a1e88031449b98a0",
+      "bytes": 33668
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\evidence\\upstream-package-proof.json",
+      "sha256": "5f9032ace58c6033a632664d00017364204cae0fb15d90aeea15e61775911312",
+      "bytes": 24182
+    }
+  ],
+  "test_impact": {
+    "update": [
+      "phase14_usage_subsets_survive_session_resume",
+      "embedded_model_pricing_updates_on_model_switch_and_resume"
+    ],
+    "add": [],
+    "delete": [],
+    "retain": [
+      "Other session tests and existing README/Schema package consumers"
+    ]
+  }
+}

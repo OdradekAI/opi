@@ -50,6 +50,19 @@ Pi Messages simple 透传自己的白名单。`ModelInfo::input_limits` 仅为�
 
 ## 公共入口
 
+Anthropic `message_delta` 逐字段应用已上报的 token 值，包括零；缺失或 null 保留
+原值。省略 stop reason 也保留原原因。消息开始及每次接受用量更新后，先刷新目录
+成本，再发布规范的 partial 或失败结果。合并后的缓存写入子集非法时，整次更新
+不提交。provider 上报总额（包括明确的零）仍具有优先权。此前已交付的独立事件
+快照保持不变；Models 的自动 observer 读取规范结果，raw prepared attempt 仍需
+显式接入观察，不会仅因携带 context 就新增 AI span。
+
+`Usage.cost` 随消息序列化，保留响应时的计价快照：目录计价分量、独立的 `total`，
+以及标识 provider 上报总额的 `total_from_provider`（包括明确上报的零总额）。
+旧 usage 对象缺少 `cost` 时，反序列化使用默认费用分解，不声称总额来自 provider。
+宿主的累计费用估算是独立策略；消息序列化不会用当前目录重新计价，也不代表所有价格
+都已知。
+
 主要公共值包括 `Usage`、`CumulativeUsage`、`Pricing`、`PricingTier`、
 `SamplingParams`、`ModelInfo::sampling_params` 和 `Request::sampling_params`。
 费用计算通过 `calculate_cost_tiered` 暴露；估算器和 sampling resolver 位于

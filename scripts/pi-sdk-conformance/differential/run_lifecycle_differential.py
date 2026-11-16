@@ -45,17 +45,27 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"refusing to overwrite evidence: {args.output}")
     repo = args.repo.resolve()
     freezer = material_tools(repo)
-    material = json.loads(args.materials.read_text(encoding="utf-8"))
-    drift = freezer.verify_evidence(repo, material)
+    materials_path = args.materials.resolve()
+    materials_bytes = materials_path.read_bytes()
+    material = json.loads(materials_bytes)
+    materials_hash = freezer.sha256_bytes(materials_bytes)
+
+    def material_drift() -> list[str]:
+        errors = freezer.verify_evidence(repo, material)
+        if freezer.file_record(materials_path).get("sha256") != materials_hash:
+            errors.append("material manifest bytes changed")
+        return errors
+
     evidence = {
         "schemaVersion": 2, "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
         "repository": str(repo),
-        "scope": "Three controlled source lifecycle comparisons, not provider coverage or full alignment.",
-        "materialsEvidence": {"path": str(args.materials.resolve()), "sha256": file_hash(args.materials)},
+        "scope": "Paired public Models source completion, EOF timing, telemetry and setup failures, and deferred fetch and cancel.",
+        "materialsEvidence": {"path": str(materials_path), "sha256": materials_hash, "snapshot": material.get("snapshot")},
         "blocked_gates": list(material.get("blocked_gates", [])),
         "strict_alignment": False,
         "cases": [],
     }
+    drift = material_drift()
     if drift:
         evidence.update({"verdict": "STALE_MATERIALS", "material_drift": drift})
         freezer.write_new_json(args.output, evidence)
@@ -70,15 +80,15 @@ def main(argv: list[str] | None = None) -> int:
             repo / "scripts/pi-sdk-conformance/differential/common.py",
             repo / "scripts/pi-sdk-conformance/differential/run_lifecycle_differential.py",
         )}
-        for scenario, source_case in SCENARIOS.items():
-            command = ["node", str(upstream_driver), "--snapshot", str(repo / ".pi/pi-1.5.0"), "--case", source_case]
+        for scenario in SCENARIOS:
+            command = ["node", str(upstream_driver), "--snapshot", material["snapshot"], "--case", scenario]
             upstream_runs = [run_json(command, repo) for _ in range(3)]
             rust = run_rust_trace(scenario, build, repo)
             comparison = compare_traces(upstream_runs[0]["trace"], rust["trace"], scenario)
             if any(row["trace"] != upstream_runs[0]["trace"] for row in upstream_runs[1:]):
                 comparison = {"status": "fail", "reason": "upstream observations differ across repetitions"}
             evidence["cases"].append({"scenario": scenario, "upstream_runs": upstream_runs, "rust_run": rust, "comparison": comparison})
-        after = freezer.verify_evidence(repo, material)
+        after = material_drift()
         if after:
             evidence.update({"verdict": "MATERIALS_CHANGED_DURING_RUN", "material_drift": after})
             code = 2

@@ -27,11 +27,8 @@ pub enum StopReason {
     Deferred,
 }
 
-/// A message-level constrained-sampling diagnostic (task 20.11): the
-/// recorded strict-prefer downgrade (kind
-/// `anthropic_strict_tools_fallback`, reason
-/// `strict_tool_limits_exceeded`) or a grammar-target fallback loss
-/// (kind `constrained_sampling_fallback`). `detail` carries the
+/// A message-level diagnostic. Examples include a constrained-sampling
+/// fallback and Codex's terminal `end_turn` signal. `detail` carries the
 /// redacted-safe provider message when one exists.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]

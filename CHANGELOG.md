@@ -1,6 +1,89 @@
 ## Unreleased
 
+### Added
+
+- `opi-ai`: the fixed rustls/AWS-LC/native-certs source-scoped TLS backend is
+  independently selectable through `tls-backend`; `http-transport` selects it
+  transitively, while the historical `opi_ai::http` TLS re-exports remain
+  available for HTTP callers.
+- `opi-ai`: the strict WebSocket Upgrade and permessage-deflate owner is
+  independently selectable through `websocket-compression`; it transitively
+  selects the shared HTTP/TLS owners, while `protocol-adapters` keeps the
+  existing provider WebSocket behavior through that feature.
+- `opi-ai`: protocol-independent AWS source chains/STS, GCP ADC, shared
+  SigV4 and cloud signing/codecs are independently selectable through
+  `cloud-auth`; it transitively selects shared HTTP/TLS, while
+  `protocol-adapters` keeps the existing Bedrock/Vertex wire behavior through
+  that owner.
+
+- `opi-ai`: provider protocol/source ownership is now independently selectable
+  for Anthropic, Azure OpenAI, Bedrock, Gemini, Mistral, OpenAI Chat, Codex
+  Responses, OpenAI Responses, OpenRouter, Pi Messages and Vertex;
+  `protocol-adapters` remains the compatibility group and default/builtins
+  behavior is unchanged.
+- `opi-ai`: capability V now has a reproducible matrix runner for all 55
+  unordered provider-owner pairs and two supported high-order provider unions;
+  native and actual-package rows retain frozen Pi 1.5.0 differential evidence,
+  while native macOS remains explicitly blocked without a runner.
+- opi-ai: the remaining shared-owner capability V pairs
+  (cloud-auth + catalog-bundled, and websocket-compression + oauth-store)
+  now have dedicated native and actual-package consumers; their exact
+  transport/TLS closures and forbidden-owner boundaries are recorded, while
+  native macOS remains explicitly blocked without a runner.
+
+### Fixed
+
+- `opi-ai`: Anthropic Messages HTTP streams now defer `message_stop` until
+  provider EOF, preserving repeated tail usage and raw observer failures before
+  the single terminal `Done` event.
+- `opi-ai`: Gemini and Vertex streaming now defer `finishReason` terminal
+  publication through repeated tail usage and suppress deferred `Done` when a
+  raw observer fails on the tail.
+- `opi-ai`: native Mistral Conversations now lets the latest valid finish
+  replace an earlier provider error, keeps repeated and usage-only tail frames
+  observable, suppresses stale `Done` after observer/parse faults, and releases
+  the failed response before a later request.
+- `opi-ai`: native Pi Messages terminal events now preserve `responseModel`;
+  repeated terminal frames stop at the first `done`/`error`, raw observer
+  failures publish typed partial errors without `Done`, and a later request can
+  reuse the provider.
+- `opi-ai`: OpenAI-compatible Chat usage now falls back to `choices[0].usage`
+  when a provider omits chunk-level usage, while preserving top-level usage
+  precedence and the existing cache, reasoning, total-token and cost mapping.
+- `opi-ai`: Bedrock Converse now holds a messageStop terminal until stream EOF,
+  lets repeated metadata update final usage, and reports tail observer failures
+  before Done on the shared HTTP route.
+- `opi-ai`: OpenAI and Azure Responses now hold completed terminals through EOF,
+  preserve repeated final usage, and surface tail raw observer failures before
+  Done on the shared HTTP route.
+- `opi-ai`: Anthropic usage updates now distinguish omitted fields from
+  explicit zero and preserve omitted stop reasons. Updated counts and catalog
+  costs reach successful and failed results, AI request accounting, and Agent
+  session save/resume without clearing omitted counters.
+- `opi-ai`: Anthropic nested cache TTL and thinking-token usage now reaches
+  canonical results and Agent session recovery; malformed subset updates fail
+  atomically while the legacy flat cache field remains accepted.
+
 ### Breaking Changes
+
+- `opi-ai` (0.x): `AnthropicEvent::MessageDelta.usage` now uses
+  `AnthropicUsageDelta` instead of `Usage`. Custom mapper callers supply
+  `Some(value)` for reported token fields, including zero, and `None` for
+  unchanged fields; omitted fields can use `..Default::default()`.
+
+- `opi-ai` (0.x): `default-features = false` now selects the backend-neutral
+  core and existing scripted test support without built-in network
+  transports, cloud authentication or the embedded catalog API. Existing
+  no-default consumers using those APIs must enable `features = ["builtins"]`.
+  Default builds enable both `builtins` and `telemetry-tracing`; custom
+  providers, credential stores and OAuth coordination remain available
+  in the core. Pure Smithy retry types are available at `retry::smithy`;
+  `bedrock::retry` remains an alias when `builtins` is enabled.
+
+- `opi-ai` (0.x): Chat SSE parsers now return `ParsedEvent::Done` for the
+  sentinel. Custom mapper callers replace `flush_pending_done()` with
+  `finish(supports_finish_reason)`, which returns all block-end events and the
+  terminal result; exhaustive parsed-event matches add the new variant.
 
 - `opi-ai`: ordinary `Models.stream*` and `complete*` chat entries now require
   a current Tokio runtime and schedule execution at construction. Dropping an
@@ -625,6 +708,57 @@
 
 ### Fixed
 
+- JSON float decoding now preserves correctly rounded values through tool execution
+  and session save/resume, including the integer spelling of `1e64`. Native
+  `i64`/`u64` values, raw final argument text and strict rejection remain unchanged.
+
+- `opi-ai`: shared Chat routes now wait for `[DONE]` or valid HTTP EOF before
+  ending blocks and emitting `Done`. Tail errors and cancellation remain
+  effective after finish/usage, preventing early Agent tool execution. The
+  sentinel releases the response even without usage; raw callbacks stop at
+  the terminal. Azure simple dispatch preserves `with_compat` settings.
+
+- `opi-ai`: streaming JSON previews preserve complete trailing `true`,
+  `false` and `null` values while an enclosing object or array is still
+  open. Final tool-argument validation remains unchanged.
+
+- `opi-ai` keeps a single OpenAI Chat text block across streamed tool
+  deltas. Resumed text keeps its original content index, and the next Chat
+  request preserves trailing whitespace received after a tool delta.
+
+- `opi-ai` creates AI metric instruments before opening request and deferred
+  poll spans, so an instrument factory error leaves no span to settle.
+
+- `opi-ai` attempts to finish the automatic request span once when a final
+  attribute write or request duration record fails on a successful chat
+  request. The span keeps any attributes already written. Host tracing
+  reports the original error and any error from the finish attempt. The call
+  delivers the successful model result.
+
+- Ordinary `opi-ai` Models chat calls now include the requested provider and
+  model IDs in failure messages synthesized during setup.
+
+- `opi-ai` deferred fetches retain the handle's provider and model IDs in
+  failure messages synthesized before a partial arrives.
+
+- `opi-ai` started deferred fetches can deliver a successful `Done` before
+  source release. Public EOF and `result()` wait for release and poll
+  settlement. The task keeps draining after consumer Drop. Force abort or
+  runtime shutdown after `Done` is cached preserves that outcome on join,
+  even if the event was unread.
+
+- `opi-ai` direct deferred iteration delivers the terminal, then drains
+  the source and settles the poll before returning EOF. Local cancellation
+  releases a pending tail and preserves the delivered outcome. Dropping
+  the direct collector after a successful `Done` releases the source
+  immediately and settles the poll once with the cached result.
+
+- `opi-ai` deferred fetch and cancel diagnostics name the requested provider
+  and API when their registration lookup fails.
+
+- `opi-ai` records first-chunk telemetry when a typed failure is the first
+  normalized stream delivery, including failures before provider dispatch.
+
 - `opi-ai`: ordinary provider calls now drain source-owned tail work after a
   business terminal before delivering the terminal and settling request telemetry.
   Tail events cannot replace the first outcome or re-enter retry admission;
@@ -668,12 +802,47 @@
 - `opi-ai`: whole-call retry vetoes recognized context overflow before transient
   text matching, so token limits containing strings such as `500` cannot cause
   another logical call or retry callbacks.
+- `opi-ai`: `is_context_overflow` recognizes LiteLLM context-window errors and
+  leading HTTP 413 diagnostics for any provider, including deferred failures.
+  Throttling and rate-limit exclusions take precedence.
+- `opi-ai`: whole-call retry recognizes Pi 1.5 workspace and Z.ai usage limits
+  and newer gateway and transport errors. HTTP status matching uses ASCII
+  alphanumeric boundaries. OpenAI-compatible 429 quota failures retain a
+  redacted diagnostic for the whole-call decision.
+- `opi-ai`: Responses `response.failed` terminals preserve transient, quota
+  and context-overflow diagnostics as fixed text. Callers can recover through
+  the whole-call policy while prepared acquisition remains sealed after handoff.
+- `opi-ai`: Responses SSE `error` events and SDK error envelopes terminate
+  with a redacted diagnostic based on the fields selected by the wire.
+  Terminal Codex WebSocket errors carry the same safe classification.
+- Codex WebSocket calls in `opi-ai` fall back to SSE with the full request
+  after two connection-limit rejections before any provider event. The same
+  session continues on SSE until resource cleanup.
+- Codex WebSocket recovery in `opi-ai` recognizes connection-limit and
+  missing-continuation codes inside `response.failed` and shares the retry
+  budgets used for `error` frames.
+- Codex SSE and WebSocket streams accept `response.done` and use the terminal
+  status to distinguish output limits from failures. Terminal results preserve
+  response identity, usage and the boolean `AssistantMessage::end_turn()`
+  diagnostic. SSE releases the response body after the first terminal.
+- Codex WebSocket reuse checks readable idle input before the next
+  `response.create`. Complete idle messages stay outside the next call,
+  and incomplete input retires the socket before a full-input send.
+- On a reused Codex WebSocket, a distinct `response.created` ID keeps
+  explicitly identified previous-response terminals out of the current
+  result and raw event callbacks.
+- Codex WebSocket Ping and Pong keep the application idle deadline. Expiry
+  attempts a bounded `idle_timeout` Close and routes later session calls to
+  SSE. Calls that received a provider event retain their partial result.
 - `opi-ai`: acquisition retries refuse server-required waits above a nonzero
   delay cap instead of shortening them. Equal-cap hints and an explicitly
   unlimited cap retain their exact server-requested duration.
-- `opi-ai`: `ChatStream` rejects contradictory terminal stop reasons with one
+- `opi-ai`: `ChatStream` rejects contradictory `Done` stop reasons with one
   typed protocol failure, retaining terminal content and usage and releasing
   the producer before permanent EOF.
+- `opi-ai`: `ChatStream` preserves matching legacy provider `Aborted` stop
+  reasons as `ProviderError::Cancelled` with the original assistant message.
+  The caller's cancellation token records local cancellation independently.
 - `opi-coding-agent`: auth remediation recognizes credential failures inside
   prepared-call projection envelopes, retaining typed failure and projection
   facts for TUI, RPC and CLI consumers.
@@ -968,6 +1137,41 @@
   call sites add `Default`/`None` fields; historical records deserialize
   unchanged.
 ### Added
+
+- `opi-ai`: provider-owned OAuth flows and their store-backed login/refresh
+  bridge are now independently selectable through `oauth-store`. The feature
+  transitively selects `http-transport` while leaving neutral credential,
+  mutation, store and OAuth contracts in core; `builtins` selects it
+  transitively so default and explicit-builtins callers keep the existing
+  surface. Provider collection and AWS/ADC/Vertex credential-source factories
+  remain behind `builtins`.
+
+- `opi-ai`: provider protocol adapters are now independently selectable through
+  `protocol-adapters`. The feature owns the built-in wire modules and their
+  protocol-only HTTP/TLS, WebSocket and compression dependency closure, and
+  transitively selects `http-transport` without enabling the bundled catalog.
+  `builtins` selects `protocol-adapters` transitively, preserving the default
+  and explicit-builtins surface; neutral OAuth/store contracts remain in core,
+  while provider collection and built-in OAuth/AWS/Vertex credential factories
+  remain behind `builtins`.
+- `opi-ai`: the shared `http-transport` feature is independently selectable
+  for the public `HttpClient`/builder, proxy and redirect policy, bounded HTTP
+  error classification, and source-scoped TLS/crypto wiring. `builtins`
+  transitively enables it, preserving the default and explicit-builtins caller
+  surface; provider protocol adapters and built-in auth remain behind
+  `builtins`.
+
+- `opi-ai`: `streaming_json::ToolCallArgumentsStream` adds caller-owned
+  incremental tool-argument previews with raw-text append/replacement,
+  independent display snapshots and strict finalization. Snapshots remain
+  unchanged while reachable values contain numeric overflow or exceed 128
+  nested containers; representable replacements resume publication. The existing
+  `message::parse_streaming_json` remains available for whole-prefix previews.
+
+- `opi-ai` adds `Models::fetch_deferred_ready` for result-only deferred
+  consumers on Tokio. It returns the first normalized pending, ready or
+  typed failure outcome while the execution task drains the source and
+  settles the poll. `Models::fetch_deferred` awaits that cleanup.
 
 - **Explicit chat execution:** `ChatCall::start()` and `ChatStream::start()`
   return a `StartedChatStream` backed by a Tokio execution owner. Requests
@@ -1419,10 +1623,11 @@
   Bounded branches: exactly one full-input retry on
   `previous_response_not_found` before public output, exactly one reconnect
   on `websocket_connection_limit_reached` before generation starts, and a
-  WS->SSE fallback only for transport-class failures before the first
-  effective provider event (per-session sticky); abort/API/auth/protocol
-  failures never masquerade as transport loss and an output-delivered error
-  ends that stream preserving the partial. `WsUpgradeRequest::headers`
+  WS->SSE fallback for transport-class failures or repeated connection-limit
+  rejections before the first effective provider event, with session affinity.
+  Terminal abort, API, auth and protocol failures retain their classification.
+  An output-delivered error ends the stream with its partial result.
+  `WsUpgradeRequest::headers`
   extends the public Upgrade bridge with caller handshake headers
   (handshake-managed names reserved). The transitional unused-code boundary
   on the private ws modules is replaced by this genuine production path.
@@ -1521,8 +1726,8 @@
 - `opi-ai`: public context-overflow, recoverable-Length and typed
   diagnostic predicates (task 20.53.3, P20-S53-3). `is_context_overflow`
   (pinned `isContextOverflow`) matches the pinned provider overflow error
-  patterns after applying the pinned non-overflow exclusions, gates the
-  bodyless Cerebras 400/413 shape on the `cerebras` provider, and detects
+  patterns after applying the pinned non-overflow exclusions, includes a
+  fallback for bodyless Cerebras diagnostics, and detects
   silent Stop overflow and zero-output Length-stop overflow against a
   caller-supplied context window - both usage-based branches require known
   usage (`Usage::reported`); unknown usage is never converted to zero

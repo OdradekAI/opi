@@ -1,0 +1,5676 @@
+{
+  "schema": 1,
+  "case": "codex-websocket-post-send-terminal-identity",
+  "baseCommit": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "pi": {
+    "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "comparedRevision": "71023aec1546d6d677a65669c5665c0927ce0dd0",
+    "snapshot": "C:/Temp/opi-ai-frozen-lock-20261111",
+    "originalLockSha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a",
+    "sourcePaths": [
+      "packages/ai/src/api/openai-codex-responses.ts",
+      "packages/ai/src/api/openai-responses-shared.ts",
+      "packages/ai/package.json"
+    ],
+    "sdk": {
+      "version": "7.19.0",
+      "declarations": "packages/ai/node_modules/openai/resources/responses/responses.d.ts",
+      "declarationsSha256": "17e2695d6dff0ee316379534f9f0a231203e5b6efe1d8055737caebc71d8b0a5"
+    },
+    "runtime": "Node 24.13.0 / Windows x64 native WebSocket",
+    "loopbackServer": "ws@8.21.0 and node:http"
+  },
+  "inputs": {
+    "crates/opi-ai/src/openai_codex_responses/ws_transport.rs": "c5373fb28aeaf021d85542d666f100e7157142353cbe5cc22a1ac822bc4dea06",
+    "crates/opi-ai/src/openai_responses_shared.rs": "79e41f7d4c58d7f240b37914d4a729cb5e1c7b8fedea6af39a7e3ecde7f2917a",
+    "crates/opi-ai/tests/openai_codex_responses.rs": "1177329d11551d633d735bef2cfaab1ef4eebaba8c72bfea314c097edc2bd18f",
+    "crates/opi-ai/tests/openai_codex_responses/websocket_idle.rs": "fd65d3d56e1c0c0e86a134e00d877ad6859eefab5379327a6c40de8338fd335c",
+    "crates/opi-ai/tests/data/codex-websocket-identity.json": "109be4014426242b07c38943f7df0a1f58f9133b798ec48cf5f61d9a1b086a07",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_identity.mjs": "327465861afbbbea2666e4d0e56bb001deebb96fc9230911cefbe831e80c63f0",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-materials.json": "f4c9f9ab9d214fd0f2ec7d2e18fd69f23c85b695aa50e6f377d5b2ec491c8b1d",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-materials.json": "07f488fdf07bb1a55f6ae29c3a897eef92a00abcef432415399d5ac329441cb5",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-observations.json": "2561ccb492996125ac284f209b5cb717e0d7dddc65d3d7bfdb7dc22940faf366"
+  },
+  "execution": {
+    "pi": {
+      "command": [
+        "node",
+        "--conditions=source",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_identity.mjs",
+        "--snapshot",
+        "C:/Temp/opi-ai-frozen-lock-20261111"
+      ],
+      "identicalRuns": 3,
+      "stdoutSha256": "aca441823ac313da7a73f70b1799db3edae02c404413e283c2e54971c7df212b",
+      "missingSnapshotExitCode": 2,
+      "missingSnapshotStderr": "node --conditions=source observe_codex_websocket_identity.mjs --snapshot <path>"
+    },
+    "baselineRust": {
+      "test": "websocket_idle::pooled_connection_attributes_post_send_terminals_by_response_identity",
+      "sourceSha256": "a5af40b7e79542f564ddb2d004a78db93f706190ab7b679fab2be61578548a11",
+      "executableSha256": "ab4dfdc977a4bc62f7aae81bf5b60bf1f3aee1fa92c4a9afff5cdec5e83cb144",
+      "exitCode": 101,
+      "observedRows": 36,
+      "note": "The first assertion expected zero for absent failure usage. The captured rows retain Rust null. The updated assertion checks that native representation."
+    },
+    "updatedRust": {
+      "defaultFeatures": {
+        "receipt": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-codex-websocket-identity-rust-df7cde92-68e8-458d-a12d-10072eacf364.json",
+        "sha256": "e19a9418671090eef8052a9df3d45283fdb550ab375896f0664db510f44760bd",
+        "rowCount": 15,
+        "identityCount": 36,
+        "results": [
+          "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s",
+          "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+          "test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.15s",
+          "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+          "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+          "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s",
+          "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s"
+        ],
+        "executables": {
+          "azure_openai_fixtures": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\azure_openai_fixtures-412cc9ec06ee1167.exe",
+            "sha256": "e9d64f7a1778dfc5d88c0ff698e96323976a4e9134cd5d5688c2dce69efe9165"
+          },
+          "openai_responses_fixtures": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_responses_fixtures-1e7d23860cf65056.exe",
+            "sha256": "155bcbf48e4d2b640ef36bad026e1a4a34bb8c43d83823143f50798c3726e4a9"
+          },
+          "whole_call_retry": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\whole_call_retry-a7c3eee005c83051.exe",
+            "sha256": "6c83dcc82219c5ca57bc53da88d84d328605d0e8edbdbbff0490662219e32e41"
+          },
+          "openai_codex_responses": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe",
+            "sha256": "a62cc473a8a206d7377faf6b9f3a0b867459852000ea358e510900020601e318"
+          },
+          "ws_upgrade": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\ws_upgrade-3a075249ab34fab4.exe",
+            "sha256": "411559f290eed3516952a1a2adf237477a0c592be1609f2d556a24f7fc33f334"
+          },
+          "stream_events": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\stream_events-55ad3cd032e1db64.exe",
+            "sha256": "fa9f3e5a36c889180f48cfe1e35f7247535f6c006b654763a2e4301968d2dad2"
+          },
+          "codex_native_options": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\codex_native_options-6fbc9fdf4569c64e.exe",
+            "sha256": "7b8ab1044eb1496ea436c0aca12993b8a5bdbce904aa7d9cb5c0684d315dcfc8"
+          }
+        },
+        "exitCode": 0
+      },
+      "noDefaultFeatures": [
+        "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s",
+        "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 85 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.15s",
+        "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s",
+        "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s"
+      ],
+      "wsLibraryTests": 89,
+      "codexCloseDeadlineTests": 1,
+      "priorIdlePairsRetained": 15,
+      "priorRetirementControlsRetained": 3,
+      "clippyExitCode": 0,
+      "rustdocExitCode": 0,
+      "formatExitCode": 0
+    },
+    "lifecycle": {
+      "stalePriorManifest": {
+        "exitCode": 2,
+        "drift": [
+          "tree drift: crates/opi-ai/src"
+        ],
+        "executedCases": 0
+      },
+      "cases": 24,
+      "exactPriorCases": 24,
+      "receipts": 96,
+      "comparisonStatuses": {
+        "pass": 4,
+        "difference": 20
+      },
+      "deferredDifferences": 10,
+      "materialDrift": [],
+      "materialBlockers": [],
+      "onlyChangedInputTree": [
+        "crates/opi-ai/src"
+      ],
+      "materialSha256": "f4c9f9ab9d214fd0f2ec7d2e18fd69f23c85b695aa50e6f377d5b2ec491c8b1d",
+      "replaySha256": "1c6352e17ea715cd7c4402615519b34561ad5302c03d8f6a97ac7d0038db642d",
+      "rustDriverSha256": "2332cbee3f473b25d6b1212cc804f7210c639b653bbe12e950601304bc60dd90",
+      "relevantContractIds": [
+        "CAP-VALUES",
+        "CAP-DEFERRED",
+        "CAP-RETRY"
+      ]
+    }
+  },
+  "comparison": {
+    "pairedCases": 36,
+    "baselineIdentityAgreement": 36,
+    "updatedIdentityAgreement": 24,
+    "updatedExactRawAgreement": 21,
+    "changedOpiPairs": [
+      "old_completed/auto",
+      "old_completed/websocket-cached",
+      "old_completed/websocket",
+      "old_done_after_text/auto",
+      "old_done_after_text/websocket-cached",
+      "old_done_after_text/websocket",
+      "old_incomplete/auto",
+      "old_incomplete/websocket-cached",
+      "old_incomplete/websocket",
+      "old_limit_after_text/auto",
+      "old_limit_after_text/websocket-cached",
+      "old_limit_after_text/websocket"
+    ],
+    "normalizedField": "Absent usage on a failure is Rust null and Pi zero; normalize only this field for the identity comparison.",
+    "notes": [
+      "The peer sends the second frame batch only after the second create. Every pair has one upgrade and zero SSE POSTs.",
+      "Updated Opi excludes a previous-response terminal only after a different nonempty current ID is known on the reused socket.",
+      "When the old done follows text, the third request in both cached modes uses resp_second instead of resp_first. Explicit Websocket still sends full input.",
+      "A terminal before response.created or without a nested ID can still end the second call. Repeated IDs and an override by a third ID retain existing behavior."
+    ]
+  },
+  "cases": [
+    {
+      "name": "clean",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      }
+    },
+    {
+      "name": "clean",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      }
+    },
+    {
+      "name": "clean",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 4
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 4
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 4
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      }
+    },
+    {
+      "name": "before_created",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "before_created",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "before_created",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.completed"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_completed",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_completed",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_completed",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.completed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_done_after_text",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      }
+    },
+    {
+      "name": "old_done_after_text",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_second",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      }
+    },
+    {
+      "name": "old_done_after_text",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 4
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 4
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 4
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": {
+          "stop": "stop",
+          "responseId": "resp_third",
+          "text": "",
+          "totalTokens": 11,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        }
+      }
+    },
+    {
+      "name": "old_incomplete",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "length",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.incomplete"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "length",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.incomplete"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_incomplete",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "length",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.incomplete"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "length",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.incomplete"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_incomplete",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "length",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.incomplete"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "length",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.incomplete"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_limit_after_text",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 0,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_limit_after_text",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 0,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "old_limit_after_text",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 0,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "idless_after_created",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "idless_after_created",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "idless_after_created",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "",
+          "totalTokens": 79,
+          "endTurn": null,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "repeat_created_id",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "repeat_created_id",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "repeat_created_id",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "repeat_without_created",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "repeat_without_created",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "repeat_without_created",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "different_terminal_id",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "different_terminal_id",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "different_terminal_id",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_reported",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "only_top_level_id",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "only_top_level_id",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "only_top_level_id",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "stop",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 8,
+          "endTurn": true,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.done"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "current_limit_after_text",
+      "transport": "auto",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 0,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "current_limit_after_text",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 0,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": "resp_first",
+            "items": 1
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      }
+    },
+    {
+      "name": "current_limit_after_text",
+      "transport": "websocket",
+      "frozenPi": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": 0,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "baselineRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      },
+      "updatedRust": {
+        "sockets": 1,
+        "sse": 0,
+        "sent": [
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 1
+          },
+          {
+            "connection": 1,
+            "previous": null,
+            "items": 2
+          }
+        ],
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_first",
+          "text": "",
+          "totalTokens": 5,
+          "endTurn": false,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ]
+        },
+        "second": {
+          "stop": "error",
+          "responseId": "resp_second",
+          "text": "second answer",
+          "totalTokens": null,
+          "endTurn": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.output_item.done",
+            "response.failed"
+          ]
+        },
+        "third": null
+      }
+    }
+  ]
+}

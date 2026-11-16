@@ -985,6 +985,7 @@ impl GeminiProvider {
     }
 
     /// Bind capture and replay to the registered canonical provider identity.
+    #[cfg(feature = "builtins")]
     pub(crate) fn with_provider_identity(mut self, provider: &str) -> Self {
         self.provider_identity = provider.to_owned();
         self
@@ -1505,14 +1506,18 @@ impl GeminiProvider {
         let mut mapper =
             GeminiMapper::new("gemini", crate::model_info::WireApi::GoogleGenerativeAi, "");
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
+        let mut terminal_error = false;
 
         for data in parse_sse_data(sse_body) {
             for parsed in ParsedEvent::from_data(&data) {
                 match parsed {
                     ParsedEvent::Valid(event) => {
-                        stream_events.extend(mapper.process(event));
+                        let events = mapper.process(event);
+                        terminal_error |= events.iter().any(Result::is_err);
+                        stream_events.extend(events);
                     }
                     ParsedEvent::Malformed => {
+                        terminal_error = true;
                         stream_events.push(Err(mapper.failure(ProviderError::StreamError(
                             ProviderErrorSummary::attested_static(MALFORMED_STREAM_FRAME),
                         ))));
@@ -1521,7 +1526,9 @@ impl GeminiProvider {
             }
         }
 
-        stream_events.extend(mapper.finish_fixture());
+        if !terminal_error {
+            stream_events.extend(mapper.finish_fixture());
+        }
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
     }

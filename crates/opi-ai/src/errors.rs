@@ -109,6 +109,7 @@ impl ProviderErrorSummary {
     ///
     /// Callers must not read a provider-controlled response body solely to
     /// construct this summary.
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn from_http_response(status: u16) -> Self {
         Self(
             format!("HTTP {status}: {}", Self::REDACTED).into_boxed_str(),
@@ -460,8 +461,8 @@ pub enum ProviderErrorCategory {
     Stream,
     /// Unsupported image/tool/thinking capability rejected before the call.
     Capability,
-    /// User/runtime cancellation. The retry loop owns timing, backoff, and
-    /// stream-abort behavior; this is the taxonomy/diagnostic-layer slot.
+    /// A cancelled operation, including a provider-reported abort. The retry
+    /// loop owns timing, backoff and stream-abort behavior.
     Cancelled,
 }
 

@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use crate::stream::StopReason;
 use crate::types::usage::{Pricing, calculate_cost};
 use opi_telemetry::schema::{
     AttributeDefinition, AttributeType, Cardinality, DefaultStatus, EventDefinition,
@@ -18,7 +19,7 @@ use opi_telemetry::schema::{
 };
 use opi_telemetry::{
     AttributeValue, Attributes, Counter, ErrorStatus, Histogram, InstrumentDefinition, SpanOptions,
-    SpanOwner, SpanStatus,
+    SpanOwner, SpanStatus, TelemetryError,
 };
 
 pub use opi_telemetry::{Instrumented, TelemetryContext};
@@ -106,8 +107,33 @@ impl std::fmt::Debug for AiRequestTelemetry {
     }
 }
 
+enum FinishError {
+    ResultAttributes(TelemetryError),
+    RequestDuration(TelemetryError),
+    Other(TelemetryError),
+}
+
+impl FinishError {
+    fn into_error(self) -> TelemetryError {
+        match self {
+            Self::ResultAttributes(error) | Self::RequestDuration(error) | Self::Other(error) => {
+                error
+            }
+        }
+    }
+}
+
+impl From<TelemetryError> for FinishError {
+    fn from(error: TelemetryError) -> Self {
+        Self::Other(error)
+    }
+}
+
 impl AiRequestTelemetry {
     /// Start synchronously when an explicit context is supplied.
+    ///
+    /// Create the required metric instruments before opening the request or poll
+    /// span. A factory failure returns the backend error before the span starts.
     ///
     /// `None` means no AI observation and returns `Ok(None)`. An explicit noop
     /// context still creates a no-op owner, preserving the same lifecycle and
@@ -139,13 +165,13 @@ impl AiRequestTelemetry {
                 .insert("reasoning".into(), string(reasoning));
         }
 
-        let owner = context.start_span(span_options)?;
-        let span = owner.span();
         let metrics = context.metrics();
         let request_duration = metrics.histogram(instrument(AI_REQUEST_DURATION, "ms"))?;
         let first_chunk_duration = metrics.histogram(instrument(AI_FIRST_CHUNK_DURATION, "ms"))?;
         let tokens = metrics.counter(instrument(AI_TOKENS, "token"))?;
         let cost = metrics.counter(instrument(AI_COST, "USD"))?;
+        let owner = context.start_span(span_options)?;
+        let span = owner.span();
         Ok(Some(Self {
             owner: Some(owner),
             span,
@@ -169,15 +195,7 @@ impl AiRequestTelemetry {
         if self.finished {
             return Ok(());
         }
-        if self.first {
-            self.first = false;
-            self.span.add_event(AI_FIRST_CHUNK, &Attributes::new())?;
-            self.first_chunk_duration.record(
-                self.started.elapsed().as_secs_f64() * 1_000.0,
-                &self.base_attributes(),
-                Some(&self.span.context()),
-            )?;
-        }
+        self.record_first_delivery()?;
         match event {
             crate::stream::AssistantStreamEvent::TextEnd {
                 content_index,
@@ -209,14 +227,37 @@ impl AiRequestTelemetry {
         Ok(())
     }
 
+    fn record_first_delivery(&mut self) -> opi_telemetry::Result<()> {
+        if self.finished || !self.first {
+            return Ok(());
+        }
+        self.first = false;
+        self.span.add_event(AI_FIRST_CHUNK, &Attributes::new())?;
+        self.first_chunk_duration.record(
+            self.started.elapsed().as_secs_f64() * 1_000.0,
+            &self.base_attributes(),
+            Some(&self.span.context()),
+        )
+    }
+
     /// Complete the request span once the business result is known.
     ///
     /// The message is optional for setup-only failures. A pending/deferred poll
     /// records duration but does not add token or cost counters.
+    /// If writing the final attributes or recording request duration fails,
+    /// this returns the backend error with the owner still available for an
+    /// explicit completion attempt.
     pub fn finish(
         &mut self,
         message: Option<&crate::message::AssistantMessage>,
     ) -> opi_telemetry::Result<()> {
+        self.try_finish(message).map_err(FinishError::into_error)
+    }
+
+    fn try_finish(
+        &mut self,
+        message: Option<&crate::message::AssistantMessage>,
+    ) -> Result<(), FinishError> {
         if self.finished {
             return Ok(());
         }
@@ -256,7 +297,9 @@ impl AiRequestTelemetry {
                     .unwrap_or(0.0)
             };
             end.insert("cost.total".into(), number(cost_total));
-            self.span.set_attributes(&end)?;
+            self.span
+                .set_attributes(&end)
+                .map_err(FinishError::ResultAttributes)?;
             if matches!(message.stop_reason, crate::stream::StopReason::Error) {
                 self.span.set_status(SpanStatus::Error {
                     error: Some(ErrorStatus {
@@ -270,11 +313,13 @@ impl AiRequestTelemetry {
                 "stop".into(),
                 string(telemetry_stop_reason(message.stop_reason)),
             );
-            self.request_duration.record(
-                self.started.elapsed().as_secs_f64() * 1_000.0,
-                &duration_attributes,
-                Some(&self.span.context()),
-            )?;
+            self.request_duration
+                .record(
+                    self.started.elapsed().as_secs_f64() * 1_000.0,
+                    &duration_attributes,
+                    Some(&self.span.context()),
+                )
+                .map_err(FinishError::RequestDuration)?;
             if !self.attributes.poll
                 || !matches!(
                     message.stop_reason,
@@ -290,7 +335,7 @@ impl AiRequestTelemetry {
         }
         self.finished = true;
         let owner = self.owner.take().expect("telemetry owner is present");
-        owner.finish(None)
+        owner.finish(None).map_err(FinishError::Other)
     }
 
     fn base_attributes(&self) -> Attributes {
@@ -333,6 +378,10 @@ impl AiRequestTelemetry {
 /// the backend failure through the host's `tracing` channel and disables only
 /// the AI observer for that call. Business events and their typed outcome keep
 /// the normal `ChatStream` contract.
+/// On a `pi.ai.request` ending in `Stop`, `Length` or `ToolUse`, failure to
+/// write the final attributes or record request duration triggers one span
+/// completion attempt. The attempt preserves prior writes and skips the
+/// remaining measurements.
 pub(crate) struct AiRequestObserver {
     inner: Option<AiRequestTelemetry>,
 }
@@ -360,11 +409,14 @@ impl SharedAiRequestObserver {
         }
     }
 
-    pub(crate) fn on_event(&self, event: &crate::stream::AssistantStreamEvent) {
+    pub(crate) fn on_delivery(
+        &self,
+        item: Result<&crate::stream::AssistantStreamEvent, &crate::stream::CallFailure>,
+    ) {
         self.inner
             .lock()
             .expect("AI telemetry observer lock")
-            .on_event(event);
+            .on_delivery(item);
     }
 
     pub(crate) fn finish(&self, message: Option<&crate::message::AssistantMessage>) {
@@ -390,11 +442,18 @@ impl AiRequestObserver {
         Self { inner }
     }
 
-    pub(crate) fn on_event(&mut self, event: &crate::stream::AssistantStreamEvent) {
+    fn on_delivery(
+        &mut self,
+        item: Result<&crate::stream::AssistantStreamEvent, &crate::stream::CallFailure>,
+    ) {
         let Some(inner) = &mut self.inner else {
             return;
         };
-        if let Err(error) = inner.on_event(event) {
+        let recorded = match item {
+            Ok(event) => inner.on_event(event),
+            Err(_) => inner.record_first_delivery(),
+        };
+        if let Err(error) = recorded {
             tracing::warn!(%error, "AI telemetry observer failed while recording an event");
             self.disable();
         }
@@ -404,9 +463,24 @@ impl AiRequestObserver {
         let Some(inner) = &mut self.inner else {
             return;
         };
-        if let Err(error) = inner.finish(message) {
+        if let Err(failure) = inner.try_finish(message) {
+            let close_after_result_error = matches!(
+                failure,
+                FinishError::ResultAttributes(_) | FinishError::RequestDuration(_)
+            ) && !inner.attributes.poll
+                && message.is_some_and(|message| {
+                    matches!(
+                        message.stop_reason,
+                        StopReason::Stop | StopReason::Length | StopReason::ToolUse
+                    )
+                });
+            let error = failure.into_error();
             tracing::warn!(%error, "AI telemetry observer failed to finish");
-            self.inner = None;
+            if close_after_result_error {
+                self.disable();
+            } else {
+                self.inner = None;
+            }
         }
     }
 

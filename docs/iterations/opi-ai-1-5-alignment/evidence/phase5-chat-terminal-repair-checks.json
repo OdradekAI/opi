@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-11-14T02:13:47.386016+00:00",
+  "scope": "#108 shared Chat terminal repair; worktree-only validation",
+  "status": "scoped-acceptance-passed-workspace-gate-has-preexisting-failures",
+  "head": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "committed": "none-for-this-task",
+  "staged": [],
+  "carried_in_and_touched": [
+    "CHANGELOG.md",
+    "crates/opi-agent/tests/agent_chat_finish_timing.rs",
+    "crates/opi-ai/docs/transport.md",
+    "crates/opi-ai/docs/transport.zh.md",
+    "crates/opi-ai/src/azure_openai.rs",
+    "crates/opi-ai/src/openai_chat.rs",
+    "crates/opi-ai/tests/openai_chat_finish_timing.rs",
+    "crates/opi-ai/tests/openai_chat_fixtures.rs",
+    "docs/iterations/opi-ai-1-5-alignment/contract-index.json",
+    "docs/iterations/opi-ai-1-5-alignment/issues/107-observe-chat-finish-terminal-boundary.md",
+    "docs/iterations/opi-ai-1-5-alignment/spec.md",
+    "scripts/pi-sdk-conformance/differential/README.md",
+    "scripts/pi-sdk-conformance/differential/replay_chat_finish_consumers.py",
+    "scripts/pi-sdk-conformance/differential/replay_chat_finish_timing.py",
+    "scripts/pi-sdk-conformance/differential/test_chat_finish_timing.py"
+  ],
+  "initially_clean_and_touched": [
+    "crates/opi-ai/tests/http_acceptance.rs"
+  ],
+  "checks": [
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --test openai_chat_finish_timing -p opi-agent --test agent_chat_finish_timing -- --nocapture",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\probes-verified.log",
+        "sha256": "5e5d7833165b83cb47ab4bf7e4a473ba86b0200336ac2a75dfbc6ff605b1b722"
+      },
+      "outcome": "5 SDK tests / 75 scenarios and 1 real Agent test / 3 scenarios pass"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- clippy --workspace --exclude opi-eval --all-targets -- -D warnings",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\clippy-final.log",
+        "sha256": "d24c24f8bb8c73f141d9d14ac79f049a5e10ae03eb3889817004939c6f878635"
+      },
+      "outcome": "Pass; final runtime candidate, before subsequent HTTP fixture-only edit"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test --workspace --exclude opi-eval --all-targets --no-fail-fast",
+      "exit_code": 101,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\workspace-tests-final.log",
+        "sha256": "fbdd0d4602281b3b808db102873eb2f2f78baa933d773aa517683f3515614c02"
+      },
+      "outcome": {
+        "targets": 272,
+        "passed": 6464,
+        "failed": 26,
+        "ignored": 5,
+        "failed_targets": [
+          "opi-ai/http_acceptance (3, repaired and rerun)",
+          "opi-ai/platform_delivery (1, pre-existing)",
+          "opi-coding-agent/json_mode (1 root + 20 lock-poison cascade, pre-existing)",
+          "opi-coding-agent/spec_ledger (1, pre-existing)"
+        ]
+      }
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --test http_acceptance",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\http-acceptance-repaired.log",
+        "sha256": "f7027f586098bf6cc7ddeee7a8e076d3d361d88e06dfd34ae52155da4f7bcb73"
+      },
+      "outcome": "21 passed after adapting the EOF/trailer fixture to the repaired terminal contract"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- clippy -p opi-ai --test http_acceptance -- -D warnings",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\clippy-http-final.log",
+        "sha256": "d4f8c16bb1dfb3afcea35680614b3e5203847120bdbac122b82f5675c6067ba8"
+      },
+      "outcome": "Pass on the final modified fixture"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test --workspace --exclude opi-eval --doc",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\doctests-final.log",
+        "sha256": "da4bca7f085242781ed231feef98b49f14760d5741124664b6e33fd8fb0ae169"
+      },
+      "outcome": "11 passed, zero failed"
+    },
+    {
+      "command": "RUSTDOCFLAGS=-D warnings cargo doc --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958 --workspace --exclude opi-eval --no-deps (lease start/end in finally)",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\rustdoc-final.log",
+        "sha256": "aba2454a00c35364c824923b70ac4d7f40b736f71d92b853032842edf391adcb"
+      },
+      "outcome": "Pass"
+    },
+    {
+      "command": "python scripts/pi-sdk-conformance/differential/test_chat_finish_timing.py",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\python-final.log",
+        "sha256": "416a1ad4fe24b7ecfed9f188b642e2e9c7f9413f72a7b184be0faa7775a5db92"
+      },
+      "outcome": "16 passed; freshness/overwrite subprocess negative controls included"
+    },
+    {
+      "command": "python scripts/pi-sdk-conformance/differential/replay_chat_finish_timing.py --materials D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence/phase5-chat-terminal-repair-final-materials.json --rust-build C:\\Temp\\opi-chat-terminal-repair-20261114/candidate-build-verified.json --pi-repo D:/Luiz/Odradek/pi --output D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence/phase5-chat-terminal-repaired-verified.json",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\paired-final.log",
+        "sha256": "5ed8d2aa8928df5254f4a8c8e81e46b9a78743320c8e263beb811e41f1ec6afb"
+      },
+      "outcome": "8 identical request pairs, 3 repetitions per side; terminal contract verified; strict_alignment=false for explicit cancellation block-end difference"
+    },
+    {
+      "command": "python scripts/pi-sdk-conformance/differential/replay_chat_finish_consumers.py --paired D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence/phase5-chat-terminal-repaired-verified.json --materials D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence/phase5-chat-terminal-repair-final-materials.json --agent-build C:\\Temp\\opi-chat-terminal-repair-20261114/agent-build-verified.json --pi-repo D:/Luiz/Odradek/pi --output D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence/phase5-chat-terminal-consumers-repaired.json",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\consumers-final.log",
+        "sha256": "e339cdab8e29747290017722f5478f7654fe8c2c5d46b59465407c4e96b2ffec"
+      },
+      "outcome": "3 Durable projection pairs and 3 real Agent cases, each repeated 3 times; no early tools or successful persistence"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-coding-agent --test json_mode -- --test-threads=1",
+      "exit_code": 101,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\json-mode-recheck.log",
+        "sha256": "ac5d70f0321b6b3e4a67f1bde6f3ea39be243e027b221c8ea5a1143f2b36488e"
+      },
+      "outcome": "Reproduces the size assertion; 27 further lock-poison failures"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-coding-agent --test json_mode -- --skip json_mode_compact_text_deltas_are_constant_size --test-threads=1",
+      "exit_code": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\json-mode-cascade-control.log",
+        "sha256": "83b1cacc106bc4b79937a92c209183280b16450b7d76edbce62a7a0bfb3fcba6"
+      },
+      "outcome": "35 passed, 1 filtered; diagnostic control only"
+    }
+  ],
+  "final_acceptance_freshness": {
+    "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\acceptance-freshness-final.json",
+    "sha256": "a564e9c96f050c736469b04656fafc3eefaf08c2c3dfebd7b4d7a9002817fec6"
+  },
+  "additional_fixture_input": {
+    "path": "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\http_acceptance.rs",
+    "sha256": "77c560c82fb59705a5ee8d95517c483561435294c9ecbd01f1e0dc5ee0a3bf60"
+  },
+  "failure_attribution": [
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\preexisting-platform-failure.json",
+      "sha256": "b69725a3da569b2724659b98cdea200d3444eff5a166907398a2436d11f088ac"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\preexisting-json-mode-failure.json",
+      "sha256": "6ced90cf80734e2ac626f7622255cee03a96235c1f663fc49cbcb8bb98a56a10"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\preexisting-spec-ledger-failure.json",
+      "sha256": "3418925e812a30e5c45923591da0890d0551b61aea8785dfec9827d1129c0bc3"
+    }
+  ],
+  "retained_failed_attempts": [
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\red.log",
+      "sha256": "ffbc334e07c608f482dddfefac73156cca3f520714bf6f535d0717ac1124dd5d"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\focused-first.log",
+      "sha256": "b8222c17952f62eaa131ff1ead8aff50fb07892980790811a0e4790453622f59"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\probes.log",
+      "sha256": "e614d0085b504a9d238a46cc800609a95c41507d22dcefd95251de452aad83fa"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\probes-second.log",
+      "sha256": "c8643fc6ea70e5a54027456c50c9f73891c3f86064bb0e0bbfb56c0e94b280b1"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\probes-third.log",
+      "sha256": "e23d9628378f775f787bf7bec59658e4fe7184e272656e5d1193ed46ff49eb0d"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\clippy.log",
+      "sha256": "9147b6f164d8c025501b8b3f0f8031e54904428664481a242c3c66e35836a3ca"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\clippy-second.log",
+      "sha256": "21e73af1fa6c67500d06d8443917e7fbf7f58f7f05369d13d7220eb280b3c637"
+    },
+    {
+      "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\workspace-tests.log",
+      "sha256": "bbda0be6d90092a61f955bb7f9b90846dbc801533ddd90f003927b5a43d5ebed"
+    }
+  ],
+  "history": {
+    "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-chat-terminal-history-preserved.json",
+    "sha256": "64a00b7d44ea74c6728fbd8f9811b9a31e10e9e6a81febcc293f62b46385be2f"
+  },
+  "intermediate_input_archives": {
+    "path": "C:\\Temp\\opi-chat-terminal-repair-20261114\\intermediate-input-archives.json",
+    "sha256": "74b8d686d408baa31d50e5d416c4064a07239531254cb6eff6785d215b0d5a5e"
+  },
+  "post_write_documentation_and_inventory_checks": "C:\\Temp\\opi-chat-terminal-repair-20261114\\post-write-checks.json",
+  "test_impact": {
+    "add": "75-scenario SDK boundary matrix expansions and negative comparator controls",
+    "update": "existing SDK/Agent timing probes, mapper fixture helper, HTTP EOF/trailer fixture and paired/caller comparators",
+    "retain": "historical #107 bytes and unrelated dirty work",
+    "delete": []
+  },
+  "limits": [
+    "Full workspace gate remains red on the three independently attributed pre-existing root failures.",
+    "Opi cancellation retains no synthetic block ends; strict alignment is not claimed.",
+    "Durable MemoryStorage projection is not a live Rust bridge or Opi JSONL persistence test.",
+    "No renewed package acceptance, other-platform/MSRV/minimal-feature evidence or six-gate closure."
+  ]
+}

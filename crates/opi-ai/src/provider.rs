@@ -4,7 +4,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 
 use futures_core::Stream;
-use reqwest::header::{HeaderName, HeaderValue};
+use http::header::{HeaderName, HeaderValue};
 use tokio_util::sync::CancellationToken;
 
 use crate::credential::BoxAuthFuture;
@@ -228,13 +228,11 @@ pub enum CacheRetention {
 }
 
 /// Preferred transport for providers that support multiple transports
-/// (task 20.16, DEL-07). `Auto` is the normalized default: providers with a
-/// WebSocket transport attempt it first and fall back to SSE only under the
-/// bounded transport rules; `Sse` never attempts an alternate transport;
-/// `Websocket` uses a fresh connection per call; `WebsocketCached` additionally
-/// reuses a session-scoped connection and its continuation state when one is
-/// available. The preference is a transport-layer hint only: it never appears
-/// in request bodies or wire payloads.
+/// (task 20.16, DEL-07). `Auto` is the normalized default. Codex applies the
+/// same bounded reconnect and SSE fallback policy to all WebSocket preferences.
+/// `Websocket` sends full input, while `Auto` and `WebsocketCached` can use
+/// a session connection's continuation state. `Sse` selects HTTP SSE
+/// exclusively. The preference guides transport selection only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TransportPreference {
     /// Provider default resolution (WebSocket first where supported).
@@ -242,10 +240,9 @@ pub enum TransportPreference {
     Auto,
     /// HTTP SSE only; never attempts an alternate transport.
     Sse,
-    /// WebSocket with a fresh connection per call.
+    /// WebSocket with full input.
     Websocket,
-    /// WebSocket with connection and continuation reuse when a session is
-    /// active.
+    /// WebSocket with continuation reuse when the session connection allows it.
     WebsocketCached,
 }
 
@@ -324,6 +321,7 @@ impl Request {
     }
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 const GITHUB_COPILOT_MANAGED_HEADERS: &[&str] = &[
     "user-agent",
     "editor-version",
@@ -339,6 +337,7 @@ const GITHUB_COPILOT_MANAGED_HEADERS: &[&str] = &[
 /// All Copilot-managed names are rejected in per-request headers before any
 /// network call. Concrete wire providers append the separately derived
 /// initiator so the same policy applies to every Copilot route.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn github_copilot_route_headers(
     request: &Request,
 ) -> Result<Vec<(String, String)>, ProviderError> {
@@ -360,6 +359,7 @@ pub(crate) fn github_copilot_route_headers(
 }
 
 /// Derive GitHub Copilot's initiator from the final conversation message.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
     match request.context.messages().last() {
         Some(Message::User(_)) | None => "user",
@@ -462,6 +462,7 @@ pub fn validate_request_capabilities(
     validate_request_for_model(provider.id(), model, request)
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn request_projection(
     provider: &dyn Provider,
     request: &Request,

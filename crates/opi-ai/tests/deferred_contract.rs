@@ -12,6 +12,7 @@ use opi_ai::Models;
 use opi_ai::auth::ResolvedAuth;
 use opi_ai::auth::{AuthScheme, StaticAuthResolver};
 use opi_ai::deferred::{DeferredError, DeferredFetchCall, DeferredHandle};
+use opi_ai::retry::{WholeCallRetryClassification, classify_whole_call_retry};
 use opi_ai::stream::StopReason;
 use opi_ai::telemetry::TelemetryContext;
 use opi_ai::test_support::{self, ScriptedDeferredBackend};
@@ -361,19 +362,90 @@ async fn unsupported_provider_and_unknown_handle_fail_typed() {
         )
         .expect("register");
     let mut unknown = pending_handle();
-    unknown.id = "deferred-999".into();
+    unknown.id = "deferred-missing".into();
     let failure = collection
         .fetch_deferred(&unknown, DeferredFetchCall::default())
         .await
         .unwrap_err();
-    assert!(
-        failure
-            .message()
-            .error_message
-            .as_deref()
-            .unwrap_or_default()
-            .contains("Unknown scripted deferred response")
+    assert_eq!(backend.fetch_count(), 1);
+    assert!(backend.cancelled_handles().is_empty());
+    assert_eq!(failure.message().stop_reason, StopReason::Error);
+    assert_eq!(
+        failure.message().error_message.as_deref(),
+        Some(
+            "invalid provider configuration: Unknown scripted deferred response: deferred-missing"
+        )
     );
+    assert!(matches!(
+        failure.cause(),
+        opi_ai::provider::ProviderError::Config(_)
+    ));
+    assert!(!failure.cause().is_retryable());
+    assert_eq!(
+        classify_whole_call_retry(failure.message()),
+        WholeCallRetryClassification::Terminal
+    );
+}
+
+#[tokio::test]
+async fn unregistered_deferred_api_names_the_lookup_in_fetch_and_cancel() {
+    use opi_ai::provider::ProviderError;
+    use opi_ai::test_support::CountingAuthResolver;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
+
+    let auth_calls = Arc::new(AtomicU32::new(0));
+    let backend = Arc::new(ScriptedDeferredBackend::new("test", "mock-model"));
+    let mut models = Models::new();
+    models
+        .register_deferred_api(
+            backend.clone(),
+            Arc::new(CountingAuthResolver::new(auth_calls.clone())),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+    let handle = DeferredHandle {
+        api: "other-api".into(),
+        ..pending_handle()
+    };
+    assert_eq!(
+        models.validate_deferred_handle(&handle, None),
+        Err(DeferredError::Unsupported {
+            provider: "test".into(),
+        })
+    );
+
+    let failure = models
+        .fetch_deferred(&handle, Default::default())
+        .await
+        .unwrap_err();
+    let ProviderError::Config(summary) = failure.cause() else {
+        panic!(
+            "expected a local configuration error, got {:?}",
+            failure.cause()
+        );
+    };
+    assert_eq!(
+        summary.as_str(),
+        "no deferred backend is registered for provider 'test' and API 'other-api'"
+    );
+    assert_eq!(failure.message().stop_reason, StopReason::Error);
+    assert_eq!(
+        failure.message().error_message.as_deref(),
+        Some(failure.cause().to_string().as_str())
+    );
+    assert_eq!(
+        models
+            .cancel_deferred(&handle, Default::default())
+            .await
+            .unwrap_err(),
+        *failure.cause()
+    );
+    assert_eq!(auth_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(backend.fetch_count(), 0);
+    assert!(backend.cancelled_handles().is_empty());
 }
 
 #[tokio::test]
@@ -406,6 +478,8 @@ async fn expired_handle_fails_typed_before_auth_or_dispatch() {
         ..Default::default()
     };
     let failure = collection.fetch_deferred(&handle, call).await.unwrap_err();
+    assert_eq!(failure.message().provider, handle.provider);
+    assert_eq!(failure.message().model, handle.model_id);
     assert!(
         failure
             .message()
@@ -469,6 +543,62 @@ async fn missing_credential_fails_typed_with_remediation_message() {
     assert_eq!(backend.fetch_count(), 0);
 }
 
+#[tokio::test]
+async fn deferred_auth_failure_preserves_cause_and_message_retry_input() {
+    use opi_ai::errors::{ProviderError, ProviderErrorSummary};
+    use std::sync::Arc;
+
+    struct FailedAuth(&'static str);
+    impl opi_ai::auth::AuthResolver for FailedAuth {
+        fn resolve(
+            &self,
+        ) -> opi_ai::credential::BoxAuthFuture<'_, Result<ResolvedAuth, ProviderError>> {
+            let cause = ProviderError::AuthFailed(ProviderErrorSummary::sanitized(self.0));
+            Box::pin(async move { Err(cause) })
+        }
+    }
+
+    for (detail, classification) in [
+        (
+            "controlled-auth-setup-failure",
+            WholeCallRetryClassification::Terminal,
+        ),
+        (
+            "503 Service Unavailable",
+            WholeCallRetryClassification::Transient,
+        ),
+    ] {
+        let backend = Arc::new(ScriptedDeferredBackend::new(
+            "lifecycle-differential",
+            "mock-model",
+        ));
+        let handle = backend.submit(test_support::text_response("not fetched"), 0, Some(25));
+        let mut collection = Models::new();
+        collection
+            .register_deferred_api(
+                Arc::clone(&backend) as Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                Arc::new(FailedAuth(detail)),
+                AuthProvenanceSource::Static,
+            )
+            .expect("register");
+        let failure = collection
+            .fetch_deferred(&handle, DeferredFetchCall::default())
+            .await
+            .expect_err("resolver failure stops fetch");
+        assert_eq!(backend.fetch_count(), 0);
+        assert!(backend.cancelled_handles().is_empty());
+        assert!(matches!(failure.cause(), ProviderError::AuthFailed(_)));
+        assert!(!failure.cause().is_retryable());
+        let message = failure.message();
+        assert_eq!(message.stop_reason, StopReason::Error);
+        assert_eq!(message.provider, handle.provider);
+        assert_eq!(message.model, handle.model_id);
+        let diagnostic = format!("authentication failed: {detail}");
+        assert_eq!(message.error_message.as_deref(), Some(diagnostic.as_str()));
+        assert_eq!(classify_whole_call_retry(message), classification);
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Cancellation: local abort vs explicit best-effort remote cancel
 // (AIR-043/AIR-044)
@@ -500,8 +630,8 @@ async fn local_abort_never_cancels_the_remote_job() {
     let handle = backend.submit(test_support::text_response("late"), 3, None);
     let (collection, _record) = registered_collection(&backend);
 
-    // Cancel the local fetch token mid-flight: the attempt aborts locally
-    // and the backend never received a cancel.
+    // Cancel the local fetch token before polling the attempt. The attempt
+    // aborts locally without calling the backend's remote cancel entry.
     let cancel = CancellationToken::new();
     cancel.cancel();
     let call = DeferredFetchCall {
@@ -543,13 +673,27 @@ async fn explicit_cancel_is_recorded_and_best_effort() {
         .fetch_deferred(&handle, DeferredFetchCall::default())
         .await
         .unwrap_err();
-    assert!(
-        failure
-            .message()
-            .error_message
-            .as_deref()
-            .unwrap_or_default()
-            .contains("cancelled")
+    assert_eq!(backend.fetch_count(), 1);
+    assert_eq!(backend.cancelled_handles(), vec![handle.clone()]);
+    assert_eq!(failure.message().provider, handle.provider);
+    assert_eq!(failure.message().model, handle.model_id);
+    assert_eq!(failure.message().stop_reason, StopReason::Error);
+    assert!(matches!(
+        failure.cause(),
+        opi_ai::provider::ProviderError::Config(_)
+    ));
+    let diagnostic = format!(
+        "invalid provider configuration: Scripted deferred response was cancelled: {}",
+        handle.id
+    );
+    assert_eq!(
+        failure.message().error_message.as_deref(),
+        Some(diagnostic.as_str())
+    );
+    assert!(!failure.cause().is_retryable());
+    assert_eq!(
+        classify_whole_call_retry(failure.message()),
+        WholeCallRetryClassification::Terminal
     );
 
     // Best-effort failure is reported, never swallowed.
@@ -568,7 +712,10 @@ async fn explicit_cancel_is_recorded_and_best_effort() {
         .cancel_deferred(&stranger, opi_ai::deferred::DeferredCancelCall::default())
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("does not support deferred"));
+    assert_eq!(
+        error.to_string(),
+        "invalid provider configuration: no deferred backend is registered for provider 'other' and API 'scripted-deferred'"
+    );
 }
 
 #[tokio::test]
@@ -1005,4 +1152,133 @@ async fn fetch_and_cancel_carry_the_frozen_telemetry_carrier() {
         .await
         .expect("cancel");
     assert_eq!(backend.cancel_telemetry_present(), vec![true]);
+}
+
+#[tokio::test]
+async fn cancel_checks_all_deferred_route_fields_before_auth_or_dispatch() {
+    use opi_ai::message::AssistantContent;
+    use opi_ai::provider::ProviderError;
+    use opi_ai::test_support::CountingAuthResolver;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    };
+
+    for name in [
+        "provider-mismatch",
+        "model-mismatch",
+        "api-mismatch",
+        "unknown-job-id",
+        "matching-handle",
+    ] {
+        let backend = Arc::new(ScriptedDeferredBackend::new(
+            "lifecycle-differential",
+            "mock-model",
+        ));
+        let original = backend.submit(test_support::text_response("ready"), 0, Some(25));
+        let auth_calls = Arc::new(AtomicU32::new(0));
+        let mut models = Models::new();
+        models
+            .register_deferred_api(
+                backend.clone(),
+                Arc::new(CountingAuthResolver::new(auth_calls.clone())),
+                AuthProvenanceSource::Static,
+            )
+            .unwrap();
+
+        let mut input = original.clone();
+        match name {
+            "provider-mismatch" => input.provider = "other-provider".into(),
+            "model-mismatch" => input.model_id = "other-model".into(),
+            "api-mismatch" => input.api = "other-api".into(),
+            "unknown-job-id" => input.id = "deferred-missing".into(),
+            "matching-handle" => {}
+            _ => unreachable!(),
+        }
+        let validation = models.validate_deferred_handle(&input, None);
+        let direct_validation = match (&validation, name) {
+            (Err(DeferredError::Unsupported { .. }), "provider-mismatch" | "api-mismatch") => {
+                "Unsupported"
+            }
+            (Err(DeferredError::RouteMismatch(_)), "model-mismatch") => "RouteMismatch",
+            (Ok(()), "unknown-job-id" | "matching-handle") => "ok",
+            _ => panic!("unexpected validation for {name}: {validation:?}"),
+        };
+        assert_eq!(auth_calls.load(Ordering::SeqCst), 0);
+
+        let result = models.cancel_deferred(&input, Default::default()).await;
+        let admitted = validation.is_ok();
+        let (delivery, cause, diagnostic) = match result {
+            Ok(()) if admitted => ("ok", None, None),
+            Err(error @ ProviderError::Config(_)) if !admitted => {
+                ("typed-err", Some("Config"), Some(error.to_string()))
+            }
+            other => panic!("unexpected cancellation for {name}: {other:?}"),
+        };
+        let cancel_auth_calls = auth_calls.load(Ordering::SeqCst);
+        let dispatches = backend.cancelled_handles();
+        assert_eq!(cancel_auth_calls, u32::from(admitted), "{name}");
+        assert_eq!(
+            dispatches.as_slice(),
+            if admitted {
+                std::slice::from_ref(&input)
+            } else {
+                &[]
+            },
+            "{name}"
+        );
+        assert_eq!(backend.fetch_count(), 0);
+        let cancel = json!({
+            "auth_calls": cancel_auth_calls, "dispatch_count": dispatches.len(), "dispatches": dispatches,
+            "result_delivery": delivery, "typed_cause": cause, "error_message": diagnostic,
+        });
+
+        let refetch = models
+            .fetch_deferred(&original, DeferredFetchCall::default())
+            .await;
+        let (message, refetch_delivery, refetch_cause) = match &refetch {
+            Ok(message) if name != "matching-handle" => (message, "ok", None),
+            Err(failure) if name == "matching-handle" => {
+                assert!(matches!(failure.cause(), ProviderError::Config(_)));
+                assert!(failure.cause().to_string().contains("was cancelled"));
+                (failure.message(), "typed-err", Some("Config"))
+            }
+            other => panic!("unexpected original refetch for {name}: {other:?}"),
+        };
+        let text: String = message
+            .content
+            .iter()
+            .filter_map(|part| match part {
+                AssistantContent::Text { text, .. } => Some(text.as_str()),
+                _ => None,
+            })
+            .collect();
+        let cancelled = name == "matching-handle";
+        assert_eq!(
+            message.stop_reason,
+            if cancelled {
+                StopReason::Error
+            } else {
+                StopReason::Stop
+            }
+        );
+        assert_eq!(text, if cancelled { "" } else { "ready" });
+        let refetch_auth_calls = auth_calls.load(Ordering::SeqCst) - cancel_auth_calls;
+        assert_eq!(refetch_auth_calls, 1, "{name}");
+        assert_eq!(backend.fetch_count(), 1, "{name}");
+        let refetch_original = json!({
+            "auth_calls": refetch_auth_calls, "dispatch_count": backend.fetch_count(),
+            "result_delivery": refetch_delivery, "typed_cause": refetch_cause, "stop": message.stop_reason, "text": text,
+            "error_message": message.error_message,
+        });
+        println!(
+            "deferred_cancel_route {}",
+            json!({
+                "name": name,
+                "route": {"provider": original.provider, "modelId": original.model_id, "api": original.api},
+                "original": original, "request_handle": input,
+                "direct_validation": direct_validation, "cancel": cancel, "refetch_original": refetch_original,
+            })
+        );
+    }
 }

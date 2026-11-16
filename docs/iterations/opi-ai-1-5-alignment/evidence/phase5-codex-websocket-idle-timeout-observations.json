@@ -1,0 +1,4071 @@
+{
+  "schema": 1,
+  "case": "codex-websocket-application-idle-timeout",
+  "baseCommit": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "pi": {
+    "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "comparedRevision": "71023aec1546d6d677a65669c5665c0927ce0dd0",
+    "snapshot": "C:/Temp/opi-ai-frozen-lock-20261111",
+    "originalLockSha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a",
+    "sourcePaths": [
+      "packages/ai/src/api/openai-codex-responses.ts",
+      "packages/ai/src/utils/retry.ts",
+      "packages/ai/src/session-resources.ts"
+    ],
+    "runtime": "Node 24.13.0 / Windows x64 native WebSocket",
+    "loopbackServer": "ws@8.21.0 and node:http"
+  },
+  "inputs": {
+    "crates/opi-ai/src/openai_codex_responses/ws_transport.rs": "9f77b1cf5c93a843f5bb079fac91a1120b1fd5d8d9179a866983bb8dba7e7580",
+    "crates/opi-ai/src/ws/io.rs": "3c2f5911ad7145d7bb8a7ef222bc9a8ae05ac9298cdf5b3ebec10ac5d1478ca7",
+    "crates/opi-ai/src/retry.rs": "7a9e308962ca7a6a4c4e2e8c3fab08ba397c9f3c623a9e0bf1feb0422e276fee",
+    "crates/opi-ai/tests/openai_codex_responses.rs": "552077f524650e4df17506b8c677d56bf4f557a1c02e355b6d4997e60e6f1b90",
+    "crates/opi-ai/tests/openai_codex_responses/websocket_idle_timeout.rs": "240960d0a57acb032a7d9d79fcdbefd1dd33b8191c927f59e76dee25619b4f89",
+    "crates/opi-ai/tests/data/codex-websocket-idle-timeout.json": "d10dc187449f740169ceeb2a6bdac4ade70e71facfbd4450f7a2184888ae7655",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_idle_timeout.mjs": "ed928b0267bc7cb2148dacf2a5fa980cea29db31dc01fd5cfc7f3f81d47fc373",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-materials.json": "028c440eb5b3364a900bafec8803f9580d6970327b3004d90740f2f6a93d3c40",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-materials.json": "f4c9f9ab9d214fd0f2ec7d2e18fd69f23c85b695aa50e6f377d5b2ec491c8b1d",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-observations.json": "ddbbe7b51d38be4592943c2cfd0a0dba555e593dddd4c971e24252d5d5ba54fa",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-observations.json": "2561ccb492996125ac284f209b5cb717e0d7dddc65d3d7bfdb7dc22940faf366"
+  },
+  "execution": {
+    "pi": {
+      "command": [
+        "node",
+        "--conditions=source",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_idle_timeout.mjs",
+        "--snapshot",
+        "C:/Temp/opi-ai-frozen-lock-20261111"
+      ],
+      "identicalRuns": 3,
+      "stdoutSha256": "98a3b878fc14afe20167d9ab2dddfc3b2dec8228ae846b2af79c5795555b6118",
+      "missingSnapshotExitCode": 2,
+      "missingSnapshotStderr": "node --conditions=source observe_codex_websocket_idle_timeout.mjs --snapshot <path>"
+    },
+    "baselineRust": {
+      "test": "websocket_idle_timeout::application_idle_timeout_ignores_websocket_control_traffic",
+      "sourceSha256": "c5373fb28aeaf021d85542d666f100e7157142353cbe5cc22a1ac822bc4dea06",
+      "executableSha256": "cff7ef50ac97b54836d71d76956ac10b6bbdf87a834a75d96afc261186b57caa",
+      "exitCode": 101,
+      "observedRows": 27
+    },
+    "updatedRust": {
+      "defaultFeatures": {
+        "receipt": "C:\\Users\\Luiz\\AppData\\Local\\Temp\\opi-codex-websocket-idle-timeout-rust-9197e9b8-c08e-41f4-a040-08aefec658de.json",
+        "sha256": "097b7589ba3de5d91150e33512b11cc201b050e21915ebac1702690b6dc48f2f",
+        "rowCount": 15,
+        "identityCount": 36,
+        "timeoutCount": 27,
+        "results": [
+          "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s",
+          "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+          "test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.15s",
+          "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+          "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+          "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s",
+          "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s"
+        ],
+        "executables": {
+          "azure_openai_fixtures": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\azure_openai_fixtures-412cc9ec06ee1167.exe",
+            "sha256": "89cafeeaa3dadb85ddcd816da84d10c7f1d5ab22dbc0f6faffd9cd9bc88bcf56"
+          },
+          "whole_call_retry": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\whole_call_retry-a7c3eee005c83051.exe",
+            "sha256": "7c313285ffe90f19ddb5458d27748927514bcdf1dbe43f758ea752256a21fb64"
+          },
+          "codex_native_options": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\codex_native_options-6fbc9fdf4569c64e.exe",
+            "sha256": "c8d16de59257b1be2c87d43581bc282aea9f74493d80f2bfb9c5669c87ff604b"
+          },
+          "openai_responses_fixtures": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_responses_fixtures-1e7d23860cf65056.exe",
+            "sha256": "c6a29a0612fba76d0ce756eb77c05ec115412d568529d138c12e5aa9bf0b182b"
+          },
+          "stream_events": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\stream_events-55ad3cd032e1db64.exe",
+            "sha256": "895fded7b097861367c4037a2f6bd690532b7d25426a83652818475505864550"
+          },
+          "ws_upgrade": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\ws_upgrade-3a075249ab34fab4.exe",
+            "sha256": "fd6eef7912930c23896a35b54b073dc525bd9740b5a6e279c194d15058610173"
+          },
+          "openai_codex_responses": {
+            "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe",
+            "sha256": "3170924f7cd62d7d5cce707e6db5743b969f1660bdf249afba4e86d48d23f022"
+          }
+        },
+        "exitCode": 0
+      },
+      "noDefaultFeatures": [
+        "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s",
+        "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s",
+        "test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 20.15s",
+        "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+        "test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+        "test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s"
+      ],
+      "wsLibraryTests": 89,
+      "codexCloseDeadlineTests": 3,
+      "priorIdlePairsRetained": 15,
+      "priorRetirementControlsRetained": 3,
+      "priorIdentityPairsRetained": 36,
+      "clippyExitCode": 0,
+      "rustdocExitCode": 0,
+      "formatExitCode": 0
+    },
+    "lifecycle": {
+      "stalePriorManifest": {
+        "exitCode": 2,
+        "drift": [
+          "tree drift: crates/opi-ai/src"
+        ],
+        "executedCases": 0
+      },
+      "cases": 24,
+      "exactPriorCases": 24,
+      "receipts": 96,
+      "comparisonStatuses": {
+        "pass": 4,
+        "difference": 20
+      },
+      "deferredDifferences": 10,
+      "materialDrift": [],
+      "materialBlockers": [],
+      "onlyChangedInputTree": [
+        "crates/opi-ai/src"
+      ],
+      "materialSha256": "028c440eb5b3364a900bafec8803f9580d6970327b3004d90740f2f6a93d3c40",
+      "replaySha256": "cbcd05e1a9fe5431d75af8db0c18b8d22a990ab9a4383de93f18b0cc1725dcaf",
+      "rustDriverSha256": "57942290ff1037fbfde5bcc41098801293d25d5b1d85627dd519962bd101b3cd",
+      "relevantContractIds": [
+        "CAP-VALUES",
+        "CAP-DEFERRED",
+        "CAP-RETRY"
+      ]
+    }
+  },
+  "comparison": {
+    "cases": 27,
+    "expiry": 18,
+    "staleControlSuccesses": 12,
+    "changed": 18,
+    "paired": 27,
+    "changedBaselinePairs": [
+      "silent_before/auto",
+      "silent_before/websocket-cached",
+      "silent_before/websocket",
+      "ping_before/auto",
+      "ping_before/websocket-cached",
+      "ping_before/websocket",
+      "pong_before/auto",
+      "pong_before/websocket-cached",
+      "pong_before/websocket",
+      "silent_after_text/auto",
+      "silent_after_text/websocket-cached",
+      "silent_after_text/websocket",
+      "ping_after_text/auto",
+      "ping_after_text/websocket-cached",
+      "ping_after_text/websocket",
+      "pong_after_progress/auto",
+      "pong_after_progress/websocket-cached",
+      "pong_after_progress/websocket"
+    ],
+    "sharedFields": [
+      "response.create count and input",
+      "SSE POST count and full input",
+      "Close code and reason",
+      "Pong observed",
+      "current and subsequent stop, ID, partial text, usage, terminal and raw callback order"
+    ],
+    "notes": [
+      "Failure usage is null in Rust and zero in Pi. The shared projection equates these values for absent usage and keeps native diagnostics in the raw rows.",
+      "Pi retryable is the public whole-call predicate. Rust retryable is the typed cause flag, while wholeCallRetryable observes the opt-in whole-call predicate.",
+      "Nine expiry pairs before a provider event fall back once in the current call. Nine after an event return a partial failure with zero current SSE requests. All eighteen use SSE in the next call.",
+      "Opi confirms Close within its 250 ms local release budget. Pi initiates Close through its native WebSocket. The real peer acknowledges Close in each expiry pair.",
+      "Progress events, a zero timeout and a 320 ms raw observer hold all keep the WebSocket result in the nine controls."
+    ]
+  },
+  "cases": [
+    {
+      "name": "silent_before",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "silent_before",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "silent_before",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "ping_before",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": "resp_late"
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "ping_before",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": "resp_late"
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "ping_before",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "pong_before",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": "resp_late"
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "pong_before",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": "resp_late"
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "pong_before",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "sse",
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 1,
+        "posts": [
+          {
+            "items": 1,
+            "previous": null
+          },
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "idle_timeout",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "silent_after_text",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 2,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket transport failed after stream start",
+          "retryable": false
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "silent_after_text",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 2,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket transport failed after stream start",
+          "retryable": false
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "silent_after_text",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 2,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket transport failed after stream start",
+          "retryable": false
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "ping_after_text",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "partial answer",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "ping_after_text",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "partial answer",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "ping_after_text",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "partial answer",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": true,
+        "first": {
+          "stop": "error",
+          "responseId": "resp_partial",
+          "text": "partial answer",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.created",
+            "response.output_item.added",
+            "response.content_part.added",
+            "response.output_text.delta"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "pong_after_progress",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": null,
+          "text": "",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.in_progress"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": "resp_late"
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": null,
+          "text": "",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.in_progress"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "pong_after_progress",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": null,
+          "text": "",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.in_progress"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": "resp_late"
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": null,
+          "text": "",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.in_progress"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "pong_after_progress",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": null,
+          "text": "",
+          "totalTokens": 0,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.in_progress"
+          ],
+          "fallback": null,
+          "error": "WebSocket idle timeout after 200ms",
+          "retryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          },
+          {
+            "connection": 1,
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_next_ws",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        }
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [
+          {
+            "items": 2,
+            "previous": null
+          }
+        ],
+        "close": {
+          "code": 1000,
+          "reason": "idle_timeout"
+        },
+        "sawPong": false,
+        "first": {
+          "stop": "error",
+          "responseId": null,
+          "text": "",
+          "totalTokens": null,
+          "terminal": [
+            "error"
+          ],
+          "raw": [
+            "response.in_progress"
+          ],
+          "fallback": null,
+          "error": "stream error: WebSocket idle timeout after stream start",
+          "retryable": false,
+          "wholeCallRetryable": true
+        },
+        "next": {
+          "stop": "stop",
+          "responseId": "resp_sse",
+          "text": "",
+          "totalTokens": 3,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": "session_fallback",
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        }
+      }
+    },
+    {
+      "name": "progress_rearms",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "progress_rearms",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "progress_rearms",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "zero_with_ping",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "zero_with_ping",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "zero_with_ping",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": true,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "callback_pauses_wait",
+      "transport": "auto",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "callback_pauses_wait",
+      "transport": "websocket-cached",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    },
+    {
+      "name": "callback_pauses_wait",
+      "transport": "websocket",
+      "frozenPi": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "baselineRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null
+        },
+        "next": null
+      },
+      "updatedRust": {
+        "creates": [
+          {
+            "connection": 1,
+            "items": 1,
+            "previous": null
+          }
+        ],
+        "firstPosts": 0,
+        "posts": [],
+        "close": null,
+        "sawPong": false,
+        "first": {
+          "stop": "stop",
+          "responseId": "resp_late",
+          "text": "",
+          "totalTokens": 7,
+          "terminal": [
+            "done"
+          ],
+          "raw": [
+            "response.in_progress",
+            "response.done"
+          ],
+          "fallback": null,
+          "error": null,
+          "retryable": null,
+          "wholeCallRetryable": null
+        },
+        "next": null
+      }
+    }
+  ]
+}

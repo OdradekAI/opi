@@ -4,7 +4,10 @@ use serde::{Deserialize, Serialize};
 
 /// Deterministic failure marker prefixed to OpenAI-family tool-result text when
 /// a provider wire format has no native tool-error field.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) const TOOL_ERROR_MARKER: &str = "[tool_error] ";
+
+pub(crate) const CODEX_END_TURN_DIAGNOSTIC: &str = "codex_end_turn";
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -58,10 +61,9 @@ pub struct AssistantMessage {
     pub raw_stop_reason: Option<String>,
     pub error_message: Option<String>,
     pub timestamp_ms: i64,
-    /// Message-level constrained-sampling diagnostics (task 20.11,
-    /// V-34/V-36): at most one recorded strict-prefer downgrade with its
-    /// reason, plus grammar-target fallback losses. Default empty;
-    /// historical messages deserialize without it.
+    /// Message-level diagnostics, including constrained-sampling fallback
+    /// and Codex's terminal `end_turn` signal. Historical messages default
+    /// to an empty list.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub diagnostics: Vec<crate::types::usage::AssistantDiagnostic>,
     /// Monotonic adapter response-stream duration (AIR-061): measured from
@@ -82,6 +84,19 @@ pub struct AssistantMessage {
     /// carries a credential.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deferred: Option<Box<crate::types::deferred::DeferredHandle>>,
+}
+
+impl AssistantMessage {
+    /// Codex's reported terminal `end_turn` signal for diagnostics.
+    ///
+    /// Preserves both boolean values. Returns `None` when absent.
+    /// Use `stop_reason` to determine the call outcome.
+    pub fn end_turn(&self) -> Option<bool> {
+        self.diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.kind == CODEX_END_TURN_DIAGNOSTIC)
+            .and_then(|diagnostic| diagnostic.reason.parse().ok())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -618,7 +633,7 @@ fn complete_partial_json(partial: &str) -> Option<serde_json::Value> {
 /// literal completes to the literal, anything else is dropped.
 fn fix_dangling_token(token: &str) -> Option<String> {
     for literal in ["true", "false", "null"] {
-        if !token.is_empty() && token.len() < literal.len() && literal.starts_with(token) {
+        if !token.is_empty() && literal.starts_with(token) {
             return Some(literal.to_owned());
         }
     }
@@ -680,11 +695,11 @@ pub fn string_enum(
 }
 
 // ---------------------------------------------------------------------------
-// Public context-overflow and recoverable-Length predicates (task 20.53.3,
-// P20-S53-3). Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/overflow.ts`.
+// Public context-overflow and recoverable-Length predicates.
+// Pi 1.5.0 reference: `packages/ai/src/utils/overflow.ts`.
 
-/// Pinned context-overflow provider error message patterns (25, case
-/// insensitive), merged into one alternation.
+/// Provider error message patterns merged into one case-insensitive
+/// alternation.
 fn context_overflow_pattern() -> &'static regex::Regex {
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
     PATTERN.get_or_init(|| {
@@ -696,10 +711,11 @@ fn context_overflow_pattern() -> &'static regex::Regex {
                 r"input is too long for requested model", // Amazon Bedrock
                 r"exceeds the context window",            // OpenAI
                 r"exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))", // LiteLLM proxies
+                r"context window exceeded", // LiteLLM pre-call check
                 r"input token count.*exceeds the maximum", // Google (Gemini)
-                r"maximum prompt length is \d+",           // xAI (Grok)
-                r"reduce the length of the messages",      // Groq
-                r"maximum context length is \d+ tokens",   // OpenRouter
+                r"maximum prompt length is \d+", // xAI (Grok)
+                r"reduce the length of the messages", // Groq
+                r"maximum context length is \d+ tokens", // OpenRouter
                 r"exceeds (?:the )?maximum allowed input length of [\d,]+ tokens?", // OpenRouter/Poolside
                 r"input \(\d+ tokens\) is longer than the model'?s context length \(\d+ tokens\)", // Together AI
                 r"exceeds the limit of \d+",           // GitHub Copilot
@@ -715,6 +731,8 @@ fn context_overflow_pattern() -> &'static regex::Regex {
                 r"context[_ ]length[_ ]exceeded", // generic fallback
                 r"too many tokens",               // generic fallback
                 r"token limit exceeded",          // generic fallback
+                // Match JavaScript's ASCII word class and whitespace at the 413 boundary.
+                r"^(?:(?-u:[\w -]+) API error \(413\):|413(?:[\s:\u{FEFF}--\u{0085}]|$))",
             ]
             .join("|"),
         )
@@ -758,11 +776,12 @@ fn cerebras_bodyless_overflow_pattern() -> &'static regex::Regex {
 ///
 /// 1. Error-based overflow: `stop_reason` is
 ///    [`crate::types::usage::StopReason::Error`] with an
-///    `error_message` matching a pinned provider overflow pattern. Messages
-///    matching a pinned non-overflow pattern first (throttling/rate-limit
-///    style) are excluded even when they also match an overflow pattern; the
-///    bodyless Cerebras 400/413 shape additionally requires
-///    `provider == "cerebras"`.
+///    `error_message` matching a provider overflow pattern, including
+///    LiteLLM's `context window exceeded` and leading HTTP 413 statuses.
+///    The 413 rule accepts `413` followed by whitespace, `:` or the end
+///    of the string, and `<provider> API error (413):` prefixes.
+///    Throttling and rate-limit diagnostics take precedence. The Cerebras
+///    fallback also recognizes that provider's bodyless 400/413 forms.
 /// 2. Silent overflow: a `Stop` message whose known usage
 ///    (`usage.reported`) reports `input_tokens + cache_read_tokens` above the
 ///    context window.
@@ -777,16 +796,9 @@ fn cerebras_bodyless_overflow_pattern() -> &'static regex::Regex {
 pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u64>) -> bool {
     if message.stop_reason == crate::types::usage::StopReason::Error
         && let Some(error_message) = &message.error_message
-        && !non_context_overflow_pattern().is_match(error_message)
+        && is_context_overflow_error(&message.provider, error_message)
     {
-        if context_overflow_pattern().is_match(error_message) {
-            return true;
-        }
-        if message.provider == "cerebras"
-            && cerebras_bodyless_overflow_pattern().is_match(error_message)
-        {
-            return true;
-        }
+        return true;
     }
     let Some(window) = context_window.filter(|window| *window > 0) else {
         return false;
@@ -803,6 +815,13 @@ pub fn is_context_overflow(message: &AssistantMessage, context_window: Option<u6
         }
         _ => false,
     }
+}
+
+pub(crate) fn is_context_overflow_error(provider: &str, error_message: &str) -> bool {
+    !non_context_overflow_pattern().is_match(error_message)
+        && (context_overflow_pattern().is_match(error_message)
+            || (provider == "cerebras"
+                && cerebras_bodyless_overflow_pattern().is_match(error_message)))
 }
 
 /// Check whether a length stop ended below the caller's or model's intended

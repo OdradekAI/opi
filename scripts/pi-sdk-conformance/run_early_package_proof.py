@@ -61,6 +61,10 @@ class CandidateTelemetry:
     def command(self, command: list[str]) -> list[str]:
         if command and command[0] == "cargo":
             self.verify_files()
+            # cargo-clippy launches Cargo again; it only forwards configuration
+            # passed to the subcommand, not Cargo's preceding global arguments.
+            if len(command) > 1 and command[1] == "clippy":
+                return ["cargo", "clippy", "--config", str(self.config), *command[2:]]
             return ["cargo", "--config", str(self.config), *command[1:]]
         return command
 
@@ -153,7 +157,8 @@ def check_graph(metadata: dict, package: Path, caller_defaults: bool) -> dict:
         raise ValueError("consumer must compile the extracted opi-ai package")
     features = {node["id"]: node["features"] for node in metadata["resolve"]["nodes"]}
     sdk_features = set(features.get(sdk[0]["id"], []))
-    if ("telemetry-tracing" in sdk_features) != caller_defaults:
+    if (("telemetry-tracing" in sdk_features) != caller_defaults
+            or ("builtins" in sdk_features) != caller_defaults):
         raise ValueError("caller opi-ai default-feature profile was not exercised")
     result = {
         "opi_ai": {

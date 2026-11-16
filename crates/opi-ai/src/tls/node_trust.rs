@@ -11,6 +11,7 @@
 //! do not edit certificates by hand.
 
 /// The pinned Node reference default CA bundle as concatenated PEM blocks.
+#[cfg_attr(not(feature = "http-transport"), allow(dead_code))]
 pub(super) const NODE_ROOT_CERTIFICATES_PEM: &str = concat!(
     "-----BEGIN CERTIFICATE-----
 MIIDdTCCAl2gAwIBAgILBAAAAAABFUtaw5QwDQYJKoZIhvcNAQEFBQAwVzELMAkGA1UEBhMC

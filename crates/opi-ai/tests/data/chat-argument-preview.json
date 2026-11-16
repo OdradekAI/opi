@@ -1,0 +1,12 @@
+[
+  {"name":"missing-members","pieces":["{","\"a\" ",":","null",",\"b\"",":\"","x","\"}"],"final":{"a":null,"b":"x"}},
+  {"name":"split-key","pieces":["{\"","na","me","\"",":","\"ok\"}"],"final":{"name":"ok"}},
+  {"name":"empty-key","pieces":["{\"\"",":","0","}"],"final":{"":0}},
+  {"name":"nested","pieces":["{\"obj\":{","\"child\"",": [","1,","{\"x\"",":tru","e}]}","}"],"final":{"obj":{"child":[1,{"x":true}]}}},
+  {"name":"fraction-exponent","pieces":["{\"n\":","1.","25","e","+","2","}"],"final":{"n":125.0}},
+  {"name":"escape","pieces":["{\"s\":\"a","\\","u00","4","1","\\","n","z","\"}"],"final":{"s":"aA\nz"}},
+  {"name":"space-and-control","pieces":["{\"s\":\"a"," ","\t","b","\"}"],"final":{"s":"a \tb"}},
+  {"name":"invalid-escape","pieces":["{\"s\":\"x","\\q","y","\"}"],"final":{"s":"x\\qy"}},
+  {"name":"duplicate-key","pieces":["{\"a\":1,","\"a\"",":","2","}"],"final":{"a":2}},
+  {"name":"array-literals","pieces":["{\"a\":[","\"x","\",","f","alse",",","nu","ll","]}"],"final":{"a":["x",false,null]}}
+]

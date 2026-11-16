@@ -53,10 +53,106 @@ python -B scripts/pi-sdk-conformance/run_readme_examples.py --offline --scratch 
 ```
 
 The proof packages `opi-telemetry` and `opi-ai`, creates an ordinary external
-Cargo consumer, verifies both default and `default-features = false` profiles,
+Cargo consumer, verifies default and explicit `builtins` without tracing profiles,
 checks that setup performs no source/store/request IO, and executes the exact
 README examples. It records a JSON verdict under
 `scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`.
+
+For the minimum, run `scripts/pi-sdk-conformance/run_minimal_package.py` with
+fresh `--scratch`, the shared `--target-dir` and a new `--evidence-output` path.
+It verifies the actual archive graph with tracing off/on, executes core Faux
+tool continuation, custom login Store ACK and argument/numeric contracts, and
+rejects accidental backend dependencies. This is a core profile proof, not a
+claim that every Pi Faux behavior or supported feature/platform row is closed.
+Use `--evidence-output` with the README runner as well to preserve prior receipts.
+
+For the shared HTTP transport profile, run
+`scripts/pi-sdk-conformance/run_http_transport_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It consumes the actual archive with `default-features = false,
+features = ["http-transport"]`, checks the transport-only dependency graph,
+and executes the public pool, proxy and redirect contract outside the workspace.
+
+For the TLS backend profile, run
+`scripts/pi-sdk-conformance/run_tls_backend_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It consumes the actual archive with `default-features = false,
+features = ["tls-backend"]`, verifies the exact rustls/AWS-LC/native-certs
+closure with reqwest and provider owners absent, and executes the public
+`opi_ai::tls` trust/ALPN contract outside the workspace. The HTTP transport
+profile separately proves that `http-transport` still selects this backend.
+
+For the WebSocket/compression profile, run
+`scripts/pi-sdk-conformance/run_websocket_compression_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It consumes the actual archive with `default-features = false,
+features = ["websocket-compression"]`, verifies the exact HTTP/TLS/PMD
+dependency closure without provider adapters, and executes a workspace-external
+HTTP/1.1 Upgrade with negotiated permessage-deflate. The native profile also
+runs the public Upgrade/WSS contract and the private frame/PMD regression suite.
+
+
+For the cloud authentication profile, run
+`scripts/pi-sdk-conformance/run_cloud_auth_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It consumes the actual archive with `default-features = false,
+features = ["cloud-auth"]`, verifies the exact HTTP/TLS plus AWS/GCP
+source/signing codec closure without provider protocol or compression owners,
+and executes the public AWS endpoint, SigV4 and GCP ADC constants outside the
+workspace.
+
+For the provider protocol adapter profile, run
+`scripts/pi-sdk-conformance/run_protocol_adapters_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It consumes the actual archive with `default-features = false,
+features = ["protocol-adapters"]`, checks the provider protocol dependency
+closure including the transitive `cloud-auth`/`http-transport`/`tls-backend` owners without
+the bundled catalog, and executes direct adapter, auth-store and WebSocket
+surface calls outside the workspace. Provider collection and
+built-in OAuth/AWS/Vertex credential factories remain a `builtins` proof.
+
+For the provider OAuth/store profile, run
+`scripts/pi-sdk-conformance/run_oauth_store_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It consumes the actual archive with `default-features = false,
+features = ["oauth-store"]`, verifies the exact `http-transport` union,
+rejects the bundled catalog and protocol/cloud-signing owners, and executes
+the provider OAuth plus StoreOAuthResolver surface outside the workspace.
+Neutral credential, mutation, store and OAuth contracts remain covered by the
+minimum profile; provider collection and platform credential-source factories
+remain a `builtins` proof.
+
+For the per-provider protocol/source owners, run
+`scripts/pi-sdk-conformance/run_provider_protocol_package.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+The runner consumes the actual archive outside the workspace and validates each
+of these eleven owner features independently: `provider-anthropic`,
+`provider-azure-openai`, `provider-bedrock`, `provider-gemini`,
+`provider-mistral`, `provider-openai-chat`, `provider-openai-codex-responses`,
+`provider-openai-responses`, `provider-openrouter`, `provider-pi-messages` and
+`provider-vertex`. Use `--owner provider-vertex` to rerun one owner after a
+transient package-build failure without rewriting the earlier receipt. Native
+profile tests and warnings-denied Clippy use the same feature spelling.
+
+
+For provider-owner pair and high-order capability V, run
+`scripts/pi-sdk-conformance/run_provider_protocol_matrix.py` with a fresh
+`--scratch`, the marked workspace `--target-dir` and a new `--evidence-output`.
+It verifies all 55 unordered provider-owner pairs and the two supported
+high-order unions natively, then consumes the actual archive from external
+Cargo callers for the same rows. The receipt keeps the frozen Pi 1.5.0
+paired-differential references and records native macOS as blocked when no
+runner is available.
+
+For the remaining shared-owner pairs, run
+scripts/pi-sdk-conformance/run_shared_owner_pairs.py with a fresh
+--scratch, the marked workspace --target-dir and a new --evidence-output.
+It verifies cloud-auth+catalog-bundled and websocket-compression+oauth-store
+with their owner profile tests, then consumes the actual archive from external
+callers and checks the exact feature closure plus forbidden-owner boundaries.
+Use --only to rerun one pair without rewriting the other receipt. The receipt
+retains frozen Pi 1.5.0 references and records native macOS as blocked when no
+runner exists.
 
 ## Development Checks
 

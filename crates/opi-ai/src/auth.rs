@@ -44,17 +44,23 @@ pub use values::*;
 /// Store-owned OAuth refresh and request identity assembly.
 pub mod store_oauth;
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) mod anthropic_federation;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) mod builtin;
+#[cfg(feature = "builtins")]
 pub mod builtin_aws;
+#[cfg(feature = "builtins")]
 pub mod builtin_vertex;
 
 /// SDK OAuth flows (Anthropic first): injectable presenter + HTTP + store,
 /// pinned to pi 1.3.0 wire shapes.
+#[cfg(any(feature = "builtins", feature = "oauth-store"))]
 pub mod oauth;
 
 /// Local AWS credential-source chain modules (Bedrock's selected-source
 /// coordinator; product-neutral, injectable, no live AWS calls).
+#[cfg(any(feature = "builtins", feature = "cloud-auth"))]
 pub mod adc {
     /// Cancelable executable (pluggable) supplier.
     pub mod cache;
@@ -70,6 +76,7 @@ pub mod adc {
     /// Subject-token suppliers (file/URL/certificate/aws1).
     pub mod subject;
 }
+#[cfg(any(feature = "builtins", feature = "cloud-auth"))]
 pub mod aws {
     /// Regional STS endpoint resolution (partition/override arithmetic).
     pub mod cache;
@@ -83,6 +90,8 @@ pub mod aws {
     pub mod process;
     /// STS `AssumeRole` exchange and pinned Query/XML codecs.
     pub mod role;
+    /// AWS SigV4 signing shared by cloud credential exchanges and Bedrock.
+    pub mod sigv4;
     /// Injectable auth-source HTTP transport.
     pub mod source_http;
     pub mod sso;

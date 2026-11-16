@@ -1,0 +1,3239 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-11-11T04:56:05.857349+00:00",
+  "scope": "Original-lock installation on Windows x64, rebuilt pinned catalog, and controlled lifecycle replay.",
+  "candidate": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+  "install": {
+    "schemaVersion": 1,
+    "generatedAtUtc": "2026-11-11T04:49:07.385874+00:00",
+    "candidate": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+    "supplied": "D:\\Luiz\\Odradek\\opi\\.pi\\pi-1.5.0",
+    "baseline": {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase1-baseline.json",
+      "status": "present",
+      "bytes": 835653,
+      "sha256": "b73ce56a839dad1259e7e2f9fac3656a57de9b77b221dc91350143dffe6eefe5"
+    },
+    "recovered_lock": {
+      "git": "D:/Luiz/Odradek/pi",
+      "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+      "path": "package-lock.json",
+      "blob": "a0749b93b38ead1c75351751883ed95dec5cb32f",
+      "bytes": 185524,
+      "sha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a"
+    },
+    "cache_seed": {
+      "resolved": "https://registry.npmjs.org/typebox/-/typebox-1.1.38.tgz",
+      "integrity": "sha512-pZ0aQPmMmXoUvSbeuWf/Hzsc+avNw/Zd6VeE8CFgkVGWyuHPJvqeJJDeJqLve+K70LvjYIoleGcoJHPT17cWoA==",
+      "cached_before": false,
+      "cached_after_sha512": "a59d1a40f98c997a14bd26deb967ff1f3b1cf9abcdc3f65de95784f02160915196cae1cf26fa9e2490de26a2ef7be2bbd0bbe3608a257867282473d3d7b716a0",
+      "sha512_matches": true,
+      "npm_cli": {
+        "status": "present",
+        "bytes": 56,
+        "sha256": "3ce7cba6f5128dd5f54c98b6a5036b0f850496878cc2e21044b675fe3c594e3e"
+      },
+      "command": {
+        "command": [
+          "node",
+          "D:\\nvm4w\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+          "cache",
+          "add",
+          "https://registry.npmjs.org/typebox/-/typebox-1.1.38.tgz",
+          "--cache",
+          "D:\\nvm\\node_cache",
+          "--userconfig",
+          "C:\\Temp\\opi-ai-lock-seed-unused-user.npmrc",
+          "--globalconfig",
+          "C:\\Temp\\opi-ai-lock-seed-unused-global.npmrc",
+          "--ignore-scripts",
+          "--no-audit",
+          "--no-fund",
+          "--fetch-retries=0"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    },
+    "tools": {
+      "node": {
+        "status": "present",
+        "bytes": 89953280,
+        "sha256": "d14ba95cdce1ef7dc9ad3ac74949ca5db38b27378ee30f30a23cf26f9e875a11"
+      },
+      "npm_cli": {
+        "status": "present",
+        "bytes": 56,
+        "sha256": "3ce7cba6f5128dd5f54c98b6a5036b0f850496878cc2e21044b675fe3c594e3e"
+      },
+      "npm_manifest": {
+        "status": "present",
+        "bytes": 6793,
+        "sha256": "00613c3052df3ff9d69a731334569232993ddaee6a7c6c9b5e33c791761fd027"
+      }
+    },
+    "copied_source_files": 2949,
+    "candidate_before_install": {
+      "checked_files": 2949,
+      "frozen_manifest_sha256": "959b3b486f111b53771d37da272c8951064952bd9b18596c5c244935cea45072",
+      "changes": []
+    },
+    "node_version": {
+      "command": [
+        "D:\\nvm4w\\nodejs\\node.exe",
+        "--version"
+      ],
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "v24.13.0\n",
+      "stderr": ""
+    },
+    "npm_version": {
+      "command": [
+        "D:\\nvm4w\\nodejs\\node.exe",
+        "D:\\nvm4w\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "--version"
+      ],
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "11.6.2\n",
+      "stderr": "npm warn Unknown project config \"min-release-age\". This will stop working in the next major version of npm.\n"
+    },
+    "install": {
+      "command": [
+        "D:\\nvm4w\\nodejs\\node.exe",
+        "D:\\nvm4w\\nodejs\\node_modules\\npm\\bin\\npm-cli.js",
+        "ci",
+        "--offline",
+        "--ignore-scripts",
+        "--no-audit",
+        "--no-fund",
+        "--include=dev",
+        "--include=optional",
+        "--include=peer",
+        "--cache",
+        "D:/nvm/node_cache",
+        "--userconfig",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111\\.candidate-user.npmrc",
+        "--globalconfig",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111\\.candidate-global.npmrc"
+      ],
+      "status": "ok",
+      "exit_code": 0,
+      "stdout": "\nadded 285 packages in 17s\n",
+      "stderr": "npm warn Unknown project config \"min-release-age\". This will stop working in the next major version of npm.\nnpm warn deprecated prebuild-install@7.1.3: No longer maintained. Please contact the author of the relevant native addon; alternatives are available.\nnpm warn deprecated node-domexception@1.0.0: Use your platform's native DOMException instead\n"
+    },
+    "candidate_after_install": {
+      "checked_files": 2949,
+      "frozen_manifest_sha256": "959b3b486f111b53771d37da272c8951064952bd9b18596c5c244935cea45072",
+      "changes": []
+    },
+    "root_lock": {
+      "status": "present",
+      "bytes": 185524,
+      "sha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a"
+    },
+    "installed_lock": {
+      "status": "present",
+      "bytes": 129154,
+      "sha256": "531723901e7bf5c7a656e71a33d21e6e0b5ed9bc03343f9ed68f671e4b198530"
+    },
+    "status": "installed"
+  },
+  "rebuild": {
+    "schemaVersion": 1,
+    "generatedAtUtc": "2026-11-11T04:53:27.189199+00:00",
+    "candidate": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+    "install_receipt": {
+      "path": "C:\\Temp\\opi-ai-frozen-lock-install-20261111.json",
+      "status": "present",
+      "bytes": 4729,
+      "sha256": "8ab4796a4e5fa96fb251ce9d3d999d7d0bb6129398dbaf3dd1f0b47c7d0c0eff"
+    },
+    "commands": [
+      {
+        "label": "typescript-version",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\typescript\\bin\\tsc",
+          "--version"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "Version 7.0.2\n",
+        "stderr": ""
+      },
+      {
+        "label": "hydrate-pinned",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\scripts\\hydrate-model-catalog.ts",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-model-catalog.json"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "label": "validate-data",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\scripts\\check-model-data.ts"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "Generated model data is valid.\n",
+        "stderr": ""
+      },
+      {
+        "label": "compile-telemetry",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\typescript\\bin\\tsc",
+          "-p",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\telemetry\\tsconfig.build.json"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "label": "compile-schema",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\typescript\\bin\\tsc",
+          "-p",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\schema\\tsconfig.build.json"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "label": "compile-ai",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\typescript\\bin\\tsc",
+          "-p",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\tsconfig.build.json"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "label": "copy-model-assets",
+        "cwd": "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111\\scripts\\package-files.mjs",
+          "copy",
+          "src/providers/data",
+          "dist/providers"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      {
+        "label": "runtime-catalog",
+        "cwd": "D:\\Luiz\\Odradek\\opi",
+        "command": [
+          "D:/nvm4w/nodejs/node.exe",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\verify_catalog_runtime.mjs",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-model-catalog.json"
+        ],
+        "status": "ok",
+        "exit_code": 0,
+        "stdout": "{\"status\":\"pass\",\"providers\":42,\"models\":1712,\"errors\":[]}\n",
+        "stderr": ""
+      }
+    ],
+    "installed_provenance": {
+      "platform": "win32-x64",
+      "root_lock": {
+        "status": "present",
+        "bytes": 185524,
+        "sha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a"
+      },
+      "installed_lock": {
+        "status": "present",
+        "bytes": 129154,
+        "sha256": "531723901e7bf5c7a656e71a33d21e6e0b5ed9bc03343f9ed68f671e4b198530"
+      },
+      "root_lock_rows": 418,
+      "installed_lock_rows": 305,
+      "registry_manifests": [
+        {
+          "path": "node_modules/@anthropic-ai/sdk",
+          "name": "@anthropic-ai/sdk",
+          "version": "0.129.0",
+          "manifest_sha256": "3da3840a09a3bfeac32aed68cfd7fa9ac952f41a00cabe335f806caa2966f3f1"
+        },
+        {
+          "path": "node_modules/@ata-validator/native-win32-x64",
+          "name": "@ata-validator/native-win32-x64",
+          "version": "1.61.3",
+          "manifest_sha256": "432cfe87c26c0c5ae1484eda59313eeb0a018bd3002abc88511c499562c9b2fc"
+        },
+        {
+          "path": "node_modules/@aws-sdk/client-bedrock-runtime",
+          "name": "@aws-sdk/client-bedrock-runtime",
+          "version": "3.1127.0",
+          "manifest_sha256": "d38839f240b6f89020c1abf351691d9749f7d35e6680abd6a6fc4415823c10e0"
+        },
+        {
+          "path": "node_modules/@aws-sdk/core",
+          "name": "@aws-sdk/core",
+          "version": "3.977.9",
+          "manifest_sha256": "e0b560214b4c7d69d6c0bbdcdac86cf16f4dbf6f1f335b3e19f09803f48201ad"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-env",
+          "name": "@aws-sdk/credential-provider-env",
+          "version": "3.972.70",
+          "manifest_sha256": "9208af1685caccbedc512d793df2a70b4608274c76abe4d5b51e4435d42ccd09"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-http",
+          "name": "@aws-sdk/credential-provider-http",
+          "version": "3.972.72",
+          "manifest_sha256": "d5e45507d74cd842274ceb0df9ab77247be618f5d62f7703a30e9950d4f7286f"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-ini",
+          "name": "@aws-sdk/credential-provider-ini",
+          "version": "3.973.15",
+          "manifest_sha256": "159cf3e4fde9105bca47eb1e86f5f38a07c3bffbcbc2b13e348c7ce9721564c8"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-login",
+          "name": "@aws-sdk/credential-provider-login",
+          "version": "3.972.77",
+          "manifest_sha256": "9079c1be9a70783a76d67f8050ec6dde0e37a08fb555517d4269f3660f54d66d"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-node",
+          "name": "@aws-sdk/credential-provider-node",
+          "version": "3.972.82",
+          "manifest_sha256": "9c87b53f1b96c5d1ab0d88c4d27405c02d178bf9bf38554166a919d0411b4c47"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-process",
+          "name": "@aws-sdk/credential-provider-process",
+          "version": "3.972.70",
+          "manifest_sha256": "5d738715ecfa7e0675c41109162bb46a00086b72822bd5bcf410da0901e1088a"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-sso",
+          "name": "@aws-sdk/credential-provider-sso",
+          "version": "3.973.14",
+          "manifest_sha256": "97a62a4d42441a1347d7000b7118988d1534a3f4d1fe52ea6f2b044d9f83ae7d"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-sso/node_modules/@aws-sdk/token-providers",
+          "name": "@aws-sdk/token-providers",
+          "version": "3.1116.0",
+          "manifest_sha256": "a5718e6c1bd66b71d240b0282dfa6a9befeb9a1570a6cbf7be5d9d0b64401f51"
+        },
+        {
+          "path": "node_modules/@aws-sdk/credential-provider-web-identity",
+          "name": "@aws-sdk/credential-provider-web-identity",
+          "version": "3.972.76",
+          "manifest_sha256": "e5c137586bd6166fa010c219fca5b3fac4aa34f12c901d467b3f34da0a63b3f6"
+        },
+        {
+          "path": "node_modules/@aws-sdk/eventstream-handler-node",
+          "name": "@aws-sdk/eventstream-handler-node",
+          "version": "3.972.34",
+          "manifest_sha256": "05123c43610246bdd113ad45b04a5557a2f35f9d358ecf49fb2f5ea45bb7d6ef"
+        },
+        {
+          "path": "node_modules/@aws-sdk/middleware-eventstream",
+          "name": "@aws-sdk/middleware-eventstream",
+          "version": "3.972.29",
+          "manifest_sha256": "f6c349485e796b7507604e42f2f69155d6b6043632fa2e79da3d90033a667b1b"
+        },
+        {
+          "path": "node_modules/@aws-sdk/middleware-websocket",
+          "name": "@aws-sdk/middleware-websocket",
+          "version": "3.972.52",
+          "manifest_sha256": "535b40a1b4b303fb749a70800dc5db48ce26ed0b6846dc0bb68eb5d9dc0394d6"
+        },
+        {
+          "path": "node_modules/@aws-sdk/nested-clients",
+          "name": "@aws-sdk/nested-clients",
+          "version": "3.997.44",
+          "manifest_sha256": "0665ff67df4b870c8aab7d99e8a0f15c1acd9b7f82b9b08eed783a00c67ad78d"
+        },
+        {
+          "path": "node_modules/@aws-sdk/signature-v4-multi-region",
+          "name": "@aws-sdk/signature-v4-multi-region",
+          "version": "3.996.46",
+          "manifest_sha256": "9edd78872c722b55ee176c5b4714020422ad073c4d13528f446a0421df553d7b"
+        },
+        {
+          "path": "node_modules/@aws-sdk/token-providers",
+          "name": "@aws-sdk/token-providers",
+          "version": "3.1127.0",
+          "manifest_sha256": "fcb7e0ea77d0466b548fe3fc04efa0c13ced2dfbed14c62e7dc0995e1153dcd8"
+        },
+        {
+          "path": "node_modules/@aws-sdk/types",
+          "name": "@aws-sdk/types",
+          "version": "3.974.5",
+          "manifest_sha256": "e714ed119d7ed0e06ea5d89b4e28fcecfbbcb9f2c52c724a8bc52b4dd23b14f7"
+        },
+        {
+          "path": "node_modules/@aws-sdk/xml-builder",
+          "name": "@aws-sdk/xml-builder",
+          "version": "3.972.40",
+          "manifest_sha256": "e59293b6e8c39a53773e214b5cf550822d0d30b69bc8a90c23d1194a1e1656f1"
+        },
+        {
+          "path": "node_modules/@aws/lambda-invoke-store",
+          "name": "@aws/lambda-invoke-store",
+          "version": "0.3.0",
+          "manifest_sha256": "67dd0cc15cb17df9e12654a78486e710e13a2e96623cb28c683056378fa973dc"
+        },
+        {
+          "path": "node_modules/@babel/runtime",
+          "name": "@babel/runtime",
+          "version": "7.29.2",
+          "manifest_sha256": "a34bfb8ab99545a10b211e8918e4a58cc66740366644298cb8efa3b766537ee0"
+        },
+        {
+          "path": "node_modules/@biomejs/biome",
+          "name": "@biomejs/biome",
+          "version": "2.3.5",
+          "manifest_sha256": "6f007d9271fb1e4e9f9e6a8cf99fb92803eaf144ddc89866050643cfd64a5f3e"
+        },
+        {
+          "path": "node_modules/@biomejs/cli-win32-x64",
+          "name": "@biomejs/cli-win32-x64",
+          "version": "2.3.5",
+          "manifest_sha256": "4ab113d882d1821990076f60c0dafe3d4f685abd79f0bb734b6625783be9444f"
+        },
+        {
+          "path": "node_modules/@biomejs/wasm-nodejs",
+          "name": "@biomejs/wasm-nodejs",
+          "version": "2.3.5",
+          "manifest_sha256": "ebd4aa073526f2528d507626fe286c9baeb865e0c48481bd4075d239d90c5622"
+        },
+        {
+          "path": "node_modules/@cfworker/json-schema",
+          "name": "@cfworker/json-schema",
+          "version": "4.1.1",
+          "manifest_sha256": "22eea38eb34f98c1413cb9af8e5d67d6b36200ccb4a0920eab72458e475b6df9"
+        },
+        {
+          "path": "node_modules/@cloudflare/kv-asset-handler",
+          "name": "@cloudflare/kv-asset-handler",
+          "version": "0.5.0",
+          "manifest_sha256": "635bf6580f8cd6fab399627da52f18c5a4abb8038e2a7a21ba382a7c24702f73"
+        },
+        {
+          "path": "node_modules/@cloudflare/unenv-preset",
+          "name": "@cloudflare/unenv-preset",
+          "version": "2.16.2",
+          "manifest_sha256": "9307fbe9f19db598b23d53bcc6f66db49239f89090f9059b98c56c4781c26f2c"
+        },
+        {
+          "path": "node_modules/@cloudflare/vitest-plugin",
+          "name": "@cloudflare/vitest-plugin",
+          "version": "1.4.10",
+          "manifest_sha256": "1026c0e25e185d89d655618ffda8c19b1d8aefdd151b6eac6b36e2a1c1cfb4ff"
+        },
+        {
+          "path": "node_modules/@cloudflare/vitest-plugin/node_modules/zod",
+          "name": "zod",
+          "version": "4.6.6",
+          "manifest_sha256": "cff7e142055a9dd9bc2947a71ca3fb5e3aacdfda966d7728993ff3656245b94a"
+        },
+        {
+          "path": "node_modules/@cloudflare/workerd-windows-64",
+          "name": "@cloudflare/workerd-windows-64",
+          "version": "1.20261023.1",
+          "manifest_sha256": "b4f1ffe58bde82ba598ad836928094abba3144d417a365651a664f01442d0995"
+        },
+        {
+          "path": "node_modules/@cspotcode/source-map-support",
+          "name": "@cspotcode/source-map-support",
+          "version": "0.8.1",
+          "manifest_sha256": "c240639d502ae6fc5bb1be1ed58db958c3bae957d8fb9fe103e6c8bb94a75e9e"
+        },
+        {
+          "path": "node_modules/@cto.af/wtf8",
+          "name": "@cto.af/wtf8",
+          "version": "0.0.5",
+          "manifest_sha256": "9b85b2c8f846ce26fdda13b37033ac5753e65edba7d802217901353df9fdae5d"
+        },
+        {
+          "path": "node_modules/@earendil-works/gondolin",
+          "name": "@earendil-works/gondolin",
+          "version": "0.14.0",
+          "manifest_sha256": "89bbb6b730a4279a9a932273194a82359109d4de8a7fcbbde7dd0267d202d0ab"
+        },
+        {
+          "path": "node_modules/@earendil-works/gondolin/node_modules/undici",
+          "name": "undici",
+          "version": "6.29.1",
+          "manifest_sha256": "df5d9c505f8db601e62bf67eb835117985e549cfbbb61c4c1a84c55d57ab3532"
+        },
+        {
+          "path": "node_modules/@emnapi/runtime",
+          "name": "@emnapi/runtime",
+          "version": "1.11.3",
+          "manifest_sha256": "751db16171cb4d111905122be8a4c0dc2b5c82e6ba2a590ca24fbc6cca048f93"
+        },
+        {
+          "path": "node_modules/@esbuild/win32-x64",
+          "name": "@esbuild/win32-x64",
+          "version": "0.28.2",
+          "manifest_sha256": "89382df45735edcd917c492a810ab514920fa07d36c653cdc122bdfd8f526964"
+        },
+        {
+          "path": "node_modules/@google/genai",
+          "name": "@google/genai",
+          "version": "2.21.0",
+          "manifest_sha256": "64e3cd991d6b4749cd4b3afe46c8a0ad2f5d983f33df94081343797693fdbc81"
+        },
+        {
+          "path": "node_modules/@img/colour",
+          "name": "@img/colour",
+          "version": "1.1.0",
+          "manifest_sha256": "bc38c5097693ed53b91c32f35fb0a52569736c7854ba2eb6d080f3252071f75c"
+        },
+        {
+          "path": "node_modules/@img/sharp-wasm32",
+          "name": "@img/sharp-wasm32",
+          "version": "0.35.5",
+          "manifest_sha256": "59d5eeaaac1c43434701f08e9ea78648aa54011159ff2eb192550432608e05c1"
+        },
+        {
+          "path": "node_modules/@img/sharp-win32-x64",
+          "name": "@img/sharp-win32-x64",
+          "version": "0.35.5",
+          "manifest_sha256": "697b3d89590e3b988b51764bd22dfd6f4a1b35cd4eb12c664eca7987e8ee6115"
+        },
+        {
+          "path": "node_modules/@isaacs/nonrecursive-glob-match",
+          "name": "@isaacs/nonrecursive-glob-match",
+          "version": "1.0.3",
+          "manifest_sha256": "dd7fe938a874149eeb80ab429b30436e3c00190f6e59b549e09e3bb028c40e49"
+        },
+        {
+          "path": "node_modules/@jridgewell/resolve-uri",
+          "name": "@jridgewell/resolve-uri",
+          "version": "3.1.2",
+          "manifest_sha256": "0793e722ffe08f3b4f1862c4dc96d920a62d6811a3648b4feb02f06c63227e8b"
+        },
+        {
+          "path": "node_modules/@jridgewell/sourcemap-codec",
+          "name": "@jridgewell/sourcemap-codec",
+          "version": "1.5.5",
+          "manifest_sha256": "398fc774628ec1592c794e8c14ecdc0096206a2521545e527e5a06429dac6006"
+        },
+        {
+          "path": "node_modules/@jridgewell/trace-mapping",
+          "name": "@jridgewell/trace-mapping",
+          "version": "0.3.9",
+          "manifest_sha256": "9db86cd1623d3501bcf68102c5ec1c5b0c58abaa134fbf0f80430674ed9fe054"
+        },
+        {
+          "path": "node_modules/@oh-my-pi/omptype",
+          "name": "@oh-my-pi/omptype",
+          "version": "18.13.3",
+          "manifest_sha256": "811e5d8fa0ea7b6bd461801c5f75f7ed5bfb0301184e71d48c62b11551857664"
+        },
+        {
+          "path": "node_modules/@oxc-project/types",
+          "name": "@oxc-project/types",
+          "version": "0.154.0",
+          "manifest_sha256": "c34d50b664964ca1086306220a78c1bcf4b2ec61ade2df149cc290e46dff2395"
+        },
+        {
+          "path": "node_modules/@poppinss/colors",
+          "name": "@poppinss/colors",
+          "version": "4.1.6",
+          "manifest_sha256": "41bbc9edc4d165aebaf1977bd24a46f11075e64200b92b2bd6ef804ac2b1f0ba"
+        },
+        {
+          "path": "node_modules/@poppinss/dumper",
+          "name": "@poppinss/dumper",
+          "version": "0.6.5",
+          "manifest_sha256": "ee665c86ab77935736e398d808a0df9ac1ff63147afcacd70d9f145107c955a9"
+        },
+        {
+          "path": "node_modules/@poppinss/exception",
+          "name": "@poppinss/exception",
+          "version": "1.2.3",
+          "manifest_sha256": "ed3d422020f5b132e2c0ce0507212a17497dd26654fc6956242cf65e887628f5"
+        },
+        {
+          "path": "node_modules/@protobufjs/aspromise",
+          "name": "@protobufjs/aspromise",
+          "version": "1.1.2",
+          "manifest_sha256": "4a39ee1c94f6ee038d2944196aa6167785d3429a91727f828a1274262919e2d8"
+        },
+        {
+          "path": "node_modules/@protobufjs/base64",
+          "name": "@protobufjs/base64",
+          "version": "1.1.2",
+          "manifest_sha256": "7ff6a89f566b95c0f21a5a9cb12df5718f0b06ef96d4186a92d650c0849fa2c5"
+        },
+        {
+          "path": "node_modules/@protobufjs/codegen",
+          "name": "@protobufjs/codegen",
+          "version": "2.0.5",
+          "manifest_sha256": "818bf10387c19ab09b3814004ec672ab8d975302cdaf2dd65466bdb604764d65"
+        },
+        {
+          "path": "node_modules/@protobufjs/eventemitter",
+          "name": "@protobufjs/eventemitter",
+          "version": "1.1.1",
+          "manifest_sha256": "d157d364fe4aee21cfd517abff35bca312ff51e6e6e90abdbec16225057e5914"
+        },
+        {
+          "path": "node_modules/@protobufjs/fetch",
+          "name": "@protobufjs/fetch",
+          "version": "1.1.1",
+          "manifest_sha256": "52f997898a745acce5d68751883aad6296bcc2f152468ced0ed30e3c3c5a1c72"
+        },
+        {
+          "path": "node_modules/@protobufjs/float",
+          "name": "@protobufjs/float",
+          "version": "1.0.2",
+          "manifest_sha256": "1cae4ded1bc97375a67fe4608f87ee59990734ea738fabb98e9061ab23669cdf"
+        },
+        {
+          "path": "node_modules/@protobufjs/path",
+          "name": "@protobufjs/path",
+          "version": "1.1.2",
+          "manifest_sha256": "b19802dd696ceb8a4aa4839f35ab1c8312e97693d93485ff3c3e4f19cca183c4"
+        },
+        {
+          "path": "node_modules/@protobufjs/pool",
+          "name": "@protobufjs/pool",
+          "version": "1.1.0",
+          "manifest_sha256": "7a33b609e770020fe1e09690cfebc23bbdd6e1306e3f0dd98ba5048966cb7fec"
+        },
+        {
+          "path": "node_modules/@protobufjs/utf8",
+          "name": "@protobufjs/utf8",
+          "version": "1.1.1",
+          "manifest_sha256": "0487ccf34c45f9a65ebc1cc553a9898df191e3f9cd530bf2aea7ad341c02afdc"
+        },
+        {
+          "path": "node_modules/@rolldown/binding-win32-x64-msvc",
+          "name": "@rolldown/binding-win32-x64-msvc",
+          "version": "1.2.14",
+          "manifest_sha256": "af6e41c1ead8c6806fb42d78d95f2aa338ea9b2ea2f082c37ba18ab3626c3251"
+        },
+        {
+          "path": "node_modules/@rolldown/pluginutils",
+          "name": "@rolldown/pluginutils",
+          "version": "1.0.1",
+          "manifest_sha256": "c3d2bfe0ff94de71fd5b82e6f3a01b12ee4d99b8f1b34cc00b984b9acde61cfa"
+        },
+        {
+          "path": "node_modules/@silvia-odwyer/photon",
+          "name": "@silvia-odwyer/photon",
+          "version": "0.3.3",
+          "manifest_sha256": "20bd07f096f177f4fb12d1cb7893c788bda42edf1722ca5450dc2355701769f8"
+        },
+        {
+          "path": "node_modules/@silvia-odwyer/photon-node",
+          "name": "@silvia-odwyer/photon-node",
+          "version": "0.3.4",
+          "manifest_sha256": "a1362f6a9e9d942d6b77555f1e40b19a6b3e2cc04bfb8af95e452a6f769fe7db"
+        },
+        {
+          "path": "node_modules/@sindresorhus/is",
+          "name": "@sindresorhus/is",
+          "version": "7.2.0",
+          "manifest_sha256": "3a1535a0f64df969c9315c5249f748d861903a40d23977987f74b83d33569f49"
+        },
+        {
+          "path": "node_modules/@smithy/core",
+          "name": "@smithy/core",
+          "version": "3.33.3",
+          "manifest_sha256": "9244b0d64bd4d9e0c36c877cfd9cbca9cd7f3a7346a636373d1401ce4107bee9"
+        },
+        {
+          "path": "node_modules/@smithy/credential-provider-imds",
+          "name": "@smithy/credential-provider-imds",
+          "version": "4.5.2",
+          "manifest_sha256": "1e3b437bfaf7800cbcd770cc744084ab9e3b6c445196b707fde90e2f66e0403c"
+        },
+        {
+          "path": "node_modules/@smithy/fetch-http-handler",
+          "name": "@smithy/fetch-http-handler",
+          "version": "5.8.0",
+          "manifest_sha256": "3319f9f00b71ae85d49473c1f5d5a0151c89547d7724753abe8d189471decffe"
+        },
+        {
+          "path": "node_modules/@smithy/node-http-handler",
+          "name": "@smithy/node-http-handler",
+          "version": "4.12.1",
+          "manifest_sha256": "e685e00a1e28371390ffab5711e5300b81743b7a7d5f5bf1a994e40197467221"
+        },
+        {
+          "path": "node_modules/@smithy/signature-v4",
+          "name": "@smithy/signature-v4",
+          "version": "5.7.3",
+          "manifest_sha256": "311248fd3c1829d286f59813f53bb5d2805a57bc48d883849d78b39545ebe616"
+        },
+        {
+          "path": "node_modules/@smithy/types",
+          "name": "@smithy/types",
+          "version": "4.18.0",
+          "manifest_sha256": "7ebaa9023dcc247162ed27daf93ac21e269bdf20da83e58dcf86cedd32dc3da6"
+        },
+        {
+          "path": "node_modules/@speed-highlight/core",
+          "name": "@speed-highlight/core",
+          "version": "1.2.24",
+          "manifest_sha256": "6abc2112341f8d6fd590319d2fbee61e437369614919afed84d2fc2096a5baba"
+        },
+        {
+          "path": "node_modules/@stablelib/base64",
+          "name": "@stablelib/base64",
+          "version": "1.0.1",
+          "manifest_sha256": "7821116cc9ab0fb2542c1407ac5e34ff78bcc70b2d1295b753a9ea16134b3df7"
+        },
+        {
+          "path": "node_modules/@standard-schema/spec",
+          "name": "@standard-schema/spec",
+          "version": "1.1.0",
+          "manifest_sha256": "58e5bd75ddd0684c88b07cd799585cc72a37fd6efb8ab0c936d49e230d5164fb"
+        },
+        {
+          "path": "node_modules/@types/chai",
+          "name": "@types/chai",
+          "version": "5.2.3",
+          "manifest_sha256": "273a3159a592826cc068b22356e9a3e968dffe88a0f99892032a889f28c567a7"
+        },
+        {
+          "path": "node_modules/@types/cross-spawn",
+          "name": "@types/cross-spawn",
+          "version": "6.0.6",
+          "manifest_sha256": "fb19e16e756d670bcc086a10f41f2a8c0653272515482629398f43f6c18aa06a"
+        },
+        {
+          "path": "node_modules/@types/deep-eql",
+          "name": "@types/deep-eql",
+          "version": "4.0.2",
+          "manifest_sha256": "a2e45f386b2fbaed8a8fe333502f97e59061ed738ddd0437437fde05acfa5484"
+        },
+        {
+          "path": "node_modules/@types/estree",
+          "name": "@types/estree",
+          "version": "1.0.9",
+          "manifest_sha256": "3537a6a503f57901111d8a29df81962887653deb199b9a795c7fb50bbfdd1bdc"
+        },
+        {
+          "path": "node_modules/@types/hosted-git-info",
+          "name": "@types/hosted-git-info",
+          "version": "3.0.5",
+          "manifest_sha256": "84ae61e40535e746f6e99671f90e11e531426e83885d68388de57132a09c31c9"
+        },
+        {
+          "path": "node_modules/@types/ms",
+          "name": "@types/ms",
+          "version": "2.1.0",
+          "manifest_sha256": "bbd8f5322ea82216e826e522a6a4ec2ed3086b57a25234d0044673eb374b8e2d"
+        },
+        {
+          "path": "node_modules/@types/node",
+          "name": "@types/node",
+          "version": "22.19.19",
+          "manifest_sha256": "ba8f6326a685af9e7dce89a99f55e0dc3cef450046acf00a20f7cb673562f581"
+        },
+        {
+          "path": "node_modules/@types/proper-lockfile",
+          "name": "@types/proper-lockfile",
+          "version": "4.1.4",
+          "manifest_sha256": "892bde4e440d1536c07410155f8f7c4776d6d825c931fa34d5d04b8f0a9c02f5"
+        },
+        {
+          "path": "node_modules/@types/retry",
+          "name": "@types/retry",
+          "version": "0.12.5",
+          "manifest_sha256": "03d7348d63dd71d2acd89448c5c61b087fafb537c5caef1db745655a738912cd"
+        },
+        {
+          "path": "node_modules/@types/semver",
+          "name": "@types/semver",
+          "version": "7.7.1",
+          "manifest_sha256": "4cc0b3f1c5571b3e0b2080d7895834f931f669d08a35c6d928d3323e6cdf57f3"
+        },
+        {
+          "path": "node_modules/@types/ws",
+          "name": "@types/ws",
+          "version": "8.18.2",
+          "manifest_sha256": "f5b7223923b24d17ae264da95d3e35f72c57bc951c63a31c7c5fbd1490fbf94a"
+        },
+        {
+          "path": "node_modules/@typescript/typescript-win32-x64",
+          "name": "@typescript/typescript-win32-x64",
+          "version": "7.0.2",
+          "manifest_sha256": "6d8ec7623880a902bb225c53571112e2bbf0273412b2c534070b1193d2be0f6b"
+        },
+        {
+          "path": "node_modules/@vitest-evals/core",
+          "name": "@vitest-evals/core",
+          "version": "0.15.0",
+          "manifest_sha256": "5066949dcbfc892570f940f9a179899c3ce2c457edb63e88d1bac506b1cd0515"
+        },
+        {
+          "path": "node_modules/@vitest-evals/report-ui",
+          "name": "@vitest-evals/report-ui",
+          "version": "0.15.0",
+          "manifest_sha256": "cbf23c4f5ba873abe0bd6569f555481410894e1bff6ea1dec02f77a09cdc8799"
+        },
+        {
+          "path": "node_modules/@vitest/expect",
+          "name": "@vitest/expect",
+          "version": "4.1.12",
+          "manifest_sha256": "98a4c135fb0993d11cec19f0b48f986e8d9e02cff8a68d1306ff50dc64a9915b"
+        },
+        {
+          "path": "node_modules/@vitest/mocker",
+          "name": "@vitest/mocker",
+          "version": "4.1.12",
+          "manifest_sha256": "088f9fa2fbb35aea0fd36a12dbff0cfd178b99e7efe5c1f3a863b7ac37230e6e"
+        },
+        {
+          "path": "node_modules/@vitest/pretty-format",
+          "name": "@vitest/pretty-format",
+          "version": "4.1.12",
+          "manifest_sha256": "6cb0a3aed2f0251b482b74c3133c64fd8700cd804bc91921b2fd02e98d9f18b6"
+        },
+        {
+          "path": "node_modules/@vitest/runner",
+          "name": "@vitest/runner",
+          "version": "4.1.12",
+          "manifest_sha256": "54a437a3811773a3dcf8d17eb89120e0ed91f820c752fc76c37b83d22e6f76bf"
+        },
+        {
+          "path": "node_modules/@vitest/snapshot",
+          "name": "@vitest/snapshot",
+          "version": "4.1.12",
+          "manifest_sha256": "299cd191debb8acdddd2ab65f5c618aeb39953f92afa4a7a2c0c5ee2cc240abf"
+        },
+        {
+          "path": "node_modules/@vitest/spy",
+          "name": "@vitest/spy",
+          "version": "4.1.12",
+          "manifest_sha256": "0476c3f564f299d7546a3d53957d9514e3490bbd6320c9edf68a1fb1ba99b849"
+        },
+        {
+          "path": "node_modules/@vitest/utils",
+          "name": "@vitest/utils",
+          "version": "4.1.12",
+          "manifest_sha256": "f7dc399df4aba16359fd4add7ed14d0c3be1bc35ffe567449f831dd2fd7b23f1"
+        },
+        {
+          "path": "node_modules/@xterm/headless",
+          "name": "@xterm/headless",
+          "version": "5.5.0",
+          "manifest_sha256": "7ca390b7c3a5b09ed55eba2fee167fd0bc31a508582357b6735ae734894775a0"
+        },
+        {
+          "path": "node_modules/agent-base",
+          "name": "agent-base",
+          "version": "7.1.4",
+          "manifest_sha256": "7a08cb2fe1d2b788e0a7bf6a9b7597dbeeeae804698c2fbd15de786d284d327c"
+        },
+        {
+          "path": "node_modules/ajv",
+          "name": "ajv",
+          "version": "8.20.0",
+          "manifest_sha256": "1f9033ee5a6515e7d76938b7072941862d1ed228a6879cc7fe10cdeb75107989"
+        },
+        {
+          "path": "node_modules/ajv-formats",
+          "name": "ajv-formats",
+          "version": "3.0.1",
+          "manifest_sha256": "402fb4bcfa457f0226813f3976ac42839dd619907c075c108efba8600d7edb69"
+        },
+        {
+          "path": "node_modules/asn1",
+          "name": "asn1",
+          "version": "0.2.6",
+          "manifest_sha256": "9931ef8d2e8857b7be3cc1fb13af4c943165046fe66337a8d7fec50fee8a5764"
+        },
+        {
+          "path": "node_modules/assertion-error",
+          "name": "assertion-error",
+          "version": "2.0.1",
+          "manifest_sha256": "7a77fe7be32038e40aab9a3fc6180a6fbe3fdbb68b006b78a47401f7026e96e7"
+        },
+        {
+          "path": "node_modules/ata-validator",
+          "name": "ata-validator",
+          "version": "1.61.3",
+          "manifest_sha256": "6255777c305af12bf20e973fddf459683874212bbfadb2a6581f5197e0e75575"
+        },
+        {
+          "path": "node_modules/balanced-match",
+          "name": "balanced-match",
+          "version": "4.0.4",
+          "manifest_sha256": "c984e6ae5c41fac085a07a732b665b22e0a26f28b61c692ba18ff458a8ecc95a"
+        },
+        {
+          "path": "node_modules/base64-js",
+          "name": "base64-js",
+          "version": "1.5.1",
+          "manifest_sha256": "9758f3ab8c45e07bb9a368e32f9a8b3729623bbf47cbbb205b32d674ab2a91f0"
+        },
+        {
+          "path": "node_modules/bcrypt-pbkdf",
+          "name": "bcrypt-pbkdf",
+          "version": "1.0.2",
+          "manifest_sha256": "06fc161a503054580e1e975c384436da3901ee5c6cbd9a29454947c669fe8890"
+        },
+        {
+          "path": "node_modules/bignumber.js",
+          "name": "bignumber.js",
+          "version": "9.3.1",
+          "manifest_sha256": "192208575108629a3272453526258511a5911a8127ab955371fb1f25ac79e99d"
+        },
+        {
+          "path": "node_modules/bl",
+          "name": "bl",
+          "version": "4.1.0",
+          "manifest_sha256": "fea66d3b8671e46f77e83db040837cf72da180b8d390d53c43d882fd553659df"
+        },
+        {
+          "path": "node_modules/blake3-wasm",
+          "name": "blake3-wasm",
+          "version": "2.1.5",
+          "manifest_sha256": "f36864b59bcb76e6a97b7f236ad3ca78749af8374453ae1bcca048815b8c6e9e"
+        },
+        {
+          "path": "node_modules/bowser",
+          "name": "bowser",
+          "version": "2.14.1",
+          "manifest_sha256": "b12b643998a1a7febff9933b5a05e53045c722ff4de13fab751391b2d346a974"
+        },
+        {
+          "path": "node_modules/brace-expansion",
+          "name": "brace-expansion",
+          "version": "5.0.12",
+          "manifest_sha256": "8af7dc0916002266f3b01459ef691d9f834d8ecdb0e021263280a50b913d85fa"
+        },
+        {
+          "path": "node_modules/buffer",
+          "name": "buffer",
+          "version": "5.7.1",
+          "manifest_sha256": "5af7b62dbf5575a301cd13e8616f1d7d9cff3c90f9fab7bc3d6a1f4fbfee94eb"
+        },
+        {
+          "path": "node_modules/buffer-equal-constant-time",
+          "name": "buffer-equal-constant-time",
+          "version": "1.0.1",
+          "manifest_sha256": "2d3df7ecb57811cf6fc43be180d9801c7c70928e5388391a6f258d889449ef4e"
+        },
+        {
+          "path": "node_modules/buildcheck",
+          "name": "buildcheck",
+          "version": "0.0.7",
+          "manifest_sha256": "8595d74bff1913518d2a2f9205edd42ab9392f51479a195df5a1cd0996d9ac62"
+        },
+        {
+          "path": "node_modules/canvas",
+          "name": "canvas",
+          "version": "3.2.3",
+          "manifest_sha256": "a0d8fc7c96dc8c05154d93f27d646a09e6dcf74cb8bb6efe7f9179bb22e1e29f"
+        },
+        {
+          "path": "node_modules/cbor2",
+          "name": "cbor2",
+          "version": "2.3.0",
+          "manifest_sha256": "a5d8fb94407d5b8c8af5a48f3d13afbfd15c03d4702b23dd7bfaa2bebbeeddf7"
+        },
+        {
+          "path": "node_modules/chai",
+          "name": "chai",
+          "version": "6.3.0",
+          "manifest_sha256": "1cfe6961e9484f378c906b58303884f71f591aa53a55fb58acfe9f48585d050e"
+        },
+        {
+          "path": "node_modules/chalk",
+          "name": "chalk",
+          "version": "6.0.0",
+          "manifest_sha256": "5a853fc6dc0c529bc126f97645989e9d60d06a2e9b20f66a6b48b0e8ef9da3ef"
+        },
+        {
+          "path": "node_modules/chownr",
+          "name": "chownr",
+          "version": "1.1.4",
+          "manifest_sha256": "7c18e85ac9eff99dc6cb6c5626e11ebea658e69119e0bc8cb4bd799c2b48125a"
+        },
+        {
+          "path": "node_modules/cjs-module-lexer",
+          "name": "cjs-module-lexer",
+          "version": "1.2.3",
+          "manifest_sha256": "69b1695072ca828706fe928f8ee312eb86f69c072fa0b4c129d2e8d360e39029"
+        },
+        {
+          "path": "node_modules/convert-source-map",
+          "name": "convert-source-map",
+          "version": "2.0.0",
+          "manifest_sha256": "e6bf802e6ee220d66321808ce3d619fbb85ff4d5729ea4f649bd65dfe9ee8956"
+        },
+        {
+          "path": "node_modules/cookie",
+          "name": "cookie",
+          "version": "1.1.1",
+          "manifest_sha256": "e13337a4eb106b201e0502361f3214af9cc22ae88b2bfac2368996bb949a102f"
+        },
+        {
+          "path": "node_modules/cpu-features",
+          "name": "cpu-features",
+          "version": "0.0.10",
+          "manifest_sha256": "c47e0020f5434c5b87b7a108c07fd7042656c2524ca2387c4b132adde52fa985"
+        },
+        {
+          "path": "node_modules/cross-spawn",
+          "name": "cross-spawn",
+          "version": "7.0.6",
+          "manifest_sha256": "2e106cd9b4ae4e34ead35218371a0d4e172da72515a4f8f97d69a2e1fe3dee82"
+        },
+        {
+          "path": "node_modules/data-uri-to-buffer",
+          "name": "data-uri-to-buffer",
+          "version": "4.0.1",
+          "manifest_sha256": "ad4f90a737ab5d8af4dad265e9218456e3779ca5beb70df38dd5feecf80121dd"
+        },
+        {
+          "path": "node_modules/debug",
+          "name": "debug",
+          "version": "4.4.3",
+          "manifest_sha256": "ea8e33d63fe5f3a4c36609b6c3df8e2ef1f8b8ba2fc3a2e1e53cb27291f384af"
+        },
+        {
+          "path": "node_modules/decompress-response",
+          "name": "decompress-response",
+          "version": "6.0.0",
+          "manifest_sha256": "8fb6b0b19d09cc1c5b2caad128ae39b2fd693a35bb3d440c4e1143bfb9d10080"
+        },
+        {
+          "path": "node_modules/deep-extend",
+          "name": "deep-extend",
+          "version": "0.6.0",
+          "manifest_sha256": "21b307891704eb34e9be621d7563d13734f75f41d8f97825862b05ca5bc2d217"
+        },
+        {
+          "path": "node_modules/detect-libc",
+          "name": "detect-libc",
+          "version": "2.1.2",
+          "manifest_sha256": "ee88e5b954fdf3a8480b1d01ef767d68d8ca2c6da269f58c5cf1c5550e9aa2a7"
+        },
+        {
+          "path": "node_modules/diff",
+          "name": "diff",
+          "version": "8.0.4",
+          "manifest_sha256": "372a1ad33bcaded0234d5d327d1164c18968ee3f2e9f362ddd22e4489e91e369"
+        },
+        {
+          "path": "node_modules/ecdsa-sig-formatter",
+          "name": "ecdsa-sig-formatter",
+          "version": "1.0.11",
+          "manifest_sha256": "f8c0805a13487310192db6ae04452c4315f5538ae87d7bc20de2904902c34027"
+        },
+        {
+          "path": "node_modules/end-of-stream",
+          "name": "end-of-stream",
+          "version": "1.4.5",
+          "manifest_sha256": "da504d0bef5a5974590b62f58df0003b448eccde6b5fbeb044506b7e43368eb5"
+        },
+        {
+          "path": "node_modules/error-stack-parser-es",
+          "name": "error-stack-parser-es",
+          "version": "1.0.5",
+          "manifest_sha256": "c1aa9b437730af67a4ee929abcb47f335cdb8c1307e19e007c25fdde660ca187"
+        },
+        {
+          "path": "node_modules/es-module-lexer",
+          "name": "es-module-lexer",
+          "version": "2.3.1",
+          "manifest_sha256": "bc5f0204fe8e6d52460889a7248f655b025fa314b52f35129b93a4f35923f19f"
+        },
+        {
+          "path": "node_modules/esbuild",
+          "name": "esbuild",
+          "version": "0.28.2",
+          "manifest_sha256": "9d0bc453f4e791553c4cc2298ba023b409241fd9801e494741666eb0f6051490"
+        },
+        {
+          "path": "node_modules/estree-walker",
+          "name": "estree-walker",
+          "version": "3.0.3",
+          "manifest_sha256": "c459668153035def85be26dbeb40caf315191da06ac8a092cd8024b677c2fc21"
+        },
+        {
+          "path": "node_modules/expand-template",
+          "name": "expand-template",
+          "version": "2.0.3",
+          "manifest_sha256": "90f652967155275d9fab2887a845454ee797340b28cc0c1b00f1889aaa65f771"
+        },
+        {
+          "path": "node_modules/expect-type",
+          "name": "expect-type",
+          "version": "1.3.0",
+          "manifest_sha256": "a7453b74e6d7d4d1f0a9e78f13d9d8c01a28a9b53e2dcdd4e0976fcdf81515a3"
+        },
+        {
+          "path": "node_modules/extend",
+          "name": "extend",
+          "version": "3.0.2",
+          "manifest_sha256": "8d891b3f00bead114c4741d8a594e7aaa59114f53782ec9a9319a619709dc14f"
+        },
+        {
+          "path": "node_modules/fake-indexeddb",
+          "name": "fake-indexeddb",
+          "version": "6.2.6",
+          "manifest_sha256": "5388c5c992abcd36b8529a98e5d079586b37c87c381870d91f41696efa13968f"
+        },
+        {
+          "path": "node_modules/fast-deep-equal",
+          "name": "fast-deep-equal",
+          "version": "3.1.3",
+          "manifest_sha256": "a5c63940db0260739be9e2ac67f3aac268df4db5770420ee4e34e493152f97d2"
+        },
+        {
+          "path": "node_modules/fast-sha256",
+          "name": "fast-sha256",
+          "version": "1.3.0",
+          "manifest_sha256": "d312f1993364bfb4f217f820ff7f9e0a6b1d87930bfc2605138ab660e8d29806"
+        },
+        {
+          "path": "node_modules/fast-uri",
+          "name": "fast-uri",
+          "version": "3.1.9",
+          "manifest_sha256": "06728ad83c4df979c6895d089452622441e34afe9b1c24584e2acac8d94a2876"
+        },
+        {
+          "path": "node_modules/fdir",
+          "name": "fdir",
+          "version": "6.5.0",
+          "manifest_sha256": "aca49395d61ef383a09f74555c66ed45817ca2b5724e710a4dc9e0471b83d8f5"
+        },
+        {
+          "path": "node_modules/fetch-blob",
+          "name": "fetch-blob",
+          "version": "3.2.0",
+          "manifest_sha256": "ee47bb73168049962586a09317017c44b1b10b2a90fc74e5c4561efdb361411b"
+        },
+        {
+          "path": "node_modules/formdata-polyfill",
+          "name": "formdata-polyfill",
+          "version": "4.0.10",
+          "manifest_sha256": "09767e86a596171ef17e8ec4977eb11f530654740fa3105dbbd7cd545753421e"
+        },
+        {
+          "path": "node_modules/fs-constants",
+          "name": "fs-constants",
+          "version": "1.0.0",
+          "manifest_sha256": "9cefec768b4f8c52591b840367d077a46a5a2b72ea2778dcf037afd96b234671"
+        },
+        {
+          "path": "node_modules/gaxios",
+          "name": "gaxios",
+          "version": "7.1.4",
+          "manifest_sha256": "f0021f603f3760b635b30f8b9d18b1bf80118b1cf1080e59cea42ba420f703c7"
+        },
+        {
+          "path": "node_modules/gcp-metadata",
+          "name": "gcp-metadata",
+          "version": "8.1.2",
+          "manifest_sha256": "1d50f7d982a12c539356257f1b26631ec06f569b804a596dc926ec8773224fa4"
+        },
+        {
+          "path": "node_modules/get-east-asian-width",
+          "name": "get-east-asian-width",
+          "version": "1.6.0",
+          "manifest_sha256": "d263e50dd1a43aee9acda4d7f066e66b0d0bde1f2852ea6e7153750a5e3a3e52"
+        },
+        {
+          "path": "node_modules/github-from-package",
+          "name": "github-from-package",
+          "version": "0.0.0",
+          "manifest_sha256": "67742aa2b856e3523c2f89132e41cc5026c49ffe7df58bd3ea906caaa217bd79"
+        },
+        {
+          "path": "node_modules/google-auth-library",
+          "name": "google-auth-library",
+          "version": "10.6.2",
+          "manifest_sha256": "717e643e6ae916804b50abb3ec0319fdabd539625ce3076d6ff253e233c7c462"
+        },
+        {
+          "path": "node_modules/google-logging-utils",
+          "name": "google-logging-utils",
+          "version": "1.1.3",
+          "manifest_sha256": "74980e1fd2db59c71a20ddf6accf42704c67da3b905fc5d2134ee39807dad42f"
+        },
+        {
+          "path": "node_modules/graceful-fs",
+          "name": "graceful-fs",
+          "version": "4.2.11",
+          "manifest_sha256": "5747d4ba6b17165c6ecac30ab3a331715f41c7ad546e1f1574dab1bdcb116181"
+        },
+        {
+          "path": "node_modules/grok-mermaid",
+          "name": "grok-mermaid",
+          "version": "0.2.3",
+          "manifest_sha256": "2bdc21cc50b7af0096d4000050fe210c58b7bdedb6e6a07f8ecd2a6f2ded2e53"
+        },
+        {
+          "path": "node_modules/highlight.js",
+          "name": "highlight.js",
+          "version": "10.7.3",
+          "manifest_sha256": "4f657beb931cb9613e5173414855b2a01e698696c0661d21973bfbbd50e184cf"
+        },
+        {
+          "path": "node_modules/hosted-git-info",
+          "name": "hosted-git-info",
+          "version": "9.0.3",
+          "manifest_sha256": "7c3774e4843581832aec08133a19df318625a91c1ca6c90fef1a328d4e02705e"
+        },
+        {
+          "path": "node_modules/http-proxy-agent",
+          "name": "http-proxy-agent",
+          "version": "9.1.0",
+          "manifest_sha256": "03703c6c566b00d8fd85ba57cd6460b14d0b762f694e26f0efbfe4e5384e3081"
+        },
+        {
+          "path": "node_modules/http-proxy-agent/node_modules/agent-base",
+          "name": "agent-base",
+          "version": "9.0.0",
+          "manifest_sha256": "13df46dd018fcf2e4231a0f47a1a007dd7d5441d9f8efb108f50f9fb64a17138"
+        },
+        {
+          "path": "node_modules/https-proxy-agent",
+          "name": "https-proxy-agent",
+          "version": "7.0.6",
+          "manifest_sha256": "b08c1977d38f14f4be7fb5be33aab545e3e5a6e2e12100733a6ad97dec995206"
+        },
+        {
+          "path": "node_modules/husky",
+          "name": "husky",
+          "version": "9.1.7",
+          "manifest_sha256": "8f3966c3b43a59e4b8e13fdfe8eb00a7ab66dfeb235515f7c19c8e0f5ca530e1"
+        },
+        {
+          "path": "node_modules/ieee754",
+          "name": "ieee754",
+          "version": "1.2.1",
+          "manifest_sha256": "a8004b9c8dffe2e1b01a058ecf968a5d50beabcabc43cc98c655184ba6afc050"
+        },
+        {
+          "path": "node_modules/ignore",
+          "name": "ignore",
+          "version": "7.0.8",
+          "manifest_sha256": "809e28f354aca6ac273e9d455ee2ebd8f2c0e8676d0b62417a5b11ddda4ba8cd"
+        },
+        {
+          "path": "node_modules/inherits",
+          "name": "inherits",
+          "version": "2.0.4",
+          "manifest_sha256": "be645800bc94fd8de29c8ae91690549b316cc437100108aeea7b2f347693cc80"
+        },
+        {
+          "path": "node_modules/ini",
+          "name": "ini",
+          "version": "1.3.8",
+          "manifest_sha256": "8cfafc3521292bd7434d2f40762984f36eb12f03bde92b42a9df2ea17552f4a4"
+        },
+        {
+          "path": "node_modules/isexe",
+          "name": "isexe",
+          "version": "2.0.0",
+          "manifest_sha256": "395c2af9abeeaafe7391974c1eacfb2a2bdeef187f21c3f5582c49e0368e59bf"
+        },
+        {
+          "path": "node_modules/jiti",
+          "name": "jiti",
+          "version": "2.7.0",
+          "manifest_sha256": "aab8aafc42d9aeec14a6e2fe0e15ea1514c0c205a624055a7e776f2ec456283c"
+        },
+        {
+          "path": "node_modules/json-bigint",
+          "name": "json-bigint",
+          "version": "1.0.0",
+          "manifest_sha256": "1c3b07ce46552112606922f0782b316383529b3da935d637c0606cb38a8caa5a"
+        },
+        {
+          "path": "node_modules/json-schema-to-ts",
+          "name": "json-schema-to-ts",
+          "version": "3.1.1",
+          "manifest_sha256": "9439fa620a0f7a930950239ec4445d902c7d29590cddf0985a83bea531b2e81e"
+        },
+        {
+          "path": "node_modules/json-schema-traverse",
+          "name": "json-schema-traverse",
+          "version": "1.0.0",
+          "manifest_sha256": "156fb24af02845c190701360d06dfda35ef04282e34a734289ea9535ad9819ae"
+        },
+        {
+          "path": "node_modules/jwa",
+          "name": "jwa",
+          "version": "2.0.1",
+          "manifest_sha256": "53610fa0143c2cdef9d280e0c029ededf688930648358d4f3e35a081d75219d8"
+        },
+        {
+          "path": "node_modules/jws",
+          "name": "jws",
+          "version": "4.0.1",
+          "manifest_sha256": "a934389f53e2ac8909d5399410c1ede3e35397be9e9f521bde25b61e1fee0b2f"
+        },
+        {
+          "path": "node_modules/kleur",
+          "name": "kleur",
+          "version": "4.1.5",
+          "manifest_sha256": "cc1c864fe6dc0eabc980a74b4af4fee8b8491319de2d48a34cb6f4959dad9ef0"
+        },
+        {
+          "path": "node_modules/lightningcss",
+          "name": "lightningcss",
+          "version": "1.33.0",
+          "manifest_sha256": "b26fa1b188f90ec672206326e9a1de793f0403a263be9c3797c2e2d56aa48b3c"
+        },
+        {
+          "path": "node_modules/lightningcss-win32-x64-msvc",
+          "name": "lightningcss-win32-x64-msvc",
+          "version": "1.33.0",
+          "manifest_sha256": "b5ebddf44be90f0f82899482f512de5c2937fee0892dd001041cd17b35bc7699"
+        },
+        {
+          "path": "node_modules/long",
+          "name": "long",
+          "version": "5.3.2",
+          "manifest_sha256": "982e554a35d140981c7962fbba77855563e5890de200f8dc0a249135e4d9acb8"
+        },
+        {
+          "path": "node_modules/lru-cache",
+          "name": "lru-cache",
+          "version": "11.4.0",
+          "manifest_sha256": "f46461a60ce544a6a1cad7dabc1ee1a260841e66c353a5db0179cfd21cc0efb5"
+        },
+        {
+          "path": "node_modules/magic-string",
+          "name": "magic-string",
+          "version": "0.30.21",
+          "manifest_sha256": "86814aaf7dacba9d31fbf361c3285981f1cbbda0a87108caa4131d297bd9eba2"
+        },
+        {
+          "path": "node_modules/marked",
+          "name": "marked",
+          "version": "18.0.11",
+          "manifest_sha256": "5a43adf708c24038a44ecd5f642bc55e3226f9e8e7997fca20272f32037970e3"
+        },
+        {
+          "path": "node_modules/marked-cjk-friendly",
+          "name": "marked-cjk-friendly",
+          "version": "0.1.2",
+          "manifest_sha256": "0d79f51535036c54e9068154f78e93ddf882449864b09e46ba726b67b29f13eb"
+        },
+        {
+          "path": "node_modules/mimic-response",
+          "name": "mimic-response",
+          "version": "3.1.0",
+          "manifest_sha256": "ff358428a418a46fb2431a2c48b396fb01c8291fec9e1f14434ade01196c8e9c"
+        },
+        {
+          "path": "node_modules/miniflare",
+          "name": "miniflare",
+          "version": "5.20261023.2-beta",
+          "manifest_sha256": "10995090d642a00090ae5486a98972f038dfb194a05b82ad23b57beb5054a060"
+        },
+        {
+          "path": "node_modules/miniflare/node_modules/undici",
+          "name": "undici",
+          "version": "7.30.1",
+          "manifest_sha256": "0e62f63508558cd8bc44dbf61baee562907ff4bbd147bf837ded998c2bf62a28"
+        },
+        {
+          "path": "node_modules/minimatch",
+          "name": "minimatch",
+          "version": "11.0.3",
+          "manifest_sha256": "ef4a771ea995978f41d37b063f9f8c061101ac89d0c53647cf4087df970e7ba5"
+        },
+        {
+          "path": "node_modules/minimist",
+          "name": "minimist",
+          "version": "1.2.8",
+          "manifest_sha256": "252881f6a068a3e70386706d88a694b5e8e9e053b6d9f309fd9a329e651bbf81"
+        },
+        {
+          "path": "node_modules/mkdirp-classic",
+          "name": "mkdirp-classic",
+          "version": "0.5.3",
+          "manifest_sha256": "dd81e4703dc7005247e7c2dc056c67c936923a40b4dc9b266cf8acf3442ba89c"
+        },
+        {
+          "path": "node_modules/ms",
+          "name": "ms",
+          "version": "2.1.3",
+          "manifest_sha256": "1a6b4d9739790c0b94ab96c8cc0507e281c164c311ff4fbf5e57fb8d26290b40"
+        },
+        {
+          "path": "node_modules/nan",
+          "name": "nan",
+          "version": "2.27.0",
+          "manifest_sha256": "8e3b382dff4ce1f64d0b0aee356fe3817d041569d37e713476a07f681e0ac23a"
+        },
+        {
+          "path": "node_modules/nanoid",
+          "name": "nanoid",
+          "version": "3.3.20",
+          "manifest_sha256": "e2a77185ded1c006171e4e2f8b316d0e3b4c51a135a190851cfc888ea428f6bf"
+        },
+        {
+          "path": "node_modules/napi-build-utils",
+          "name": "napi-build-utils",
+          "version": "2.0.0",
+          "manifest_sha256": "001ba5640df99785e76b7d407ae35a24c490f145737cf3f194408fb17dfec411"
+        },
+        {
+          "path": "node_modules/node-abi",
+          "name": "node-abi",
+          "version": "3.92.0",
+          "manifest_sha256": "0bf67c397d8f6a9136d44eda86f417c0c81893e99697cbdf8733cb2982d7884b"
+        },
+        {
+          "path": "node_modules/node-addon-api",
+          "name": "node-addon-api",
+          "version": "7.1.1",
+          "manifest_sha256": "e4947cf10e432c42459e60a00947ccd1ad2501e16cf1a530b3d39f0c2de5c83f"
+        },
+        {
+          "path": "node_modules/node-domexception",
+          "name": "node-domexception",
+          "version": "1.0.0",
+          "manifest_sha256": "1ff59c11ab7aef2b2f7fa393e8b871362e21b8a2defbd4922a8f8a5082fbfa06"
+        },
+        {
+          "path": "node_modules/node-fetch",
+          "name": "node-fetch",
+          "version": "3.3.2",
+          "manifest_sha256": "058acbc2474901ffa0b95c3f9d0903111426b118b55f928300e448d7252fc27d"
+        },
+        {
+          "path": "node_modules/obug",
+          "name": "obug",
+          "version": "2.1.3",
+          "manifest_sha256": "60b9ec85fb6f784a18b90582165b98fac735ae06dfa40d972d5b9feeafff7219"
+        },
+        {
+          "path": "node_modules/once",
+          "name": "once",
+          "version": "1.4.0",
+          "manifest_sha256": "33840d74c14c94bfb75c76374765b635531b1eacb88d7f1f2f380c94d0ea1328"
+        },
+        {
+          "path": "node_modules/p-retry",
+          "name": "p-retry",
+          "version": "4.6.2",
+          "manifest_sha256": "ee4376966f4f8db899019ec955b3dc25fd972e12587a0da10d8313dc7b617b3f"
+        },
+        {
+          "path": "node_modules/p-retry/node_modules/@types/retry",
+          "name": "@types/retry",
+          "version": "0.12.0",
+          "manifest_sha256": "5d07cffb225eba4439977949ad9e8729620e51d1acc04f60fc8bad712183e063"
+        },
+        {
+          "path": "node_modules/partial-json",
+          "name": "partial-json",
+          "version": "0.1.7",
+          "manifest_sha256": "42b3ae6c99ec959249f8eb4d3da7fdb44ec1f96ec627fa7f9ca5487a4e80963f"
+        },
+        {
+          "path": "node_modules/path-key",
+          "name": "path-key",
+          "version": "3.1.1",
+          "manifest_sha256": "25594dab72681c910d9cc919263a4daf27d77a75e0d2c26a4d958d6d6b798f86"
+        },
+        {
+          "path": "node_modules/path-to-regexp",
+          "name": "path-to-regexp",
+          "version": "6.3.0",
+          "manifest_sha256": "8d858476cc93dd0af859fcd3d84cf780ae0bd9930a7459623f483d897d7dacd4"
+        },
+        {
+          "path": "node_modules/pathe",
+          "name": "pathe",
+          "version": "2.0.3",
+          "manifest_sha256": "6cccffe6bb2a39e2e4f257aefc3f5d553d98199a0c79558bdb5ea2880fa030a3"
+        },
+        {
+          "path": "node_modules/picocolors",
+          "name": "picocolors",
+          "version": "1.1.1",
+          "manifest_sha256": "ef2ac226c4811d312e12c64214c453878653e834482125ae475f27cea60de737"
+        },
+        {
+          "path": "node_modules/picomatch",
+          "name": "picomatch",
+          "version": "4.0.7",
+          "manifest_sha256": "479b70b87aa7b44344d62c8a459ae7e53dd2bca6c61f1396bd55e63e9de73fc6"
+        },
+        {
+          "path": "node_modules/pnpm",
+          "name": "pnpm",
+          "version": "11.15.1",
+          "manifest_sha256": "989fe977bb71ccdc641a9f50b849d2e5e7bf6963a93b688fc90b3449af88eca7"
+        },
+        {
+          "path": "node_modules/postcss",
+          "name": "postcss",
+          "version": "8.5.31",
+          "manifest_sha256": "2bc68f53bee43580a7229a351c94ba72ebdea65a885746d481586313c5426da9"
+        },
+        {
+          "path": "node_modules/prebuild-install",
+          "name": "prebuild-install",
+          "version": "7.1.3",
+          "manifest_sha256": "d8502f5ce977ea10cc7e91e95b595ce845e838cf412801230e9a2f211ad68039"
+        },
+        {
+          "path": "node_modules/proper-lockfile",
+          "name": "proper-lockfile",
+          "version": "4.1.2",
+          "manifest_sha256": "23888ecc7abd83a8e98e132da556eda2172792cc04c4e6d157b590667802bd2a"
+        },
+        {
+          "path": "node_modules/proper-lockfile/node_modules/retry",
+          "name": "retry",
+          "version": "0.12.0",
+          "manifest_sha256": "c0733eb226e2a6572c7c9c2bc8b4a0efabe233971b0dee1e6d62c6898257e1da"
+        },
+        {
+          "path": "node_modules/protobufjs",
+          "name": "protobufjs",
+          "version": "7.6.6",
+          "manifest_sha256": "0e56b70de03bffc143e74311b42ae22b557370a4a1f4b5066568fbc77857639a"
+        },
+        {
+          "path": "node_modules/proxy-agent-negotiate",
+          "name": "proxy-agent-negotiate",
+          "version": "1.1.0",
+          "manifest_sha256": "7b7c2579ea138d20d4f7699ca78ef16c526f35168dbf694f1d47cc861b0954d4"
+        },
+        {
+          "path": "node_modules/pump",
+          "name": "pump",
+          "version": "3.0.4",
+          "manifest_sha256": "d369a9c97d4aaca4a637af77b6ead9169146809ff3c27268e62151b613cae016"
+        },
+        {
+          "path": "node_modules/quickjs-wasi",
+          "name": "quickjs-wasi",
+          "version": "3.6.2",
+          "manifest_sha256": "efa1d0d3b440dd7a31f55690d414f9c7f59e6a15395075efee884454c86715c2"
+        },
+        {
+          "path": "node_modules/rc",
+          "name": "rc",
+          "version": "1.2.8",
+          "manifest_sha256": "96f035349a8e6034d380348ec3d454ed8ea3a602c7a5700eb36ff48310bdbe9f"
+        },
+        {
+          "path": "node_modules/readable-stream",
+          "name": "readable-stream",
+          "version": "3.6.2",
+          "manifest_sha256": "469ea81f64037d1f179bcd46412217903a2924dd2e7d7d9b728659b6f12c3e69"
+        },
+        {
+          "path": "node_modules/require-from-string",
+          "name": "require-from-string",
+          "version": "2.0.2",
+          "manifest_sha256": "c0002f7d4c7d7e2a885cf0f97226344902417c3a0980f2beca41962d2bc1f6d8"
+        },
+        {
+          "path": "node_modules/retry",
+          "name": "retry",
+          "version": "0.13.1",
+          "manifest_sha256": "7ae366b6b8133485abf27abe657c0ffa2d32600611ecf2c4fe5246165bed73d5"
+        },
+        {
+          "path": "node_modules/rolldown",
+          "name": "rolldown",
+          "version": "1.2.14",
+          "manifest_sha256": "f46fa23bccbb2a1ee76a763b02a55853cdfea4aaf8b0f3b82e8d16bad8778020"
+        },
+        {
+          "path": "node_modules/safe-buffer",
+          "name": "safe-buffer",
+          "version": "5.2.1",
+          "manifest_sha256": "e4018fdbfe625433371f48274fee26f520bbe865e0d8c85bf3aa07424134b90c"
+        },
+        {
+          "path": "node_modules/safer-buffer",
+          "name": "safer-buffer",
+          "version": "2.1.2",
+          "manifest_sha256": "4247a3a63c45a6a7ced1557fe4dd9d2a163af4915d594b95e5867b69a53edb52"
+        },
+        {
+          "path": "node_modules/semver",
+          "name": "semver",
+          "version": "7.8.5",
+          "manifest_sha256": "7c94cb7f2a53c27b20d76386ec144c062894dbcc909cfabd0f728c37874b1776"
+        },
+        {
+          "path": "node_modules/sharp",
+          "name": "sharp",
+          "version": "0.35.5",
+          "manifest_sha256": "ad4a2535d72eb638053a38867b1abf43c328cd1c1dbae5cf4172d498365a8b97"
+        },
+        {
+          "path": "node_modules/shebang-command",
+          "name": "shebang-command",
+          "version": "2.0.0",
+          "manifest_sha256": "44de390ae5ed6c5f9758b8b9c90b93fa53977d5361731600429f1de08f4b3f30"
+        },
+        {
+          "path": "node_modules/shebang-regex",
+          "name": "shebang-regex",
+          "version": "3.0.0",
+          "manifest_sha256": "b8018c6b8cc9900dfd1ac18a54956ba34c453fdc2da5e5fe555ee8f04133a1c5"
+        },
+        {
+          "path": "node_modules/siginfo",
+          "name": "siginfo",
+          "version": "2.0.0",
+          "manifest_sha256": "ff13b85283144b84f297d757a7b5dcffc7abcc469b3b22bb6fc94b6b1ae5f662"
+        },
+        {
+          "path": "node_modules/signal-exit",
+          "name": "signal-exit",
+          "version": "3.0.7",
+          "manifest_sha256": "cec1bba4c97e0cf653c13c8c79f745aac2232131ee718c93c4236c1b9577a201"
+        },
+        {
+          "path": "node_modules/simple-concat",
+          "name": "simple-concat",
+          "version": "1.0.1",
+          "manifest_sha256": "d6ae2e35a0c64b4469f1e531a3244efd50be7c115ef42d1422e54d14d9359e99"
+        },
+        {
+          "path": "node_modules/simple-get",
+          "name": "simple-get",
+          "version": "4.0.1",
+          "manifest_sha256": "8337ba9774d6d8199a5861c6dfa57058f162bfb6210362c01db38f0a593f96d6"
+        },
+        {
+          "path": "node_modules/source-map-js",
+          "name": "source-map-js",
+          "version": "1.2.2",
+          "manifest_sha256": "9f1ea63b1661d0f6e5fcd50b625d86cddd77de870a0019b23262360987b487f5"
+        },
+        {
+          "path": "node_modules/ssh2",
+          "name": "ssh2",
+          "version": "1.17.0",
+          "manifest_sha256": "e6fd4e4c3e69e4ad185c87cb5ee1df631e3f4cbd43cf89470f83c1e5d1a76dfb"
+        },
+        {
+          "path": "node_modules/stackback",
+          "name": "stackback",
+          "version": "0.0.2",
+          "manifest_sha256": "4d984909b27d37d2f1a379b9cda7292a6e3a133c076df166d740a17514ac6e60"
+        },
+        {
+          "path": "node_modules/standardwebhooks",
+          "name": "standardwebhooks",
+          "version": "1.1.1",
+          "manifest_sha256": "686397f0f0202e0b693cfd3f6241d7a8da3df326f9642867a484fbbd295690b6"
+        },
+        {
+          "path": "node_modules/std-env",
+          "name": "std-env",
+          "version": "4.2.0",
+          "manifest_sha256": "9605e7a2e98c223727617205465824fb54e3f78ea5535bee38b821e6baf3b557"
+        },
+        {
+          "path": "node_modules/string_decoder",
+          "name": "string_decoder",
+          "version": "1.3.0",
+          "manifest_sha256": "31984c85cd4f3df0aa75075acdec98c25961496897d1f46d04ed4a701f129c54"
+        },
+        {
+          "path": "node_modules/strip-json-comments",
+          "name": "strip-json-comments",
+          "version": "2.0.1",
+          "manifest_sha256": "52fba89a1d2724dfeafa21ec58f8c4a8a210103cc6b65b4468ab3fb973ad1753"
+        },
+        {
+          "path": "node_modules/supports-color",
+          "name": "supports-color",
+          "version": "10.2.2",
+          "manifest_sha256": "f208d0897ad657613dbd6199357f1b2c082d975fffa316933cad58851eff00ed"
+        },
+        {
+          "path": "node_modules/tar-fs",
+          "name": "tar-fs",
+          "version": "2.1.4",
+          "manifest_sha256": "ba35bcca6e868b872346f2905b3ff58fed8c99d475f9b3124afbf5de37514443"
+        },
+        {
+          "path": "node_modules/tar-stream",
+          "name": "tar-stream",
+          "version": "2.2.0",
+          "manifest_sha256": "bf26c92d0b2d3b865681bac5cf3bca4cd405e33fcb47f45216899aaed4f81010"
+        },
+        {
+          "path": "node_modules/tinybench",
+          "name": "tinybench",
+          "version": "2.9.0",
+          "manifest_sha256": "74cf001e0ad7780cb3f596a75a2595d737337741ba76f734811387a5139ff327"
+        },
+        {
+          "path": "node_modules/tinyexec",
+          "name": "tinyexec",
+          "version": "1.2.4",
+          "manifest_sha256": "a930901b9a4b26370398ce8403a190cb8fdf822ab0e56cdb3d79b70a1973686e"
+        },
+        {
+          "path": "node_modules/tinyglobby",
+          "name": "tinyglobby",
+          "version": "0.2.17",
+          "manifest_sha256": "bd2b2af3c9ba0580f1acfb22c55d0b6d29abf683af5cac8a2efe82fa7c943f23"
+        },
+        {
+          "path": "node_modules/tinyrainbow",
+          "name": "tinyrainbow",
+          "version": "3.1.0",
+          "manifest_sha256": "8febb1f9812e3ca8891bf4914b39efdb8d4034f015c899a3921377feb71150b8"
+        },
+        {
+          "path": "node_modules/ts-algebra",
+          "name": "ts-algebra",
+          "version": "2.0.0",
+          "manifest_sha256": "6c6f692e1a3ad9943c77b5fa4eb04b0f63cb708353c67dcc5d86b35b2f7e5c30"
+        },
+        {
+          "path": "node_modules/tslib",
+          "name": "tslib",
+          "version": "2.8.1",
+          "manifest_sha256": "f02b4851df316f29bdfcd404aa1eb41e4e216b5859015f81fcd3e91caf8be931"
+        },
+        {
+          "path": "node_modules/tunnel-agent",
+          "name": "tunnel-agent",
+          "version": "0.6.0",
+          "manifest_sha256": "08a8560b650b49370af44148a8645c11675ba97d21ee7f347d8d434b13c51074"
+        },
+        {
+          "path": "node_modules/tweetnacl",
+          "name": "tweetnacl",
+          "version": "0.14.5",
+          "manifest_sha256": "4d4e7122e483ab7bed48c884bb0de1471d3cb3753e1a334e3aafa3c32c22923e"
+        },
+        {
+          "path": "node_modules/typebox",
+          "name": "typebox",
+          "version": "1.3.27",
+          "manifest_sha256": "c59ddfd977ce941f1e8ee8b0a0b14396c332fa27cc5fa6fa165227ffd5a3992f"
+        },
+        {
+          "path": "node_modules/typescript",
+          "name": "typescript",
+          "version": "7.0.2",
+          "manifest_sha256": "3722b30210616a13a3213ded11575ba6b2dbab10c32a5ef67afca8513e27017e"
+        },
+        {
+          "path": "node_modules/undici",
+          "name": "undici",
+          "version": "8.12.3",
+          "manifest_sha256": "652933475722a1ac7b8531f29a728f856e018332f56ea39f79a2dcc3544d56d0"
+        },
+        {
+          "path": "node_modules/undici-types",
+          "name": "undici-types",
+          "version": "6.21.0",
+          "manifest_sha256": "11f873b423b96a5ad444a099685ca6b9de1379dcd83fd8d368e757ddb53658e4"
+        },
+        {
+          "path": "node_modules/unenv",
+          "name": "unenv",
+          "version": "2.0.0-rc.24",
+          "manifest_sha256": "beb23fc92aa4c83a6d22a29f8427532ff9012e53c965c4fdd88839586dde344c"
+        },
+        {
+          "path": "node_modules/util-deprecate",
+          "name": "util-deprecate",
+          "version": "1.0.2",
+          "manifest_sha256": "7bba467f049074957e693fc06672848b040c38fa071b6eed8690f5fbe090a8b2"
+        },
+        {
+          "path": "node_modules/vite",
+          "name": "vite",
+          "version": "8.3.4",
+          "manifest_sha256": "260a0a7a96a35e1b657480014c0f3b592b70061e42099edefc8fe97972f05fd4"
+        },
+        {
+          "path": "node_modules/vitest",
+          "name": "vitest",
+          "version": "4.1.12",
+          "manifest_sha256": "e5a6d55e103f04929442595df0f641f128b02fd706ff01474c094863b44511d0"
+        },
+        {
+          "path": "node_modules/vitest-evals",
+          "name": "vitest-evals",
+          "version": "0.15.0",
+          "manifest_sha256": "faff359a8a1bb61145d8f2a220059bf347a3485bda87c7e7cdd8b61c94178db5"
+        },
+        {
+          "path": "node_modules/web-streams-polyfill",
+          "name": "web-streams-polyfill",
+          "version": "3.3.3",
+          "manifest_sha256": "13e22b076747f7673afc2afad4b932843844b1ffb2e5bd613442937eacdaf7d7"
+        },
+        {
+          "path": "node_modules/which",
+          "name": "which",
+          "version": "2.0.2",
+          "manifest_sha256": "43010039ed5e89f7186960be682b3cb5cda5ab6cdfb06cbfd4f081cf0e7b4260"
+        },
+        {
+          "path": "node_modules/why-is-node-running",
+          "name": "why-is-node-running",
+          "version": "2.3.0",
+          "manifest_sha256": "c762d49d3da5e8d8fdaa840ba1f18d68bb433e61c671b66b3127f8430d490fe2"
+        },
+        {
+          "path": "node_modules/workerd",
+          "name": "workerd",
+          "version": "1.20261023.1",
+          "manifest_sha256": "7705476c57aa0c988263eca428d28478cc0f61a02730b72dd03b224e8b486d9b"
+        },
+        {
+          "path": "node_modules/wrangler",
+          "name": "wrangler",
+          "version": "4.155.0",
+          "manifest_sha256": "aeb824fd395da15756aa3c28865bc30f72a6b193bf7921805356b1f4c15afd11"
+        },
+        {
+          "path": "node_modules/wrappy",
+          "name": "wrappy",
+          "version": "1.0.2",
+          "manifest_sha256": "712ac9c4c3cef8bc79f42cf6075ff18551f4cb768f35158214fd643853ad7abc"
+        },
+        {
+          "path": "node_modules/ws",
+          "name": "ws",
+          "version": "8.21.0",
+          "manifest_sha256": "584ce6e7516587ba249dc910b0c04e2753f6b3f451fc3a5bc324f7735bdacc71"
+        },
+        {
+          "path": "node_modules/yaml",
+          "name": "yaml",
+          "version": "2.9.0",
+          "manifest_sha256": "20b8b197cbd10dad245d45e463dfe58e4c8c25a47e24bc4256ad9ab58bf35683"
+        },
+        {
+          "path": "node_modules/youch",
+          "name": "youch",
+          "version": "4.1.0-beta.10",
+          "manifest_sha256": "281777e78e8d8981cd79848e7e6c40c6858b151bb45a20510dee9798da4ddcf0"
+        },
+        {
+          "path": "node_modules/youch-core",
+          "name": "youch-core",
+          "version": "0.3.3",
+          "manifest_sha256": "d0f1babad63816d61e6947edb3369c8d9b24ee2550c5a3c0054640358ec4d613"
+        },
+        {
+          "path": "node_modules/zod",
+          "name": "zod",
+          "version": "4.6.7",
+          "manifest_sha256": "c2d190d9ee4e0bdb60332aaa2130a6a98d65ddb903fe1d29248b15de57832c45"
+        },
+        {
+          "path": "packages/ai/node_modules/agent-base",
+          "name": "agent-base",
+          "version": "9.0.0",
+          "manifest_sha256": "13df46dd018fcf2e4231a0f47a1a007dd7d5441d9f8efb108f50f9fb64a17138"
+        },
+        {
+          "path": "packages/ai/node_modules/https-proxy-agent",
+          "name": "https-proxy-agent",
+          "version": "9.1.0",
+          "manifest_sha256": "50d17385a8c63c0ed0e138069617d4d9236ce92bddbe6f52cfec0e3a834c97a0"
+        },
+        {
+          "path": "packages/ai/node_modules/openai",
+          "name": "openai",
+          "version": "7.19.0",
+          "manifest_sha256": "8a855f81669a434ce894e2d1ae2f18e9050e93c57d14091f155cd543056bdc30"
+        },
+        {
+          "path": "packages/coding-agent/node_modules/@anthropic-ai/sdk",
+          "name": "@anthropic-ai/sdk",
+          "version": "0.52.0",
+          "manifest_sha256": "30884106d97ea9d3dbbe57693b6ee1bc9a84f3b02c201229019e5d6828264ec2"
+        }
+      ],
+      "verified_registry_tarballs": 268,
+      "workspace_links": [
+        {
+          "path": "node_modules/@earendil-works/chord",
+          "target": "packages/chord",
+          "manifest_sha256": "c2ed884d836f0045236bfdc17b11997c8c60b1814e30058da85a337694fef1b7"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-agent-core",
+          "target": "packages/agent",
+          "manifest_sha256": "f602103f403398a90628258f4359099aa76ebc75b530fd5867c29c1d8ec791d0"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-ai",
+          "target": "packages/ai",
+          "manifest_sha256": "9bac9281776095c8cb1597b706e6cc43c1e082d77189c666b02d068d3c6b9aca"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-codemode",
+          "target": "packages/codemode",
+          "manifest_sha256": "afcb00a94e443af214e383989af8cdebd72bfbcb3c777846d6b0afe40bd22eab"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-coding-agent",
+          "target": "packages/coding-agent",
+          "manifest_sha256": "990aac3caff17b717294fa792b4e3f60b991d274d9f4ab6977d6aa42aa43c95e"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-durable",
+          "target": "packages/durable",
+          "manifest_sha256": "63f2c3f3af7795aed20b6bf427917324db16129898c918fd6e7074c3df252d1b"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-env",
+          "target": "packages/env",
+          "manifest_sha256": "ab91596238c31fb0f1bc400dbb4e0b6942372d4875de4c7509390a97e3752b14"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-evals",
+          "target": "packages/evals",
+          "manifest_sha256": "91664e80fd574b5905f49126fef95658c5c8751784599e905d9d940131e57f05"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-mcp",
+          "target": "packages/mcp",
+          "manifest_sha256": "f9e7beb2c5fa399a5fe350036ac4bb56e22fa8d41944d21fd5cc6bbaf0c612c7"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-schema",
+          "target": "packages/schema",
+          "manifest_sha256": "88f3e22dc6830ed0a7dc287ce82dfc63a0958483143031e6f0c462183ad6177c"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-telemetry",
+          "target": "packages/telemetry",
+          "manifest_sha256": "6e9dbd90ae345976c464f9b8b4540b117d4c05aa670202b53a732e06af737ef6"
+        },
+        {
+          "path": "node_modules/@earendil-works/pi-tui",
+          "target": "packages/tui",
+          "manifest_sha256": "396da9b4632e2f43a5cf17299298cbb7618c891c5c693a049df952ee9ccf03d7"
+        },
+        {
+          "path": "node_modules/pi-extension-custom-provider-anthropic",
+          "target": "packages/coding-agent/examples/extensions/custom-provider-anthropic",
+          "manifest_sha256": "0e9e5f13522be4d55279ba7a194e822e920ccc6936a345510b5d79d72786c3e5"
+        },
+        {
+          "path": "node_modules/pi-extension-custom-provider-gitlab-duo",
+          "target": "packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
+          "manifest_sha256": "34c942801b9b0f4c815aff47f5e8e6896fa221442a8fb54d667e88a4802b5edb"
+        },
+        {
+          "path": "node_modules/pi-extension-gondolin",
+          "target": "packages/coding-agent/examples/extensions/gondolin",
+          "manifest_sha256": "550bfb2f33316248365ecfa64c2ba70b5a32b9d0d812e774bb0c73f8c304ef57"
+        },
+        {
+          "path": "node_modules/pi-extension-with-deps",
+          "target": "packages/coding-agent/examples/extensions/with-deps",
+          "manifest_sha256": "dacbcbf070faca037ed1bf63add96d9afb42681cac518bcac9b1911fcdb78dbc"
+        }
+      ],
+      "workspace_manifests": [
+        {
+          "path": "packages/agent",
+          "manifest_sha256": "f602103f403398a90628258f4359099aa76ebc75b530fd5867c29c1d8ec791d0"
+        },
+        {
+          "path": "packages/ai",
+          "manifest_sha256": "9bac9281776095c8cb1597b706e6cc43c1e082d77189c666b02d068d3c6b9aca"
+        },
+        {
+          "path": "packages/chord",
+          "manifest_sha256": "c2ed884d836f0045236bfdc17b11997c8c60b1814e30058da85a337694fef1b7"
+        },
+        {
+          "path": "packages/codemode",
+          "manifest_sha256": "afcb00a94e443af214e383989af8cdebd72bfbcb3c777846d6b0afe40bd22eab"
+        },
+        {
+          "path": "packages/coding-agent",
+          "manifest_sha256": "990aac3caff17b717294fa792b4e3f60b991d274d9f4ab6977d6aa42aa43c95e"
+        },
+        {
+          "path": "packages/coding-agent/examples/extensions/custom-provider-anthropic",
+          "manifest_sha256": "0e9e5f13522be4d55279ba7a194e822e920ccc6936a345510b5d79d72786c3e5"
+        },
+        {
+          "path": "packages/coding-agent/examples/extensions/custom-provider-gitlab-duo",
+          "manifest_sha256": "34c942801b9b0f4c815aff47f5e8e6896fa221442a8fb54d667e88a4802b5edb"
+        },
+        {
+          "path": "packages/coding-agent/examples/extensions/gondolin",
+          "manifest_sha256": "550bfb2f33316248365ecfa64c2ba70b5a32b9d0d812e774bb0c73f8c304ef57"
+        },
+        {
+          "path": "packages/coding-agent/examples/extensions/with-deps",
+          "manifest_sha256": "dacbcbf070faca037ed1bf63add96d9afb42681cac518bcac9b1911fcdb78dbc"
+        },
+        {
+          "path": "packages/durable",
+          "manifest_sha256": "63f2c3f3af7795aed20b6bf427917324db16129898c918fd6e7074c3df252d1b"
+        },
+        {
+          "path": "packages/env",
+          "manifest_sha256": "ab91596238c31fb0f1bc400dbb4e0b6942372d4875de4c7509390a97e3752b14"
+        },
+        {
+          "path": "packages/evals",
+          "manifest_sha256": "91664e80fd574b5905f49126fef95658c5c8751784599e905d9d940131e57f05"
+        },
+        {
+          "path": "packages/mcp",
+          "manifest_sha256": "f9e7beb2c5fa399a5fe350036ac4bb56e22fa8d41944d21fd5cc6bbaf0c612c7"
+        },
+        {
+          "path": "packages/schema",
+          "manifest_sha256": "88f3e22dc6830ed0a7dc287ce82dfc63a0958483143031e6f0c462183ad6177c"
+        },
+        {
+          "path": "packages/telemetry",
+          "manifest_sha256": "6e9dbd90ae345976c464f9b8b4540b117d4c05aa670202b53a732e06af737ef6"
+        },
+        {
+          "path": "packages/tui",
+          "manifest_sha256": "396da9b4632e2f43a5cf17299298cbb7618c891c5c693a049df952ee9ccf03d7"
+        }
+      ],
+      "platform_optional_omissions": [
+        {
+          "path": "node_modules/@ata-validator/native-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@ata-validator/native-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@ata-validator/native-linux-arm64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@ata-validator/native-linux-arm64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@ata-validator/native-linux-x64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@ata-validator/native-linux-x64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-linux-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-linux-arm64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-linux-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-linux-x64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@biomejs/cli-win32-arm64",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@cloudflare/workerd-darwin-64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@cloudflare/workerd-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@cloudflare/workerd-linux-64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@cloudflare/workerd-linux-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@earendil-works/gondolin-krun-runner-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@earendil-works/gondolin-krun-runner-linux-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/aix-ppc64",
+          "os": [
+            "aix"
+          ],
+          "cpu": [
+            "ppc64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/android-arm",
+          "os": [
+            "android"
+          ],
+          "cpu": [
+            "arm"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/android-arm64",
+          "os": [
+            "android"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/android-x64",
+          "os": [
+            "android"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/freebsd-arm64",
+          "os": [
+            "freebsd"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/freebsd-x64",
+          "os": [
+            "freebsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-arm",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-ia32",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "ia32"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-loong64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "loong64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-mips64el",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "mips64el"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-ppc64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "ppc64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-riscv64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "riscv64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-s390x",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "s390x"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/linux-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/netbsd-arm64",
+          "os": [
+            "netbsd"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/netbsd-x64",
+          "os": [
+            "netbsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/openbsd-arm64",
+          "os": [
+            "openbsd"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/openbsd-x64",
+          "os": [
+            "openbsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/openharmony-arm64",
+          "os": [
+            "openharmony"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/sunos-x64",
+          "os": [
+            "sunos"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/win32-arm64",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@esbuild/win32-ia32",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "ia32"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-freebsd-wasm32",
+          "os": [
+            "freebsd"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linux-arm",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linux-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linux-ppc64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "ppc64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linux-riscv64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "riscv64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linux-s390x",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "s390x"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linux-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linuxmusl-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-libvips-linuxmusl-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linux-arm",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linux-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linux-ppc64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "ppc64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linux-riscv64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "riscv64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linux-s390x",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "s390x"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linux-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linuxmusl-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-linuxmusl-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-webcontainers-wasm32",
+          "cpu": [
+            "wasm32"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-win32-arm64",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@img/sharp-win32-ia32",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "ia32"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-android-arm-eabi",
+          "os": [
+            "android"
+          ],
+          "cpu": [
+            "arm"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-android-arm64",
+          "os": [
+            "android"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-freebsd-x64",
+          "os": [
+            "freebsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-arm-gnueabihf",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-arm64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-arm64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-ppc64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "ppc64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-s390x-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "s390x"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-x64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-linux-x64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-openharmony-arm64",
+          "os": [
+            "openharmony"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@rolldown/binding-win32-arm64-msvc",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-aix-ppc64",
+          "os": [
+            "aix"
+          ],
+          "cpu": [
+            "ppc64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-freebsd-arm64",
+          "os": [
+            "freebsd"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-freebsd-x64",
+          "os": [
+            "freebsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-arm",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-arm64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-loong64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "loong64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-mips64el",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "mips64el"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-ppc64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "ppc64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-riscv64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "riscv64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-s390x",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "s390x"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-linux-x64",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-netbsd-arm64",
+          "os": [
+            "netbsd"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-netbsd-x64",
+          "os": [
+            "netbsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-openbsd-arm64",
+          "os": [
+            "openbsd"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-openbsd-x64",
+          "os": [
+            "openbsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-sunos-x64",
+          "os": [
+            "sunos"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/@typescript/typescript-win32-arm64",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/fsevents",
+          "os": [
+            "darwin"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-android-arm64",
+          "os": [
+            "android"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-darwin-arm64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-darwin-x64",
+          "os": [
+            "darwin"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-freebsd-x64",
+          "os": [
+            "freebsd"
+          ],
+          "cpu": [
+            "x64"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-linux-arm-gnueabihf",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-linux-arm64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-linux-arm64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "arm64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-linux-x64-gnu",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "glibc"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-linux-x64-musl",
+          "os": [
+            "linux"
+          ],
+          "cpu": [
+            "x64"
+          ],
+          "libc": [
+            "musl"
+          ]
+        },
+        {
+          "path": "node_modules/lightningcss-win32-arm64-msvc",
+          "os": [
+            "win32"
+          ],
+          "cpu": [
+            "arm64"
+          ]
+        }
+      ],
+      "frozen_extraneous_without_manifest": [
+        "packages/agent/node_modules/@earendil-works/pi-ai/node_modules/typebox",
+        "packages/coding-agent/node_modules/@earendil-works/pi-agent-core/node_modules/typebox",
+        "packages/coding-agent/node_modules/@earendil-works/pi-ai/node_modules/@anthropic-ai/sdk",
+        "packages/coding-agent/node_modules/@earendil-works/pi-ai/node_modules/typebox"
+      ]
+    },
+    "npm_ls": {
+      "command": [
+        "D:/nvm4w/nodejs/node.exe",
+        "D:/nvm4w/nodejs/node_modules/npm/bin/npm-cli.js",
+        "ls",
+        "--all",
+        "--json",
+        "--offline",
+        "--userconfig",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111\\.candidate-user.npmrc",
+        "--globalconfig",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111\\.candidate-global.npmrc"
+      ],
+      "status": "ok",
+      "exit_code": 0,
+      "stderr": "npm warn Unknown project config \"min-release-age\". This will stop working in the next major version of npm.\n",
+      "stdout_sha256": "dccdb4b1b63e4a12f60866aa4dfc450143898181228bb74ee0d2490607e5bc59",
+      "problems": [
+        "extraneous: @emnapi/runtime@1.11.3 C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\@emnapi\\runtime",
+        "extraneous: @img/sharp-wasm32@0.35.5 C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\@img\\sharp-wasm32"
+      ]
+    },
+    "typescript": {
+      "version": "7.0.2",
+      "entry": "C:\\Temp\\opi-ai-frozen-lock-20261111\\node_modules\\typescript\\bin\\tsc",
+      "status": "present",
+      "bytes": 44,
+      "sha256": "2219f428a7e55aaf1f7ad85b9b0f0cf5078aeb76ccc9a7c6036c92d48f492ffd"
+    },
+    "catalog": {
+      "status": "verified",
+      "bytes": 940702,
+      "sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+      "revision": "sha256-f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-model-catalog.json"
+    },
+    "runtime_catalog": {
+      "status": "pass",
+      "providers": 42,
+      "models": 1712,
+      "errors": []
+    },
+    "candidate_source": {
+      "checked_files": 2949,
+      "frozen_manifest_sha256": "959b3b486f111b53771d37da272c8951064952bd9b18596c5c244935cea45072",
+      "changes": []
+    },
+    "generated_trees": {
+      "packages/telemetry/dist": {
+        "status": "present",
+        "file_count": 32,
+        "sha256": "62a3dfd2f156459ec126d4f5750bc539f038e0dc56c604c3ba4ca96008012e59"
+      },
+      "packages/schema/dist": {
+        "status": "present",
+        "file_count": 172,
+        "sha256": "3692d8fc0a809fd50cc3bdaf8175c3e3d54804f5e50ba938531ff68a679092ac"
+      },
+      "packages/ai/dist": {
+        "status": "present",
+        "file_count": 859,
+        "sha256": "fe08fba275df18427a552e72807b4236ba358b0410ab554268c9eba1cc3be74a"
+      },
+      "packages/ai/src/providers/data": {
+        "status": "present",
+        "file_count": 43,
+        "sha256": "ebc574af729b85a12d54f49cea39c69299ce4c0410abe4a317c66aac6685e57d"
+      }
+    },
+    "status": "rebuilt"
+  },
+  "materials": {
+    "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-frozen-lock-materials.json",
+    "status": "present",
+    "bytes": 264705,
+    "sha256": "fc188607ef588d33208dadf5696c600029840229dc96a6bcb8d2a7b233104d70"
+  },
+  "differential": {
+    "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-frozen-lock-lifecycle-differential.json",
+    "status": "present",
+    "bytes": 256728,
+    "sha256": "d1204a6f87c3751dae452fbbc811b8a2ff487591b36e06cf26d745f1b7b2a4bd",
+    "verdict": "DIFFERENCES_REQUIRE_DECISION",
+    "cases": {
+      "lazy-no-consumption": "pass",
+      "lazy-stop-consumption": "pass",
+      "lazy-setup-failure": "pass"
+    }
+  },
+  "rechecked": {
+    "installed_identity_and_cache_integrity_after_replay": "match",
+    "four_generated_trees_to_reviewed_candidate": "match",
+    "three_comparisons_to_issue_39": "match",
+    "supplied_frozen_source_and_generated_trees": "match",
+    "issue_39_materials_revalidation": "match"
+  }
+}

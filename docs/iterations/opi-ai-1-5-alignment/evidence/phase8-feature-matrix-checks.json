@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "issue": "#125",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "commands": [
+    {
+      "command": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps --no-default-features",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps --no-default-features --features telemetry-tracing",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps --no-default-features --features builtins",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps",
+      "status": "PASS"
+    },
+    {
+      "command": "python scripts/opi-doc-check.py",
+      "status": "PASS"
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "PASS"
+    },
+    {
+      "command": "contract-index IMPL-125 source hash consistency",
+      "status": "PASS"
+    }
+  ],
+  "limits": [
+    "Metadata is manifest identity evidence, not an active dependency graph or runtime build proof.",
+    "The four profile package receipts are reused from prior verified external consumers.",
+    "Complete V, MSRV/native-platform, quantitative budget and #94 evidence remain open."
+  ]
+}

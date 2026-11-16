@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::{Arc, OnceLock};
 use std::task::{Context, Poll};
 
 use futures_core::Stream;
@@ -12,11 +13,10 @@ use tokio::task::{JoinError, JoinHandle};
 use crate::message::AssistantMessage;
 use crate::provider::{ProviderError, ProviderErrorSummary};
 use crate::stream::{AssistantStreamEvent, CallFailure, ProducerSnapshot};
+use crate::telemetry::SharedAiRequestObserver;
 
 type Event = Result<AssistantStreamEvent, CallFailure>;
 type Outcome = Result<AssistantMessage, CallFailure>;
-
-pub(crate) type AbortHandler = Box<dyn FnOnce(&CallFailure) + Send + 'static>;
 
 /// The consumer of a chat call scheduled on a Tokio runtime.
 ///
@@ -43,23 +43,24 @@ pub(crate) type AbortHandler = Box<dyn FnOnce(&CallFailure) + Send + 'static>;
 ///
 /// The underlying call's first-terminal absorption and single final result
 /// are preserved, including for calls partially consumed before `start`.
-/// Source resources are released before a terminal is forwarded. This does
-/// not join independent tasks spawned internally by a custom provider, or
-/// add a provider-specific cleanup or timeout policy.
+/// Terminals ordinarily follow source release. A deferred fetch caches and
+/// forwards a successful `Done` before draining its source. Public EOF and
+/// `result` wait for source release and poll settlement. Provider-owned tasks
+/// retain their own cleanup and timeout policies.
 ///
-/// Provider panics use Tokio's panic hook and are resumed when this handle is
-/// polled or awaited; they are not converted to a successful business result.
-/// If the runtime cancels the task, a waiting consumer receives a typed stream
-/// failure retaining the latest produced partial. This execution owner does
-/// not create telemetry; an observed [`ChatStream`](crate::stream::ChatStream)
-/// may supply an abort finalizer for the same observer it owns.
+/// Provider panics use Tokio's panic hook and are resumed when this handle
+/// joins the task. Runtime cancellation yields a typed stream failure with
+/// the latest produced partial, or the cached successful `Done` of a
+/// deferred fetch. Joining that cancelled tail settles the existing poll
+/// observer with the cached outcome after source release.
 pub struct StartedChatStream {
     events: Option<UnboundedReceiver<Event>>,
     execution: Option<JoinHandle<Outcome>>,
     terminal: Option<Outcome>,
     progress: ProducerSnapshot,
     abort_requested: bool,
-    abort_handler: Option<AbortHandler>,
+    observer: Option<SharedAiRequestObserver>,
+    committed_success: Option<Arc<OnceLock<AssistantMessage>>>,
 }
 
 impl StartedChatStream {
@@ -70,7 +71,8 @@ impl StartedChatStream {
             terminal: Some(outcome),
             progress: ProducerSnapshot::default(),
             abort_requested: false,
-            abort_handler: None,
+            observer: None,
+            committed_success: None,
         }
     }
 
@@ -78,7 +80,8 @@ impl StartedChatStream {
         mut source: S,
         finish: F,
         progress: ProducerSnapshot,
-        abort_handler: Option<AbortHandler>,
+        observer: Option<SharedAiRequestObserver>,
+        committed_success: Option<Arc<OnceLock<AssistantMessage>>>,
     ) -> Self
     where
         S: Stream<Item = Event> + Send + Unpin + 'static,
@@ -87,6 +90,7 @@ impl StartedChatStream {
     {
         let (tx, events) = unbounded_channel();
         let produced = progress.clone();
+        let deferred_success = committed_success.clone();
         let execution = tokio::spawn(async move {
             let mut terminal = None;
             while let Some(event) = source.next().await {
@@ -102,7 +106,15 @@ impl StartedChatStream {
                     .as_ref()
                     .map_or(true, AssistantStreamEvent::is_terminal)
                 {
-                    terminal = Some(event);
+                    if let (Some(committed), Ok(AssistantStreamEvent::Done { message, .. })) =
+                        (&deferred_success, &event)
+                    {
+                        // Commit before publication, including when the queue is closed.
+                        committed.get_or_init(|| message.clone());
+                        let _ = tx.send(event);
+                    } else {
+                        terminal = Some(event);
+                    }
                     break;
                 }
                 // A closed consumer is not a cancellation request.
@@ -110,9 +122,8 @@ impl StartedChatStream {
                 // Also cooperate when a custom source is continuously ready.
                 tokio::task::consume_budget().await;
             }
-            // Reuse the source's terminal cache, including when it was
-            // consumed before start(). This consumes/releases the source
-            // before either terminal delivery or task completion is observed.
+            // Reuse the source's terminal cache, including after a terminal
+            // was consumed before start(). Completion waits for source release.
             let outcome = finish(source).await;
             if let Some(event) = terminal {
                 let _ = tx.send(event);
@@ -125,7 +136,8 @@ impl StartedChatStream {
             terminal: None,
             progress,
             abort_requested: false,
-            abort_handler,
+            observer,
+            committed_success,
         }
     }
 
@@ -133,11 +145,11 @@ impl StartedChatStream {
     ///
     /// This consumes the event handle, immediately frees queued events on
     /// first poll, and does not resubmit the request. Dropping this future
-    /// detaches the waiter; the execution continues until its own terminal.
+    /// detaches the waiter and the execution continues through source cleanup.
     pub async fn result(mut self) -> Outcome {
         self.events.take();
         match self.execution.take() {
-            Some(task) => completed(task.await, &self.progress, self.abort_requested),
+            Some(task) => self.finish_join(task.await, false),
             None => self.terminal.take().expect("observed execution outcome"),
         }
     }
@@ -146,19 +158,19 @@ impl StartedChatStream {
     ///
     /// On first poll, releases buffered events and requests task abortion.
     /// If execution has already finished (or finishes before abortion takes
-    /// effect), returns its original outcome. Otherwise returns cancellation
-    /// with the latest partial observed by this execution, including unread
-    /// events. Provider state that emitted no event is not available here.
+    /// effect), returns its original outcome. A deferred fetch also retains
+    /// its cached successful `Done` when abortion stops the tail, even if
+    /// the event was unread. Otherwise returns cancellation with the latest
+    /// partial observed by this execution, including unread events.
     /// Source panics are resumed, just as with [`result`](Self::result).
     ///
     /// This does not cancel the original request token. Cancel that token too
     /// when other work shares the request. Awaiting this method joins this
     /// execution task only; independently spawned provider tasks and session
     /// resources retain their own cleanup contracts. A source that blocks
-    /// inside a poll must yield before Tokio can abort it. When the source is an
-    /// observed [`ChatStream`](crate::stream::ChatStream), its request observer is
-    /// settled with the returned `aborted` outcome after Tokio confirms task
-    /// cancellation.
+    /// inside a poll must yield before Tokio can abort it. When Tokio confirms
+    /// cancellation, the join settles the existing observer with the returned
+    /// outcome.
     ///
     /// The handle retains the task while waiting. Dropping this future after
     /// its first poll does not undo the abort request; `abort`, `result` or
@@ -172,18 +184,54 @@ impl StartedChatStream {
                 task.abort();
             }
             let joined = task.await;
-            let cancelled = joined.as_ref().is_err_and(|error| error.is_cancelled());
             self.execution.take();
-            let outcome = completed(joined, &self.progress, self.abort_requested);
-            if cancelled
-                && let Some(handler) = self.abort_handler.take()
-                && let Err(failure) = &outcome
-            {
-                handler(failure);
-            }
-            self.terminal = Some(outcome);
+            self.terminal = Some(self.finish_join(joined, true));
         }
         self.terminal.clone().expect("observed execution outcome")
+    }
+
+    fn finish_join(&mut self, joined: Result<Outcome, JoinError>, aborting: bool) -> Outcome {
+        let committed = self.committed_success.take();
+        let observer = self.observer.take();
+        let outcome = match joined {
+            Ok(outcome) => return outcome,
+            Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
+            Err(_) => match committed.as_deref().and_then(OnceLock::get) {
+                Some(message) => Ok(message.clone()),
+                None => {
+                    let cause = if self.abort_requested {
+                        ProviderError::Cancelled
+                    } else {
+                        ProviderError::StreamError(ProviderErrorSummary::attested_static(
+                            "chat execution task stopped before completion",
+                        ))
+                    };
+                    Err(CallFailure::from_partial(
+                        None,
+                        self.progress.failure(cause),
+                    ))
+                }
+            },
+        };
+        if let Some(observer) = observer
+            && (aborting || self.abort_requested || outcome.is_ok())
+        {
+            let message = outcome.as_ref().unwrap_or_else(|failure| failure.message());
+            observer.finish(Some(message));
+        }
+        outcome
+    }
+
+    pub(crate) async fn await_ready(
+        mut self,
+        ready: tokio::sync::oneshot::Receiver<Outcome>,
+    ) -> Outcome {
+        self.events.take();
+        match ready.await {
+            Ok(outcome) => outcome,
+            // Join to recover interruption or a panic before the notification.
+            Err(_) => self.result().await,
+        }
     }
 }
 
@@ -201,13 +249,17 @@ impl Stream for StartedChatStream {
                 Poll::Ready(Some(event)) => {
                     match &event {
                         Ok(AssistantStreamEvent::Done { message, .. }) => {
-                            this.terminal = Some(Ok(message.clone()));
+                            this.events.take();
+                            // A deferred Done still needs to join its source drain.
+                            if this.committed_success.is_none() {
+                                this.terminal = Some(Ok(message.clone()));
+                            }
                         }
-                        Err(failure) => this.terminal = Some(Err(failure.clone())),
+                        Err(failure) => {
+                            this.events.take();
+                            this.terminal = Some(Err(failure.clone()));
+                        }
                         _ => {}
-                    }
-                    if this.terminal.is_some() {
-                        this.events.take();
                     }
                     return Poll::Ready(Some(event));
                 }
@@ -222,38 +274,12 @@ impl Stream for StartedChatStream {
         };
         this.execution.take();
         let interrupted = joined.is_err();
-        let outcome = completed(joined, &this.progress, this.abort_requested);
-        let event = if interrupted {
-            Some(Err(outcome.clone().expect_err("interrupted task failed")))
-        } else {
-            // A source whose terminal was consumed before start has no new
-            // events. Cache its outcome without manufacturing a second one.
-            None
+        let outcome = this.finish_join(joined, false);
+        let event = match (&outcome, interrupted) {
+            (Err(failure), true) => Some(Err(failure.clone())),
+            _ => None,
         };
         this.terminal = Some(outcome);
         Poll::Ready(event)
-    }
-}
-
-fn completed(
-    joined: Result<Outcome, JoinError>,
-    progress: &ProducerSnapshot,
-    abort_requested: bool,
-) -> Outcome {
-    match joined {
-        Ok(outcome) => outcome,
-        Err(error) if error.is_panic() => std::panic::resume_unwind(error.into_panic()),
-        Err(_) if abort_requested => Err(CallFailure::from_partial(
-            None,
-            progress.failure(ProviderError::Cancelled),
-        )),
-        Err(_) => Err(CallFailure::from_partial(
-            None,
-            progress.failure(ProviderError::StreamError(
-                ProviderErrorSummary::attested_static(
-                    "chat execution task stopped before completion",
-                ),
-            )),
-        )),
     }
 }

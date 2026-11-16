@@ -6,7 +6,7 @@
 //! calls.
 
 pub mod event_stream;
-pub mod retry;
+pub use crate::retry::smithy as retry;
 pub mod sigv4;
 
 use std::sync::Arc;
@@ -18,7 +18,10 @@ use tokio_util::sync::CancellationToken;
 use crate::bedrock::sigv4::{AwsCredentials, sign_request};
 use crate::http::HttpClient;
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
-use crate::model_info::WireApi;
+use crate::model_info::{
+    WireApi, bedrock_model_candidates as model_candidates,
+    supports_bedrock_adaptive_thinking as supports_adaptive_thinking,
+};
 use crate::provider::{
     AttemptContext, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
@@ -171,6 +174,7 @@ impl BedrockProvider {
     }
 
     /// Bind capture and replay to the registered canonical provider identity.
+    #[cfg(feature = "builtins")]
     pub(crate) fn with_provider_identity(mut self, provider: &str) -> Self {
         self.provider_identity = provider.to_owned();
         self
@@ -1371,7 +1375,7 @@ struct BedrockMapper {
     saw_done: bool,
     usage: BedrockUsage,
     usage_reported: bool,
-    /// Pending Done event held until Metadata arrives (Bedrock sends metadata after messageStop).
+    /// Pending Done event held until the provider source reaches EOF.
     pending_done: Option<AssistantStreamEvent>,
 }
 
@@ -1423,7 +1427,7 @@ impl BedrockMapper {
         }
     }
 
-    /// Flush any pending Done event (when stream ends without metadata).
+    /// Flush any pending Done event after the provider source reaches EOF.
     pub fn flush_pending(&mut self) -> Option<AssistantStreamEvent> {
         if self.usage_reported
             && let Some(AssistantStreamEvent::Done { message, .. }) = &mut self.pending_done
@@ -1433,7 +1437,7 @@ impl BedrockMapper {
                 self.usage.output_tokens,
                 self.usage.cache_read_tokens,
                 self.usage.cache_write_tokens,
-                None, // cache_write_1h_tokens
+                self.usage.cache_write_1h_tokens,
                 None, // reasoning_tokens
             );
         }
@@ -1740,7 +1744,11 @@ impl BedrockMapper {
                         None, // reasoning_tokens
                     );
                 }
-                self.pending_done.take().into_iter().map(Ok).collect()
+                // Keep the terminal pending until the source reaches EOF.
+                // Pi consumes every provider item before publishing `done`,
+                // so a repeated metadata item (or a later observer failure)
+                // must still be able to update or reject the final outcome.
+                Vec::new()
             }
             BedrockEvent::Exception => {
                 // Preserve state that did not produce a public event (usage,
@@ -1787,22 +1795,6 @@ const EMPTY_TEXT_PLACEHOLDER: &str = "<empty>";
 /// images move after the turn's results (pi `ERROR_TOOL_IMAGE_PLACEHOLDER`).
 const ERROR_TOOL_IMAGE_PLACEHOLDER: &str = "(image attached after the tool results)";
 
-/// Lowercased id/name candidates with pi's separator normalization
-/// (`[\s_.:]+` -> `-`) so application inference profile ARNs and catalog
-/// names match the same substring rules as model ids.
-fn model_candidates(id: &str, name: &str) -> Vec<String> {
-    let mut candidates = Vec::new();
-    for value in [id, name] {
-        if value.is_empty() {
-            continue;
-        }
-        let lower = value.to_lowercase();
-        candidates.push(lower.clone());
-        candidates.push(lower.replace([' ', '_', '.', ':'], "-"));
-    }
-    candidates
-}
-
 /// Claude models on Bedrock (pi `isAnthropicClaudeModel`): the model id
 /// carries the anthropic prefix, or the user-controlled name references
 /// Claude (application inference profiles).
@@ -1810,21 +1802,6 @@ fn is_anthropic_claude_model(id: &str, name: &str) -> bool {
     id.to_lowercase().contains("anthropic.claude")
         || id.to_lowercase().contains("anthropic/claude")
         || name.to_lowercase().contains("claude")
-}
-
-/// Adaptive-thinking Claude models (pi `supportsAdaptiveThinking`):
-/// Opus 4.6+, Sonnet 4.6+, Claude 5.
-pub(crate) fn supports_adaptive_thinking(id: &str, name: &str) -> bool {
-    model_candidates(id, name).iter().any(|s| {
-        s.contains("opus-4-6")
-            || s.contains("opus-4-7")
-            || s.contains("opus-4-8")
-            || s.contains("opus-5")
-            || s.contains("sonnet-4-6")
-            || s.contains("sonnet-5")
-            || s.contains("haiku-5")
-            || s.contains("fable-5")
-    })
 }
 
 /// Models accepting a native `xhigh` effort (pi `supportsNativeXhighEffort`).

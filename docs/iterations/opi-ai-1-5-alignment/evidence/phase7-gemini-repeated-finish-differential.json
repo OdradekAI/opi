@@ -1,0 +1,429 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "scope": "Gemini repeated finishReason and tail usage ordering on simple and direct routes",
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_gemini_repeated_finish.mjs": "f3305557dbe219f9bf37c9e9da46a4912054bc184ed9e7b97cdc614300354856",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\gemini-repeated-finish.json": "dba244a86ac17d2ebf74010b95fdaf2b4b4f7ee916ab17db4a98c972b661ebc1",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\compare_gemini_repeated_finish.py": "7857c84359dae2953da3ae1091eae857ccf75ed25ea062d5c40e411747f37866",
+    "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\gemini_repeated_finish-ae1b78bac9b8eb33.exe": "fcbde4982516367edcbc67da0b57c779824159c70d44696d30b828c9c4ec30ab",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\google-generative-ai.ts": "2d094a12a79c28d0bbbaaae50626463dff40642b11b4f24e5c49ceef01dfccb7"
+  },
+  "expected": {
+    "input": 10,
+    "output": 7
+  },
+  "pi_runs": [
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_gemini_repeated_finish.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\gemini-repeated-finish.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"gemini-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"error\":null,\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":\"STOP\",\"output\":5},{\"finish\":\"STOP\",\"output\":7}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"error\":null,\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":\"STOP\",\"output\":5},{\"finish\":\"STOP\",\"output\":7}],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "gemini-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "error": null,
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "STOP",
+                "output": 5
+              },
+              {
+                "finish": "STOP",
+                "output": 7
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "error": null,
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "STOP",
+                "output": 5
+              },
+              {
+                "finish": "STOP",
+                "output": 7
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_gemini_repeated_finish.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\gemini-repeated-finish.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"gemini-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"error\":null,\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":\"STOP\",\"output\":5},{\"finish\":\"STOP\",\"output\":7}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"error\":null,\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":\"STOP\",\"output\":5},{\"finish\":\"STOP\",\"output\":7}],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "gemini-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "error": null,
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "STOP",
+                "output": 5
+              },
+              {
+                "finish": "STOP",
+                "output": 7
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "error": null,
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "STOP",
+                "output": 5
+              },
+              {
+                "finish": "STOP",
+                "output": 7
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_gemini_repeated_finish.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\gemini-repeated-finish.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"gemini-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"error\":null,\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":\"STOP\",\"output\":5},{\"finish\":\"STOP\",\"output\":7}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"error\":null,\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":\"STOP\",\"output\":5},{\"finish\":\"STOP\",\"output\":7}],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "gemini-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "error": null,
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "STOP",
+                "output": 5
+              },
+              {
+                "finish": "STOP",
+                "output": 7
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "error": null,
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "STOP",
+                "output": 5
+              },
+              {
+                "finish": "STOP",
+                "output": 7
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    }
+  ],
+  "rust_runs": [
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\gemini_repeated_finish-ae1b78bac9b8eb33.exe",
+        "--exact",
+        "repeated_finish_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"gemini-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"requests\":1}]}\ntest repeated_finish_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "gemini-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\gemini_repeated_finish-ae1b78bac9b8eb33.exe",
+        "--exact",
+        "repeated_finish_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"gemini-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"requests\":1}]}\ntest repeated_finish_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "gemini-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\gemini_repeated_finish-ae1b78bac9b8eb33.exe",
+        "--exact",
+        "repeated_finish_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"gemini-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"STOP\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"requests\":1}]}\ntest repeated_finish_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "gemini-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "STOP",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    }
+  ],
+  "differences": [
+    "Pi exposes provider_events from every source chunk; Rust's direct fixture helper exposes normalized event_types only."
+  ]
+}

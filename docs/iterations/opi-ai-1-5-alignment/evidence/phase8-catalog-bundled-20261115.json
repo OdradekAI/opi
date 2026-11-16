@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "family": "catalog-bundled-capability",
+  "status": "PASS",
+  "scope": "independent catalog-bundled feature with preserved builtins/default behavior and external archive consumption",
+  "source_revision": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "historical_evidence": {
+    "prior_capability_matrix": {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase8-capability-v-20261115.json",
+      "sha256": "a6104fbf832b16b4d37cced163b31cee2e8a59492fcf6592988ee1fda53dfb23"
+    },
+    "prior_issue": {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\issues\\127-refresh-phase1-snapshot-and-capability-v.md",
+      "sha256": "305d4c5edf174ebf0087314a8ac66a176accfc7ab133bc69cd17059d9cd028dd"
+    }
+  },
+  "feature_contract": {
+    "catalog-bundled": "enables only the embedded validated Pi catalog and Catalog::builtin/builtin_bundle_bytes",
+    "builtins": "continues to include catalog-bundled plus existing network/auth/provider dependencies",
+    "default": "unchanged user-visible union: builtins and telemetry-tracing, with builtins transitively selecting catalog-bundled",
+    "core": "Catalog::from_bytes and custom catalog/store contracts remain available without catalog-bundled"
+  },
+  "source_hashes": {
+    "crates/opi-ai/Cargo.toml": "1b10750c2167842cf546b7919d9692ffe5b9cd65d554de8c780be334ee2a8352",
+    "crates/opi-ai/src/catalog/mod.rs": "0c12c7eab2cf7505e09fb192090a1f2bf950ed5a996428b562f45d5de8168e2a",
+    "crates/opi-ai/src/catalog/builtin.rs": "b06d48d52cfb66c3038149598e277c0a376d1fe997bd89508b3389dbcfa653d3",
+    "crates/opi-ai/README.md": "4ab24c7331532db95b11a130103e0c2a08eb29bf83c122fb7e542caa87a932c0",
+    "crates/opi-ai/README.zh.md": "732adf9cb3dbe828b7bd943edd8b268e23610065a0b027d2dcf56cd0b40950f7"
+  },
+  "native": [
+    {
+      "name": "catalog-only",
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features catalog-bundled --test catalog_artifact -- --nocapture",
+      "exit": 0,
+      "passed": 11,
+      "log": "C:/Temp/opi-catalog-bundled-package-20261115-v1/native-catalog-only.log",
+      "log_sha256": "293d4cd173bdc52420b4695f4c4951ba0e18d64b3e17b606da849de78b92f532"
+    },
+    {
+      "name": "builtins-compatibility",
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features builtins --test catalog_lifecycle -- --nocapture",
+      "exit": 0,
+      "passed": 9,
+      "log": "C:/Temp/opi-catalog-bundled-package-20261115-v1/native-builtins.log",
+      "log_sha256": "015e090076a8f114db88a6ff573d68811aaf978ddcbeca2bfd9d9378f5592afb",
+      "interpretation": "builtins transitively selects catalog-bundled and retains the existing lifecycle/provider surface"
+    },
+    {
+      "name": "catalog-only-clippy",
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- clippy -p opi-ai --locked --offline --no-default-features --features catalog-bundled --tests -- -D warnings",
+      "exit": 0,
+      "warnings_denied": true
+    }
+  ],
+  "package": {
+    "receipt": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase8-catalog-bundled-package-20261115.json",
+    "receipt_sha256": "49954ccc1a30c4a7a69f31a6a0e6ab0fff6c04485c3516b886244b36f0b5b6c0",
+    "verdict": "PASS",
+    "archive_sha256": "a48875bd3478a6d55864a0bd602707e9f86fc43c27588a26007e0c8fe30958ff",
+    "consumer_features": [
+      "catalog-bundled"
+    ],
+    "forbidden_backend_absent": [
+      "aws-lc-rs",
+      "aws-lc-sys",
+      "aws-smithy-query",
+      "aws-smithy-xml",
+      "flate2",
+      "hmac",
+      "libz-rs-sys",
+      "p256",
+      "reqwest",
+      "rustls",
+      "rustls-native-certs",
+      "sha1",
+      "xmlparser"
+    ],
+    "command": "python -B scripts/pi-sdk-conformance/run_catalog_bundled_package.py --scratch C:/Temp/opi-catalog-bundled-package-20261115-v1 --target-dir E:/opi/cargo-targets/opi-72fa37a0fa044958 --evidence-output docs/iterations/opi-ai-1-5-alignment/evidence/phase8-catalog-bundled-package-20261115.json",
+    "consumer_output": "catalog=sha256-ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678 chat=1608"
+  },
+  "disposition": "catalog-bundled is independently selectable and package-consumable; builtins remains the compatibility aggregate; no complete capability V claim is made"
+}

@@ -18,6 +18,7 @@ use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
 use opi_ai::provider::{Provider, ProviderError, Request, ThinkingConfig};
 use opi_ai::stream::AssistantStreamEvent;
 use secrecy::SecretString;
+use std::sync::{Arc, Mutex};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -925,7 +926,7 @@ async fn done_maps_usage_levels_rewrite_and_stops() {
                         "\"usage\":{{\"input\":10,\"output\":5,\"cacheRead\":3,\"cacheWrite\":2,",
                         "\"cacheWrite1h\":1,\"reasoning\":4,\"totalTokens\":20,",
                         "\"cost\":{{\"input\":0.1,\"output\":0.2,\"cacheRead\":0.01,\"cacheWrite\":0.02,\"total\":0.33}}}},",
-                        "\"responseId\":\"resp-3\",\"providerThinkingLevel\":\"high\",",
+                        "\"responseId\":\"resp-3\",\"responseModel\":\"radius-final\",\"providerThinkingLevel\":\"high\",",
                         "\"rewrite\":{{\"policyId\":\"pol-1\",\"policyVersion\":2,\"changed\":true,",
                         "\"tokenCountChange\":-5,\"messageCountChange\":0,\"systemPromptChanged\":false}}}}\n\n",
                     ),
@@ -942,6 +943,7 @@ async fn done_maps_usage_levels_rewrite_and_stops() {
 
         assert_eq!(message.stop_reason, expected);
         assert_eq!(message.response_id.as_deref(), Some("resp-3"));
+        assert_eq!(message.response_model.as_deref(), Some("radius-final"));
         assert_eq!(message.provider_thinking_level.as_deref(), Some("high"));
         assert_eq!(message.usage.input_tokens, 10);
         assert_eq!(message.usage.output_tokens, 5);
@@ -954,6 +956,71 @@ async fn done_maps_usage_levels_rewrite_and_stops() {
         assert_eq!(message.diagnostics[0].kind, "pi_messages_rewrite");
         server.verify().await;
     }
+}
+
+#[tokio::test]
+async fn terminal_raw_observer_failure_releases_response_and_repeated_done_is_ignored() {
+    let server = MockServer::start().await;
+    let body = concat!(
+        "data: {\"type\":\"start\"}\n\n",
+        "data: {\"type\":\"text_start\",\"contentIndex\":0}\n\n",
+        "data: {\"type\":\"text_delta\",\"contentIndex\":0,\"delta\":\"partial\"}\n\n",
+        "data: {\"type\":\"done\",\"reason\":\"stop\",\"usage\":{\"input\":10,\"output\":5,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":15},\"responseModel\":\"radius-final\"}\n\n",
+        "data: {\"type\":\"done\",\"reason\":\"stop\",\"usage\":{\"input\":99,\"output\":99,\"cacheRead\":0,\"cacheWrite\":0,\"totalTokens\":198}}\n\n",
+    );
+    Mock::given(method("POST"))
+        .and(path("/messages"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(body)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .expect(2)
+        .mount(&server)
+        .await;
+    let provider = PiMessagesProvider::new(Some(server.uri()))
+        .with_models(vec![model_44(MODEL_44)])
+        .with_native_options(PiMessagesOptions::native(None, None, false));
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let observed = seen.clone();
+    let mut failing = req_44("first");
+    failing.callbacks = RequestCallbacks::new().with_on_raw(Arc::new(move |event| {
+        let kind = event["type"].as_str().unwrap_or("?").to_owned();
+        observed.lock().unwrap().push(kind.clone());
+        if kind == "done" {
+            Err(opi_ai::callbacks::CallbackError::new(
+                "terminal observer failed",
+            ))
+        } else {
+            Ok(())
+        }
+    }));
+    let failed = run_44(&provider, failing).await;
+    assert!(failed.iter().any(|item| {
+        matches!(item, Err(ProviderError::StreamFailure(failure)) if matches!(failure.cause(), ProviderError::CallbackPhase(_)))
+    }));
+    assert!(
+        !failed
+            .iter()
+            .any(|item| matches!(item, Ok(AssistantStreamEvent::Done { .. })))
+    );
+    assert_eq!(
+        seen.lock().unwrap().as_slice(),
+        ["start", "text_start", "text_delta", "done"]
+    );
+
+    let success = run_44(&provider, req_44("second")).await;
+    let done = done_message_44(&success).await;
+    assert_eq!(done.response_model.as_deref(), Some("radius-final"));
+    assert_eq!(done.usage.total_tokens, Some(15));
+    assert_eq!(
+        success
+            .iter()
+            .filter(|item| matches!(item, Ok(AssistantStreamEvent::Done { .. })))
+            .count(),
+        1
+    );
+    server.verify().await;
 }
 
 #[tokio::test]
@@ -1635,7 +1702,11 @@ async fn node5_pi_terminal_error_preserves_final_accounting_and_context_envelope
 
 #[tokio::test]
 async fn node5_pi_toolcall_end_overrides_delta_arguments() {
-    for delta in [None, Some("{\"q\":\"draft\"}")] {
+    for (delta, preview) in [
+        (None, serde_json::json!({})),
+        (Some("{\"q\":\"draft\"}"), serde_json::json!({"q":"draft"})),
+        (Some("{\"flag\":true"), serde_json::json!({"flag":true})),
+    ] {
         let server = MockServer::start().await;
         let mut events = vec![
             serde_json::json!({"type":"start"}),
@@ -1656,6 +1727,24 @@ async fn node5_pi_toolcall_end_overrides_delta_arguments() {
         let provider =
             PiMessagesProvider::new(Some(server.uri())).with_models(vec![model_44(MODEL_44)]);
         let events = run_44(&provider, req_44("probe")).await;
+        let deltas: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Ok(AssistantStreamEvent::ToolCallDelta { partial, .. }) => Some(partial),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas.len(), usize::from(delta.is_some()));
+        if let Some(partial) = deltas.first() {
+            let opi_ai::message::AssistantContent::ToolCall { tool_call } = &partial.content[0]
+            else {
+                panic!("partial tool call")
+            };
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&tool_call.arguments).unwrap(),
+                preview
+            );
+        }
         let message = done_message_44(&events).await;
         let opi_ai::message::AssistantContent::ToolCall { tool_call } = &message.content[0] else {
             panic!("tool call")

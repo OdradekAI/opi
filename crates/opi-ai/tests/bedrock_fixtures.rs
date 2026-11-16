@@ -8517,6 +8517,75 @@ async fn bedrock_raw_callback_sees_frame_events_in_order() {
 }
 
 #[tokio::test]
+async fn bedrock_tail_raw_callback_failure_precedes_pending_done() {
+    let body_bytes = build_bedrock_stream(&[
+        ("messageStart", r#"{"role":"assistant"}"#),
+        (
+            "contentBlockStart",
+            r#"{"start":{"text":{}},"contentBlockIndex":0}"#,
+        ),
+        (
+            "contentBlockDelta",
+            r#"{"delta":{"text":"partial"},"contentBlockIndex":0}"#,
+        ),
+        ("contentBlockStop", r#"{"contentBlockIndex":0}"#),
+        ("messageStop", r#"{"stopReason":"end_turn"}"#),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":10,"outputTokens":2}}"#,
+        ),
+        (
+            "metadata",
+            r#"{"usage":{"inputTokens":12,"outputTokens":7}}"#,
+        ),
+    ]);
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/model/anthropic.claude-sonnet-4/converse-stream"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_raw(body_bytes, "application/vnd.amazon.eventstream"),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let metadata_seen = Arc::new(AtomicUsize::new(0));
+    let observer_count = metadata_seen.clone();
+    let provider = BedrockProvider::new(Some(server.uri()), Arc::new(HttpClient::new()));
+    let mut request = lifecycle_text_request();
+    request.callbacks = RequestCallbacks::new().with_on_raw(Arc::new(move |event| {
+        if event["type"] == "metadata" && observer_count.fetch_add(1, Ordering::SeqCst) == 1 {
+            return Err(opi_ai::callbacks::CallbackError::new(
+                "tail metadata observer failed",
+            ));
+        }
+        Ok(())
+    }));
+
+    let mut stream = provider.stream_prepared(request, test_auth());
+    let mut outcomes = Vec::new();
+    while let Some(item) = stream.next().await {
+        outcomes.push(item);
+    }
+
+    assert_eq!(metadata_seen.load(Ordering::SeqCst), 2);
+    assert!(
+        outcomes
+            .iter()
+            .any(|item| matches!(item, Err(error) if matches!(direct_error_cause(error), ProviderError::CallbackPhase(_)))),
+        "the second metadata observer failure is surfaced as a typed callback error"
+    );
+    assert!(
+        !outcomes
+            .iter()
+            .any(|item| matches!(item, Ok(AssistantStreamEvent::Done { .. }))),
+        "pending Done must not be published before the tail observer succeeds"
+    );
+    server.verify().await;
+}
+
+#[tokio::test]
 async fn bedrock_transform_touching_signing_headers_fails_typed_before_http() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -8640,7 +8709,9 @@ mod bedrock_42 {
     use opi_ai::model_info::{
         ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi,
     };
-    use opi_ai::provider::{CacheRetention, Provider, ProviderError};
+    #[cfg(feature = "telemetry-tracing")]
+    use opi_ai::provider::Provider;
+    use opi_ai::provider::{CacheRetention, ProviderError};
     use opi_ai::stream::AssistantStreamEvent;
     use opi_ai::{ChatModelRecord, Models};
     use std::collections::BTreeMap;
@@ -10182,6 +10253,7 @@ mod bedrock_42 {
         assert!(options.request_metadata.is_empty());
     }
 
+    #[cfg(feature = "telemetry-tracing")]
     #[tokio::test]
     async fn telemetry_carrier_instruments_bedrock_producer() {
         use std::sync::atomic::{AtomicUsize, Ordering};

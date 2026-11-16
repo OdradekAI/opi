@@ -225,7 +225,7 @@ enum AnthropicRawEvent {
     #[serde(rename = "message_delta")]
     MessageDelta {
         delta: RawMessageDelta,
-        usage: RawUsage,
+        usage: Option<RawUsage>,
     },
     #[serde(rename = "message_stop")]
     MessageStop,
@@ -248,22 +248,80 @@ struct RawUsage {
     output_tokens: Option<u32>,
     cache_read_input_tokens: Option<u32>,
     cache_creation_input_tokens: Option<u32>,
+    /// Anthropic's current nested cache TTL breakdown. The flat 1h alias is
+    /// retained for older proxies and fixtures.
+    #[serde(default)]
+    cache_creation: Option<RawCacheCreation>,
     /// Subset of `cache_creation_input_tokens` eligible for 1h TTL.
     #[serde(default)]
     cache_creation_input_tokens_1h: Option<u64>,
+    /// Anthropic's nested thinking-token breakdown.
+    #[serde(default)]
+    output_tokens_details: Option<RawOutputTokensDetails>,
     /// OpenRouter billing fields may be attached to Anthropic usage deltas.
     #[serde(default)]
     cost: Option<f64>,
     #[serde(default)]
     is_byok: Option<bool>,
     #[serde(default)]
-    cost_details: Option<crate::openrouter::OpenRouterCostDetails>,
+    cost_details: Option<crate::openrouter_usage::OpenRouterCostDetails>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCacheCreation {
+    #[serde(default)]
+    ephemeral_1h_input_tokens: Option<u64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawOutputTokensDetails {
+    #[serde(default)]
+    thinking_tokens: Option<u64>,
 }
 
 impl RawUsage {
+    fn cache_write_1h_tokens(&self) -> Option<u64> {
+        self.cache_creation
+            .as_ref()
+            .and_then(|cache| cache.ephemeral_1h_input_tokens)
+            .or(self.cache_creation_input_tokens_1h)
+    }
+
+    fn reasoning_tokens(&self) -> Option<u64> {
+        self.output_tokens_details
+            .as_ref()
+            .and_then(|details| details.thinking_tokens)
+    }
+
+    fn into_delta(self, is_openrouter: bool) -> AnthropicUsageDelta {
+        let cache_write_1h_tokens = self.cache_write_1h_tokens();
+        let reasoning_tokens = self.reasoning_tokens();
+        let mut accounting = Usage::unknown();
+        if is_openrouter {
+            crate::openrouter_usage::apply_openrouter_reported_cost(
+                &mut accounting,
+                &crate::openrouter_usage::OpenRouterUsageAccounting {
+                    cost: self.cost,
+                    is_byok: self.is_byok,
+                    cost_details: self.cost_details,
+                },
+            );
+        }
+        AnthropicUsageDelta {
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
+            cache_read_tokens: self.cache_read_input_tokens,
+            cache_write_tokens: self.cache_creation_input_tokens,
+            cache_write_1h_tokens,
+            reasoning_tokens,
+            cost: accounting.cost,
+        }
+    }
+
     fn into_usage(self, is_openrouter: bool) -> Result<Usage, ProviderError> {
         let cache_write = self.cache_creation_input_tokens.unwrap_or(0);
-        let cache_write_1h = self.cache_creation_input_tokens_1h;
+        let cache_write_1h = self.cache_write_1h_tokens();
+        let reasoning_tokens = self.reasoning_tokens();
         if cache_write_1h.is_some_and(|tokens| tokens > u64::from(cache_write)) {
             return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
                 format!(
@@ -272,10 +330,23 @@ impl RawUsage {
                 ),
             )));
         }
+        if reasoning_tokens
+            .is_some_and(|tokens| tokens > u64::from(self.output_tokens.unwrap_or(0)))
+        {
+            return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                format!(
+                    "output_tokens_details.thinking_tokens ({}) exceeds output_tokens ({})",
+                    reasoning_tokens.unwrap_or(0),
+                    self.output_tokens.unwrap_or(0)
+                ),
+            )));
+        }
         if self.input_tokens.is_some()
             || self.output_tokens.is_some()
             || self.cache_read_input_tokens.is_some()
             || self.cache_creation_input_tokens.is_some()
+            || cache_write_1h.is_some()
+            || reasoning_tokens.is_some()
         {
             let mut usage = Usage::reported(
                 self.input_tokens.unwrap_or(0),
@@ -283,12 +354,12 @@ impl RawUsage {
                 self.cache_read_input_tokens.unwrap_or(0),
                 cache_write,
                 cache_write_1h,
-                None, // reasoning_tokens
+                reasoning_tokens,
             );
             if is_openrouter {
-                crate::openrouter::apply_openrouter_reported_cost(
+                crate::openrouter_usage::apply_openrouter_reported_cost(
                     &mut usage,
-                    &crate::openrouter::OpenRouterUsageAccounting {
+                    &crate::openrouter_usage::OpenRouterUsageAccounting {
                         cost: self.cost,
                         is_byok: self.is_byok,
                         cost_details: self.cost_details,
@@ -357,6 +428,67 @@ struct RawErrorBody {
 // Public AnthropicEvent enum
 // ---------------------------------------------------------------------------
 
+/// An Anthropic usage update, preserving field presence independently of value.
+///
+/// `None` leaves the accumulated value unchanged; `Some(0)` clears it. The
+/// mapper validates the merged cache-write subset before committing any field.
+/// A provider-reported cost (including zero) overrides the catalog total.
+#[derive(Debug, Clone, Default)]
+pub struct AnthropicUsageDelta {
+    pub input_tokens: Option<u32>,
+    pub output_tokens: Option<u32>,
+    pub cache_read_tokens: Option<u32>,
+    pub cache_write_tokens: Option<u32>,
+    pub cache_write_1h_tokens: Option<u64>,
+    pub reasoning_tokens: Option<u64>,
+    pub cost: crate::stream::CostBreakdown,
+}
+
+impl AnthropicUsageDelta {
+    fn apply(self, previous: &Usage) -> Result<Usage, ProviderError> {
+        let mut merged = previous.clone();
+        for (update, target) in [
+            (self.input_tokens, &mut merged.input_tokens),
+            (self.output_tokens, &mut merged.output_tokens),
+            (self.cache_read_tokens, &mut merged.cache_read_tokens),
+            (self.cache_write_tokens, &mut merged.cache_write_tokens),
+        ] {
+            if let Some(value) = update {
+                *target = value;
+                merged.reported = true;
+            }
+        }
+        if let Some(value) = self.cache_write_1h_tokens {
+            merged.cache_write_1h_tokens = Some(value);
+            merged.reported = true;
+        }
+        if let Some(value) = self.reasoning_tokens {
+            merged.reasoning_tokens = Some(value);
+            merged.reported = true;
+        }
+        if merged
+            .cache_write_1h_tokens
+            .is_some_and(|value| value > u64::from(merged.cache_write_tokens))
+        {
+            return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                "cache_creation_input_tokens_1h exceeds merged cache_creation_input_tokens",
+            )));
+        }
+        if merged
+            .reasoning_tokens
+            .is_some_and(|value| value > u64::from(merged.output_tokens))
+        {
+            return Err(ProviderError::StreamError(ProviderErrorSummary::sanitized(
+                "output_tokens_details.thinking_tokens exceeds merged output_tokens",
+            )));
+        }
+        if self.cost.total_from_provider {
+            merged.cost = self.cost;
+        }
+        Ok(merged)
+    }
+}
+
 /// A parsed Anthropic SSE event.
 #[derive(Debug, Clone)]
 pub enum AnthropicEvent {
@@ -378,7 +510,7 @@ pub enum AnthropicEvent {
     },
     MessageDelta {
         stop_reason: Option<String>,
-        usage: Usage,
+        usage: AnthropicUsageDelta,
     },
     MessageStop,
     Error {
@@ -468,7 +600,9 @@ impl AnthropicEvent {
             }
             AnthropicRawEvent::MessageDelta { delta, usage } => AnthropicEvent::MessageDelta {
                 stop_reason: delta.stop_reason,
-                usage: usage.into_usage(is_openrouter)?,
+                usage: usage
+                    .map(|usage| usage.into_delta(is_openrouter))
+                    .unwrap_or_default(),
             },
             AnthropicRawEvent::MessageStop => AnthropicEvent::MessageStop,
             AnthropicRawEvent::Error { error } => AnthropicEvent::Error {
@@ -595,6 +729,8 @@ pub struct AnthropicMapper {
     /// remain after closure so duplicate active indices advance in order.
     transport_indices: Vec<Option<usize>>,
     saw_done: bool,
+    defer_terminal: bool,
+    pending_terminal: bool,
     model_info: Option<crate::model_info::ModelInfo>,
 }
 
@@ -694,6 +830,35 @@ impl AnthropicMapper {
         events
     }
 
+    /// Hold `message_stop` until the source reaches EOF so raw observers see
+    /// every provider frame before the canonical Done event is published.
+    pub(crate) fn with_deferred_terminal(mut self) -> Self {
+        self.defer_terminal = true;
+        self
+    }
+
+    pub(crate) fn has_pending_terminal(&self) -> bool {
+        self.pending_terminal
+    }
+
+    /// Publish the single deferred Done after the source has reached EOF.
+    pub(crate) fn flush_pending_terminal(
+        &mut self,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if self.saw_done || !self.pending_terminal {
+            return Vec::new();
+        }
+        self.pending_terminal = false;
+        self.saw_done = true;
+        if let Some(model_info) = &self.model_info {
+            model_info.apply_response_cost(&mut self.partial);
+        }
+        vec![Ok(AssistantStreamEvent::Done {
+            reason: self.partial.stop_reason,
+            message: self.partial.clone(),
+        })]
+    }
+
     pub(crate) fn failure(&self, cause: ProviderError) -> ProviderError {
         self.snapshot
             .failure(cause.with_partial(self.partial.clone()))
@@ -712,6 +877,8 @@ impl AnthropicMapper {
             blocks: Vec::new(),
             transport_indices: Vec::new(),
             saw_done: false,
+            defer_terminal: false,
+            pending_terminal: false,
             model_info: None,
         }
     }
@@ -747,6 +914,16 @@ impl AnthropicMapper {
         if self.saw_done {
             return Vec::new();
         }
+        if self.pending_terminal
+            && !matches!(
+                event,
+                AnthropicEvent::MessageDelta { .. }
+                    | AnthropicEvent::MessageStop
+                    | AnthropicEvent::Error { .. }
+            )
+        {
+            return Vec::new();
+        }
         match event {
             AnthropicEvent::MessageStart { id, model, usage } => {
                 self.partial.response_id = id;
@@ -758,6 +935,9 @@ impl AnthropicMapper {
                     }
                 }
                 self.partial.usage = usage;
+                if let Some(model_info) = &self.model_info {
+                    model_info.apply_response_cost(&mut self.partial);
+                }
                 let start = self.partial.clone();
                 vec![Ok(AssistantStreamEvent::Start { partial: start })]
             }
@@ -972,30 +1152,20 @@ impl AnthropicMapper {
                 }
             }
             AnthropicEvent::MessageDelta { stop_reason, usage } => {
+                let usage = match usage.apply(&self.partial.usage) {
+                    Ok(usage) => usage,
+                    Err(error) => {
+                        self.saw_done = true;
+                        return vec![Err(self.failure(error))];
+                    }
+                };
                 if let Some(reason) = stop_reason.as_ref().filter(|reason| !reason.is_empty()) {
                     self.partial.raw_stop_reason = Some(reason.clone());
+                    self.partial.stop_reason = map_stop_reason(Some(reason));
                 }
-                self.partial.stop_reason = map_stop_reason(stop_reason.as_deref());
-                if usage.is_reported() {
-                    self.partial.usage.reported = true;
-                }
-                if usage.input_tokens > 0 {
-                    self.partial.usage.input_tokens = usage.input_tokens;
-                }
-                if usage.output_tokens > 0 {
-                    self.partial.usage.output_tokens = usage.output_tokens;
-                }
-                if usage.cache_read_tokens > 0 {
-                    self.partial.usage.cache_read_tokens = usage.cache_read_tokens;
-                }
-                if usage.cache_write_tokens > 0 {
-                    self.partial.usage.cache_write_tokens = usage.cache_write_tokens;
-                }
-                if usage.cache_write_1h_tokens.is_some() {
-                    self.partial.usage.cache_write_1h_tokens = usage.cache_write_1h_tokens;
-                }
-                if usage.cost.total_from_provider {
-                    self.partial.usage.cost = usage.cost;
+                self.partial.usage = usage;
+                if let Some(model_info) = &self.model_info {
+                    model_info.apply_response_cost(&mut self.partial);
                 }
                 // message_delta doesn't emit a stream event; Done comes from message_stop
                 Vec::new()
@@ -1003,6 +1173,10 @@ impl AnthropicMapper {
             AnthropicEvent::MessageStop => {
                 if let Some(model_info) = &self.model_info {
                     model_info.apply_response_cost(&mut self.partial);
+                }
+                if self.defer_terminal {
+                    self.pending_terminal = true;
+                    return Vec::new();
                 }
                 self.saw_done = true;
                 vec![Ok(AssistantStreamEvent::Done {
@@ -1808,20 +1982,26 @@ impl AnthropicProvider {
 
     /// Stream events from a raw SSE response body.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper = AnthropicMapper::new();
+        let mut mapper = AnthropicMapper::new().with_deferred_terminal();
         mapper.set_model_info(None);
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         let is_openrouter =
             self.provider_id == "openrouter" || self.default_base_url.contains("openrouter.ai");
+        let mut saw_terminal_error = false;
         for (parsed, _raw) in parse_transport_events_with_raw_for_model(sse_body, is_openrouter) {
             let usage_error = matches!(
                 &parsed,
                 TransportParsedEvent::Public(ParsedEvent::UsageError(_))
             );
-            stream_events.extend(mapper.process_transport(parsed));
-            if usage_error {
+            let events = mapper.process_transport(parsed);
+            saw_terminal_error = usage_error || events.iter().any(Result::is_err);
+            stream_events.extend(events);
+            if saw_terminal_error {
                 break;
             }
+        }
+        if !saw_terminal_error {
+            stream_events.extend(mapper.flush_pending_terminal());
         }
 
         let _cancel = cancel; // used by the real HTTP path
@@ -2307,7 +2487,7 @@ impl AnthropicProvider {
                 &provider_id,
             ));
         }
-        let mut mapper = AnthropicMapper::new_for_provider(&provider_id);
+        let mut mapper = AnthropicMapper::new_for_provider(&provider_id).with_deferred_terminal();
         mapper.set_model_info(model_info);
         mapper.set_strict_tools(strict_tools);
         mapper.oauth_tool_names = oauth_tool_names;
@@ -2361,7 +2541,11 @@ impl AnthropicProvider {
                 }
 
                 for (parsed, raw) in drain_sse_events(&mut buffer, eof, is_openrouter)? {
-                    if mapper.saw_done {
+                    // A typed transport error (for example a mid-output
+                    // fallback) terminates the source immediately. A
+                    // successful message_stop is only pending, so its tail
+                    // frames still reach the raw observer below.
+                    if mapper.saw_done && !mapper.has_pending_terminal() {
                         return Ok(());
                     }
                     // Raw observer first: strictly before normalization, in
@@ -2390,8 +2574,14 @@ impl AnthropicProvider {
                 }
             }
 
-            // Stream ended without a terminal event  - surface as provider protocol error
-            if !mapper.saw_done {
+            if mapper.has_pending_terminal() {
+                for item in mapper.flush_pending_terminal() {
+                    if !send_or_cancel(&cancel, tx, item).await? {
+                        return Ok(());
+                    }
+                }
+            } else if !mapper.saw_done {
+                // Stream ended without a terminal event  - surface as provider protocol error
                 let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                     "stream ended without a terminal event (message_stop or error)",
                 ));

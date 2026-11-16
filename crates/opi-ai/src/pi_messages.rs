@@ -146,6 +146,7 @@ impl std::fmt::Debug for PiMessagesProvider {
 }
 
 impl PiMessagesProvider {
+    #[cfg(feature = "builtins")]
     pub(crate) fn with_client(mut self, client: Arc<crate::http::HttpClient>) -> Self {
         self.client = client;
         self
@@ -1193,6 +1194,9 @@ impl PiMessagesSseMapper {
                 self.message.usage = parse_usage(&event)?;
                 if let Some(id) = optional_string_member(&event, "responseId") {
                     self.message.response_id = Some(id);
+                }
+                if let Some(model) = optional_string_member(&event, "responseModel") {
+                    self.message.response_model = Some(model);
                 }
                 if let Some(level) = optional_string_member(&event, "providerThinkingLevel") {
                     self.message.provider_thinking_level = Some(level);

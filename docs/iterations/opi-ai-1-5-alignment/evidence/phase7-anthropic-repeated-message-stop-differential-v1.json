@@ -1,0 +1,349 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "scope": "Anthropic message_stop repeated usage and tail observer ordering on simple and direct routes",
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_anthropic_repeated_message_stop.mjs": "8ec7cd66127669e99ed3db587d6c6fe975ea7dbc3081da6ec32703aecd18b228",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\anthropic-repeated-message-stop.json": "90bcf982060494e48ced8e39d5c21de01d24e0c638bcd01a86aadf94fecf70cb",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\compare_anthropic_repeated_message_stop.py": "64cffcf4978a7af80f884d6f7375a0f90cd2b466d339a85b16284e094d894fe3",
+    "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\anthropic_repeated_message_stop-120ffa28c29de560.exe": "6615e51109d307188854779d2db695b384a1b9786a4ff451a1a7669b64a8260a",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\anthropic-messages.ts": "f1348f1919aa9c4d2ed69767e4f64727e29df0455e8998a7da55773197fce48b"
+  },
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "end_turn",
+    "input": 10,
+    "output": 7,
+    "done_count": 1,
+    "provider_events": 5
+  },
+  "pi_runs": [
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_anthropic_repeated_message_stop.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\anthropic-repeated-message-stop.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"anthropic-repeated-message-stop\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"message_start\",\"message_delta\",\"message_stop\",\"message_delta\",\"message_stop\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"message_start\",\"message_delta\",\"message_stop\",\"message_delta\",\"message_stop\"],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "anthropic-repeated-message-stop",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "provider_events": [
+              "message_start",
+              "message_delta",
+              "message_stop",
+              "message_delta",
+              "message_stop"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "provider_events": [
+              "message_start",
+              "message_delta",
+              "message_stop",
+              "message_delta",
+              "message_stop"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_anthropic_repeated_message_stop.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\anthropic-repeated-message-stop.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"anthropic-repeated-message-stop\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"message_start\",\"message_delta\",\"message_stop\",\"message_delta\",\"message_stop\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"message_start\",\"message_delta\",\"message_stop\",\"message_delta\",\"message_stop\"],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "anthropic-repeated-message-stop",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "provider_events": [
+              "message_start",
+              "message_delta",
+              "message_stop",
+              "message_delta",
+              "message_stop"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "provider_events": [
+              "message_start",
+              "message_delta",
+              "message_stop",
+              "message_delta",
+              "message_stop"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_anthropic_repeated_message_stop.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\anthropic-repeated-message-stop.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"anthropic-repeated-message-stop\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"message_start\",\"message_delta\",\"message_stop\",\"message_delta\",\"message_stop\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"message_start\",\"message_delta\",\"message_stop\",\"message_delta\",\"message_stop\"],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "anthropic-repeated-message-stop",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "provider_events": [
+              "message_start",
+              "message_delta",
+              "message_stop",
+              "message_delta",
+              "message_stop"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "provider_events": [
+              "message_start",
+              "message_delta",
+              "message_stop",
+              "message_delta",
+              "message_stop"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    }
+  ],
+  "rust_runs": [
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\anthropic_repeated_message_stop-120ffa28c29de560.exe",
+        "--exact",
+        "repeated_message_stop_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"anthropic-repeated-message-stop\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"requests\":1}]}\ntest repeated_message_stop_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "anthropic-repeated-message-stop",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\anthropic_repeated_message_stop-120ffa28c29de560.exe",
+        "--exact",
+        "repeated_message_stop_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"anthropic-repeated-message-stop\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"requests\":1}]}\ntest repeated_message_stop_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "anthropic-repeated-message-stop",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\anthropic_repeated_message_stop-120ffa28c29de560.exe",
+        "--exact",
+        "repeated_message_stop_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"anthropic-repeated-message-stop\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":10,\"output\":7},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"requests\":1}]}\ntest repeated_message_stop_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "anthropic-repeated-message-stop",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "end_turn",
+            "usage": {
+              "input": 10,
+              "output": 7
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "done"
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    }
+  ],
+  "differences": [
+    "Pi exposes provider_events from every source item; Rust's direct fixture helper exposes normalized event_types only."
+  ]
+}

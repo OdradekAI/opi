@@ -4,7 +4,7 @@
 //! The runner is flow-mechanism only: HTTP goes through an injected
 //! `reqwest::Client`, interaction through an injected
 //! [`LoginPresenter`], and persistence through
-//! an injected [`CredentialStore`]. No
+//! an injected [`crate::CredentialStore`]. No
 //! browser is opened, no ambient
 //! environment is consulted, and no keychain is read here.
 //!
@@ -37,9 +37,8 @@ use time::OffsetDateTime;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::auth::{LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider};
-use crate::credential::{BoxAuthFuture, CredentialStore, CredentialStoreError};
-use crate::mutation::{MutationError, MutationOutcome};
+use crate::auth::{LoginPresenter, OAuthCredential};
+use crate::credential::BoxAuthFuture;
 use crate::provider::{ProviderError, ProviderErrorSummary};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -1264,146 +1263,7 @@ pub fn production_oauth_client() -> reqwest::Client {
 // Store-acknowledged login (SDK)
 // ---------------------------------------------------------------------------
 
-/// Typed failure of a store-acknowledged login.
-#[derive(Debug)]
-pub enum LoginStoreError {
-    /// The OAuth flow itself failed.
-    Flow(ProviderError),
-    /// The store rejected or failed the write (no success was reported).
-    Store(CredentialStoreError),
-    /// The mutation's outcome is unknown; the write may or may not have
-    /// landed. Success is never reported for an unconfirmed outcome.
-    Unknown {
-        /// Redacted, non-secret loss detail.
-        detail: String,
-    },
-}
-
-/// Presenter wrapper that suppresses the flow's own success notification so
-/// success is only presented after the store ACK (V-55: no success before
-/// the ACK returns).
-struct DeferredSuccessPresenter<'a> {
-    inner: &'a dyn LoginPresenter,
-}
-
-impl LoginPresenter for DeferredSuccessPresenter<'_> {
-    fn select_login_method<'a>(
-        &'a self,
-        provider_id: &'a str,
-        methods: &'a [OAuthLoginMethod],
-        default: OAuthLoginMethod,
-    ) -> BoxAuthFuture<'a, Result<OAuthLoginMethod, ProviderError>> {
-        self.inner
-            .select_login_method(provider_id, methods, default)
-    }
-
-    fn present_auth_url<'a>(
-        &'a self,
-        url: &'a str,
-    ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.present_auth_url(url)
-    }
-
-    fn present_device_code<'a>(
-        &'a self,
-        user_code: &'a str,
-        verification_uri: &'a str,
-    ) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.present_device_code(user_code, verification_uri)
-    }
-
-    fn await_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
-        self.inner.await_manual_code()
-    }
-
-    fn await_login_cancelled<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.await_login_cancelled()
-    }
-
-    fn cancel_manual_code<'a>(&'a self) -> BoxAuthFuture<'a, Result<(), ProviderError>> {
-        self.inner.cancel_manual_code()
-    }
-
-    fn prompt_text<'a>(
-        &'a self,
-        message: &'a str,
-        placeholder: &'a str,
-    ) -> BoxAuthFuture<'a, Result<String, ProviderError>> {
-        self.inner.prompt_text(message, placeholder)
-    }
-
-    fn notify_progress(&self, message: &str) {
-        self.inner.notify_progress(message);
-    }
-
-    fn notify_success(&self) {
-        // Deferred: the SDK reports success only after the store ACK.
-    }
-
-    fn notify_failure(&self, reason: &str) {
-        self.inner.notify_failure(reason);
-    }
-}
-
-/// Run one OAuth login and persist the resulting credential through the
-/// store-owned serialized mutation queue, reporting success only after the
-/// awaited ACK. Login serializes with logout/replace/refresh on the same
-/// store; no automatic browser, keychain, environment fallback, or remote
-/// revocation happens here.
-pub async fn login_to_store(
-    provider_id: &str,
-    flow: &dyn OAuthProvider,
-    store: &dyn CredentialStore,
-    presenter: &dyn LoginPresenter,
-) -> Result<OAuthCredential, LoginStoreError> {
-    let deferred = DeferredSuccessPresenter { inner: presenter };
-    let cred = flow.login(&deferred).await.map_err(LoginStoreError::Flow)?;
-    // Persist through the store-owned serialized mutation queue; the awaited
-    // receipt is the ACK before success is reported.
-    let receipt = match store
-        .modify(
-            provider_id,
-            crate::mutation::write_mutation(cred.clone().into()),
-        )
-        .await
-    {
-        Ok(receipt) => receipt,
-        Err(error) => {
-            presenter.notify_failure("credential store write failed");
-            return Err(LoginStoreError::Store(error));
-        }
-    };
-    match receipt.outcome {
-        MutationOutcome::Written { .. } | MutationOutcome::Unchanged { .. } => {
-            presenter.notify_success();
-            Ok(cred)
-        }
-        MutationOutcome::Failed { error } => match &*error {
-            MutationError::Store(store_error) => {
-                presenter.notify_failure("credential store write failed");
-                Err(LoginStoreError::Store(store_error.clone()))
-            }
-            _ => {
-                presenter.notify_failure("credential store write failed");
-                Err(LoginStoreError::Store(CredentialStoreError::Backend {
-                    provider: provider_id.to_owned(),
-                    reason: "credential mutation failed".to_owned(),
-                }))
-            }
-        },
-        MutationOutcome::Unknown { detail } => {
-            presenter.notify_failure("credential store write outcome unknown");
-            Err(LoginStoreError::Unknown { detail })
-        }
-        MutationOutcome::Deleted { .. } => {
-            presenter.notify_failure("credential store write failed");
-            Err(LoginStoreError::Store(CredentialStoreError::Backend {
-                provider: provider_id.to_owned(),
-                reason: "unexpected delete outcome for login".to_owned(),
-            }))
-        }
-    }
-}
+pub use super::store_oauth::{LoginStoreError, login_to_store};
 
 // ---------------------------------------------------------------------------
 // Local error constructors (match the product protocol's closed summaries)

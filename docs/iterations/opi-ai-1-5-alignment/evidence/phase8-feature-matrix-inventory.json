@@ -1,0 +1,108 @@
+{
+  "schemaVersion": 1,
+  "issue": "#125",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": "Current opi-ai manifest feature matrix inventory on the Windows workspace target; this freezes the declared four profiles and maps them to existing external package receipts without claiming the complete V, MSRV or native-platform gates.",
+  "source": {
+    "manifest": "crates/opi-ai/Cargo.toml",
+    "manifest_sha256": "c7116b82e34000db75ddcd346ba55325574097bd20e6ec0bae51b5c36d1a965c",
+    "package_version": "0.8.3",
+    "rust_version": "1.97",
+    "declared_features": {
+      "default": ["builtins", "telemetry-tracing"],
+      "builtins": [
+        "dep:reqwest",
+        "dep:hmac",
+        "dep:aws-smithy-query",
+        "dep:aws-smithy-xml",
+        "dep:xmlparser",
+        "dep:p256",
+        "dep:sha1",
+        "dep:rustls",
+        "dep:aws-lc-rs",
+        "dep:rustls-native-certs",
+        "dep:libz-rs-sys",
+        "dep:flate2",
+        "dep:windows-sys"
+      ],
+      "telemetry-tracing": ["opi-telemetry/tracing"]
+    }
+  },
+  "metadata_environment": {
+    "host": "Windows workspace",
+    "command_family": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps",
+    "scratch": "C:/Temp/opi-feature-matrix-20261115",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "matrix": [
+    {
+      "id": "core",
+      "requested_features": [],
+      "cargo_args": ["--no-default-features"],
+      "metadata_stdout_sha256": "633cd0a79a157f150e457599ae8b872885e09b7a3abc2dae64813c81e5947be8",
+      "metadata_exit": 0,
+      "external_consumer": {
+        "status": "PASS",
+        "receipt": "evidence/phase5-minimal-package-verified.json",
+        "receipt_sha256": "a7059df8d3564eaf032f8e250e55eeac7a3f4748e849cf0f8a130fe4fcddd0eb",
+        "profile": "core"
+      }
+    },
+    {
+      "id": "core-tracing",
+      "requested_features": ["telemetry-tracing"],
+      "cargo_args": ["--no-default-features", "--features", "telemetry-tracing"],
+      "metadata_stdout_sha256": "633cd0a79a157f150e457599ae8b872885e09b7a3abc2dae64813c81e5947be8",
+      "metadata_exit": 0,
+      "external_consumer": {
+        "status": "PASS",
+        "receipt": "evidence/phase5-minimal-package-verified.json",
+        "receipt_sha256": "a7059df8d3564eaf032f8e250e55eeac7a3f4748e849cf0f8a130fe4fcddd0eb",
+        "profile": "core-tracing"
+      }
+    },
+    {
+      "id": "builtins-no-tracing",
+      "requested_features": ["builtins"],
+      "cargo_args": ["--no-default-features", "--features", "builtins"],
+      "metadata_stdout_sha256": "633cd0a79a157f150e457599ae8b872885e09b7a3abc2dae64813c81e5947be8",
+      "metadata_exit": 0,
+      "external_consumer": {
+        "status": "PASS",
+        "receipt": "evidence/phase5-minimal-readme-package.json",
+        "receipt_sha256": "cd1503d5cd90696b9b99ff34555dbfccdd170e117ed1529f0f86abf8e7cef99e",
+        "profile": "builtins-no-tracing"
+      }
+    },
+    {
+      "id": "defaults-on",
+      "requested_features": ["builtins", "telemetry-tracing"],
+      "cargo_args": [],
+      "metadata_stdout_sha256": "633cd0a79a157f150e457599ae8b872885e09b7a3abc2dae64813c81e5947be8",
+      "metadata_exit": 0,
+      "external_consumer": {
+        "status": "PASS",
+        "receipt": "evidence/phase5-minimal-readme-package.json",
+        "receipt_sha256": "cd1503d5cd90696b9b99ff34555dbfccdd170e117ed1529f0f86abf8e7cef99e",
+        "profile": "defaults-on"
+      }
+    }
+  ],
+  "observations": [
+    "The declared feature space currently has two independent switches and therefore four boolean profiles; all four metadata commands exit successfully.",
+    "Each declared profile has an existing actual archive consumer receipt: core/core-tracing from the minimum package proof and builtins-no-tracing/defaults-on from the README package proof.",
+    "The profile receipts are independent package consumers; this inventory does not relabel workspace builds or schema-only checks as package proof.",
+    "Pi 1.5.0 behavior pairing remains covered by the adapter receipts; this feature inventory adds no new Pi runtime claim."
+  ],
+  "open_scope": [
+    "The complete V still needs independent backend/auth/catalog/telemetry combinations beyond the coarse builtins switch, plus valid pair and higher-order risk combinations.",
+    "MSRV execution, native Linux/macOS rows, exact toolchain/platform identities and all-features validity remain unverified here.",
+    "Quantitative resource/performance budgets and real Deferred integration (#94) remain open; no six-gate acceptance claim is made."
+  ],
+  "test_impact": {
+    "add": ["Manifest-level feature matrix inventory and receipt mapping"],
+    "update": ["None"],
+    "delete": [],
+    "retain": "All prior Pi differential, adapter, observer, package and failure receipts"
+  }
+}

@@ -1,0 +1,69 @@
+{
+  "prefix": [
+    {"type":"response.created","response":{"id":"resp_partial","model":"wire-model","status":"in_progress"}},
+    {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_partial","role":"assistant","status":"in_progress","content":[]}},
+    {"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}},
+    {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"partial"}
+  ],
+  "afterFailure": {
+    "type":"response.completed",
+    "response":{"id":"resp_late","model":"late-model","status":"completed","output":[],"usage":{"input_tokens":7,"output_tokens":3,"total_tokens":10}}
+  },
+  "cases": [
+    {
+      "name":"gateway-forward",
+      "error":{"message":"Unable to forward upstream stream. PRIVATE_CANARY"},
+      "decision":"transient"
+    },
+    {
+      "name":"gateway-request",
+      "error":{"code":"upstream_error","message":"Upstream request failed. PRIVATE_CANARY"},
+      "decision":"transient"
+    },
+    {
+      "name":"gateway-read-code",
+      "error":{"code":"upstream_stream_read_error","message":"PRIVATE_CANARY"},
+      "decision":"transient"
+    },
+    {
+      "name":"gateway-http2",
+      "error":{"message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"},
+      "decision":"transient"
+    },
+    {
+      "name":"server-error-code",
+      "error":{"code":"server_error","message":"PRIVATE_CANARY"},
+      "decision":"transient"
+    },
+    {
+      "name":"quota-veto",
+      "error":{"code":"subscription_sharing_workplace_individual_usage_limit_exceeded","message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"},
+      "decision":"quota"
+    },
+    {
+      "name":"overflow-veto",
+      "error":{"code":"context_length_exceeded","message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"},
+      "decision":"overflow"
+    },
+    {
+      "name":"ambiguous-code",
+      "error":{"code":"upstream_error","message":"Invalid request. PRIVATE_CANARY"},
+      "decision":"terminal"
+    },
+    {
+      "name":"unrelated-fields",
+      "error":{"code":"ref503xyz-PRIVATE_CANARY","message":"Invalid request","type":"upstream_stream_read_error","metadata":{"message":"Upstream HTTP/2 stream failed"}},
+      "decision":"terminal"
+    },
+    {
+      "name":"malformed-diagnostic",
+      "error":{"code":{"message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"},"message":null},
+      "decision":"terminal"
+    },
+    {
+      "name":"no-detail",
+      "error":null,
+      "decision":"terminal"
+    }
+  ]
+}

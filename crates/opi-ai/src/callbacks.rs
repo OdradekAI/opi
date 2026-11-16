@@ -186,6 +186,7 @@ impl RequestCallbacks {
         callbacks
     }
 
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn inherited_attempt(&self) -> Option<crate::provider::AttemptContext> {
         self.attempt.clone()
     }
@@ -570,6 +571,7 @@ fn validate_payload_replacement(
 }
 
 #[derive(Clone, Copy)]
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) enum OpenAiPayloadShape {
     Chat,
     Responses,
@@ -578,6 +580,7 @@ pub(crate) enum OpenAiPayloadShape {
 /// Check the structural fields consumed by the streaming adapters after the
 /// callback. Unknown fields and tool kinds remain available to custom routes;
 /// schema contents and provider-specific semantic constraints are not checked.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn validate_openai_payload_shape(
     body: &serde_json::Value,
     shape: OpenAiPayloadShape,
@@ -646,6 +649,7 @@ pub(crate) fn validate_openai_payload_shape(
     Ok(())
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 fn optional_wire_field(
     value: &serde_json::Value,
     field: &str,
@@ -654,16 +658,19 @@ fn optional_wire_field(
     value.get(field).is_none_or(accepts)
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 fn object_array(value: &serde_json::Value) -> bool {
     value
         .as_array()
         .is_some_and(|items| items.iter().all(serde_json::Value::is_object))
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 fn object_or_null(value: &serde_json::Value) -> bool {
     value.is_object() || value.is_null()
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 fn openai_tool_shape(tool: &serde_json::Value) -> bool {
     if !tool.is_object() || !optional_wire_field(tool, "type", serde_json::Value::is_string) {
         return false;

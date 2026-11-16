@@ -548,6 +548,13 @@ RPC 压缩在等待摘要时仍可通过 `abort` 取消。
 `%LOCALAPPDATA%\opi\sessions\` 和 Unix 的 `~/.local/share/opi/sessions/`，可用
 `OPI_SESSIONS_DIR` 覆盖。
 
+Assistant 消息在 JSONL 中保留响应时的 `usage.cost` 快照：目录计价分量、总额和
+`total_from_provider`，包括 provider 明确报告的零总额。恢复时原样保留这些字段。
+缺少 `cost` 的旧消息仍可读取，使用默认费用分解，且不声称总额来自 provider。
+会话费用摘要是另一项估算，按累计 token 用量和会话当前模型价格重新计算；摘要不入盘，
+也不通过相加消息费用生成。因此价格变化可以改变摘要，而不改写历史消息。
+用量或价格未知时，摘要仍不可用。
+
 旧版会话中的模型记录可能是不带 provider 前缀的裸模型名。resume、fork 或
 branch 时，只有当恰好一条可分发路由提供该模型时才会归一化；路由缺失或
 有歧义时保持配置的模型并给出类型化的修复诊断，而不是猜测。加载和归一化

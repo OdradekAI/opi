@@ -988,10 +988,10 @@ impl Models {
         Ok(DeferredApiHandle::new(api_id))
     }
 
-    /// Validate one deferred handle against the registered backends
-    /// (AIR-043): route identity and, when the caller injects a clock
-    /// reading, expiry — both before any authentication. Returns the typed
-    /// [`DeferredError`] without touching resolvers or network.
+    /// Validate the handle against its exact API and provider registration,
+    /// then its model and optional expiry, before authentication (AIR-043).
+    /// Returns the typed [`DeferredError`] without resolving credentials
+    /// or dispatching a backend operation.
     pub fn validate_deferred_handle(
         &self,
         handle: &DeferredHandle,
@@ -1013,14 +1013,29 @@ impl Models {
     /// (identity, then expiry), resolve authentication through the
     /// backend's registered resolver, and dispatch exactly one fetch.
     ///
-    /// Pre-dispatch failures (unsupported provider, route mismatch,
+    /// Pre-dispatch failures (missing provider/API registration, route mismatch,
     /// expiry, missing credential) surface as one typed `Err` stream item,
     /// which [`ChatStream`] converts into the canonical `CallFailure`.
+    /// A missing registration diagnostic identifies the requested provider and API.
+    /// When it synthesizes a failure message without a partial, it uses the
+    /// handle's provider and model IDs.
     /// `wait_ms = 0` (pi wait0) performs a single status check; the SDK
     /// never polls implicitly. When the call carries a telemetry context,
     /// the SDK installs the Pi-shaped `pi.ai.poll` observer at this boundary
     /// and completes it with the same result that [`ChatStream::result`]
     /// returns.
+    ///
+    /// Direct iteration delivers the terminal as soon as it is cached.
+    /// The next read drives the retained source to EOF, releases it and
+    /// settles the poll observer before returning public EOF. Cancelling a
+    /// pending tail releases the source and preserves the delivered outcome.
+    /// Dropping the direct collector after a successful `Done` releases the
+    /// source immediately and settles its poll observer with the cached result.
+    ///
+    /// [`ChatStream::start`] schedules the fetch independently of the
+    /// consumer and forwards a successful `Done` before draining the source.
+    /// Public EOF and the result await source release and poll settlement.
+    /// The task continues driving the source after consumer Drop.
     pub fn stream_deferred(
         &self,
         handle: &DeferredHandle,
@@ -1038,6 +1053,8 @@ impl Models {
             telemetry_context.as_ref(),
             attributes,
         )
+        .with_requested_route(handle.provider.clone(), handle.model_id.clone())
+        .with_tail_drain_on_completion()
     }
 
     fn stream_deferred_source(
@@ -1066,7 +1083,7 @@ impl Models {
                 (registration, options)
             }
             Err(error) => {
-                let provider_error = error.into_provider_error();
+                let provider_error = error.into_provider_error(&handle.api);
                 return Box::pin(stream::once(async move { Err(provider_error) }));
             }
         };
@@ -1122,6 +1139,9 @@ impl Models {
     /// results are `Ok` with [`crate::stream::StopReason::Deferred`] and the
     /// handle on the returned message; ready results deliver the final
     /// assistant message; every failure is one `Err(CallFailure)`.
+    /// The returned future drives source release and poll settlement. Use
+    /// [`Self::fetch_deferred_ready`] to receive the outcome as soon as the
+    /// first terminal is normalized.
     pub async fn fetch_deferred(
         &self,
         handle: &DeferredHandle,
@@ -1130,11 +1150,41 @@ impl Models {
         self.stream_deferred(handle, call).result().await
     }
 
+    /// Fetch once and return the first normalized outcome while the execution
+    /// task drives source release and poll settlement independently.
+    ///
+    /// Routing, authentication and provider wait use [`Self::stream_deferred`].
+    /// A still-pending response returns `Ok` with
+    /// [`crate::stream::StopReason::Deferred`] and its handle. A caller
+    /// schedules any subsequent fetch. Failures return a typed [`CallFailure`].
+    ///
+    /// The first poll starts the task. Dropping the waiter after that leaves
+    /// the task running until it finishes or its runtime shuts down. The
+    /// request's token can stop an in-flight fetch or its tail locally. After the
+    /// outcome is cached, local cancellation of the tail preserves that
+    /// outcome. Remote cancellation uses [`Self::cancel_deferred`]. Use
+    /// [`Self::fetch_deferred`] when the caller needs to await source release
+    /// and poll settlement or observe a panic during the drain.
+    ///
+    /// # Panics
+    ///
+    /// Panics if polled outside a Tokio runtime. A source panic before the
+    /// terminal is resumed in this future. Once the terminal is cached, a
+    /// tail panic reaches Tokio's panic hook.
+    pub async fn fetch_deferred_ready(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.stream_deferred(handle, call).first_outcome().await
+    }
+
     /// Cancel one deferred response remotely, best effort (AIR-043/AIR-044).
     ///
-    /// The handle validates exactly like a fetch; the backend's failure is
-    /// reported and never taken as a guarantee. Local fetch cancellation
-    /// never reaches this operation.
+    /// The SDK validates the handle's route as it does for fetch. A missing
+    /// registration reports the requested provider and API. Backend failures
+    /// are returned to the caller. Local fetch cancellation never reaches
+    /// this operation.
     pub async fn cancel_deferred(
         &self,
         handle: &DeferredHandle,
@@ -1142,14 +1192,14 @@ impl Models {
     ) -> Result<(), ProviderError> {
         let registration = self
             .deferred_registration(handle)
-            .map_err(DeferredError::into_provider_error)?;
+            .map_err(|error| error.into_provider_error(&handle.api))?;
         handle
             .validate_identity(
                 &registration.provider_id,
                 &registration.model_id,
                 registration.api_id.as_str(),
             )
-            .map_err(DeferredError::into_provider_error)?;
+            .map_err(|error| error.into_provider_error(&handle.api))?;
         if call.cancel.is_cancelled() {
             return Err(ProviderError::Cancelled);
         }
@@ -2342,6 +2392,7 @@ impl Models {
         }
     }
 
+    #[cfg(feature = "builtins")]
     pub(crate) fn oauth_flow_for_builtin(
         &self,
         provider: &str,
@@ -2349,6 +2400,7 @@ impl Models {
         self.oauth_flows.get(provider).cloned()
     }
 
+    #[cfg(feature = "builtins")]
     pub(crate) fn register_builtin_auth_factory(
         &mut self,
         provider: &str,
@@ -2359,6 +2411,7 @@ impl Models {
         self.rebind_builtin_auth(provider);
     }
 
+    #[cfg(feature = "builtins")]
     pub(crate) fn mark_builtin_default_auth(&mut self, provider: &str, only_if_unbound: bool) {
         if !only_if_unbound
             || (!self.resolvers.contains_key(provider) && !self.auth.contains_key(provider))
@@ -2367,12 +2420,14 @@ impl Models {
         }
     }
 
+    #[cfg(feature = "builtins")]
     pub(crate) fn mark_builtin_image_auth(&mut self, provider: &str, api: &ApiId) {
         if let Some(registration) = self.image_apis.get_mut(&(provider.into(), api.clone())) {
             registration.builtin_auth = true;
         }
     }
 
+    #[cfg(feature = "builtins")]
     pub(crate) fn mark_builtin_classifier_auth(&mut self, provider: &str, api: &ApiId) {
         if let Some(registration) = self
             .classifier_apis
@@ -2515,7 +2570,7 @@ impl Models {
                 reason: "no credential store attached".to_owned(),
             })
         })?;
-        match crate::auth::oauth::login_to_store(
+        match crate::auth::store_oauth::login_to_store(
             provider_id,
             flow.as_ref(),
             store.as_ref(),
@@ -2524,16 +2579,16 @@ impl Models {
         .await
         {
             Ok(credential) => Ok(credential),
-            Err(crate::auth::oauth::LoginStoreError::Flow(error)) => {
+            Err(crate::auth::store_oauth::LoginStoreError::Flow(error)) => {
                 Err(ModelsError::AuthResolution {
                     provider: provider_id.to_owned(),
                     error: Box::new(error),
                 })
             }
-            Err(crate::auth::oauth::LoginStoreError::Store(error)) => {
+            Err(crate::auth::store_oauth::LoginStoreError::Store(error)) => {
                 Err(ModelsError::CredentialStore(error))
             }
-            Err(crate::auth::oauth::LoginStoreError::Unknown { detail }) => {
+            Err(crate::auth::store_oauth::LoginStoreError::Unknown { detail }) => {
                 Err(ModelsError::MutationOutcomeUnknown {
                     provider: provider_id.to_owned(),
                     detail,
@@ -3892,6 +3947,7 @@ impl PreparedProviderCall {
 /// Drive ordinary and direct calls with the same per-call acquisition owner
 /// used by advanced preparation. Admitted retries consume their existing
 /// counters; only the source-qualified strict admission creates a new variant.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn drive_resolved_call(
     provider: Arc<dyn Provider>,
     request: Request,
@@ -4102,7 +4158,10 @@ fn compile_prepared_request(
         // Non-adaptive Bedrock routes resolve a numeric neutral budget;
         // adaptive models keep the level flowing to `output_config.effort`.
         let numeric_bedrock = model.wire_api == crate::WireApi::BedrockConverseStream
-            && !crate::bedrock::supports_adaptive_thinking(&model.id, &model.display_name);
+            && !crate::model_info::supports_bedrock_adaptive_thinking(
+                &model.id,
+                &model.display_name,
+            );
         if (numeric_anthropic || numeric_bedrock) && request.thinking.budget_tokens.is_none() {
             request.thinking.budget_tokens = Some(match request.thinking.level {
                 crate::ThinkingLevel::Minimal => 1_024,
@@ -4187,11 +4246,8 @@ fn models_error_cause(error: ModelsError) -> ProviderError {
     }
 }
 
-fn setup_failure(message: String) -> CallFailure {
-    CallFailure::from_partial(
-        None,
-        ProviderError::Config(ProviderErrorSummary::sanitized(message)),
-    )
+fn setup_config_error(message: String) -> ProviderError {
+    ProviderError::Config(ProviderErrorSummary::sanitized(message))
 }
 
 // ---------------------------------------------------------------------------
@@ -5020,15 +5076,13 @@ impl ChatCall {
             chat_binding_telemetry_attributes(&binding, &request),
         );
         let driver = ChatCallDriver::new(binding, request, options, observer.clone());
-        let abort_handler = Box::new(move |failure: &CallFailure| {
-            observer.finish(Some(failure.message()));
-        }) as crate::execution::AbortHandler;
         Self {
             execution: crate::stream::StartedChatStream::spawn(
                 driver,
                 ChatCallDriver::result,
                 crate::stream::ProducerSnapshot::default(),
-                Some(abort_handler),
+                Some(observer),
+                None,
             ),
         }
     }
@@ -5211,6 +5265,7 @@ impl Stream for ChatCallDriver {
                             this.state = ChatCallState::Active(Box::new(stream));
                         }
                         Poll::Ready(Err(failure)) => {
+                            this.observer.on_delivery(Err(&failure));
                             this.observer.finish(Some(failure.message()));
                             this.terminal = Some(Err(failure.clone()));
                             this.state = ChatCallState::Done;
@@ -5238,6 +5293,8 @@ async fn materialize_chat_call(
 ) -> Result<ChatStream, CallFailure> {
     // Canonical model identity comes from the frozen complete record.
     request.model = binding.record.spec();
+    let setup_failure = |cause| CallFailure::from_setup(&binding.record, cause);
+    let setup_config_failure = |message| setup_failure(setup_config_error(message));
     let resources = {
         let _registration = binding.registration_gate.lock().unwrap();
         binding
@@ -5249,19 +5306,19 @@ async fn materialize_chat_call(
         .as_ref()
         .map_or_else(|| request.cancel.child_token(), |lease| lease.token());
     if request.cancel.is_cancelled() {
-        return Err(CallFailure::from_partial(None, ProviderError::Cancelled));
+        return Err(setup_failure(ProviderError::Cancelled));
     }
 
     let (event_stream, projection) = match binding.route {
         FrozenRoute::ChatApi { api_id, entry } => {
             let Some(entry) = entry else {
-                return Err(setup_failure(format!(
+                return Err(setup_config_failure(format!(
                     "chat api '{}' is not registered",
                     api_id.as_str()
                 )));
             };
             if entry.provider_id != binding.record.provider_id() {
-                return Err(setup_failure(format!(
+                return Err(setup_config_failure(format!(
                     "record provider '{}' does not match the registered chat api provider '{}'",
                     binding.record.provider_id(),
                     entry.provider_id
@@ -5271,7 +5328,7 @@ async fn materialize_chat_call(
                 unreachable!("simple entries dispatch through provider routes")
             };
             if type_id != entry.options_type {
-                return Err(setup_failure(format!(
+                return Err(setup_config_failure(format!(
                     "native options type does not match the registered chat api '{}'",
                     api_id.as_str()
                 )));
@@ -5281,22 +5338,22 @@ async fn materialize_chat_call(
                 Some(binding.record.info()),
                 &request,
             )
-            .map_err(|error| CallFailure::from_partial(None, error))?;
+            .map_err(setup_failure)?;
             entry
                 .dispatch
                 .validate_native_erased(binding.record.info(), &request, value.as_ref())
-                .map_err(|error| CallFailure::from_partial(None, error))?;
+                .map_err(setup_failure)?;
             let projection = crate::transcript::compile_request_projection(
                 &request,
                 binding.record.provider_id(),
                 Some(binding.record.info()),
                 binding.record.wire_api(),
             )
-            .map_err(|error| CallFailure::from_partial(None, error))?
+            .map_err(setup_failure)?
             .facts;
             let auth = resolve_binding_auth(&binding.auth_plan, &request.cancel)
                 .await
-                .map_err(|failure| failure.with_projection(&projection))?;
+                .map_err(|cause| setup_failure(cause).with_projection(&projection))?;
             let retained_resources = resources.clone();
             let stream = entry.dispatch.stream_prepared_erased(
                 binding.record.info().clone(),
@@ -5319,37 +5376,37 @@ async fn materialize_chat_call(
             provider,
         } => {
             let Some(provider) = provider else {
-                return Err(setup_failure(format!("unknown provider: {provider_id}")));
+                return Err(setup_config_failure(format!(
+                    "unknown provider: {provider_id}"
+                )));
             };
             let CallOptions::Simple(simple_options) = options else {
                 unreachable!("native entries dispatch through chat APIs")
             };
             provider
                 .validate_simple_options(binding.record.info(), &simple_options)
-                .map_err(|error| CallFailure::from_partial(None, error))?;
+                .map_err(setup_failure)?;
             compile_prepared_request(
                 binding.record.provider_id(),
                 binding.record.info(),
                 &mut request,
             )
-            .map_err(|error| CallFailure::from_partial(None, error))?;
+            .map_err(setup_failure)?;
             let projection = crate::transcript::compile_request_projection(
                 &request,
                 binding.record.provider_id(),
                 Some(binding.record.info()),
                 binding.record.wire_api(),
             )
-            .map_err(|error| CallFailure::from_partial(None, error))?
+            .map_err(setup_failure)?
             .facts;
             let mut auth = resolve_binding_auth(&binding.auth_plan, &request.cancel)
                 .await
-                .map_err(|failure| failure.with_projection(&projection))?;
+                .map_err(|cause| setup_failure(cause).with_projection(&projection))?;
             let mut selected_model = binding.record.info().clone();
             let provider = provider
                 .prepare_model_call(&mut selected_model, &mut auth)
-                .map_err(|error| {
-                    CallFailure::from_partial(None, error).with_projection(&projection)
-                })?
+                .map_err(|cause| setup_failure(cause).with_projection(&projection))?
                 .unwrap_or(provider);
             (
                 drive_resolved_call_registered(
@@ -5374,14 +5431,14 @@ async fn materialize_chat_call(
 async fn resolve_binding_auth(
     plan: &AuthPlan,
     cancel: &CancellationToken,
-) -> Result<ResolvedAuth, CallFailure> {
+) -> Result<ResolvedAuth, ProviderError> {
     match plan {
         AuthPlan::Injected(auth) => Ok((**auth).clone()),
         AuthPlan::Route {
             provider_id,
             resolver: None,
             ..
-        } => Err(setup_failure(format!(
+        } => Err(setup_config_error(format!(
             "provider '{provider_id}' has no dispatchable route"
         ))),
         AuthPlan::Route {
@@ -5390,7 +5447,6 @@ async fn resolve_binding_auth(
             ..
         } => resolve_route_auth(resolver, source.clone(), cancel)
             .await
-            .map_err(models_error_cause)
-            .map_err(|cause| CallFailure::from_partial(None, cause)),
+            .map_err(models_error_cause),
     }
 }

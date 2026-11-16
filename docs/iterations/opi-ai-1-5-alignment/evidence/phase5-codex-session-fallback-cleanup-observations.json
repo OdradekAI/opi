@@ -1,0 +1,3236 @@
+{
+  "schema": 1,
+  "case": "codex-session-fallback-cleanup",
+  "observedOn": "2026-11-13",
+  "baseCommit": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "pi": {
+    "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "comparedRevision": "71023aec1546d6d677a65669c5665c0927ce0dd0",
+    "snapshot": "C:/Temp/opi-ai-frozen-lock-20261111",
+    "originalLockSha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a",
+    "runtime": "Node 24.13.0 / Windows x64 native WebSocket",
+    "loopbackServer": "ws@8.21.0 and node:http",
+    "publicEntries": [
+      "packages/ai/dist/index.js",
+      "packages/ai/dist/providers/openai-codex.js"
+    ],
+    "sourcePaths": [
+      "packages/ai/src/index.ts",
+      "packages/ai/src/session-resources.ts",
+      "packages/ai/src/api/openai-codex-responses.ts",
+      "packages/coding-agent/src/core/agent-session-runtime.ts",
+      "packages/coding-agent/src/core/agent-session.ts",
+      "packages/coding-agent/src/core/session-manager.ts",
+      "packages/coding-agent/src/core/sdk.ts"
+    ]
+  },
+  "inputs": {
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_session_fallback_cleanup.mjs": "f343d964ae012dbc9ce0dd5210036fed2846f87b030558cc5bb7ef80fb1beec5",
+    "crates/opi-ai/tests/data/codex-websocket-idle-timeout.json": "d10dc187449f740169ceeb2a6bdac4ade70e71facfbd4450f7a2184888ae7655",
+    "crates/opi-ai/tests/openai_codex_responses.rs": "455cca540e3030f1f7fa2f697cfeaf7c25c56fd1f9968a4106ccd48a5b729702",
+    "crates/opi-ai/tests/openai_codex_responses/session_fallback_cleanup.rs": "0bd37fa9f68e39c6c6d13b48c07284a6355b2132793386e8db7d3cbc47316744",
+    "C:/Temp/opi-ai-frozen-lock-20261111/packages/ai/dist/index.js": "5c1a13b16ba62ce20c60e76a79721ddebfd50801f6932141d7923ac468f63473",
+    "C:/Temp/opi-ai-frozen-lock-20261111/packages/ai/dist/providers/openai-codex.js": "44087142be22adfd09cf1a87edbbdb74ce155b5fd34e70fa4666f3a9f8a9a680",
+    "C:/Temp/opi-ai-frozen-lock-20261111/packages/ai/dist/api/openai-codex-responses.js": "13d02ecedbe4594b7c73bc3b9180e04f2a5e68e42aedfba9a366d5c082be8d57",
+    "C:/Temp/opi-ai-frozen-lock-20261111/node_modules/ws/wrapper.mjs": "fe154662301fd558f935f9c217fccbe7a7dac02ff39e648a000589403ff27c7f"
+  },
+  "execution": {
+    "pi": {
+      "command": [
+        "node",
+        "--conditions=source",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_codex_session_fallback_cleanup.mjs",
+        "--snapshot",
+        "C:/Temp/opi-ai-frozen-lock-20261111"
+      ],
+      "identicalRuns": 3,
+      "stdoutSha256": "f2d6a1ccff6437f947ec0dbe6983cc59e9dc49513435f1e5ac63354364686209",
+      "missingSnapshotExitCode": 2,
+      "missingSnapshotStderr": "node --conditions=source observe_codex_session_fallback_cleanup.mjs --snapshot <path>"
+    },
+    "rust": {
+      "toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13) / x86_64-pc-windows-msvc",
+      "test": "session_fallback_cleanup::public_cleanup_reopens_websocket_for_selected_sticky_sessions",
+      "targetCounts": {
+        "openai_codex_responses": 87,
+        "codex_native_options": 21,
+        "resource_cleanup": 16,
+        "ws_upgrade": 16
+      },
+      "defaultAndNoDefaultFeaturesRowsEqual": true,
+      "defaultFeaturesExecutable": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe",
+        "sha256": "54fa3014e514f0dcd9d285a071e3088316f26684031de7331fd908265c01a2fb"
+      },
+      "noDefaultFeaturesExecutable": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-dffced032df7d70b.exe",
+        "sha256": "21cf0eab5b40599bd5135c5ff84beda2b967488cc5382535e1651bb1b4a4422a"
+      }
+    }
+  },
+  "lifecycle": {
+    "materials": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-materials.json",
+    "materialsSha256": "028c440eb5b3364a900bafec8803f9580d6970327b3004d90740f2f6a93d3c40",
+    "replay": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-differential.json",
+    "replaySha256": "cbcd05e1a9fe5431d75af8db0c18b8d22a990ab9a4383de93f18b0cc1725dcaf",
+    "reused": true,
+    "materialDrift": [],
+    "materialBlockers": [],
+    "cases": 24,
+    "traceReceipts": 96,
+    "deferredDifferences": 10,
+    "verdict": "DIFFERENCES_REQUIRE_DECISION",
+    "strictAlignment": false
+  },
+  "comparison": {
+    "pairedCases": 6,
+    "pairedCalls": 48,
+    "postCleanupRouteDifferences": 9,
+    "callsWithSameWireAndOutcomeAfterFailureNormalization": 39,
+    "disposition": "Preserve Opi's documented cleanup and fresh same-session WebSocket attempt. Record the route, result and cleanup API differences.",
+    "strictAlignment": false,
+    "realProviderCalls": 0
+  },
+  "cases": [
+    {
+      "scope": "target",
+      "transport": "auto",
+      "selector": "cleanup-target-auto-target",
+      "changedAfterCleanup": [
+        {
+          "step": "targetAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        }
+      ],
+      "nativeFailureDifference": {
+        "step": "otherSeed",
+        "fields": [
+          "totalTokens",
+          "error"
+        ]
+      },
+      "rust": {
+        "scope": "target",
+        "transport": "auto",
+        "selector": "cleanup-target-auto-target",
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": null,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "stream error: WebSocket idle timeout after stream start"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-control",
+                  "input": [
+                    "second turn"
+                  ],
+                  "previous": "resp_next_ws"
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-target",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 4,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          }
+        ],
+        "cleanup": {
+          "cancelledGenerations": 0,
+          "closedConnections": 0,
+          "clearedFallbackSessions": 1,
+          "unconfirmedEffects": []
+        }
+      },
+      "pi": {
+        "scope": "target",
+        "transport": "auto",
+        "selector": "cleanup-target-auto-target",
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": 0,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "WebSocket idle timeout after 200ms"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-auto-control",
+                  "input": [
+                    "second turn"
+                  ],
+                  "previous": "resp_next_ws"
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 3,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          }
+        ],
+        "cleanup": null
+      }
+    },
+    {
+      "scope": "target",
+      "transport": "websocket-cached",
+      "selector": "cleanup-target-websocket-cached-target",
+      "changedAfterCleanup": [
+        {
+          "step": "targetAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        }
+      ],
+      "nativeFailureDifference": {
+        "step": "otherSeed",
+        "fields": [
+          "totalTokens",
+          "error"
+        ]
+      },
+      "rust": {
+        "scope": "target",
+        "transport": "websocket-cached",
+        "selector": "cleanup-target-websocket-cached-target",
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": null,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "stream error: WebSocket idle timeout after stream start"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-control",
+                  "input": [
+                    "second turn"
+                  ],
+                  "previous": "resp_next_ws"
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-target",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 4,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          }
+        ],
+        "cleanup": {
+          "cancelledGenerations": 0,
+          "closedConnections": 0,
+          "clearedFallbackSessions": 1,
+          "unconfirmedEffects": []
+        }
+      },
+      "pi": {
+        "scope": "target",
+        "transport": "websocket-cached",
+        "selector": "cleanup-target-websocket-cached-target",
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": 0,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "WebSocket idle timeout after 200ms"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-cached-control",
+                  "input": [
+                    "second turn"
+                  ],
+                  "previous": "resp_next_ws"
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 3,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          }
+        ],
+        "cleanup": null
+      }
+    },
+    {
+      "scope": "target",
+      "transport": "websocket",
+      "selector": "cleanup-target-websocket-target",
+      "changedAfterCleanup": [
+        {
+          "step": "targetAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        }
+      ],
+      "nativeFailureDifference": {
+        "step": "otherSeed",
+        "fields": [
+          "totalTokens",
+          "error"
+        ]
+      },
+      "rust": {
+        "scope": "target",
+        "transport": "websocket",
+        "selector": "cleanup-target-websocket-target",
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": null,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "stream error: WebSocket idle timeout after stream start"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-target",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 4,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          }
+        ],
+        "cleanup": {
+          "cancelledGenerations": 0,
+          "closedConnections": 0,
+          "clearedFallbackSessions": 1,
+          "unconfirmedEffects": []
+        }
+      },
+      "pi": {
+        "scope": "target",
+        "transport": "websocket",
+        "selector": "cleanup-target-websocket-target",
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": 0,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "WebSocket idle timeout after 200ms"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-target-websocket-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-target-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 3,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          }
+        ],
+        "cleanup": null
+      }
+    },
+    {
+      "scope": "global",
+      "transport": "auto",
+      "selector": null,
+      "changedAfterCleanup": [
+        {
+          "step": "targetAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        },
+        {
+          "step": "otherAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        }
+      ],
+      "nativeFailureDifference": {
+        "step": "otherSeed",
+        "fields": [
+          "totalTokens",
+          "error"
+        ]
+      },
+      "rust": {
+        "scope": "global",
+        "transport": "auto",
+        "selector": null,
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": null,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "stream error: WebSocket idle timeout after stream start"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [
+              {
+                "connection": 5,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-target",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [
+              {
+                "connection": 6,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-other",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 6,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 3,
+            "code": 1000,
+            "reason": ""
+          }
+        ],
+        "cleanup": {
+          "cancelledGenerations": 0,
+          "closedConnections": 1,
+          "clearedFallbackSessions": 2,
+          "unconfirmedEffects": []
+        }
+      },
+      "pi": {
+        "scope": "global",
+        "transport": "auto",
+        "selector": null,
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": 0,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "WebSocket idle timeout after 200ms"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-global-auto-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-auto-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 4,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 3,
+            "code": 1000,
+            "reason": "debug_close"
+          }
+        ],
+        "cleanup": null
+      }
+    },
+    {
+      "scope": "global",
+      "transport": "websocket-cached",
+      "selector": null,
+      "changedAfterCleanup": [
+        {
+          "step": "targetAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        },
+        {
+          "step": "otherAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        }
+      ],
+      "nativeFailureDifference": {
+        "step": "otherSeed",
+        "fields": [
+          "totalTokens",
+          "error"
+        ]
+      },
+      "rust": {
+        "scope": "global",
+        "transport": "websocket-cached",
+        "selector": null,
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": null,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "stream error: WebSocket idle timeout after stream start"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [
+              {
+                "connection": 5,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-target",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [
+              {
+                "connection": 6,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-other",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 6,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 3,
+            "code": 1000,
+            "reason": ""
+          }
+        ],
+        "cleanup": {
+          "cancelledGenerations": 0,
+          "closedConnections": 1,
+          "clearedFallbackSessions": 2,
+          "unconfirmedEffects": []
+        }
+      },
+      "pi": {
+        "scope": "global",
+        "transport": "websocket-cached",
+        "selector": null,
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": 0,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "WebSocket idle timeout after 200ms"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-cached-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-cached-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 4,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 3,
+            "code": 1000,
+            "reason": "debug_close"
+          }
+        ],
+        "cleanup": null
+      }
+    },
+    {
+      "scope": "global",
+      "transport": "websocket",
+      "selector": null,
+      "changedAfterCleanup": [
+        {
+          "step": "targetAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        },
+        {
+          "step": "otherAfter",
+          "fields": [
+            "creates",
+            "posts",
+            "responseId",
+            "totalTokens"
+          ]
+        }
+      ],
+      "nativeFailureDifference": {
+        "step": "otherSeed",
+        "fields": [
+          "totalTokens",
+          "error"
+        ]
+      },
+      "rust": {
+        "scope": "global",
+        "transport": "websocket",
+        "selector": null,
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": null,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "stream error: WebSocket idle timeout after stream start"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [
+              {
+                "connection": 5,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-target",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [
+              {
+                "connection": 6,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-other",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 6,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 3,
+            "code": 1000,
+            "reason": ""
+          }
+        ],
+        "cleanup": {
+          "cancelledGenerations": 0,
+          "closedConnections": 1,
+          "clearedFallbackSessions": 2,
+          "unconfirmedEffects": []
+        }
+      },
+      "pi": {
+        "scope": "global",
+        "transport": "websocket",
+        "selector": null,
+        "calls": [
+          {
+            "step": "targetSeed",
+            "creates": [
+              {
+                "connection": 1,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-target",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-target",
+                "input": [
+                  "hello"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSeed",
+            "creates": [
+              {
+                "connection": 2,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-other",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "error",
+            "responseId": "resp_partial",
+            "text": "partial answer",
+            "totalTokens": 0,
+            "terminal": [
+              "error"
+            ],
+            "raw": [
+              "response.created",
+              "response.output_item.added",
+              "response.content_part.added",
+              "response.output_text.delta"
+            ],
+            "error": "WebSocket idle timeout after 200ms"
+          },
+          {
+            "step": "targetSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherSticky",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlWarm",
+            "creates": [
+              {
+                "connection": 3,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-control",
+                  "input": [
+                    "hello"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "controlAfter",
+            "creates": [
+              {
+                "connection": 4,
+                "body": {
+                  "cacheKey": "cleanup-global-websocket-control",
+                  "input": [
+                    "hello",
+                    "second turn"
+                  ],
+                  "previous": null
+                }
+              }
+            ],
+            "posts": [],
+            "stop": "stop",
+            "responseId": "resp_next_ws",
+            "text": "",
+            "totalTokens": 7,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "targetAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-target",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          },
+          {
+            "step": "otherAfter",
+            "creates": [],
+            "posts": [
+              {
+                "cacheKey": "cleanup-global-websocket-other",
+                "input": [
+                  "hello",
+                  "second turn"
+                ],
+                "previous": null
+              }
+            ],
+            "stop": "stop",
+            "responseId": "resp_sse",
+            "text": "",
+            "totalTokens": 3,
+            "terminal": [
+              "done"
+            ],
+            "raw": [
+              "response.done"
+            ],
+            "error": null
+          }
+        ],
+        "connections": 4,
+        "closes": [
+          {
+            "connection": 1,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 2,
+            "code": 1000,
+            "reason": "idle_timeout"
+          },
+          {
+            "connection": 3,
+            "code": 1000,
+            "reason": "debug_close"
+          }
+        ],
+        "cleanup": null
+      }
+    }
+  ]
+}

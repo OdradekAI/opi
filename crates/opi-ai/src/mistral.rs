@@ -276,6 +276,7 @@ impl std::fmt::Debug for MistralConversationsProvider {
 }
 
 impl MistralConversationsProvider {
+    #[cfg(feature = "builtins")]
     pub(crate) fn with_client(mut self, client: std::sync::Arc<crate::http::HttpClient>) -> Self {
         self.client = client;
         self
@@ -1198,9 +1199,20 @@ impl MistralSseMapper {
         if let Some(reason) = choice.get("finish_reason").and_then(|r| r.as_str()) {
             self.message.raw_stop_reason = Some(reason.to_owned());
             match reason {
-                "stop" => self.stop_reason = Some(StopReason::Stop),
-                "length" | "model_length" => self.stop_reason = Some(StopReason::Length),
-                "tool_calls" => self.stop_reason = Some(StopReason::ToolUse),
+                "stop" => {
+                    self.stop_reason = Some(StopReason::Stop);
+                    // A later valid terminal replaces an earlier provider
+                    // error, matching Pi's last-consumed finish snapshot.
+                    self.stop_error = None;
+                }
+                "length" | "model_length" => {
+                    self.stop_reason = Some(StopReason::Length);
+                    self.stop_error = None;
+                }
+                "tool_calls" => {
+                    self.stop_reason = Some(StopReason::ToolUse);
+                    self.stop_error = None;
+                }
                 "error" => {
                     // Preserve the provider's in-stream failure while the
                     // producer snapshot keeps successful acquisition sealed.

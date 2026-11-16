@@ -1,0 +1,4704 @@
+{
+  "family": "provider-protocol-capability-matrix",
+  "scope": "all unordered provider-owner pairs plus two high-order provider-owner unions",
+  "runner_sha256": "707ab253044f91b29aeef7070a7bfadf1356d9d790b750c880adf52b4d4e43e7",
+  "provider_count": 11,
+  "pair_count": 55,
+  "high_order_count": 2,
+  "profiles_expected": 57,
+  "native": {
+    "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+    "profiles": [
+      {
+        "id": "provider-anthropic+provider-azure-openai",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-azure-openai"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-azure-openai",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_azure_openai_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-bedrock",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-bedrock"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-anthropic",
+          "provider-bedrock",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_bedrock_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-gemini",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-gemini"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-gemini",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_gemini_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-mistral",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-mistral"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_mistral_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-openai-chat",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-openai-chat"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_openai_chat_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-openai-codex-responses",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-openai-codex-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_openai_codex_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-anthropic",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-anthropic+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-anthropic",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-anthropic",
+          "provider-gemini",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-bedrock",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-bedrock"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-azure-openai",
+          "provider-bedrock",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_bedrock_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-gemini",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-gemini"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-gemini",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_gemini_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-mistral",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-mistral"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_mistral_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-openai-chat",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-openai-chat"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_openai_chat_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-openai-codex-responses",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-openai-codex-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_openai_codex_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-azure-openai",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-azure-openai+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-azure-openai",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-azure-openai",
+          "provider-gemini",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_azure_openai_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-gemini",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-gemini"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-gemini",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_gemini_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-mistral",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-mistral"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_mistral_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-openai-chat",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-openai-chat"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_openai_chat_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-openai-codex-responses",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-openai-codex-responses"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_openai_codex_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-bedrock+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-bedrock",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-bedrock",
+          "provider-gemini",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_bedrock_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-mistral",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-mistral"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-gemini",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_mistral_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-openai-chat",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-openai-chat"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_openai_chat_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-openai-codex-responses",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-openai-codex-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_openai_codex_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-gemini",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-gemini+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-gemini",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_gemini_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-mistral+provider-openai-chat",
+        "kind": "pair",
+        "features": [
+          "provider-mistral",
+          "provider-openai-chat"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_mistral_profile",
+          "provider_openai_chat_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-mistral+provider-openai-codex-responses",
+        "kind": "pair",
+        "features": [
+          "provider-mistral",
+          "provider-openai-codex-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_mistral_profile",
+          "provider_openai_codex_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-mistral+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-mistral",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_mistral_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-mistral+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-mistral",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_mistral_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-mistral+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-mistral",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_mistral_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-mistral+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-mistral",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_mistral_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-chat+provider-openai-codex-responses",
+        "kind": "pair",
+        "features": [
+          "provider-openai-chat",
+          "provider-openai-codex-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_chat_profile",
+          "provider_openai_codex_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-chat+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-openai-chat",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_chat_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-chat+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-openai-chat",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_chat_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-chat+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-openai-chat",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_chat_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-chat+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-openai-chat",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_chat_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-codex-responses+provider-openai-responses",
+        "kind": "pair",
+        "features": [
+          "provider-openai-codex-responses",
+          "provider-openai-responses"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-codex-responses",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_codex_responses_profile",
+          "provider_openai_responses_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-codex-responses+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-openai-codex-responses",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_codex_responses_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-codex-responses+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-openai-codex-responses",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_codex_responses_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-codex-responses+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-openai-codex-responses",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-codex-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_codex_responses_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-responses+provider-openrouter",
+        "kind": "pair",
+        "features": [
+          "provider-openai-responses",
+          "provider-openrouter"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_responses_profile",
+          "provider_openrouter_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-responses+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-openai-responses",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_responses_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openai-responses+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-openai-responses",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openai_responses_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openrouter+provider-pi-messages",
+        "kind": "pair",
+        "features": [
+          "provider-openrouter",
+          "provider-pi-messages"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openrouter_profile",
+          "provider_pi_messages_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-openrouter+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-openrouter",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_openrouter_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "provider-pi-messages+provider-vertex",
+        "kind": "pair",
+        "features": [
+          "provider-pi-messages",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-gemini",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_pi_messages_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "all-provider-owners",
+        "kind": "higher-order",
+        "features": [
+          "provider-anthropic",
+          "provider-azure-openai",
+          "provider-bedrock",
+          "provider-gemini",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses",
+          "provider-openrouter",
+          "provider-pi-messages",
+          "provider-vertex"
+        ],
+        "expected_feature_closure": [
+          "cloud-auth",
+          "http-transport",
+          "provider-anthropic",
+          "provider-azure-openai",
+          "provider-bedrock",
+          "provider-gemini",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "provider-vertex",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_azure_openai_profile",
+          "provider_bedrock_profile",
+          "provider_gemini_profile",
+          "provider_mistral_profile",
+          "provider_openai_chat_profile",
+          "provider_openai_codex_responses_profile",
+          "provider_openai_responses_profile",
+          "provider_openrouter_profile",
+          "provider_pi_messages_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "all-provider-owners-plus-support",
+        "kind": "higher-order",
+        "features": [
+          "provider-anthropic",
+          "provider-azure-openai",
+          "provider-bedrock",
+          "provider-gemini",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses",
+          "provider-openrouter",
+          "provider-pi-messages",
+          "provider-vertex",
+          "catalog-bundled",
+          "oauth-store",
+          "telemetry-tracing"
+        ],
+        "expected_feature_closure": [
+          "catalog-bundled",
+          "cloud-auth",
+          "http-transport",
+          "oauth-store",
+          "opi-telemetry/tracing",
+          "provider-anthropic",
+          "provider-azure-openai",
+          "provider-bedrock",
+          "provider-gemini",
+          "provider-mistral",
+          "provider-openai-chat",
+          "provider-openai-codex-responses",
+          "provider-openai-responses",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-pi-messages",
+          "provider-protocol-common",
+          "provider-vertex",
+          "telemetry-tracing",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "provider_anthropic_profile",
+          "provider_azure_openai_profile",
+          "provider_bedrock_profile",
+          "provider_gemini_profile",
+          "provider_mistral_profile",
+          "provider_openai_chat_profile",
+          "provider_openai_codex_responses_profile",
+          "provider_openai_responses_profile",
+          "provider_openrouter_profile",
+          "provider_pi_messages_profile",
+          "provider_vertex_profile"
+        ],
+        "verdict": "PASS"
+      }
+    ],
+    "steps": [
+      {
+        "name": "native-01-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-azure-openai"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 53.56,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-01-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-01-check.stderr",
+          "sha256": "6ec4e4feafc922ed4ffbcb160268ea569bcaba5c815084a845adac6248942583"
+        }
+      },
+      {
+        "name": "native-01-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-azure-openai",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_azure_openai_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 65.64,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-01-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-01-profile.stderr",
+          "sha256": "4fa01ada30bc66cd5aca4198d719907537fe4ff77310a44d0fcf827bfb4919ca"
+        }
+      },
+      {
+        "name": "native-02-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-bedrock"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 7.34,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-02-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-02-check.stderr",
+          "sha256": "fa74b2daff2b7e357e3dd43b05aadae41aa511c4e670b523b54ee5e2714719ba"
+        }
+      },
+      {
+        "name": "native-02-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-bedrock",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_bedrock_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 22.48,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-02-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-02-profile.stderr",
+          "sha256": "b71df33bb4a34f761afaa0582a6e7baf08ebdcd9c57f20287a271d70bec2a9aa"
+        }
+      },
+      {
+        "name": "native-03-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-gemini"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.92,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-03-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-03-check.stderr",
+          "sha256": "156cf2032982ac71d4243c67dce2a1f65a571a508375fbddc7a9ff7f0875b14c"
+        }
+      },
+      {
+        "name": "native-03-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-gemini",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_gemini_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.77,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-03-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-03-profile.stderr",
+          "sha256": "3b955f2fb120a47a0b82e1bb846318dc8cf54cee6eedc2325a550e7dcb9052b7"
+        }
+      },
+      {
+        "name": "native-04-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-mistral"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.28,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-04-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-04-check.stderr",
+          "sha256": "b369f1c7ecddbb577e076f42cb544c97b34425c9d8e509b95d88eb73295034d4"
+        }
+      },
+      {
+        "name": "native-04-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-mistral",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_mistral_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.64,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-04-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-04-profile.stderr",
+          "sha256": "8ab5a366d8913ab98c0d6003f27b0e3c9a60c7aeef583c7188ec5235d37ee254"
+        }
+      },
+      {
+        "name": "native-05-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openai-chat"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.14,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-05-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-05-check.stderr",
+          "sha256": "6db9def9d76fc703366b3b92fc6a28c33e35f3c307414c7224f8e407c7b33526"
+        }
+      },
+      {
+        "name": "native-05-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openai-chat",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 16.66,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-05-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-05-profile.stderr",
+          "sha256": "40d2ed2c670678a9865ec1aae4b670adb4e0d81a229a27dc9c84e381042dfe4a"
+        }
+      },
+      {
+        "name": "native-06-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openai-codex-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.42,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-06-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-06-check.stderr",
+          "sha256": "05044a264429307515e9d0d284aca81567b83d0c0a03f7574b2d4ffe47c89efe"
+        }
+      },
+      {
+        "name": "native-06-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openai-codex-responses",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.22,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-06-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-06-profile.stderr",
+          "sha256": "d017604df108d279562ca0716107c74c0ca06ac405b49ecbdc6d761b2b2595cf"
+        }
+      },
+      {
+        "name": "native-07-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.0,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-07-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-07-check.stderr",
+          "sha256": "98d8bb092f2802243f57cbfd356f7629b00ee8adca20bfb17a397d26f899fe7a"
+        }
+      },
+      {
+        "name": "native-07-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openai-responses",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.64,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-07-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-07-profile.stderr",
+          "sha256": "359f7949c9c5f2717fb4b8e18a2ca4ffa4317661d550fd0ea80c179d55efe8e4"
+        }
+      },
+      {
+        "name": "native-08-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.19,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-08-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-08-check.stderr",
+          "sha256": "d6c0538b316df5938de0243c2841ca8afb84a0862eb4b6ba02377d520925dd24"
+        }
+      },
+      {
+        "name": "native-08-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-openrouter",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 16.55,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-08-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-08-profile.stderr",
+          "sha256": "c3f47ea766e735d9f1eb9182ce98b93d583215522f8b4e381553c75929ffc491"
+        }
+      },
+      {
+        "name": "native-09-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.83,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-09-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-09-check.stderr",
+          "sha256": "f64214a932aef210d7087aa3d27dc4526af7ffb54e92ae6d4a6479ade0a11f0a"
+        }
+      },
+      {
+        "name": "native-09-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-pi-messages",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.77,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-09-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-09-profile.stderr",
+          "sha256": "84d17461db163909f79bfc68c0659051d7a4801751ecceedff3bfa32f75c1a8e"
+        }
+      },
+      {
+        "name": "native-10-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.05,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-10-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-10-check.stderr",
+          "sha256": "222983276b84506740ffaf67c968598a81f55d00530e6fdaa7bac76a3315acd1"
+        }
+      },
+      {
+        "name": "native-10-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-vertex",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.91,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-10-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-10-profile.stderr",
+          "sha256": "480dfca689fb62782b2b5f430f161ce5e48433104fe5ca79ad4f2bf6fa377b29"
+        }
+      },
+      {
+        "name": "native-11-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-bedrock"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.27,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-11-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-11-check.stderr",
+          "sha256": "6d95a583d64d31b9bcb1362c51791057ad46fc8d21f58f70222ef93d1f0dad69"
+        }
+      },
+      {
+        "name": "native-11-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-bedrock",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_bedrock_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 22.39,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-11-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-11-profile.stderr",
+          "sha256": "de7755f803601d1ff4b3c69f85b79c45bd4b1f0102c31c7adeceb8ce5e059e32"
+        }
+      },
+      {
+        "name": "native-12-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-gemini"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.3,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-12-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-12-check.stderr",
+          "sha256": "b369f1c7ecddbb577e076f42cb544c97b34425c9d8e509b95d88eb73295034d4"
+        }
+      },
+      {
+        "name": "native-12-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-gemini",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_gemini_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.97,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-12-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-12-profile.stderr",
+          "sha256": "ba66c78cfacc64268cdc269346d23349ae76bfc27c78f158fd048d98d98fe6e3"
+        }
+      },
+      {
+        "name": "native-13-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-mistral"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.22,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-13-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-13-check.stderr",
+          "sha256": "f9a4c26d585beaa90dcdd62a5821704b553a781bfc3bddb64fc278ff9209c2ad"
+        }
+      },
+      {
+        "name": "native-13-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-mistral",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_mistral_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.5,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-13-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-13-profile.stderr",
+          "sha256": "84a821febfae5fe389cb49c7e82b9a16e393325b6884ba4bbdeed71802112f7a"
+        }
+      },
+      {
+        "name": "native-14-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openai-chat"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.06,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-14-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-14-check.stderr",
+          "sha256": "0a74564b7f8414d70d73c06d28ca268a0617ab4734c6884698a7b0c487dd6ee9"
+        }
+      },
+      {
+        "name": "native-14-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openai-chat",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.67,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-14-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-14-profile.stderr",
+          "sha256": "37b14ee59673d28f14e856c113679baeacca3c3dd73963465630f468794f35f9"
+        }
+      },
+      {
+        "name": "native-15-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openai-codex-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.64,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-15-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-15-check.stderr",
+          "sha256": "d6610febf5873392f1a6f473c501c1ad2be61b32b269130d43967c84d8b347ce"
+        }
+      },
+      {
+        "name": "native-15-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openai-codex-responses",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.86,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-15-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-15-profile.stderr",
+          "sha256": "ec2a9e3726ce310bc8d6d9d7f2fea76767450570393e8304befa6d20667d7485"
+        }
+      },
+      {
+        "name": "native-16-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.23,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-16-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-16-check.stderr",
+          "sha256": "06fa81a6641bb2348d7793e40b0cb2cc3a56e2f9f83097e213c113ab5a1eeeb8"
+        }
+      },
+      {
+        "name": "native-16-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openai-responses",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.81,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-16-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-16-profile.stderr",
+          "sha256": "02e46ec11772c9ed6b0a6f4e067f0943168d84216029adb2b9a03f062cf92c6b"
+        }
+      },
+      {
+        "name": "native-17-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.02,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-17-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-17-check.stderr",
+          "sha256": "fe8a2f5e3335e4ffb283477a159188cc81806e3a2719eac8d32262bd989da670"
+        }
+      },
+      {
+        "name": "native-17-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-openrouter",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.42,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-17-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-17-profile.stderr",
+          "sha256": "1a550161a7f1d14e295a7b181e7ec50e20978efe4d5b0f1f38de7804f03c9447"
+        }
+      },
+      {
+        "name": "native-18-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.2,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-18-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-18-check.stderr",
+          "sha256": "f9a4c26d585beaa90dcdd62a5821704b553a781bfc3bddb64fc278ff9209c2ad"
+        }
+      },
+      {
+        "name": "native-18-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-pi-messages",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.61,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-18-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-18-profile.stderr",
+          "sha256": "19b830aa6b86ebb563e1f046dfeff8b33a2ed10ac3c5621a7570be1b39d35b54"
+        }
+      },
+      {
+        "name": "native-19-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.5,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-19-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-19-check.stderr",
+          "sha256": "ec0b2a1b9d095035e928a165fa7bfd98cfe8888873cf43acb1d3dbdd11bfd1ba"
+        }
+      },
+      {
+        "name": "native-19-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-azure-openai,provider-vertex",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 23.06,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-19-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-19-profile.stderr",
+          "sha256": "fb7ec6a590f9f028f45e7f2f7085c448c718666e54b6a8357ae7d4a337b51652"
+        }
+      },
+      {
+        "name": "native-20-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-gemini"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.75,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-20-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-20-check.stderr",
+          "sha256": "e6ea03f4bba4a2f96755351fe0a11e878a63eff861063e5a432989df19adeec0"
+        }
+      },
+      {
+        "name": "native-20-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-gemini",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_gemini_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.0,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-20-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-20-profile.stderr",
+          "sha256": "07be095d260be4c946af081239ac35254aafd7a9b66fb79ce1499aaf318370a1"
+        }
+      },
+      {
+        "name": "native-21-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-mistral"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.99,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-21-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-21-check.stderr",
+          "sha256": "2b8d6846701912331e9cbd2bb389cc1c48d24f82a4222635d1adb42c1900e5a6"
+        }
+      },
+      {
+        "name": "native-21-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-mistral",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_mistral_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.92,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-21-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-21-profile.stderr",
+          "sha256": "428a3bb5707c8eafe4a250561ac866316c87d75b0c24fd4e2ba950017f3de484"
+        }
+      },
+      {
+        "name": "native-22-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openai-chat"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.84,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-22-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-22-check.stderr",
+          "sha256": "971379ec5bf989448182cf9205cf12d30121cf7aea48c31e74c4b261baf021c2"
+        }
+      },
+      {
+        "name": "native-22-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openai-chat",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.86,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-22-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-22-profile.stderr",
+          "sha256": "3d268e0047632eaf89c2012cb05fd167c3cbf87229170aab89de15b429a8a296"
+        }
+      },
+      {
+        "name": "native-23-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openai-codex-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.17,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-23-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-23-check.stderr",
+          "sha256": "4d01c38bd4417b8d30c55224abeeccb2c322c938675fff3156147674cae77a5b"
+        }
+      },
+      {
+        "name": "native-23-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openai-codex-responses",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.75,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-23-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-23-profile.stderr",
+          "sha256": "acc1438cf7accfeffb668dda50fd63983e35e498cb4172f7832c1b83fe54fb16"
+        }
+      },
+      {
+        "name": "native-24-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.72,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-24-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-24-check.stderr",
+          "sha256": "b28f219be5995631a95cd7ef1c91228474203b9e0fb9ccc9db17f1e130aee4ef"
+        }
+      },
+      {
+        "name": "native-24-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openai-responses",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.38,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-24-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-24-profile.stderr",
+          "sha256": "5cdcd882c15baaa851d66cc891e4d55c536d6f18e405ebe6ebf3135242c9c008"
+        }
+      },
+      {
+        "name": "native-25-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.89,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-25-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-25-check.stderr",
+          "sha256": "8a83d3ce3e8f6ebfed940dd2ea973b743384144020858984d4e5b39b74192243"
+        }
+      },
+      {
+        "name": "native-25-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-openrouter",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.95,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-25-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-25-profile.stderr",
+          "sha256": "b7e5c609174de4c632d6a394dd1ee582c31abb25c2b0b782c396afad877fcd0d"
+        }
+      },
+      {
+        "name": "native-26-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.55,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-26-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-26-check.stderr",
+          "sha256": "4ffcdbb3cbb98b492ac01885150198b1b93e3e95cc9d555b819515666baff1cc"
+        }
+      },
+      {
+        "name": "native-26-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-pi-messages",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.31,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-26-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-26-profile.stderr",
+          "sha256": "58363d8c902883c92634f3bd49bd58964bc2533951fa45f6cbe54c179450829a"
+        }
+      },
+      {
+        "name": "native-27-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.73,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-27-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-27-check.stderr",
+          "sha256": "cad20357b293fd79c18dee90dac1e5e6a988e50b689665b4016174298997ab80"
+        }
+      },
+      {
+        "name": "native-27-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-bedrock,provider-vertex",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.47,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-27-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-27-profile.stderr",
+          "sha256": "60f4aa9b6abc669e20aa2aa0c97d2e4f0adf90ab1e245386bed26f4ef24bbccc"
+        }
+      },
+      {
+        "name": "native-28-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-mistral"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.42,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-28-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-28-check.stderr",
+          "sha256": "a6d0e7cbaf3e3fee146a127fc9d6cdb7ce5eae7f5808509f6ab12a8e7a75b5f0"
+        }
+      },
+      {
+        "name": "native-28-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-mistral",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_mistral_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.73,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-28-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-28-profile.stderr",
+          "sha256": "3a2a449ce7ad5b57c1f44a276c3622a268f7d1aeec66d56453218df3b3e5edbb"
+        }
+      },
+      {
+        "name": "native-29-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openai-chat"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.02,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-29-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-29-check.stderr",
+          "sha256": "fe8a2f5e3335e4ffb283477a159188cc81806e3a2719eac8d32262bd989da670"
+        }
+      },
+      {
+        "name": "native-29-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openai-chat",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.55,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-29-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-29-profile.stderr",
+          "sha256": "01e0c060abe1a58f5ffe988f933600a8482b99e9f573b319cd2b943c18991ee5"
+        }
+      },
+      {
+        "name": "native-30-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openai-codex-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.36,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-30-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-30-check.stderr",
+          "sha256": "a86bbff3b488289e0cc8ffbd4c5996aea098b4e612ad86241d8a919fe1848ee7"
+        }
+      },
+      {
+        "name": "native-30-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openai-codex-responses",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.78,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-30-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-30-profile.stderr",
+          "sha256": "551af69101fd7b3451042fc122b50e361c26c9c72809d595acd3a52d618bc4dc"
+        }
+      },
+      {
+        "name": "native-31-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.91,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-31-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-31-check.stderr",
+          "sha256": "156cf2032982ac71d4243c67dce2a1f65a571a508375fbddc7a9ff7f0875b14c"
+        }
+      },
+      {
+        "name": "native-31-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openai-responses",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.19,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-31-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-31-profile.stderr",
+          "sha256": "073cb3ee02ecca9ce8048d17aa3f10b25ac0d8e7115815fc23d18c22459309c9"
+        }
+      },
+      {
+        "name": "native-32-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.08,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-32-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-32-check.stderr",
+          "sha256": "14dfc9a6136ebac94eb53df0cec1816fa07578144855cb3c9e2d4fb4aac36685"
+        }
+      },
+      {
+        "name": "native-32-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-openrouter",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.19,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-32-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-32-profile.stderr",
+          "sha256": "125508048107670f21dc00203e1a8518d8f394d5cf82ac06abe890703742e8ab"
+        }
+      },
+      {
+        "name": "native-33-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.72,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-33-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-33-check.stderr",
+          "sha256": "98a63ec6e93069584abb12db273c554aa41692c9515ec029b2fb87e5ff0e51cc"
+        }
+      },
+      {
+        "name": "native-33-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-pi-messages",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.58,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-33-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-33-profile.stderr",
+          "sha256": "2e196feb2fffa55094c9c1cd3fd300946dc27709af9e18f40426bbc8dd517a69"
+        }
+      },
+      {
+        "name": "native-34-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.56,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-34-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-34-check.stderr",
+          "sha256": "0505376cd735e7e0cbd7d8144465d4549fde2d880d090284b2bbff23a3cbaf33"
+        }
+      },
+      {
+        "name": "native-34-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-gemini,provider-vertex",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.76,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-34-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-34-profile.stderr",
+          "sha256": "ea4316b7dd057df1b3d7f9d83613b477dc55a61f47e1a0b50c00ffe5079d4f55"
+        }
+      },
+      {
+        "name": "native-35-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openai-chat"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.99,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-35-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-35-check.stderr",
+          "sha256": "98d8bb092f2802243f57cbfd356f7629b00ee8adca20bfb17a397d26f899fe7a"
+        }
+      },
+      {
+        "name": "native-35-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openai-chat",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.56,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-35-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-35-profile.stderr",
+          "sha256": "c162663b2d29ed7f76aa421cfb97b3f0502a3723bbc66809a312f8fd5deb5273"
+        }
+      },
+      {
+        "name": "native-36-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openai-codex-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.34,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-36-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-36-check.stderr",
+          "sha256": "a86bbff3b488289e0cc8ffbd4c5996aea098b4e612ad86241d8a919fe1848ee7"
+        }
+      },
+      {
+        "name": "native-36-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openai-codex-responses",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.0,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-36-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-36-profile.stderr",
+          "sha256": "72d5c1d97664e5d87034c4cc3341278730557f756b346d5750076b6dd9f451b1"
+        }
+      },
+      {
+        "name": "native-37-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.05,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-37-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-37-check.stderr",
+          "sha256": "868ad1776364496b720ba7c213c2cf496d62d98da377ff018112b40e09384076"
+        }
+      },
+      {
+        "name": "native-37-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openai-responses",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.25,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-37-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-37-profile.stderr",
+          "sha256": "4214927d318a7d19883385ecaa3daf413270b6e633bfe8428a6e39890337c277"
+        }
+      },
+      {
+        "name": "native-38-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.91,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-38-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-38-check.stderr",
+          "sha256": "156cf2032982ac71d4243c67dce2a1f65a571a508375fbddc7a9ff7f0875b14c"
+        }
+      },
+      {
+        "name": "native-38-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-openrouter",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.69,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-38-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-38-profile.stderr",
+          "sha256": "d0e811c50eac701c58b26093f857ab00c7e3f9b6024c440c09f83e993b326556"
+        }
+      },
+      {
+        "name": "native-39-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.02,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-39-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-39-check.stderr",
+          "sha256": "fe8a2f5e3335e4ffb283477a159188cc81806e3a2719eac8d32262bd989da670"
+        }
+      },
+      {
+        "name": "native-39-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-pi-messages",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.42,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-39-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-39-profile.stderr",
+          "sha256": "3e9c9f702b2226818950b13df9c88db942ba63d1846feb13389ad09fcb38b608"
+        }
+      },
+      {
+        "name": "native-40-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.16,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-40-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-40-check.stderr",
+          "sha256": "68348f346d65c737be43ce879c14fa3894af554eef2c1de1f9e37a7b41c0de4e"
+        }
+      },
+      {
+        "name": "native-40-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-mistral,provider-vertex",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 21.45,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-40-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-40-profile.stderr",
+          "sha256": "b26bc1daeaeeed3315ea9e6d42bbc6bdf478889b9d79d18fa15d5585debc5534"
+        }
+      },
+      {
+        "name": "native-41-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-openai-codex-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.25,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-41-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-41-check.stderr",
+          "sha256": "c2405c4c4f24f6054d105760b09c83cdd27ef6651aa36f541b67c61886748f41"
+        }
+      },
+      {
+        "name": "native-41-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-openai-codex-responses",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 16.92,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-41-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-41-profile.stderr",
+          "sha256": "480fd3140846ce23529757fed2b2a1a8b3a3da30135120c43853ee6c94c6064f"
+        }
+      },
+      {
+        "name": "native-42-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.94,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-42-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-42-check.stderr",
+          "sha256": "c956a7899c390d0b2f09edd50191c4654e08d123251ff2a2ea238ce95b5d269b"
+        }
+      },
+      {
+        "name": "native-42-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-openai-responses",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.09,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-42-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-42-profile.stderr",
+          "sha256": "506be114e7ac1caa3d389fd2f2276a4e544e377df88bec8d88b683e86f3fc1c1"
+        }
+      },
+      {
+        "name": "native-43-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.84,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-43-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-43-check.stderr",
+          "sha256": "920ab1088fd5fd20479f21b70bd3ffc70431f207638c691f487d7fc162861d82"
+        }
+      },
+      {
+        "name": "native-43-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-openrouter",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 16.08,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-43-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-43-profile.stderr",
+          "sha256": "1c157b02d568e11ca55976fd619979f751a5c11b0a4243cd1493e4adc7b4b4af"
+        }
+      },
+      {
+        "name": "native-44-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.91,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-44-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-44-check.stderr",
+          "sha256": "c956a7899c390d0b2f09edd50191c4654e08d123251ff2a2ea238ce95b5d269b"
+        }
+      },
+      {
+        "name": "native-44-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-pi-messages",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.01,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-44-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-44-profile.stderr",
+          "sha256": "beee1987e70e971af6e74f66a23f203257cc9376544d5c0ea7d8f8e991ab4298"
+        }
+      },
+      {
+        "name": "native-45-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.0,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-45-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-45-check.stderr",
+          "sha256": "1758cbb6e0ee608f9fa3d0e35603076d3ceea405c7902cd916cbfcd17e154677"
+        }
+      },
+      {
+        "name": "native-45-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-chat,provider-vertex",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 21.11,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-45-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-45-profile.stderr",
+          "sha256": "aa9e648ee893400ea055e2ef532fff56687b2481e34f8e40a3d4dff696b16b07"
+        }
+      },
+      {
+        "name": "native-46-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-openai-responses"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.08,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-46-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-46-check.stderr",
+          "sha256": "0a74564b7f8414d70d73c06d28ca268a0617ab4734c6884698a7b0c487dd6ee9"
+        }
+      },
+      {
+        "name": "native-46-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-openai-responses",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.59,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-46-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-46-profile.stderr",
+          "sha256": "3f936e11e5aef9779adf870b133390a09b8017b7e800de1442c4d617d2a9348c"
+        }
+      },
+      {
+        "name": "native-47-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.28,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-47-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-47-check.stderr",
+          "sha256": "a5683a3c9a16d3341cc3b475c004e639369c882b5e7d57c707e1d0a86878f322"
+        }
+      },
+      {
+        "name": "native-47-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-openrouter",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.72,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-47-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-47-profile.stderr",
+          "sha256": "8ed38f966a1957892fb218e60f7e4a08a96dc3027cd4f29da33d563bc4546ea6"
+        }
+      },
+      {
+        "name": "native-48-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.12,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-48-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-48-check.stderr",
+          "sha256": "85a536436ec3d53be8d44bb447feb9704d2e067dd63f194d084bcb05d7d66188"
+        }
+      },
+      {
+        "name": "native-48-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-pi-messages",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.58,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-48-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-48-profile.stderr",
+          "sha256": "380ef8e30b91d62296d204abede5a2310dcb36930d594b13b4bd2c68f60b15e0"
+        }
+      },
+      {
+        "name": "native-49-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.2,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-49-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-49-check.stderr",
+          "sha256": "18b9de8e039a90b853cce8dc18c3a40b2ce324c0bd8cb187de2f80d780b0f4e9"
+        }
+      },
+      {
+        "name": "native-49-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-codex-responses,provider-vertex",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 21.89,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-49-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-49-profile.stderr",
+          "sha256": "572da4b7105f636a395cf059c8b98e0739d8abe26d6104fcb8839d32ea07869c"
+        }
+      },
+      {
+        "name": "native-50-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses,provider-openrouter"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.94,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-50-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-50-check.stderr",
+          "sha256": "f52e49b410d465c2f7ec9bc5db3a62643862372960e2b21e647ebb55a3047cfb"
+        }
+      },
+      {
+        "name": "native-50-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses,provider-openrouter",
+          "--test",
+          "provider_openai_responses_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.61,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-50-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-50-profile.stderr",
+          "sha256": "55dcb01a3df5834c98964d7f417f60ea0dd20f5944b16b4349e2645cee621cbb"
+        }
+      },
+      {
+        "name": "native-51-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.77,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-51-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-51-check.stderr",
+          "sha256": "d30b880b9187804b97722b0e9b29a78c813066383f73052d560470a79a5df58f"
+        }
+      },
+      {
+        "name": "native-51-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses,provider-pi-messages",
+          "--test",
+          "provider_openai_responses_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 17.91,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-51-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-51-profile.stderr",
+          "sha256": "bd0acc5078c9ad5f4566c2e5018481dd9a0a5c36382a471a469eceb4ec213f49"
+        }
+      },
+      {
+        "name": "native-52-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.8,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-52-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-52-check.stderr",
+          "sha256": "d6c0330ca3dc53bab897ccbd2f938c7ea06180e20f665316ab32f4654bc5d4b0"
+        }
+      },
+      {
+        "name": "native-52-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses,provider-vertex",
+          "--test",
+          "provider_openai_responses_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.5,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-52-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-52-profile.stderr",
+          "sha256": "24484eb449d3420d62fd0e32f27cad9f5a333ffde2c9f07e0788f14848e68c1d"
+        }
+      },
+      {
+        "name": "native-53-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openrouter,provider-pi-messages"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.89,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-53-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-53-check.stderr",
+          "sha256": "c956a7899c390d0b2f09edd50191c4654e08d123251ff2a2ea238ce95b5d269b"
+        }
+      },
+      {
+        "name": "native-53-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openrouter,provider-pi-messages",
+          "--test",
+          "provider_openrouter_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.31,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-53-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-53-profile.stderr",
+          "sha256": "9703b070a2679496cbc7001f1098a85eba4e90679c9ee29075bbc0128ae82fb9"
+        }
+      },
+      {
+        "name": "native-54-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openrouter,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.98,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-54-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-54-check.stderr",
+          "sha256": "8814f7e6eeabc1ef5553c9e8ec979e07ba2fbac9abe4a0ce5b3758310946c358"
+        }
+      },
+      {
+        "name": "native-54-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-openrouter,provider-vertex",
+          "--test",
+          "provider_openrouter_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 21.06,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-54-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-54-profile.stderr",
+          "sha256": "956d8d56eb7b9129c0b3fba4f05a259353ba63a62a4eceaee9a2045ea3718f54"
+        }
+      },
+      {
+        "name": "native-55-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-pi-messages,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.7,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-55-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-55-check.stderr",
+          "sha256": "07cfc098394b71006fa234cbcd5454c0e0e3f162bf3561af9d4f1e4eed8cbcef"
+        }
+      },
+      {
+        "name": "native-55-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-pi-messages,provider-vertex",
+          "--test",
+          "provider_pi_messages_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 20.38,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-55-profile.stdout",
+          "sha256": "bd0cdac4a7673bcd67f16180a37fc68fa0c0e1ea721e83edc3dd27a2caa3da39"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-55-profile.stderr",
+          "sha256": "c09f9730f29d5c1f86d156af43048f217d64a1f927bd5d7a542539b4c50efc38"
+        }
+      },
+      {
+        "name": "native-56-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-azure-openai,provider-bedrock,provider-gemini,provider-mistral,provider-openai-chat,provider-openai-codex-responses,provider-openai-responses,provider-openrouter,provider-pi-messages,provider-vertex"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 6.56,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-56-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-56-check.stderr",
+          "sha256": "8f8c78f0af722321135669a8c2b27f6d44ce1b7fa169d4f64aa9b6acdfe43ecd"
+        }
+      },
+      {
+        "name": "native-56-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-azure-openai,provider-bedrock,provider-gemini,provider-mistral,provider-openai-chat,provider-openai-codex-responses,provider-openai-responses,provider-openrouter,provider-pi-messages,provider-vertex",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 55.26,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-56-profile.stdout",
+          "sha256": "7c82df27819a5e0d51fafc80777c895d852675fec86f39a55a97d31f8a44c210"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-56-profile.stderr",
+          "sha256": "a96111b08e931acb187ae86bead5d854ea3339855f7dbee1e0d7a8df96495a29"
+        }
+      },
+      {
+        "name": "native-57-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-azure-openai,provider-bedrock,provider-gemini,provider-mistral,provider-openai-chat,provider-openai-codex-responses,provider-openai-responses,provider-openrouter,provider-pi-messages,provider-vertex,catalog-bundled,oauth-store,telemetry-tracing"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 8.05,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-57-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-57-check.stderr",
+          "sha256": "476b60a1b4beb39a00081ee25384800bc4716779df152b906df95106c7551577"
+        }
+      },
+      {
+        "name": "native-57-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "provider-anthropic,provider-azure-openai,provider-bedrock,provider-gemini,provider-mistral,provider-openai-chat,provider-openai-codex-responses,provider-openai-responses,provider-openrouter,provider-pi-messages,provider-vertex,catalog-bundled,oauth-store,telemetry-tracing",
+          "--test",
+          "provider_anthropic_profile",
+          "--test",
+          "provider_azure_openai_profile",
+          "--test",
+          "provider_bedrock_profile",
+          "--test",
+          "provider_gemini_profile",
+          "--test",
+          "provider_mistral_profile",
+          "--test",
+          "provider_openai_chat_profile",
+          "--test",
+          "provider_openai_codex_responses_profile",
+          "--test",
+          "provider_openai_responses_profile",
+          "--test",
+          "provider_openrouter_profile",
+          "--test",
+          "provider_pi_messages_profile",
+          "--test",
+          "provider_vertex_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 55.91,
+        "stdout": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-57-profile.stdout",
+          "sha256": "7c82df27819a5e0d51fafc80777c895d852675fec86f39a55a97d31f8a44c210"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\native-57-profile.stderr",
+          "sha256": "202f8cc6db2484faf676f6725e946783cc21337af2f8eef8f71267d5bc963961"
+        }
+      }
+    ],
+    "verdict": "PASS",
+    "scratch": "C:\\Temp\\opi-provider-matrix-native-20261116-v3"
+  },
+  "package": null,
+  "verdict": "PASS",
+  "frozen_pi": {
+    "status": "retained",
+    "reference": "phase5/phase8 frozen Pi 1.5.0 paired differential receipts; no source behavior change in this feature-union validation"
+  },
+  "macos": {
+    "status": "BLOCKED",
+    "reason": "no user-provided macOS runner or SSH host"
+  },
+  "scratch": "C:\\Temp\\opi-provider-matrix-native-20261116-v3",
+  "steps": [
+    {
+      "name": "rustc-version",
+      "command": [
+        "rustc",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.03,
+      "stdout": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\rustc-version.stdout",
+        "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\rustc-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cargo-version",
+      "command": [
+        "cargo",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.02,
+      "stdout": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\cargo-version.stdout",
+        "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\cargo-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "65712"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.17,
+      "stdout": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\lease-start.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\lease-start.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "65712"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.2,
+      "stdout": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\lease-end.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-provider-matrix-native-20261116-v3\\lease-end.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "scope": "OpenAI Responses repeated terminal usage and tail observer ordering on the shared HTTP adapter",
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_repeated_terminal.mjs": "98320e7153d5b9c3ecf348ebe5f25b58fa1835d4ff1376037a8896b4444c403c",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\responses-repeated-terminal.json": "3021245a35067f76be0dc72f2a8db52413cc212ce2b242c7f4682a1fffe85d6a",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\compare_responses_repeated_terminal.py": "bdbc571fc7ed831afc9de0897ec4ca9d897f7bd70ce1e665ea71c10a2a9b47c3",
+    "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\responses_repeated_terminal-5c4e60791b215b55.exe": "312ab6265de4a21f19d83823f15b417fe058206588c307795d9b5a6e4a678b98",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\openai-responses.ts": "20a2a355191df9c171e3e91c462fc771ff09cdfa40bf671eaf5a6cabd68b549b",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\openai-responses-shared.ts": "f5198fe8a6438008e0f57b149e4d2db4c93d839d30d904ddee33e44f6560e083"
+  },
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "completed",
+    "input": 12,
+    "output": 7,
+    "total": 19,
+    "done_count": 1,
+    "provider_events": 4
+  },
+  "pi_runs": [
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_repeated_terminal.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\responses-repeated-terminal.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"responses-repeated-terminal\",\"stop\":\"stop\",\"raw_stop\":\"completed\",\"usage\":{\"input\":12,\"output\":7,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"response.created\",\"response.completed\",\"response.completed\",\"response.created\"]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "responses-repeated-terminal",
+        "stop": "stop",
+        "raw_stop": "completed",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "total": 19
+        },
+        "done_count": 1,
+        "event_types": [
+          "start",
+          "done"
+        ],
+        "provider_events": [
+          "response.created",
+          "response.completed",
+          "response.completed",
+          "response.created"
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_repeated_terminal.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\responses-repeated-terminal.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"responses-repeated-terminal\",\"stop\":\"stop\",\"raw_stop\":\"completed\",\"usage\":{\"input\":12,\"output\":7,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"response.created\",\"response.completed\",\"response.completed\",\"response.created\"]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "responses-repeated-terminal",
+        "stop": "stop",
+        "raw_stop": "completed",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "total": 19
+        },
+        "done_count": 1,
+        "event_types": [
+          "start",
+          "done"
+        ],
+        "provider_events": [
+          "response.created",
+          "response.completed",
+          "response.completed",
+          "response.created"
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_repeated_terminal.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\responses-repeated-terminal.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"responses-repeated-terminal\",\"stop\":\"stop\",\"raw_stop\":\"completed\",\"usage\":{\"input\":12,\"output\":7,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"done\"],\"provider_events\":[\"response.created\",\"response.completed\",\"response.completed\",\"response.created\"]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "responses-repeated-terminal",
+        "stop": "stop",
+        "raw_stop": "completed",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "total": 19
+        },
+        "done_count": 1,
+        "event_types": [
+          "start",
+          "done"
+        ],
+        "provider_events": [
+          "response.created",
+          "response.completed",
+          "response.completed",
+          "response.created"
+        ]
+      }
+    }
+  ],
+  "rust_runs": [
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\responses_repeated_terminal-5c4e60791b215b55.exe",
+        "--exact",
+        "repeated_terminal_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"responses-repeated-terminal\",\"stop\":\"stop\",\"raw_stop\":\"completed\",\"usage\":{\"input\":12,\"output\":7,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"done\"]}\ntest repeated_terminal_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "responses-repeated-terminal",
+        "stop": "stop",
+        "raw_stop": "completed",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "total": 19
+        },
+        "done_count": 1,
+        "event_types": [
+          "start",
+          "done"
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\responses_repeated_terminal-5c4e60791b215b55.exe",
+        "--exact",
+        "repeated_terminal_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"responses-repeated-terminal\",\"stop\":\"stop\",\"raw_stop\":\"completed\",\"usage\":{\"input\":12,\"output\":7,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"done\"]}\ntest repeated_terminal_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "responses-repeated-terminal",
+        "stop": "stop",
+        "raw_stop": "completed",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "total": 19
+        },
+        "done_count": 1,
+        "event_types": [
+          "start",
+          "done"
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\responses_repeated_terminal-5c4e60791b215b55.exe",
+        "--exact",
+        "repeated_terminal_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"responses-repeated-terminal\",\"stop\":\"stop\",\"raw_stop\":\"completed\",\"usage\":{\"input\":12,\"output\":7,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"done\"]}\ntest repeated_terminal_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "responses-repeated-terminal",
+        "stop": "stop",
+        "raw_stop": "completed",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "total": 19
+        },
+        "done_count": 1,
+        "event_types": [
+          "start",
+          "done"
+        ]
+      }
+    }
+  ],
+  "differences": [
+    "Pi exposes provider_events from every source item; Rust's direct fixture helper exposes normalized event_types only."
+  ]
+}

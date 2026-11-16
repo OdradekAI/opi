@@ -1,0 +1,614 @@
+{
+  "cases": [
+    {
+      "name": "empty",
+      "operations": [
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "append",
+          "text": " "
+        },
+        {
+          "op": "append",
+          "text": ""
+        },
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "replace",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\":\"x"
+        },
+        {
+          "op": "replace",
+          "text": "{\"a\":\"xy\"}"
+        },
+        {
+          "op": "replace",
+          "text": "{\"a\":\"xy\"}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "{\"b\":f"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "append",
+          "text": "alse}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": ""
+        },
+        {
+          "op": "snapshot"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "strict-final",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\":tru"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "append",
+          "text": "e}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "append",
+          "text": " trailing"
+        },
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "non-object",
+      "operations": [
+        {
+          "op": "replace",
+          "text": "[true]"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "42"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "null"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "\"text\""
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "tolerant-structure",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\" 1 \"b\":2}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "{\"a\":}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "{\"ok\":true,\"nan\":NaN,\"inf\":Infinity,\"last\":3}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "escapes",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"s\":\"a"
+        },
+        {
+          "op": "append",
+          "text": "\\"
+        },
+        {
+          "op": "append",
+          "text": "u12"
+        },
+        {
+          "op": "append",
+          "text": "x\\q\n "
+        },
+        {
+          "op": "append",
+          "text": "\"}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "unicode-pair",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"s\":\"x"
+        },
+        {
+          "op": "append",
+          "text": "\\ud83d"
+        },
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "append",
+          "text": "\\ude00"
+        },
+        {
+          "op": "append",
+          "text": "!\"}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": true
+    },
+    {
+      "name": "unicode-key-pair",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"\\ud83d"
+        },
+        {
+          "op": "append",
+          "text": "\\ude00\":true}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "lone-value",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"s\":\"x"
+        },
+        {
+          "op": "append",
+          "text": "\\udc00\"}"
+        },
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": true
+    },
+    {
+      "name": "lone-key",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\":1,"
+        },
+        {
+          "op": "append",
+          "text": "\"\\ud800\":true}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": true
+    },
+    {
+      "name": "unicode-duplicate-recovery",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\":\"\\ud800\","
+        },
+        {
+          "op": "append",
+          "text": "\"a\":true"
+        },
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "append",
+          "text": "}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": true
+    },
+    {
+      "name": "raw-non-bmp",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"s\":\""
+        },
+        {
+          "op": "append",
+          "text": "\ud83d\ude00"
+        },
+        {
+          "op": "append",
+          "text": "\u00e9!\"}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "long-scalar",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"n\":"
+        },
+        {
+          "op": "append",
+          "text": "100000000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "op": "append",
+          "text": "0"
+        },
+        {
+          "op": "append",
+          "text": "0"
+        },
+        {
+          "op": "append",
+          "text": "}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "special-keys",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"__proto__\":{"
+        },
+        {
+          "op": "append",
+          "text": "\"\":true},\"constructor\":false}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "nested",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":{\"x\":"
+        },
+        {
+          "op": "append",
+          "text": "true"
+        },
+        {
+          "op": "append",
+          "text": "}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "numbers",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"n\":-"
+        },
+        {
+          "op": "append",
+          "text": "1."
+        },
+        {
+          "op": "append",
+          "text": "2e-"
+        },
+        {
+          "op": "append",
+          "text": "3"
+        },
+        {
+          "op": "append",
+          "text": ",\"b\":t"
+        },
+        {
+          "op": "append",
+          "text": "rue}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "{\"z\":-1e-400,\"n\":-0,\"p\":0}"
+        },
+        {
+          "op": "finish"
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "interleaved-owners",
+      "operations": [
+        {
+          "op": "append",
+          "tool": 0,
+          "text": "{\"left\":\"a"
+        },
+        {
+          "op": "append",
+          "tool": 1,
+          "text": "{\"right\":f"
+        },
+        {
+          "op": "append",
+          "tool": 0,
+          "text": "b\"}"
+        },
+        {
+          "op": "append",
+          "tool": 1,
+          "text": "alse}"
+        },
+        {
+          "op": "finish",
+          "tool": 1
+        },
+        {
+          "op": "finish",
+          "tool": 0
+        }
+      ],
+      "unicode_difference": false
+    },
+    {
+      "name": "key-order",
+      "unicode_difference": false,
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"b\":1,\"a\":2"
+        },
+        {
+          "op": "append",
+          "text": ",\"a\":3,\"10\":true,\"2\":true,\"01\":true,\"4294967295\":true,\"4294967294\":true,\"0\":true"
+        },
+        {
+          "op": "append",
+          "text": "}"
+        },
+        {
+          "op": "finish"
+        }
+      ]
+    },
+    {
+      "name": "non-finite",
+      "unicode_difference": false,
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"n\":1e"
+        },
+        {
+          "op": "append",
+          "text": "400,\"m\":-1e400,\"z\":1e-400}"
+        },
+        {
+          "op": "finish"
+        }
+      ]
+    },
+    {
+      "name": "depth-boundary",
+      "unicode_difference": false,
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":{\"a\":0}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}"
+        },
+        {
+          "op": "finish"
+        }
+      ]
+    },
+    {
+      "name": "non-finite-array",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"a\":[7"
+        },
+        {
+          "op": "append",
+          "text": ",1e"
+        },
+        {
+          "op": "append",
+          "text": "400"
+        },
+        {
+          "op": "append",
+          "text": ",false]}"
+        },
+        {
+          "op": "finish"
+        },
+        {
+          "op": "replace",
+          "text": "{\"a\":[7,8,false]}"
+        },
+        {
+          "op": "finish"
+        }
+      ]
+    },
+    {
+      "name": "non-finite-duplicate",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"n\":2,"
+        },
+        {
+          "op": "append",
+          "text": "\"n\":1e400,\"other\":true,"
+        },
+        {
+          "op": "snapshot"
+        },
+        {
+          "op": "append",
+          "text": "\"n\":f"
+        },
+        {
+          "op": "append",
+          "text": "alse}"
+        },
+        {
+          "op": "finish"
+        }
+      ]
+    },
+    {
+      "name": "non-finite-isolation",
+      "operations": [
+        {
+          "op": "append",
+          "text": "{\"ok\":1}",
+          "tool": 0
+        },
+        {
+          "op": "append",
+          "text": "{\"n\":-1e400}",
+          "tool": 1
+        },
+        {
+          "op": "replace",
+          "text": "{\"n\":1e400}",
+          "tool": 0
+        },
+        {
+          "op": "replace",
+          "text": "{\"ok\":2}",
+          "tool": 1
+        },
+        {
+          "op": "snapshot",
+          "tool": 0
+        },
+        {
+          "op": "replace",
+          "text": "{\"ok\":3}",
+          "tool": 0
+        }
+      ]
+    }
+  ],
+  "large_array_items": 1200,
+  "long_strings": [
+    {
+      "length": 25000,
+      "chunk": 32
+    },
+    {
+      "length": 250000,
+      "chunk": 32
+    }
+  ]
+}

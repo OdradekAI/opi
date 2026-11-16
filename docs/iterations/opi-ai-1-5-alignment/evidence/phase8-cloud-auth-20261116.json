@@ -1,0 +1,304 @@
+{
+  "schemaVersion": 1,
+  "issue": "#134",
+  "generatedAt": "2026-11-16",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "host": {
+    "os": "Windows",
+    "target": "x86_64-pc-windows-msvc",
+    "cargo_target": "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+  },
+  "feature_contract": {
+    "cloud-auth": [
+      "http-transport",
+      "dep:hmac",
+      "dep:aws-smithy-query",
+      "dep:aws-smithy-xml",
+      "dep:xmlparser",
+      "dep:p256",
+      "dep:sha1"
+    ],
+    "protocol-adapters": [
+      "http-transport",
+      "websocket-compression",
+      "cloud-auth"
+    ],
+    "cloud_auth_does_not_select": [
+      "protocol-adapters",
+      "catalog-bundled",
+      "oauth-store",
+      "provider collection",
+      "WebSocket/compression"
+    ],
+    "default_compatibility": "builtins/default retain protocol-adapters, oauth-store and catalog-bundled; protocol-adapters transitively retains cloud-auth; no public provider wire behavior change"
+  },
+  "native": {
+    "check": {
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-cloud-auth-native-20261116-v2/check-cloud-auth.log",
+        "sha256": "ea6aa44138a0a3206df1ad843ca3f193ac6d0b8fe58c0d00c8782fcc21d54641"
+      }
+    },
+    "profile": {
+      "tests": "1 passed",
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-cloud-auth-native-20261116-v2/test-cloud-auth-profile.log",
+        "sha256": "352d284a3734c0a5f60e5d36b7ac062696b5622c0083c1b0967ca8188034a9ee"
+      }
+    },
+    "auth_tests": {
+      "tests": "59 passed",
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-cloud-auth-native-20261116-v2/test-cloud-auth-lib.log",
+        "sha256": "f97c29b107774e25846c8f6399335de1c8535a4972c8b11835c876067241319e"
+      }
+    },
+    "clippy": {
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-cloud-auth-native-20261116-v2/clippy-cloud-auth.log",
+        "sha256": "8ab359bd0c407c280cd1652847caf95f197f5c8c79acafef7b4d9b5a4d38db57"
+      }
+    },
+    "historical_failures": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-cloud-auth-package-20261116-v1.json",
+        "sha256": "9fa8ab46201d40f94b8d5d985c99e3f14f7174859a80f1daa8cccbc20fd45776",
+        "verdict": "FAIL",
+        "cause": "external consumer harness omitted secrecy dependency; build failed before cloud-auth source validation"
+      }
+    ]
+  },
+  "package": {
+    "receipt": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-cloud-auth-package-20261116-v3.json",
+      "sha256": "528ca33a0c4ca1a9c7b6aad514863e24e193d164dbfcbabe7480151f25399387"
+    },
+    "feature_graph": [
+      "cloud-auth",
+      "http-transport",
+      "tls-backend"
+    ],
+    "present": [
+      "aws-lc-rs",
+      "aws-smithy-query",
+      "aws-smithy-xml",
+      "hmac",
+      "p256",
+      "reqwest",
+      "rustls",
+      "rustls-native-certs",
+      "sha1",
+      "xmlparser"
+    ],
+    "forbidden_absent": [
+      "opi-catalog",
+      "protocol-adapters",
+      "libz-rs-sys",
+      "flate2"
+    ],
+    "consumer": "external archive consumer builds/runs the public AWS endpoint and SigV4/ADC surface with cloud-auth only",
+    "runner_sha256": "9893ac89d46b00c5507ba3e69c1f6d1239693c6e171ac4f65abd84f13ef87550",
+    "consumer_sources": {
+      "Cargo.toml": "13177febe80045d46d74024efb2d530282f4769d3be0835753f437808259ca7b",
+      "src/main.rs": "a4c21d2797e27dc171974a95d524dbf95a42eddbefdf7286373ddd35dc4d3f4c",
+      "Cargo.lock": "6fa31481b44e9580cea536aba69276b8c1a5eb3aad830f4c9d8686d63aff8467"
+    },
+    "metadata_stdout": {
+      "path": "C:/Temp/opi-cloud-auth-package-20261116-v3-fresh/cloud-auth-metadata.stdout",
+      "sha256": "282bc0e33dd1b64da747d1376eb3635bb07930a1f940a3e157de8982afbb4448"
+    }
+  },
+  "caller_audit": {
+    "receipt": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-cloud-auth-callers-20261116-v1.json",
+      "sha256": "c3f5e3f30be5975f71c1396e9f88c89bf8d267ce5f6007d2870ae6f95ad41c1d"
+    },
+    "files": 667,
+    "matches": {
+      "aws_auth_surface": 454,
+      "adc_auth_surface": 259,
+      "cloud_provider_wire": 972,
+      "process_source": 725,
+      "cloud_codec_direct": 35
+    },
+    "interpretation": "AWS source chains/STS, GCP ADC and shared SigV4/cloud codecs select cloud-auth; Bedrock/Vertex wire callers inherit it through protocol-adapters; provider collection/factories remain builtins; direct codec refs are implementation/tests."
+  },
+  "paired_compatibility": {
+    "native": [
+      {
+        "id": "protocol-adapter-profile",
+        "tests": "2 passed",
+        "log": {
+          "path": "C:/Temp/opi-cloud-auth-paired-20261116-v2/protocol-adapter-profile.log",
+          "sha256": "e164dd915ecbf449c9adf2021f9a3e8429f7db780aa1e23792000e9cc7800ba4"
+        }
+      },
+      {
+        "id": "protocol-adapter-clippy",
+        "exit": 0,
+        "log": {
+          "path": "C:/Temp/opi-cloud-auth-paired-20261116-v2/protocol-adapter-clippy.log",
+          "sha256": "e6b2c9e9e1d90241f921ae6191ee16c8dec218fd382056d081c3b78717fc9a15"
+        }
+      },
+      {
+        "id": "builtins-http-transport",
+        "tests": "3 passed",
+        "log": {
+          "path": "C:/Temp/opi-cloud-auth-paired-20261116-v2/builtins-http-transport.log",
+          "sha256": "95d8c792fbf3d3dc20c6eb2e2b1bfceba390465fe9a82a74275966d9584f5ca0"
+        }
+      },
+      {
+        "id": "builtins-http-acceptance",
+        "tests": "21 passed",
+        "log": {
+          "path": "C:/Temp/opi-cloud-auth-paired-20261116-v2/builtins-http-acceptance.log",
+          "sha256": "a7b706cda2236ed0a48416834b083f59765cc54f2c1c6c09d31389cddcb8dfca"
+        }
+      }
+    ],
+    "package": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261116-v6.json",
+        "sha256": "7cb5a7e46e9ef1d32d5658fd78be571e6270d64ca2374b29ce2433d3f1f4768d",
+        "verdict": "PASS",
+        "features": [
+          "http-transport",
+          "tls-backend"
+        ]
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261116-v11.json",
+        "sha256": "7638bb08fcdfbc08ecc166e6f60df72441456d7f34b238d55b46540a9451ddbc",
+        "verdict": "PASS",
+        "features": [
+          "cloud-auth",
+          "http-transport",
+          "protocol-adapters",
+          "tls-backend",
+          "websocket-compression"
+        ]
+      }
+    ],
+    "result": "shared HTTP and builtins callers remain green; protocol archive now records cloud-auth as a transitive feature and preserves provider wire closure"
+  },
+  "pi_runtime_control": {
+    "frozen_version": "Pi 1.5.0",
+    "historical_receipts": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-differential.json",
+        "sha256": "1c6352e17ea715cd7c4402615519b34561ad5302c03d8f6a97ac7d0038db642d",
+        "role": "frozen runtime differential"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-differential.json",
+        "sha256": "aa1f645c165c22b790cbf944aa80a95f78fa9b6ca1d905ef5f6401023e3f07f8",
+        "role": "frozen runtime differential"
+      }
+    ],
+    "disposition": "retained immutable; cloud-auth changes feature ownership and shared signing placement without changing provider wire or Pi runtime behavior"
+  },
+  "historical_inputs": [
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v7.json",
+      "sha256": "26dbba1fb362ecc8c7b486e2f3a29257077f666460f30ee747eb470f8d4b678e",
+      "role": "pre-split capability matrix"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261116-v9.json",
+      "sha256": "d82474c5f54fc1594901e7080d16839b21eb9727c0f29e60ef0739b052efa4ff",
+      "role": "superseded protocol package receipt"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-cloud-auth-package-20261116-v1.json",
+      "sha256": "9fa8ab46201d40f94b8d5d985c99e3f14f7174859a80f1daa8cccbc20fd45776",
+      "role": "failed package harness attempt"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261116-v10.json",
+      "sha256": "71d7d88b06f04dad3eed2b4ff63b21e4233543a1aad535afde7f6c9454cd9a6a",
+      "verdict": "PASS",
+      "features": [
+        "cloud-auth",
+        "http-transport",
+        "protocol-adapters",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "role": "superseded pre-formatting protocol package receipt"
+    }
+  ],
+  "capability_matrix": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261116-v8.json",
+    "sha256": "e3b941685186d2dd65c1beed336b894aa7ab95dbbea32c9e89220212edfd13ff"
+  },
+  "test_impact": {
+    "add": "cloud-auth owner, native/profile/auth tests, package consumer, caller inventory and protocol pairing evidence",
+    "update": "protocol-adapter feature closure and bilingual capability/testing docs, changelog and spec",
+    "delete": "none",
+    "retain": "all prior Pi and adapter/observer/runtime/package receipts"
+  },
+  "repository_checks": {
+    "status": "PASS_WITH_LINE_ENDING_NOTE",
+    "cargo_fmt_check_all": {
+      "exit": 1,
+      "result": "FAIL due existing unrelated dirty files using Rust 2024 syntax rejected by the repo toolchain invocation and pre-existing formatting drift; cloud-auth touched files pass rustfmt --edition 2024 --check"
+    },
+    "rustfmt_cloud_auth_files": {
+      "exit": 0,
+      "result": "PASS",
+      "files": [
+        "crates/opi-ai/src/auth.rs",
+        "crates/opi-ai/src/auth/adc/subject.rs",
+        "crates/opi-ai/src/auth/aws/role.rs",
+        "crates/opi-ai/src/auth/aws/sigv4.rs",
+        "crates/opi-ai/src/bedrock/sigv4.rs",
+        "crates/opi-ai/tests/cloud_auth_profile.rs"
+      ]
+    },
+    "package_runner_unit_tests": {
+      "exit": 0,
+      "cloud_auth": "3 passed",
+      "protocol_adapters": "3 passed",
+      "py_compile": "PASS"
+    },
+    "doc_check": {
+      "command": "python scripts/opi-doc-check.py",
+      "exit": 0,
+      "result": "PASS"
+    },
+    "diff_check_scoped_cr_at_eol": {
+      "command": "git -c core.whitespace=cr-at-eol diff --check",
+      "exit": 0,
+      "result": "PASS"
+    },
+    "diff_check_strict": {
+      "command": "git diff --check",
+      "exit": 2,
+      "result": "FAIL due existing CRLF lines in the broad pre-existing dirty worktree; preserved without rewriting",
+      "log": "C:/Temp/opi-cloud-auth-diff-check-strict-20261116.log",
+      "log_sha256": "25e7a9240066afa6e9034cd15de819bd0e0504b6621b042ce8fe344290bfeb2f"
+    },
+    "hash_validation": {
+      "exit": 0,
+      "references_checked": 124,
+      "result": "PASS"
+    },
+    "current_native": {
+      "cloud_auth": "PASS: check/profile 1 passed/auth 59 passed/Clippy",
+      "protocol_pair": "PASS: profile 2 passed/Clippy",
+      "builtins_http": "PASS: profile 3 passed/acceptance 21 passed"
+    },
+    "current_package": {
+      "cloud_auth": "PASS v3",
+      "protocol_adapters": "PASS v11"
+    }
+  },
+  "verdict": "PASS_WITH_OPEN_SCOPE",
+  "remaining": "per-provider protocol/source owners, finer credential-source boundaries, complete capability V/high-order pairs and user-deferred native macOS"
+}

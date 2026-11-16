@@ -1,0 +1,20 @@
+{
+  "prefix": [
+    {"id":"chat-finish","choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]},
+    {"id":"chat-finish","choices":[{"index":0,"delta":{"content":"ready"},"finish_reason":null}]},
+    {"id":"chat-finish","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_finish","type":"function","function":{"name":"record","arguments":"{\"a\":\"ok\",\"n\":2}"}}]},"finish_reason":null}]}
+  ],
+  "finish":{"id":"chat-finish","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]},
+  "usage":{"id":"chat-finish","choices":[],"usage":{"prompt_tokens":7,"completion_tokens":3,"total_tokens":10}},
+  "error":{"error":{"message":"fixture tail failure","type":"server_error","code":"fixture_tail"}},
+  "cases":[
+    {"id":"trailer","usage":"trailer","tail":"done"},
+    {"id":"inline_usage","usage":"inline","tail":"done"},
+    {"id":"no_usage","usage":"none","tail":"done"},
+    {"id":"eof_without_done","usage":"trailer","tail":"eof"},
+    {"id":"error_before_usage","usage":"none","tail":"error"},
+    {"id":"error_after_usage","usage":"trailer","tail":"error"},
+    {"id":"cancel_before_usage","usage":"none","tail":"cancel"},
+    {"id":"cancel_after_usage","usage":"trailer","tail":"cancel"}
+  ]
+}

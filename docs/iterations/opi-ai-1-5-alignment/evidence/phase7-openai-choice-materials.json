@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "snapshot": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+  "scope": "OpenAI-compatible Chat choice-level usage fallback and public adapter/helper caller mapping",
+  "pi_sources": {
+    "packages/ai/src/api/openai-completions.ts": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a",
+    "packages/ai/src/models.ts": "de226bcd332fc660129f87b8c02a12c4862b620201a407998c2cdeacc4f2044a"
+  },
+  "rust_sources": {
+    "crates/opi-ai/src/openai_chat.rs": "fba64e5c0ec13a5f29a8e008c58193f720e7f31e4065ab0b3f45aec4646d571f",
+    "crates/opi-ai/tests/openai_choice_usage.rs": "f065c19878dbc232c19a736d3cd3f4c3ff93e810cebd677bfd6d08b1a557cf5a",
+    "crates/opi-ai/tests/data/openai-choice-usage.json": "21ca316d4ef40478198b4c50a301c5ab00c2ed09ce736a25e43a1854f6b0edcd"
+  },
+  "tools": {
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_choice_usage.mjs": "4cfc7dd4c9d4d4f6c26acbe27c68be5ef28a62cc1ce6a84f10fec907e5760ab0",
+    "scripts/pi-sdk-conformance/differential/compare_openai_choice_usage.py": "fc5354e81f8a40689f0b29c034fce26dedbdf84eeea5baf18367853945987249",
+    "scripts/pi-sdk-conformance/run_openai_choice_usage_package.py": "e89bc1da948d3f2c8ea98e937448ef620b0abf8d6234a4ca7fe0d287a4abdf07",
+    "scripts/pi-sdk-conformance/differential/test_openai_choice_usage.py": "1a8caf1ffda4af042991cfa6b70e68d54054a7c4cd0ee282fe485844d9186bf8",
+    "scripts/pi-sdk-conformance/test_openai_choice_usage_package.py": "d7abc70a86391c2efd08ddb8537ccab56149249a727d7394ab67cdc7b9b91c95"
+  },
+  "fixture": "crates/opi-ai/tests/data/openai-choice-usage.json",
+  "commands": [
+    {
+      "name": "pi-probe",
+      "command": [
+        "node",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_choice_usage.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "crates/opi-ai/tests/data/openai-choice-usage.json"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "rust-targeted",
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--test",
+        "openai_choice_usage",
+        "--offline",
+        "--locked",
+        "--",
+        "nocapture"
+      ],
+      "exit": 0
+    },
+    {
+      "name": "frozen-differential",
+      "command": [
+        "python",
+        "scripts/pi-sdk-conformance/differential/compare_openai_choice_usage.py",
+        "--repo",
+        "D:/Luiz/Odradek/opi",
+        "--snapshot",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "--fixture",
+        "D:/Luiz/Odradek/opi/crates/opi-ai/tests/data/openai-choice-usage.json",
+        "--rust-executable",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958/debug/deps/openai_choice_usage-92b11f657d7e75a7.exe",
+        "--output",
+        "C:/Temp/opi-openai-choice-20261115/differential-v3.json"
+      ],
+      "exit": 0
+    }
+  ],
+  "history": {
+    "prior_phase6_receipts_unchanged": true,
+    "initial_json_receipts": 244,
+    "initial_json_receipts_byte_identical": true,
+    "phase6_and_earlier_receipts_overwritten": false,
+    "earlier_failures_retained": true,
+    "cache_deletion": false,
+    "self_hash": "omitted to avoid self-reference"
+  }
+}

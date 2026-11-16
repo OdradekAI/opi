@@ -1,8 +1,11 @@
 //! Streaming response events (S7.3).
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
 use std::future::Future;
+use std::future::poll_fn;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::sync::{Arc, OnceLock};
+use std::task::{Context, Poll, ready};
 
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -10,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::execution::StartedChatStream;
 pub use crate::types::usage::*;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
 use tokio_util::sync::{CancellationToken, WaitForCancellationFutureOwned};
 
 use crate::provider::{ProviderError, ProviderErrorSummary};
@@ -81,9 +85,9 @@ pub enum AssistantStreamEvent {
     #[serde(rename = "error")]
     /// Legacy in-band error terminal (v0 stream format).
     ///
-    /// Read-only: retained so historical saved events keep deserializing.
-    /// Current producers never emit it; the public `ChatStream` seam
-    /// converts it to `Err(CallFailure)` retaining the original payload.
+    /// Read compatibility for saved events and legacy adapters. `ChatStream`
+    /// converts it to `Err(CallFailure)`, preserving an abort when `reason`
+    /// and `message.stop_reason` are both `Aborted`.
     Error {
         reason: StopReason,
         message: crate::message::AssistantMessage,
@@ -145,12 +149,15 @@ impl AssistantStreamEvent {
 /// `message` always contains the complete canonical partial or terminal
 /// [`AssistantMessage`](crate::message::AssistantMessage): generated content,
 /// provenance, stop reason (`Error`, or `Aborted` when the cause is a
-/// cancellation), diagnostics in `error_message` and known usage. A setup
-/// failure (nothing delivered before the failure) has no generated content and
-/// unknown usage. `cause` supplies the typed, redacted classification without
-/// a second terminal. Current streams deliver exactly one `Err(CallFailure)`;
-/// the in-band [`AssistantStreamEvent::Error`] terminal is a read-only legacy
-/// format converted at the [`ChatStream`] seam.
+/// cancellation), diagnostics in `error_message` and known usage. A synthetic
+/// failure has no generated content and unknown usage. The ordinary
+/// [`Models`](crate::Models) chat setup and deferred fetch paths include the
+/// requested provider and model IDs in synthesized failure messages.
+///
+/// `cause` supplies the typed, redacted classification. An aborted provider
+/// terminal carries [`ProviderError::Cancelled`]. The caller's cancellation
+/// token records local cancellation independently. [`ChatStream`] converts
+/// legacy [`AssistantStreamEvent::Error`] terminals into this failure type.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CallFailure {
     message: Box<crate::message::AssistantMessage>,
@@ -176,6 +183,19 @@ impl CallFailure {
     /// Split into the canonical message and the typed cause.
     pub fn into_parts(self) -> (crate::message::AssistantMessage, ProviderError) {
         (*self.message, self.cause)
+    }
+
+    /// Use the frozen record for the fallback message. A producer-supplied
+    /// partial still takes precedence.
+    pub(crate) fn from_setup(record: &crate::ChatModelRecord, cause: ProviderError) -> Self {
+        Self::from_requested_route(record.provider_id(), record.model_id(), cause)
+    }
+
+    fn from_requested_route(provider: &str, model: &str, cause: ProviderError) -> Self {
+        let mut message = setup_failure_message(&cause);
+        message.provider = provider.to_owned();
+        message.model = model.to_owned();
+        Self::from_partial(Some(message), cause)
     }
 
     /// Build a failure from the latest event-time partial (if any) and a typed
@@ -207,13 +227,21 @@ impl CallFailure {
         }
     }
 
-    /// Convert a legacy in-band error terminal, retaining the original facts
-    /// of the delivered payload (content, provenance, diagnostics, usage).
-    pub(crate) fn from_legacy_error_event(mut message: crate::message::AssistantMessage) -> Self {
-        message.stop_reason = StopReason::Error;
+    /// Convert a legacy in-band error terminal, preserving its payload. Both
+    /// stop fields must agree to classify a provider abort.
+    pub(crate) fn from_legacy_error_event(
+        reason: StopReason,
+        mut message: crate::message::AssistantMessage,
+    ) -> Self {
+        let cause = if reason == StopReason::Aborted && message.stop_reason == StopReason::Aborted {
+            ProviderError::Cancelled
+        } else {
+            message.stop_reason = StopReason::Error;
+            ProviderError::StreamError(ProviderErrorSummary::redacted())
+        };
         Self {
             message: Box::new(message),
-            cause: ProviderError::StreamError(ProviderErrorSummary::redacted()),
+            cause,
         }
     }
 
@@ -235,9 +263,7 @@ impl CallFailure {
     }
 }
 
-/// The empty canonical message for a setup failure: no generated content,
-/// unknown usage, and no provider classification to report (the failure
-/// preceded any delivered event).
+/// An empty fallback for failures where the request identity is unavailable.
 pub(crate) fn setup_failure_message(cause: &ProviderError) -> crate::message::AssistantMessage {
     crate::message::AssistantMessage {
         projection: None,
@@ -262,6 +288,15 @@ pub(crate) fn setup_failure_message(cause: &ProviderError) -> crate::message::As
 
 /// Retain an attested classification fact without replacing the acquisition
 /// cause or admitting provider-controlled text into the canonical message.
+#[cfg(any(
+    feature = "builtins",
+    feature = "provider-protocol-common",
+    feature = "http-transport"
+))]
+#[cfg_attr(
+    not(any(feature = "builtins", feature = "provider-protocol-common")),
+    allow(dead_code)
+)]
 pub(crate) fn setup_failure_with_detail(
     cause: ProviderError,
     detail: &'static str,
@@ -279,11 +314,11 @@ pub(crate) fn setup_failure_with_detail(
 ///
 /// Iteration is `Stream<Item = Result<AssistantStreamEvent, CallFailure>>`:
 /// events are delivered with their immutable event-time partials, and the
-/// first delivered terminal is absorbed — tail events and repeated terminals
-/// are never delivered, and the stream stays at permanent EOF. The source is
-/// retained behind an absorbed business terminal until [`ChatStream::result`]
-/// drains it, so a provider can finish source-owned work after delivering its
-/// final business payload. Failures surface as exactly one `Err(CallFailure)` carrying
+/// first delivered terminal fixes the outcome and absorbs later source items.
+/// [`ChatStream::result`] drains the retained source after that terminal.
+/// Streams from [`Models::stream_deferred`](crate::Models::stream_deferred) also
+/// drive that drain before returning public EOF. Once iteration reaches EOF,
+/// it stays exhausted. Failures surface as exactly one `Err(CallFailure)` carrying
 /// the canonical partial and a typed, redacted cause; a stream that ends
 /// without a terminal yields one typed protocol failure. Cancellation before
 /// any delivery is a setup failure with an `Aborted` stop reason.
@@ -295,11 +330,27 @@ pub(crate) fn setup_failure_with_detail(
 /// reusing a delivered terminal cache without resubmission or self-cancel.
 /// Dropping the handle without polling performs no inner work; dropping it
 /// mid-stream ends the attempt and releases the producer.
+/// A direct deferred collector dropped after a successful `Done` releases
+/// the source before settling its enabled poll observer with the cached result.
 pub struct ChatStream {
     inner: Option<crate::provider::EventStream>,
     partial: Option<crate::message::AssistantMessage>,
+    requested_route: Option<(String, String)>,
     terminal: Option<Result<crate::message::AssistantMessage, CallFailure>>,
     ai_telemetry: Option<crate::telemetry::SharedAiRequestObserver>,
+    drain_tail_on_completion: bool,
+    execution_owns_completion: bool,
+}
+
+fn poll_source_tail(
+    source: &mut Option<crate::provider::EventStream>,
+    cx: &mut Context<'_>,
+) -> Poll<()> {
+    if let Some(inner) = source.as_mut() {
+        while ready!(inner.as_mut().poll_next(cx)).is_some() {}
+        *source = None;
+    }
+    Poll::Ready(())
 }
 
 struct ProjectionStream {
@@ -313,23 +364,8 @@ impl Stream for ProjectionStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         if this.terminal {
-            let Some(inner) = this.inner.as_mut() else {
-                return Poll::Ready(None);
-            };
-            // A delivered business terminal does not prove that the source
-            // has settled. Drain and discard source-tail events; the owning
-            // ChatStream calls this path only from `result()` after terminal
-            // delivery has already become permanent EOF to its consumer.
-            loop {
-                match inner.as_mut().poll_next(cx) {
-                    Poll::Ready(Some(_)) => continue,
-                    Poll::Ready(None) => {
-                        this.inner = None;
-                        return Poll::Ready(None);
-                    }
-                    Poll::Pending => return Poll::Pending,
-                }
-            }
+            ready!(poll_source_tail(&mut this.inner, cx));
+            return Poll::Ready(None);
         }
         match this
             .inner
@@ -374,6 +410,7 @@ impl Stream for ProjectionStream {
     }
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn project_call(
     facts: crate::transcript::ProjectionFacts,
     prepare: impl FnOnce() -> crate::provider::EventStream,
@@ -400,17 +437,20 @@ impl ChatStream {
     /// progress. Its Drop does not cancel the source. Existing partial
     /// consumption and a delivered terminal are preserved. See
     /// [`StartedChatStream`] for buffering, cancellation and panic behavior.
-    /// If this stream has an explicit AI telemetry observer, a normal terminal
-    /// finishes that observer before the started handle reports its outcome.
-    /// Explicit [`StartedChatStream::abort`] also settles that observer with the
-    /// typed `aborted` outcome after Tokio confirms cancellation.
+    /// Streams from [`Models::stream_deferred`](crate::Models::stream_deferred)
+    /// cache and forward a successful `Done` before draining the source.
+    /// The task uses [`Self::result`] to release the retained source and
+    /// settle the poll before public EOF or the started result. This also
+    /// drives the tail of a terminal consumed before `start`.
     ///
     /// # Panics
     ///
-    /// Panics if an unfinished source is started outside a Tokio runtime. Scheduling does not promise
-    /// that the source has already been polled when this method returns.
+    /// Panics outside a Tokio runtime when starting an unfinished stream or
+    /// a deferred stream with a retained tail. The source may first be polled
+    /// after this method returns.
     pub fn start(mut self) -> StartedChatStream {
-        if self.terminal.is_some() {
+        let terminal_delivered = self.terminal.is_some();
+        if terminal_delivered && (!self.drain_tail_on_completion || self.inner.is_none()) {
             self.finish_ai_telemetry();
             let outcome = self
                 .terminal
@@ -418,16 +458,37 @@ impl ChatStream {
                 .expect("terminal presence checked before conversion");
             return StartedChatStream::finished(outcome);
         }
+        // The worker and its join own settlement after the source is handed off.
+        self.execution_owns_completion = true;
         let progress = self.progress_snapshot();
-        let abort_handler = self.ai_telemetry.clone().map(|observer| {
-            Box::new(move |failure: &CallFailure| observer.finish(Some(failure.message())))
-                as crate::execution::AbortHandler
-        });
-        // The background execution owner keeps its established resource
-        // contract: once it has forwarded the terminal, it releases the
-        // source. Direct `result()` retains the source long enough to drain
-        // provider-owned tail work.
-        StartedChatStream::spawn(self, Self::result_without_tail, progress, abort_handler)
+        let observer = self.ai_telemetry.clone();
+        if !self.drain_tail_on_completion {
+            return StartedChatStream::spawn(
+                self,
+                Self::result_without_tail,
+                progress,
+                observer,
+                None,
+            );
+        }
+        let committed_success = Some(Arc::new(
+            self.terminal
+                .as_ref()
+                .and_then(|outcome| outcome.as_ref().ok())
+                .cloned()
+                .map_or_else(OnceLock::new, OnceLock::from),
+        ));
+        if terminal_delivered {
+            // Skip event iteration so result owns both tail release and poll settlement.
+            return StartedChatStream::spawn(
+                futures_util::stream::empty(),
+                move |_| self.result(),
+                progress,
+                observer,
+                committed_success,
+            );
+        }
+        StartedChatStream::spawn(self, Self::result, progress, observer, committed_success)
     }
 
     pub(crate) fn progress_snapshot(&self) -> ProducerSnapshot {
@@ -447,13 +508,19 @@ impl ChatStream {
         Self {
             inner: Some(stream),
             partial: None,
+            requested_route: None,
             terminal: None,
             ai_telemetry: None,
+            drain_tail_on_completion: false,
+            execution_owns_completion: false,
         }
     }
 
     /// Wrap one provider event stream with the standard Pi-shaped AI
     /// telemetry observer.
+    ///
+    /// The first normalized delivery, including a typed failure, counts as
+    /// the first chunk.
     ///
     /// The observer is enabled only when `context` is `Some`; omission keeps
     /// this collector business-only. Backend failures are isolated in the
@@ -475,11 +542,26 @@ impl ChatStream {
         stream: crate::provider::EventStream,
         observer: crate::telemetry::SharedAiRequestObserver,
     ) -> Self {
-        Self {
-            inner: Some(stream),
-            partial: None,
-            terminal: None,
-            ai_telemetry: Some(observer),
+        let mut stream = Self::new(stream);
+        stream.ai_telemetry = Some(observer);
+        stream
+    }
+
+    pub(crate) fn with_requested_route(mut self, provider: String, model: String) -> Self {
+        self.requested_route = Some((provider, model));
+        self
+    }
+
+    pub(crate) fn with_tail_drain_on_completion(mut self) -> Self {
+        self.drain_tail_on_completion = true;
+        self
+    }
+
+    fn source_failure(&self, cause: ProviderError) -> CallFailure {
+        if let (None, Some((provider, model))) = (&self.partial, &self.requested_route) {
+            CallFailure::from_requested_route(provider, model, cause)
+        } else {
+            CallFailure::from_partial(self.partial.clone(), cause)
         }
     }
 
@@ -496,20 +578,17 @@ impl ChatStream {
     pub async fn result(self) -> Result<crate::message::AssistantMessage, CallFailure> {
         let mut stream = self;
         while stream.terminal.is_none() {
-            use futures_util::StreamExt as _;
             if stream.next().await.is_none() {
                 // poll_next synthesizes the premature-EOF protocol failure, so
                 // exhaustion always leaves a terminal set.
                 break;
             }
         }
-        if let Some(inner) = &mut stream.inner {
-            while inner.next().await.is_some() {}
-            stream.inner = None;
-        }
+        poll_fn(|cx| poll_source_tail(&mut stream.inner, cx)).await;
         stream.finish_ai_telemetry();
         stream
             .terminal
+            .take()
             .expect("chat stream exhaustion always records a terminal")
     }
 
@@ -518,11 +597,36 @@ impl ChatStream {
     ) -> Result<crate::message::AssistantMessage, CallFailure> {
         self.finish_ai_telemetry();
         self.terminal
+            .take()
             .expect("started execution observes a terminal before finalization")
     }
 
+    pub(crate) async fn first_outcome(
+        mut self,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.execution_owns_completion = true;
+        let (send, ready) = tokio::sync::oneshot::channel();
+        let progress = self.progress_snapshot();
+        let observer = self.ai_telemetry.clone();
+        StartedChatStream::spawn(
+            self,
+            move |source| async move {
+                // The worker has polled through the first normalized terminal.
+                if let Some(outcome) = &source.terminal {
+                    let _ = send.send(outcome.clone());
+                }
+                source.result().await
+            },
+            progress,
+            observer,
+            None,
+        )
+        .await_ready(ready)
+        .await
+    }
+
     fn finish_ai_telemetry(&mut self) {
-        let Some(observer) = &mut self.ai_telemetry else {
+        let Some(observer) = self.ai_telemetry.take() else {
             return;
         };
         match self.terminal.as_ref() {
@@ -533,13 +637,29 @@ impl ChatStream {
     }
 }
 
+impl Drop for ChatStream {
+    fn drop(&mut self) {
+        if self.drain_tail_on_completion
+            && !self.execution_owns_completion
+            && matches!(&self.terminal, Some(Ok(_)))
+            && self.ai_telemetry.is_some()
+            && !std::thread::panicking()
+        {
+            drop(self.inner.take());
+            self.finish_ai_telemetry();
+        }
+    }
+}
+
 impl Stream for ChatStream {
     type Item = Result<AssistantStreamEvent, CallFailure>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         if this.terminal.is_some() {
-            // The first terminal was delivered; permanent EOF.
+            if this.drain_tail_on_completion {
+                ready!(poll_source_tail(&mut this.inner, cx));
+            }
             this.finish_ai_telemetry();
             return Poll::Ready(None);
         }
@@ -549,26 +669,19 @@ impl Stream for ChatStream {
             return Poll::Ready(None);
         };
         let item = inner.as_mut().poll_next(cx);
-        match item {
+        let delivery = match item {
             Poll::Pending => Poll::Pending,
             Poll::Ready(None) => {
                 // Premature EOF: one typed protocol failure, then permanent
                 // EOF. The failure preserves the latest event-time partial.
                 this.inner = None;
-                let partial = this.partial.clone();
-                let failure = CallFailure::from_partial(
-                    partial,
-                    ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                        "stream ended without a terminal event",
-                    )),
-                );
+                let failure = this.source_failure(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static("stream ended without a terminal event"),
+                ));
                 this.terminal = Some(Err(failure.clone()));
                 Poll::Ready(Some(Err(failure)))
             }
             Poll::Ready(Some(Ok(event))) => {
-                if let Some(observer) = &this.ai_telemetry {
-                    observer.on_event(&event);
-                }
                 if let Some(partial) = event.latest_partial() {
                     this.partial = Some(partial.clone());
                 }
@@ -595,19 +708,14 @@ impl Stream for ChatStream {
                                 CallFailure::from_error_stop_reason(*reason, message.clone()),
                             ),
                         };
-                        // Absorb business delivery, but retain the source until
-                        // `result()` drains its tail. A terminal event is not
-                        // proof that the producer's source/result work has
-                        // settled.
+                        // Cache the terminal and retain the source for tail draining.
                         this.terminal = Some(outcome.clone());
                         Poll::Ready(Some(outcome.map(|_| event)))
                     }
-                    AssistantStreamEvent::Error { message, .. } => {
-                        // Legacy in-band error terminal (historical/mock
-                        // producers): convert, retain original facts, absorb.
-                        let failure = CallFailure::from_legacy_error_event(message.clone());
-                        // Preserve the source for `result()` to drain after
-                        // the legacy terminal has been delivered.
+                    AssistantStreamEvent::Error { reason, message } => {
+                        let failure =
+                            CallFailure::from_legacy_error_event(*reason, message.clone());
+                        // Retain the source for the drain after terminal delivery.
                         this.terminal = Some(Err(failure.clone()));
                         Poll::Ready(Some(Err(failure)))
                     }
@@ -615,13 +723,16 @@ impl Stream for ChatStream {
                 }
             }
             Poll::Ready(Some(Err(cause))) => {
-                let partial = this.partial.clone();
-                let failure = CallFailure::from_partial(partial, cause);
+                let failure = this.source_failure(cause);
                 this.inner = None;
                 this.terminal = Some(Err(failure.clone()));
                 Poll::Ready(Some(Err(failure)))
             }
+        };
+        if let (Poll::Ready(Some(item)), Some(observer)) = (&delivery, &this.ai_telemetry) {
+            observer.on_delivery(item.as_ref());
         }
+        delivery
     }
 }
 
@@ -635,22 +746,26 @@ struct ProducerState {
     projection: Option<crate::transcript::ProjectionFacts>,
     message: Option<crate::message::AssistantMessage>,
     response_received: bool,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
     terminal_delivered: bool,
 }
 
 impl ProducerSnapshot {
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
     pub(crate) fn with_projection(facts: crate::transcript::ProjectionFacts) -> Self {
         Self(std::sync::Arc::new(std::sync::Mutex::new(ProducerState {
             projection: Some(facts),
             ..Default::default()
         })))
     }
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
     fn project_event(&self, event: &mut AssistantStreamEvent) {
         if let Some(facts) = &self.0.lock().expect("producer snapshot lock").projection {
             event.set_projection(facts);
         }
     }
 
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
     pub(crate) fn terminal_delivered(&self) -> bool {
         self.0
             .lock()
@@ -667,6 +782,7 @@ impl ProducerSnapshot {
     }
 
     /// Freeze successful transport acquisition before reading response data.
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn received_response(&self) {
         self.0
             .lock()
@@ -695,12 +811,14 @@ impl ProducerSnapshot {
 
 /// Gives cancellation priority over buffered events while retaining the
 /// producer's canonical partial, then closes delivery permanently.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
 pub(crate) struct CancelAwareReceiverStream {
     rx: Option<tokio::sync::mpsc::Receiver<Result<AssistantStreamEvent, ProviderError>>>,
     cancelled: Pin<Box<WaitForCancellationFutureOwned>>,
     snapshot: ProducerSnapshot,
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
 impl CancelAwareReceiverStream {
     #[cfg(test)]
     pub(crate) fn new(
@@ -723,6 +841,7 @@ impl CancelAwareReceiverStream {
     }
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
 impl Stream for CancelAwareReceiverStream {
     type Item = Result<AssistantStreamEvent, ProviderError>;
 
@@ -793,6 +912,7 @@ impl Stream for CancelAwareReceiverStream {
     }
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common", test))]
 pub(crate) async fn send_or_cancel(
     cancel: &CancellationToken,
     tx: &tokio::sync::mpsc::Sender<Result<AssistantStreamEvent, ProviderError>>,
@@ -815,6 +935,7 @@ mod cancellation_tests {
     use super::{CancelAwareReceiverStream, send_or_cancel};
     use crate::provider::{ProviderError, ProviderErrorSummary};
 
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     #[tokio::test]
     async fn cancellation_retains_silent_producer_state_at_the_barrier() {
         let cancel = CancellationToken::new();
@@ -832,7 +953,11 @@ mod cancellation_tests {
                 mapper
                     .process(crate::anthropic::AnthropicEvent::MessageDelta {
                         stop_reason: None,
-                        usage: super::Usage::reported(10, 7, 0, 0, None, None),
+                        usage: crate::anthropic::AnthropicUsageDelta {
+                            input_tokens: Some(10),
+                            output_tokens: Some(7),
+                            ..Default::default()
+                        },
                     })
                     .is_empty()
             );
@@ -984,6 +1109,31 @@ mod cancellation_tests {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+
+    #[test]
+    fn setup_fallback_preserves_an_attached_partial() {
+        let record = crate::ChatModelRecord::new(
+            "requested-provider",
+            crate::ModelInfo::new(
+                "requested-model",
+                "Requested model",
+                crate::WireApi::OpenAiCompletions,
+                crate::registry::ModelCapabilities::new(4096, 512),
+            ),
+        );
+        let mut partial = crate::test_support::base_assistant();
+        partial.provider.clear();
+        partial.model = "producer-model".into();
+        partial.stop_reason = StopReason::Error;
+        partial.error_message = Some("producer diagnostic".into());
+        partial.usage.output_tokens = 9;
+        partial.projection = Some(terminal_facts());
+
+        let cause = ProviderError::Timeout;
+        let failure = CallFailure::from_setup(&record, cause.clone().with_partial(partial.clone()));
+        assert_eq!(failure.into_parts(), (partial, cause));
+    }
+
     #[tokio::test]
     async fn richer_producer_projection_envelope_retains_usage_and_handoff() {
         let facts = crate::transcript::ProjectionFacts {

@@ -1,0 +1,174 @@
+{
+  "status": "pass",
+  "case": "openai-chat-response-observer-failure",
+  "pi_revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "pi_source": ".pi\\pi-1.5.0\\packages\\ai\\src\\api\\openai-completions.ts",
+  "pi_source_sha256": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a",
+  "fixture_sha256": "6e497bf045096829f468b194e2fd0e214b9f529534a5ea775c2fb34cd7728c3a",
+  "probe_sha256": "500cd04b70b1ea4dfcf44e0af7a3ca68c0441296275a734f12a4ef8629b267e4",
+  "rust_executable": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_chat_response_observer-7b738f18618fe062.exe",
+  "rust_executable_sha256": "9d5c28fef231d7fdefe3bfd1c370b9e26804c2b72da66676d87cc98cc6841b40",
+  "repetitions": 3,
+  "pi_runs": [
+    {
+      "case": "openai-chat-response-observer-failure",
+      "observer_statuses": [
+        200,
+        200
+      ],
+      "first": {
+        "stop": "error",
+        "event_types": [
+          "error"
+        ]
+      },
+      "second": {
+        "stop": "stop",
+        "event_types": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "usage": {
+          "input": 2,
+          "output": 1,
+          "total": 3
+        }
+      },
+      "requests": 2
+    },
+    {
+      "case": "openai-chat-response-observer-failure",
+      "observer_statuses": [
+        200,
+        200
+      ],
+      "first": {
+        "stop": "error",
+        "event_types": [
+          "error"
+        ]
+      },
+      "second": {
+        "stop": "stop",
+        "event_types": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "usage": {
+          "input": 2,
+          "output": 1,
+          "total": 3
+        }
+      },
+      "requests": 2
+    },
+    {
+      "case": "openai-chat-response-observer-failure",
+      "observer_statuses": [
+        200,
+        200
+      ],
+      "first": {
+        "stop": "error",
+        "event_types": [
+          "error"
+        ]
+      },
+      "second": {
+        "stop": "stop",
+        "event_types": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "usage": {
+          "input": 2,
+          "output": 1,
+          "total": 3
+        }
+      },
+      "requests": 2
+    }
+  ],
+  "rust_runs": [
+    {
+      "case": "openai-chat-response-observer-failure",
+      "observer_statuses": [
+        200,
+        200
+      ],
+      "first": {
+        "stop": "error",
+        "event_types": [
+          "error"
+        ]
+      },
+      "second": {
+        "stop": "stop",
+        "usage": {
+          "input": 2,
+          "output": 1,
+          "total": 3
+        }
+      },
+      "requests": 2
+    },
+    {
+      "case": "openai-chat-response-observer-failure",
+      "observer_statuses": [
+        200,
+        200
+      ],
+      "first": {
+        "stop": "error",
+        "event_types": [
+          "error"
+        ]
+      },
+      "second": {
+        "stop": "stop",
+        "usage": {
+          "input": 2,
+          "output": 1,
+          "total": 3
+        }
+      },
+      "requests": 2
+    },
+    {
+      "case": "openai-chat-response-observer-failure",
+      "observer_statuses": [
+        200,
+        200
+      ],
+      "first": {
+        "stop": "error",
+        "event_types": [
+          "error"
+        ]
+      },
+      "second": {
+        "stop": "stop",
+        "usage": {
+          "input": 2,
+          "output": 1,
+          "total": 3
+        }
+      },
+      "requests": 2
+    }
+  ],
+  "normalized_match": true,
+  "approved_differences": [
+    "Pi emits an error AssistantMessage event and resolves result(); Rust exposes a typed CallbackPhase CallFailure.",
+    "Pi's event stream includes no Rust-normalized partial message on the callback-failure path."
+  ]
+}

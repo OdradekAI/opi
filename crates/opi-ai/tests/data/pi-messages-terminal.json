@@ -1,0 +1,31 @@
+{
+  "id": "pi-messages-terminal",
+  "events": [
+    {"type": "start"},
+    {"type": "text_start", "contentIndex": 0},
+    {"type": "text_delta", "contentIndex": 0, "delta": "hello"},
+    {"type": "text_end", "contentIndex": 0, "content": "hello"},
+    {
+      "type": "done",
+      "reason": "stop",
+      "usage": {"input": 10, "output": 5, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 15},
+      "responseId": "resp-1",
+      "responseModel": "radius-final",
+      "providerThinkingLevel": "high"
+    },
+    {
+      "type": "done",
+      "reason": "stop",
+      "usage": {"input": 99, "output": 99, "cacheRead": 0, "cacheWrite": 0, "totalTokens": 198},
+      "responseModel": "stale-tail"
+    }
+  ],
+  "expected": {
+    "stop": "stop",
+    "input": 10,
+    "output": 5,
+    "total": 15,
+    "response_model": "radius-final",
+    "raw_events": ["start", "text_start", "text_delta", "text_end", "done"]
+  }
+}

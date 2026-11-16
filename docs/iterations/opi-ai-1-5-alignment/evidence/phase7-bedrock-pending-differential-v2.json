@@ -1,0 +1,227 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "scope": "Bedrock messageStop pending terminal, repeated metadata authority, and provider-event ordering.",
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_bedrock_repeated_metadata.mjs": "d70e3cb8b73affbe2f06db3275cbc8cf924b3b0f251c96b9d22b2fe0e3f8e5b2",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\bedrock_mock_loader.mjs": "2524622190390d10817a7e06763e1c5facd09915c22787f18572e52a80edea34",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\bedrock_mock_runtime.mjs": "7679fe1b095141e75bec7e9f52613002d7bb2ad3300f59f3c43ba1bc9954f7d5",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\bedrock-repeated-metadata.json": "1e648fbde968a731fcf82778297886682cce01d11be14d08768e872a86f97a80",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\compare_bedrock_repeated_metadata.py": "1c358372e6cc858fdd383a426c2312a6640781486f7d68a64e560bb94c4c8c29",
+    "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\bedrock_pending_metadata-8c16ddc4589b1220.exe": "6c9f0667497574e008e381ff1e4fe4a581c30b6af36c3b5e56ba303abe79a663",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\bedrock-converse-stream.ts": "1319582e8075d2a6c03fda68d595689188c8d105db92aa2ff118b0f699d3c9b0",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\utils\\event-stream.ts": "9fd5e33a8e295d88b5911af71d7afbfd437c9620288808d18331f16811e24dac"
+  },
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "end_turn",
+    "input_tokens": 12,
+    "output_tokens": 7,
+    "cache_read_tokens": 3,
+    "done_count": 1
+  },
+  "pi_runs": [
+    {
+      "command": [
+        "node",
+        "--experimental-loader",
+        "file:///D:/Luiz/Odradek/opi/docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_bedrock_repeated_metadata.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\bedrock-repeated-metadata.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"bedrock-repeated-metadata\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":12,\"output\":7,\"cache_read\":3},\"done_count\":1,\"events\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[\"messageStart\",\"contentBlockStart\",\"contentBlockDelta\",\"contentBlockStop\",\"messageStop\",\"metadata\",\"metadata\"]}\n",
+      "stderr": "(node:50268) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:\n--import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"file%3A///D%3A/Luiz/Odradek/opi/docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs\", pathToFileURL(\"./\"));'\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "trace": {
+        "case": "bedrock-repeated-metadata",
+        "stop": "stop",
+        "raw_stop": "end_turn",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "cache_read": 3
+        },
+        "done_count": 1,
+        "events": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--experimental-loader",
+        "file:///D:/Luiz/Odradek/opi/docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_bedrock_repeated_metadata.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\bedrock-repeated-metadata.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"bedrock-repeated-metadata\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":12,\"output\":7,\"cache_read\":3},\"done_count\":1,\"events\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[\"messageStart\",\"contentBlockStart\",\"contentBlockDelta\",\"contentBlockStop\",\"messageStop\",\"metadata\",\"metadata\"]}\n",
+      "stderr": "(node:29312) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:\n--import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"file%3A///D%3A/Luiz/Odradek/opi/docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs\", pathToFileURL(\"./\"));'\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "trace": {
+        "case": "bedrock-repeated-metadata",
+        "stop": "stop",
+        "raw_stop": "end_turn",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "cache_read": 3
+        },
+        "done_count": 1,
+        "events": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "provider_events": [
+          "messageStart",
+          "contentBlockStart",
+          "contentBlockDelta",
+          "contentBlockStop",
+          "messageStop",
+          "metadata",
+          "metadata"
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--experimental-loader",
+        "file:///D:/Luiz/Odradek/opi/docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_bedrock_repeated_metadata.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\bedrock-repeated-metadata.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"bedrock-repeated-metadata\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":12,\"output\":7,\"cache_read\":3},\"done_count\":1,\"events\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[\"messageStart\",\"contentBlockStart\",\"contentBlockDelta\",\"contentBlockStop\",\"messageStop\",\"metadata\",\"metadata\"]}\n",
+      "stderr": "(node:49076) ExperimentalWarning: `--experimental-loader` may be removed in the future; instead use `register()`:\n--import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"file%3A///D%3A/Luiz/Odradek/opi/docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs\", pathToFileURL(\"./\"));'\n(Use `node --trace-warnings ...` to show where the warning was created)\n",
+      "trace": {
+        "case": "bedrock-repeated-metadata",
+        "stop": "stop",
+        "raw_stop": "end_turn",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "cache_read": 3
+        },
+        "done_count": 1,
+        "events": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ],
+        "provider_events": [
+          "messageStart",
+          "contentBlockStart",
+          "contentBlockDelta",
+          "contentBlockStop",
+          "messageStop",
+          "metadata",
+          "metadata"
+        ]
+      }
+    }
+  ],
+  "rust_runs": [
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\bedrock_pending_metadata-8c16ddc4589b1220.exe",
+        "--exact",
+        "repeated_metadata_updates_pending_done_before_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"bedrock-repeated-metadata\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":12,\"output\":7,\"cache_read\":3},\"done_count\":1,\"events\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"]}\ntest repeated_metadata_updates_pending_done_before_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "bedrock-repeated-metadata",
+        "stop": "stop",
+        "raw_stop": "end_turn",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "cache_read": 3
+        },
+        "done_count": 1,
+        "events": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\bedrock_pending_metadata-8c16ddc4589b1220.exe",
+        "--exact",
+        "repeated_metadata_updates_pending_done_before_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"bedrock-repeated-metadata\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":12,\"output\":7,\"cache_read\":3},\"done_count\":1,\"events\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"]}\ntest repeated_metadata_updates_pending_done_before_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "bedrock-repeated-metadata",
+        "stop": "stop",
+        "raw_stop": "end_turn",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "cache_read": 3
+        },
+        "done_count": 1,
+        "events": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\bedrock_pending_metadata-8c16ddc4589b1220.exe",
+        "--exact",
+        "repeated_metadata_updates_pending_done_before_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"bedrock-repeated-metadata\",\"stop\":\"stop\",\"raw_stop\":\"end_turn\",\"usage\":{\"input\":12,\"output\":7,\"cache_read\":3},\"done_count\":1,\"events\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"]}\ntest repeated_metadata_updates_pending_done_before_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "bedrock-repeated-metadata",
+        "stop": "stop",
+        "raw_stop": "end_turn",
+        "usage": {
+          "input": 12,
+          "output": 7,
+          "cache_read": 3
+        },
+        "done_count": 1,
+        "events": [
+          "start",
+          "text_start",
+          "text_delta",
+          "text_end",
+          "done"
+        ]
+      }
+    }
+  ],
+  "differences": []
+}

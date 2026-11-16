@@ -1524,6 +1524,54 @@ mod mistral_43 {
     }
 
     #[tokio::test]
+    async fn trailing_literal_preview_does_not_validate_incomplete_final() {
+        let frames = [
+            serde_json::json!({"choices":[{"delta":{"tool_calls":[{"index":0,"id":"abcdefghi","function":{"name":"lookup","arguments":"{\"flag\":true"}}]}}]}),
+            serde_json::json!({"choices":[{"delta":{},"finish_reason":"tool_calls"}]}),
+        ];
+        let sse = frames
+            .iter()
+            .map(|frame| format!("data: {frame}\n\n"))
+            .collect::<String>()
+            + "data: [DONE]\n\n";
+        let server = MockServer::start().await;
+        mount_43(
+            &server,
+            ResponseTemplate::new(200)
+                .set_body_string(sse)
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .await;
+        let provider = provider_43(
+            Some(&server.uri()),
+            model_43(SMALL_43, false, false),
+            MistralOptions::default(),
+        );
+        let events = run_43(&provider, req_43("go")).await;
+        let deltas: Vec<_> = events
+            .iter()
+            .filter_map(|event| match event {
+                Ok(AssistantStreamEvent::ToolCallDelta { partial, .. }) => Some(partial),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(deltas.len(), 1);
+        let AssistantContent::ToolCall { tool_call } = &deltas[0].content[0] else {
+            panic!("partial tool call")
+        };
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&tool_call.arguments).unwrap(),
+            serde_json::json!({"flag":true})
+        );
+        let final_message = done_message_43(&events).await;
+        let AssistantContent::ToolCall { tool_call } = &final_message.content[0] else {
+            panic!("final tool call")
+        };
+        assert_eq!(tool_call.arguments, "{\"flag\":true");
+        assert!(tool_call.arguments_error.is_some());
+    }
+
+    #[tokio::test]
     async fn usage_splits_cached_prompt_tokens() {
         let sse = concat!(
             "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n",
@@ -2459,6 +2507,7 @@ mod mistral_43 {
         assert_eq!(serde_json::to_vec(&unknown).unwrap(), unknown_canonical);
     }
 
+    #[cfg(feature = "telemetry-tracing")]
     #[tokio::test]
     async fn producer_runs_under_the_frozen_telemetry_context() {
         use std::sync::atomic::{AtomicUsize, Ordering};

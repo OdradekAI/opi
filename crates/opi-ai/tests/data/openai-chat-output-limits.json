@@ -1,0 +1,24 @@
+{
+  "model": {
+    "id": "gpt-4o",
+    "name": "Fixture",
+    "context_window": 10000,
+    "max_tokens": 4096
+  },
+  "fields": ["max_completion_tokens", "max_tokens"],
+  "input": "hello",
+  "history": ["earlier", "previous"],
+  "cases": [
+    {"id": "omitted", "anchor": null, "max_tokens": null, "simple_limit": 4096},
+    {"id": "explicit", "anchor": null, "max_tokens": 1024, "simple_limit": 1024},
+    {"id": "above_model_default", "anchor": null, "max_tokens": 5000, "simple_limit": 5000},
+    {"id": "omitted_near_context", "anchor": 2284, "max_tokens": null, "simple_limit": 3618},
+    {"id": "explicit_near_context", "anchor": 2284, "max_tokens": 7000, "simple_limit": 3618},
+    {"id": "context_floor", "anchor": 6000, "max_tokens": null, "simple_limit": 1},
+    {"id": "explicit_zero", "anchor": 6000, "max_tokens": 0, "simple_limit": null}
+  ],
+  "sse": {
+    "stop": "data: {\"id\":\"chat-limit\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chat-limit\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\ndata: [DONE]\n\n",
+    "length": "data: {\"id\":\"chat-limit\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chat-limit\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"o\"},\"finish_reason\":\"length\"}],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1,\"total_tokens\":11}}\n\ndata: [DONE]\n\n"
+  }
+}

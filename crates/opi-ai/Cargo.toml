@@ -10,36 +10,129 @@ repository.workspace = true
 authors.workspace = true
 
 [features]
-# Keep the full developer experience as the default, while allowing consumers
-# that do not need the optional tracing carrier to build the AI core without it.
-default = ["telemetry-tracing"]
+# Built-in adapters, authentication backends and the bundled catalog are optional.
+# The default retains the complete SDK; no-default keeps core + scripted Faux.
+default = ["builtins", "telemetry-tracing"]
+builtins = [
+    "catalog-bundled",
+    "protocol-adapters",
+    "oauth-store",
+]
+# Built-in provider protocol adapters and protocol-owned signing/codecs, plus
+# protocol-only TLS/WebSocket/compression dependencies. Concrete provider
+# OAuth/store flows remain under `oauth-store`; `builtins` keeps depending on
+# this owner for compatibility.
+protocol-adapters = [
+    "provider-anthropic",
+    "provider-azure-openai",
+    "provider-bedrock",
+    "provider-gemini",
+    "provider-mistral",
+    "provider-openai-chat",
+    "provider-openai-codex-responses",
+    "provider-openai-responses",
+    "provider-openrouter",
+    "provider-pi-messages",
+    "provider-vertex",
+]
+# Shared source/operation glue used by individually selectable provider
+# protocol owners. This is an implementation feature; callers should select
+# one of the provider-* features below or the compatibility group above.
+provider-protocol-common = []
+# Protocol-neutral usage/accounting types shared by OpenAI-compatible and
+# Anthropic adapters. The public `openrouter::*` path remains provider-owned.
+provider-openrouter-usage = ["provider-protocol-common"]
+# Individual provider protocol/source owners. Each owner keeps its own wire
+# module selectable while reusing only the shared HTTP/auth/TLS seams it needs.
+provider-anthropic = ["provider-protocol-common", "http-transport", "provider-openrouter-usage"]
+provider-azure-openai = [
+    "provider-protocol-common", "http-transport", "provider-openai-chat",
+    "provider-openai-responses",
+]
+provider-bedrock = ["provider-protocol-common", "cloud-auth"]
+provider-gemini = ["provider-protocol-common", "http-transport"]
+provider-mistral = ["provider-protocol-common", "provider-openai-chat"]
+provider-openai-chat = [
+    "provider-protocol-common", "http-transport", "provider-openrouter-usage",
+    "provider-openai-responses-shared",
+]
+provider-openai-codex-responses = [
+    "provider-protocol-common", "provider-openai-responses-shared",
+    "websocket-compression",
+]
+provider-openai-responses = [
+    "provider-protocol-common", "http-transport", "provider-openai-responses-shared",
+]
+provider-openai-responses-shared = ["provider-protocol-common"]
+provider-openrouter = ["provider-protocol-common", "provider-openai-chat"]
+provider-pi-messages = ["provider-protocol-common", "http-transport"]
+provider-vertex = ["provider-protocol-common", "provider-gemini", "cloud-auth"]
+# Protocol-independent cloud credential sources and signing/codecs. This
+# owner supplies AWS source chains/STS and GCP ADC families over shared HTTP;
+# provider wire adapters remain under `protocol-adapters`.
+cloud-auth = [
+    "http-transport",
+    "dep:hmac", "dep:aws-smithy-query", "dep:aws-smithy-xml",
+    "dep:xmlparser", "dep:p256", "dep:sha1",
+]
+# Provider-owned OAuth flows and their store-backed login/refresh integration.
+# Neutral credential values, mutation, store, and OAuth trait contracts remain
+# available from core; this owner only adds the concrete provider flows.
+oauth-store = [
+    "http-transport",
+]
+# The embedded Pi model catalog is independently selectable. `builtins` keeps
+# depending on this feature so existing explicit-builtins consumers retain the
+# same public registration surface and default behavior.
+catalog-bundled = []
+# Shared HTTP transport. Provider protocol adapters and provider OAuth/store
+# remain separate and transitively select this feature. The TLS backend is an
+# independent owner so callers that only need source-scoped TLS configuration
+# do not acquire reqwest.
+http-transport = [
+    "tls-backend", "dep:reqwest", "dep:windows-sys",
+]
+# Fixed rustls/AWS-LC source-scoped backend used by `TlsOptions`. This owner
+# exposes the typed TLS configuration module without selecting HTTP transport.
+tls-backend = [
+    "dep:rustls", "dep:aws-lc-rs", "dep:rustls-native-certs",
+]
+# Source-scoped WebSocket Upgrade, RFC 6455 framing and permessage-deflate
+# owner. This is independently selectable for callers that need the public
+# `opi_ai::ws` bridge without provider protocol adapters; it transitively
+# reuses the shared HTTP/TLS owners.
+websocket-compression = [
+    "http-transport", "dep:libz-rs-sys", "dep:flate2",
+]
 telemetry-tracing = ["opi-telemetry/tracing"]
 
 [dependencies]
-opi-telemetry = { workspace = true, default-features = false }
+opi-telemetry = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+# Final argument consumers and session roundtrips need correctly rounded floats.
+# Cargo unifies this feature with callers using the same serde_json version.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 base64 = { workspace = true }
 thiserror = { workspace = true }
-reqwest = { workspace = true }
+reqwest = { workspace = true, optional = true }
 http = { workspace = true }
 futures-core = { workspace = true }
 futures-util = { workspace = true }
 uuid = { workspace = true }
 time = { workspace = true }
 tracing = { workspace = true }
-hmac = { workspace = true }
+hmac = { workspace = true, optional = true }
 sha2 = { workspace = true }
 hex = { workspace = true }
 # Private STS protocol codecs: form-query writer, bounded XML reader, and the
 # lexical/structure precheck tokenizer (rust-backends §3.3 fixed selection).
-aws-smithy-query = { workspace = true }
-aws-smithy-xml = { workspace = true }
-xmlparser = { workspace = true }
-p256 = { workspace = true }
-sha1 = { workspace = true }
+aws-smithy-query = { workspace = true, optional = true }
+aws-smithy-xml = { workspace = true, optional = true }
+xmlparser = { workspace = true, optional = true }
+p256 = { workspace = true, optional = true }
+sha1 = { workspace = true, optional = true }
 rand = { workspace = true }
 regex = { workspace = true }
 regress = { workspace = true }
@@ -48,14 +141,14 @@ ryu-js = { workspace = true }
 url = { workspace = true }
 secrecy = { workspace = true }
 # Upstream crypto profile (RDF-23): private signing owner only; not re-exported.
-rustls = { workspace = true }
-aws-lc-rs = { workspace = true }
-rustls-native-certs = { workspace = true }
-libz-rs-sys = { workspace = true }
-flate2 = { workspace = true }
+rustls = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true, optional = true }
+rustls-native-certs = { workspace = true, optional = true }
+libz-rs-sys = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { workspace = true, features = ["Win32_Security"] }
+windows-sys = { workspace = true, optional = true, features = ["Win32_Security"] }
 
 [dev-dependencies]
 tracing-core = { workspace = true }
@@ -72,3 +165,400 @@ hyper-util = { workspace = true }
 http-body-util = { workspace = true }
 h2 = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
+
+# Built-in integration targets are excluded from the minimum SDK profile.
+
+[[test]]
+name = "adc_owner_regressions"
+required-features = ["builtins"]
+
+[[test]]
+name = "anthropic_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "anthropic_thinking_roundtrip"
+required-features = ["builtins"]
+
+[[test]]
+name = "api_mapped_provider"
+required-features = ["builtins"]
+
+[[test]]
+name = "auth_contracts"
+required-features = ["builtins"]
+
+[[test]]
+name = "auth_process_lifecycle"
+required-features = ["builtins"]
+
+[[test]]
+name = "azure_openai_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "bedrock_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "builtin_auth_ownership"
+required-features = ["builtins"]
+
+[[test]]
+name = "builtin_native_scoped"
+required-features = ["builtins"]
+
+[[test]]
+name = "builtin_scoped_env"
+required-features = ["builtins"]
+
+[[test]]
+name = "catalog_artifact"
+required-features = ["catalog-bundled"]
+
+[[test]]
+name = "catalog_lifecycle"
+required-features = ["builtins"]
+
+[[test]]
+name = "catalog_operations"
+required-features = ["builtins"]
+
+[[test]]
+name = "catalog_personalization"
+required-features = ["builtins"]
+
+[[test]]
+name = "chat_argument_preview"
+required-features = ["builtins"]
+
+[[test]]
+name = "chat_capture_replay"
+required-features = ["builtins"]
+
+[[test]]
+name = "chat_pi_messages"
+required-features = ["builtins"]
+
+[[test]]
+name = "pi_messages_terminal"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_chat_response_observer"
+required-features = ["builtins"]
+
+[[test]]
+name = "classifier_contract"
+required-features = ["builtins"]
+
+[[test]]
+name = "codex_native_options"
+required-features = ["builtins"]
+
+[[test]]
+name = "codex_telemetry"
+required-features = ["builtins", "telemetry-tracing"]
+
+[[test]]
+name = "connection_pooling"
+required-features = ["builtins"]
+
+[[test]]
+name = "external_sdk"
+required-features = ["builtins"]
+
+[[test]]
+name = "gemini_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "gemini_lifecycle"
+required-features = ["builtins"]
+
+[[test]]
+name = "http_acceptance"
+required-features = ["builtins"]
+
+[[test]]
+name = "http_transport_profile"
+required-features = ["http-transport"]
+
+[[test]]
+name = "tls_backend_profile"
+required-features = ["tls-backend"]
+
+[[test]]
+name = "websocket_compression_profile"
+required-features = ["websocket-compression"]
+
+[[test]]
+name = "cloud_auth_profile"
+required-features = ["cloud-auth"]
+
+[[test]]
+name = "protocol_adapter_profile"
+required-features = ["protocol-adapters"]
+
+[[test]]
+name = "provider_anthropic_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-anthropic"]
+
+[[test]]
+name = "provider_azure_openai_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-azure-openai"]
+
+[[test]]
+name = "provider_bedrock_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-bedrock"]
+
+[[test]]
+name = "provider_gemini_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-gemini"]
+
+[[test]]
+name = "provider_mistral_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-mistral"]
+
+[[test]]
+name = "provider_openai_chat_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-openai-chat"]
+
+[[test]]
+name = "provider_openai_codex_responses_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-openai-codex-responses"]
+
+[[test]]
+name = "provider_openai_responses_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-openai-responses"]
+
+[[test]]
+name = "provider_openrouter_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-openrouter"]
+
+[[test]]
+name = "provider_pi_messages_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-pi-messages"]
+
+[[test]]
+name = "provider_vertex_profile"
+path = "tests/provider_protocol_profile.rs"
+required-features = ["provider-vertex"]
+
+[[test]]
+name = "oauth_store_profile"
+required-features = ["oauth-store"]
+
+[[test]]
+name = "image_provider_serialization"
+required-features = ["builtins"]
+
+[[test]]
+name = "mistral_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "model_capabilities_migration"
+required-features = ["builtins"]
+
+[[test]]
+name = "model_wire_metadata"
+required-features = ["builtins"]
+
+[[test]]
+name = "node4_preparation"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_flows"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_store_integration"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_wire_shape"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_chat_finish_timing"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_chat_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_choice_usage"
+required-features = ["builtins"]
+
+[[test]]
+name = "bedrock_pending_metadata"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_chat_interleaved"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_chat_output_limits"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_codex_responses"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_compat_lifecycle"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_responses_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "openai_responses_lifecycle"
+required-features = ["builtins"]
+
+[[test]]
+name = "openrouter_cost"
+required-features = ["builtins"]
+
+[[test]]
+name = "openrouter_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "partial_aliases"
+required-features = ["builtins"]
+
+[[test]]
+name = "per_request_auth"
+required-features = ["builtins"]
+
+[[test]]
+name = "provider_collection"
+required-features = ["builtins"]
+
+[[test]]
+name = "provider_error_classes"
+required-features = ["builtins"]
+
+[[test]]
+name = "provider_lifecycle"
+required-features = ["builtins"]
+
+[[test]]
+name = "proxy_support"
+required-features = ["builtins"]
+
+[[test]]
+name = "public_utilities"
+required-features = ["builtins"]
+
+[[test]]
+name = "registry"
+required-features = ["builtins"]
+
+[[test]]
+name = "replay_contract"
+required-features = ["builtins"]
+
+[[test]]
+name = "request_enrichment"
+required-features = ["builtins"]
+
+[[test]]
+name = "resource_cleanup"
+required-features = ["builtins"]
+
+[[test]]
+name = "retry_backoff"
+required-features = ["builtins"]
+
+[[test]]
+name = "service_tier_cost"
+required-features = ["builtins"]
+
+[[test]]
+name = "telemetry_carrier"
+required-features = ["telemetry-tracing"]
+
+[[test]]
+name = "telemetry_operations"
+required-features = ["builtins", "telemetry-tracing"]
+
+[[test]]
+name = "tls_contract"
+required-features = ["builtins"]
+
+[[test]]
+name = "tool_result_no_leak"
+required-features = ["builtins"]
+
+[[test]]
+name = "tool_result_wire"
+required-features = ["builtins"]
+
+[[test]]
+name = "transcript_contract"
+required-features = ["builtins"]
+
+[[test]]
+name = "vertex_fixtures"
+required-features = ["builtins"]
+
+[[test]]
+name = "whole_call_retry"
+required-features = ["builtins"]
+
+[[test]]
+name = "ws_upgrade"
+required-features = ["websocket-compression"]
+
+[[example]]
+name = "quick_start"
+required-features = ["builtins"]
+
+[[example]]
+name = "quick_start_stream"
+required-features = ["builtins"]
+
+[[example]]
+name = "tool_loop"
+required-features = ["builtins"]
+
+[[test]]
+name = "anthropic_usage_updates"
+required-features = ["builtins"]
+
+[[test]]
+name = "anthropic_nested_usage"
+required-features = ["builtins"]
+
+[[test]]
+name = "responses_repeated_terminal"
+required-features = ["builtins"]
+
+[[test]]
+name = "anthropic_repeated_message_stop"
+required-features = ["builtins"]
+
+[[test]]
+name = "gemini_repeated_finish"
+required-features = ["builtins"]
+
+[[test]]
+name = "mistral_repeated_finish"
+required-features = ["builtins"]

@@ -1,0 +1,773 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "scope": "#115 current Models entry/caller map and Anthropic usage/partial/observer repair, with approved differences; not full Pi alignment",
+  "checks": [
+    {
+      "name": "workspace-clippy-final",
+      "command": [
+        "python",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--all-targets",
+        "--offline",
+        "--locked",
+        "-j4",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 68.62,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-clippy-final.log",
+        "sha256": "cc29877e60a024487654ada2fc055b4fc468b5037890ba079380171ad00b38f7"
+      }
+    },
+    {
+      "name": "workspace-tests",
+      "command": [
+        "python",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--all-targets",
+        "--offline",
+        "--locked",
+        "-j4",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "seconds": 1032.78,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-tests.log",
+        "sha256": "9f6d735de09d536c3a2bfd592a62bf82f40dd7a186b9f0ba384a509a2a325d92"
+      }
+    },
+    {
+      "name": "workspace-doctests",
+      "command": [
+        "python",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--doc",
+        "--offline",
+        "--locked",
+        "-j4"
+      ],
+      "exit": 0,
+      "seconds": 18.91,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-doctests.log",
+        "sha256": "2a516cde3083fab9a025ac44ca1273016bf4aba865f9d13842334ec658119f11"
+      }
+    },
+    {
+      "command": [
+        "cargo",
+        "doc",
+        "--offline",
+        "--locked",
+        "--workspace",
+        "--exclude",
+        "opi-eval",
+        "--no-deps",
+        "-j4"
+      ],
+      "exit": 0,
+      "seconds": 90.17,
+      "name": "workspace-rustdoc",
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-rustdoc.log",
+        "sha256": "11ed77cf9beb8ee2835c23d40e4f615a10ad75b589cea266c0b5cc73244da4bb"
+      },
+      "RUSTDOCFLAGS": "-D warnings"
+    }
+  ],
+  "counts": {
+    "workspace": {
+      "targets": 278,
+      "passed": 6517,
+      "failed": 0,
+      "ignored": 5,
+      "children": [
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0
+        ]
+      ],
+      "targets_without_libtest_summary": [
+        "tests\\adapter_host_mock.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\adapter_host_mock-d425ddee5713d515.exe)",
+        "tests\\fixtures\\execution_backend_mock.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\execution_backend_mock-950c1cc34fef17f8.exe)",
+        "tests\\package_adapter_example.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\package_adapter_example-5d234bc03524fe98.exe)"
+      ]
+    },
+    "doctests": {
+      "passed": 12,
+      "failed": 0,
+      "ignored": 0
+    }
+  },
+  "additional_checks": [
+    {
+      "name": "format",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\fmt-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "python-package-suite",
+      "passed": 114,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\python-package-tests.log",
+        "sha256": "4d81d4035d0f067c4623f13a72626c098e972a0e25b709505fa91565eb06a4b5"
+      },
+      "reproduce_command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "command_provenance": "Equivalent reproduction command; original argv was not recorded separately. Outcome/counts are recorded in the bound raw unittest log."
+    },
+    {
+      "name": "python-differential-suite",
+      "passed": 150,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\python-differential-tests.log",
+        "sha256": "7fb5c6f6292570a54b13501fe000bf5a306393f5e6dda97fe8bd36c390bfadfd"
+      },
+      "reproduce_command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance/differential",
+        "-p",
+        "test_*.py",
+        "-v"
+      ],
+      "command_provenance": "Equivalent reproduction command; original argv was not recorded separately. Outcome/counts are recorded in the bound raw unittest log."
+    },
+    {
+      "name": "post-hardening-package-tests",
+      "passed": 3,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\package-final-tests.log",
+        "sha256": "f2aedc512e5cab06345de9bea8cf33496a61ac27e5d09115820abc3a77a4a3fa"
+      },
+      "reproduce_command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance",
+        "-p",
+        "test_anthropic_package.py",
+        "-v"
+      ],
+      "command_provenance": "Equivalent reproduction command; original argv was not recorded separately. Outcome/counts are recorded in the bound raw unittest log."
+    },
+    {
+      "name": "post-hardening-comparator-tests",
+      "passed": 11,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\comparator-verified-tests.log",
+        "sha256": "5cdc29c7de5df9a1a21e12cf6b9151199dcdafea96c60c3287fb7a8e5a5e0b4b"
+      },
+      "reproduce_command": [
+        "python",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance/differential",
+        "-p",
+        "test_anthropic_usage.py",
+        "-v"
+      ],
+      "command_provenance": "Equivalent reproduction command; original argv was not recorded separately. Outcome/counts are recorded in the bound raw unittest log."
+    },
+    {
+      "name": "CLI-no-overwrite-negative-controls",
+      "receipt": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\cli-negative-results.json",
+        "sha256": "511deae1b7b9507dbf16277c3715f834e0c09734ec6c5b37f0fdf9f03fbb874d"
+      }
+    },
+    {
+      "name": "new-file-whitespace",
+      "result": "PASS",
+      "paths": [
+        "crates/opi-ai/src/anthropic.rs",
+        "crates/opi-ai/tests/anthropic_usage_updates.rs",
+        "crates/opi-ai/tests/data/anthropic-usage-updates.json",
+        "crates/opi-coding-agent/tests/anthropic_usage_recovery.rs",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-differential.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-final-differential.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-final-materials.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-materials.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-package-bindings.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-package.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-regrade.json",
+        "docs/iterations/opi-ai-1-5-alignment/issues/115-preserve-anthropic-usage-updates.md",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_anthropic_usage.mjs",
+        "scripts/pi-sdk-conformance/differential/compare_anthropic_usage.py",
+        "scripts/pi-sdk-conformance/differential/replay_anthropic_usage.py",
+        "scripts/pi-sdk-conformance/differential/test_anthropic_usage.py",
+        "scripts/pi-sdk-conformance/run_anthropic_package.py",
+        "scripts/pi-sdk-conformance/test_anthropic_package.py"
+      ]
+    },
+    {
+      "name": "doc-check-published",
+      "command": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit": 0,
+      "seconds": 0.78,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\doc-check-published.log",
+        "sha256": "058e14f4a41df91dec666fc9b4c8ab4df93998813c6c00245f71e34b50f92d32"
+      }
+    },
+    {
+      "name": "diff-check-published",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.16,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\diff-check-published.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "doc-check-final",
+      "command": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit": 1,
+      "seconds": 0.8,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\doc-check-final.log",
+        "sha256": "f518e66df87c972a010b15b061c9c1bc900564fdcb4b983955c56347c408d2e6"
+      }
+    },
+    {
+      "name": "diff-check-final",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "seconds": 0.2,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\diff-check-final.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "node-check-final",
+      "command": [
+        "node",
+        "--check",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_anthropic_usage.mjs"
+      ],
+      "exit": 0,
+      "seconds": 0.03,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\node-check-final.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cache-status-final",
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "status",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--quick",
+        "--json"
+      ],
+      "exit": 0,
+      "seconds": 0.99,
+      "log": {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\cache-status-final.log",
+        "sha256": "1c5a73612eaa6f36eea5a47a2b63b741641e42e4538b16c0b5a8cc25237529a2"
+      }
+    }
+  ],
+  "package_and_pairing": {
+    "scope": "three repetitions each, sealed pre-repair 84/current Rust 96/Pi 48 cases; two real archive profiles with 3 SDK tests each",
+    "builds": [
+      {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\before-build.json",
+        "sha256": "5653f9c786e68e3d3e3dd93a5b80ebfacb09d5438a670c99ba88044d3a5692e4"
+      },
+      {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\after-build.json",
+        "sha256": "adcab918e3f3d3081bfb662f9bb08178c4b13eba589dca0f8b6180b5e173e4cc"
+      },
+      {
+        "path": "C:\\Temp\\opi-entry-contracts-20261114\\final-build.json",
+        "sha256": "8de43fabc76051f72ad88e1d4d535350b1b04b5b7ff9343762bf3f71c8f3418d"
+      }
+    ],
+    "package_files_verified": {
+      "opi-ai": 321,
+      "opi-telemetry": 17
+    },
+    "checker_applicability": "Original executable/probe observations are preserved. Regrade uses stricter current comparator and feature guard against exactly the retained raw traces/metadata; no changed product inputs."
+  },
+  "history": {
+    "initial_state": {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\initial-state.json",
+      "sha256": "814ede787a32eaaa846a0717131394b89377ecc6140468804bda93a51120ce2e"
+    },
+    "pre_existing_json_count": 244,
+    "pre_existing_json_byte_identical": true,
+    "historical_artifacts_verified": [
+      {
+        "path": "C:\\Temp\\opi-preview-boundaries-package-20261114\\opi-ai-0.8.3.crate",
+        "sha256": "d41df0d73adcfbb6021b77befb49d775739a1b1dc30c8a91e17fdbaf13eec947"
+      },
+      {
+        "path": "C:\\Temp\\opi-preview-boundaries-package-20261114\\opi-telemetry-0.8.3.crate",
+        "sha256": "54ffe66285c677661c4f64991b53fa580f69fe8f0a9e370588bc6af285d2fd7a"
+      },
+      {
+        "path": "C:\\Temp\\opi-incremental-preview-package-20261114\\opi-ai-0.8.3.crate",
+        "sha256": "f836805d2034314f07b40790fe0657638824b53c61054eeb1dbf607a9b86b07b"
+      },
+      {
+        "path": "C:\\Temp\\opi-incremental-preview-package-20261114\\opi-telemetry-0.8.3.crate",
+        "sha256": "54ffe66285c677661c4f64991b53fa580f69fe8f0a9e370588bc6af285d2fd7a"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-package-20261114\\opi-ai-0.8.3.crate",
+        "sha256": "4807f02a5f00f51702067e885dd682712c8ef10d0fb16e1cffa527244fa50648"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-package-20261114\\opi-telemetry-0.8.3.crate",
+        "sha256": "54ffe66285c677661c4f64991b53fa580f69fe8f0a9e370588bc6af285d2fd7a"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-20261114\\sealed\\streaming_json-096482269c0a5003.exe",
+        "sha256": "296a351c94acbe6c47abba1258de47cc2842b45cb0f1d087cae5cbce8fdd18c2"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-20261114\\sealed\\incremental_argument_preview-4661fa67d4e4dbf6.exe",
+        "sha256": "04cb2633961a5d71809fd85af70430b28db8f22646289a88f1edce1f2906b79f"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-20261114\\sealed\\chat_argument_preview-4cdbb6609a348a7f.exe",
+        "sha256": "806bc6dea247457c1740ca34bd1fc9657aec193caa42d930d129474480b26298"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-20261114\\sealed\\final_numeric_decoding-1d0eef79ef794ed3.exe",
+        "sha256": "c412364ab69ba5112302a3d2eaebdd61cd579345623e9c5be01e18db71dc46c3"
+      },
+      {
+        "path": "C:\\Temp\\opi-final-numbers-20261114\\sealed\\final_numeric_arguments-45d48c192fa38e45.exe",
+        "sha256": "bc25d3c77a765eaf690e9a7d2c8c5295c3f9d3d01dcd3f8fc97cfaec2830c288"
+      }
+    ],
+    "failures": "Earlier compile/assertion/probe/orchestration and Clippy failures retained as raw logs. Initial final doc check ran before this receipt existed and detected only its pending link. First stricter Pi event regrade assumed final-error state too early; corrected fixture source stages documented in the regrade. No old receipt is relabeled.",
+    "cache_deletion": false
+  },
+  "changed_existing": {
+    "CHANGELOG.md": {
+      "before": "40657a0a509169968c2010f17b2f5db849bc0c96633da7f1fb66e06efd42d079",
+      "after": "5c0b24818bc25a280aa8704d281abd025ac5b743ffb368a88cfe76f2e214eead"
+    },
+    "crates/opi-ai/Cargo.toml": {
+      "before": "0bef33dc88d419e894e719a20e00dbd5672286e24fa42a0b1b97780bf4ba819b",
+      "after": "9985781082dd996798070fdc9f1946bd85c86a1491183d243ad74b195f02969d"
+    },
+    "crates/opi-ai/README.md": {
+      "before": "4800f731593b0cfaf94016f5fbe1fa8ca13272fa65cc82321ddf5e2d276ecbf8",
+      "after": "d29cf98a10536be8b8619f77eb9109e87d8b18207887584b44174ee9f1f80f01"
+    },
+    "crates/opi-ai/README.zh.md": {
+      "before": "0ce795b9525b2146b1f0e5e822901574e9e0507c18f8ad60a2c071a957fbc757",
+      "after": "baeb1f09bf203d9e8dc16669b7011c784fb61698a2e31d15ecedf43c9aa1285f"
+    },
+    "crates/opi-ai/docs/cost-pricing.md": {
+      "before": "3f8e1d6acdb0f9d61435b1c1ce9b32e14ebeaca6cc98d847807725a541e4b9be",
+      "after": "33c9a5eb4ddfd7ccc837e1f301715e0a6caa90609003a0f9c858b3b478e7c028"
+    },
+    "crates/opi-ai/docs/cost-pricing.zh.md": {
+      "before": "a3c1ea0e2bfa879fec9b9c9e2415e933a9842b0aafbcefe990d4a76d2dddf7b8",
+      "after": "92235cd3332e16eea74b1482afa912526c6304b4bd6fa51c2bb4f3d3db992c04"
+    },
+    "crates/opi-ai/src/stream.rs": {
+      "before": "73620d205a2d542f3b8ee14c182b2d7d22dd18fbdd587e5af3f8a92ef4845ddd",
+      "after": "c90d0d3be95fe9ea6b02cb2a4a7d3f90bb8caafa86db952201a6b3e66f046e4b"
+    },
+    "docs/iterations/opi-ai-1-5-alignment/contract-index.json": {
+      "before": "a47fba465cc7d888a1b200591a3f9c7454d3967f83dc8290a489b3d412b6e0a0",
+      "after": "3598be47794a9cdb6b2a0c7f71dcd1abc8630d2501da32897d177a5816eaa346"
+    },
+    "docs/iterations/opi-ai-1-5-alignment/decisions/04-public-contract.md": {
+      "before": "d7e3d42ceb628dc8e7514d120712b3367e57c2d5f6fadae6da9a181f9e8f98eb",
+      "after": "fa4e1fde8aa913a8d01c797f749c6d55f98d646e8f4867c52b06a5410baa2820"
+    },
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": {
+      "before": "8b6c6d57b0060425b005a862f15c44ce5f184c597c7bea98a30ccae85bc241ff",
+      "after": "20acb7e9a62ecfcd50e9621d05e1713b5edc1bea515f6ba9570ab0b4a1278788"
+    }
+  },
+  "previously_clean_runtime": {
+    "path": "crates/opi-ai/src/anthropic.rs",
+    "before": "dab8b89d08cd1b1ba7aba5c91fd453ec664fb1a122e9b7141baae7366dd46de1",
+    "after": "39b22bd7f7feb83bbbd0907ac83763e715a0bff3e9919612318b59382f9f1290"
+  },
+  "task_new_paths": {
+    "crates/opi-ai/tests/anthropic_usage_updates.rs": "28af432fecc9c69caf754a17d1aa0e268bef36eefc70581db067c74dfeba292f",
+    "crates/opi-ai/tests/data/anthropic-usage-updates.json": "2e6816c55b80ee46b4ac67f6824ba35df1acb1d6562cdf87e8d8a28bc316b5c3",
+    "crates/opi-coding-agent/tests/anthropic_usage_recovery.rs": "93442394d13b31084986d6323cc827e4958cfcbce502129d8907b97ca955d318",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-differential.json": "52247297a45ff8ac8bbcc6c8d99d5568d26e0e1af2f54a98f639b0c89c93f016",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-final-differential.json": "4818fde8c131bddb94ad5e1bfb34358ffc3fa6871831741d1a79ffb2db3c8549",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-final-materials.json": "2ecd6c25199423a204aef67958243235c8a8eef4a888ee3f8f546b0eb84e5486",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-materials.json": "9dce4a5ad28f4f2dc089e4ef6f57fefd0822ad34874da0c89998a5e02acbfb31",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-package-bindings.json": "e072dc5f29e0b003e6b1f0d477bcf0e987d835db74c4567dbe716abdc69abcf5",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-package.json": "ff4212992ced2194fd6afef064b44adf64fbbc1f121d7aca2789516f7dd54c9a",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-regrade.json": "1fba92a06db8960dc984f15a91d2611c3b15ad5e2fe17458db6ca1e33cb618c9",
+    "docs/iterations/opi-ai-1-5-alignment/issues/115-preserve-anthropic-usage-updates.md": "fd6f4a6d0adecb7cbf88c084f0ceaec08516551ce38f34eb8cd384899f6c3848",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_anthropic_usage.mjs": "ad0d1c0e5534c8e4eeed844f32b01a1ab84ea6c45ebed6142e14c4edd1f7194f",
+    "scripts/pi-sdk-conformance/differential/compare_anthropic_usage.py": "fcb10da0d2dae36ac6a952d036cddc78f67a06bbfd78cdd49f9001907a4ec5c4",
+    "scripts/pi-sdk-conformance/differential/replay_anthropic_usage.py": "25b2cba931b6fb974a5ce2387c255c61b01a001d43c738999cb363b2a522ca97",
+    "scripts/pi-sdk-conformance/differential/test_anthropic_usage.py": "a71ba45b72f56fc50e087cc0a3acb7a533c0da367bb8edf078609194c4cc92e8",
+    "scripts/pi-sdk-conformance/run_anthropic_package.py": "f387b904621ae03865a87fe7c94107c98120e7ef27294883e38837eddee7f8da",
+    "scripts/pi-sdk-conformance/test_anthropic_package.py": "67aa5fc64204652958ee792b8fc4eff75912c90a894c0adbd7c464f75ae4a86c"
+  },
+  "worktree": {
+    "head": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+    "committed": "none-for-this-task",
+    "staged": "",
+    "unstaged": "M\t.agents/skills/opi-implement/references/ledger-schema.md\nM\t.gitignore\nM\tCHANGELOG.md\nM\tcrates/opi-ai/Cargo.toml\nM\tcrates/opi-ai/README.md\nM\tcrates/opi-ai/README.zh.md\nM\tcrates/opi-ai/docs/cost-pricing.md\nM\tcrates/opi-ai/docs/cost-pricing.zh.md\nM\tcrates/opi-ai/docs/provider-auth.md\nM\tcrates/opi-ai/docs/provider-auth.zh.md\nM\tcrates/opi-ai/docs/testing.md\nM\tcrates/opi-ai/docs/testing.zh.md\nM\tcrates/opi-ai/docs/transport.md\nM\tcrates/opi-ai/docs/transport.zh.md\nM\tcrates/opi-ai/docs/utilities.md\nM\tcrates/opi-ai/docs/utilities.zh.md\nM\tcrates/opi-ai/examples/lifecycle_differential.rs\nM\tcrates/opi-ai/src/anthropic.rs\nM\tcrates/opi-ai/src/api.rs\nM\tcrates/opi-ai/src/auth.rs\nM\tcrates/opi-ai/src/auth/oauth/mod.rs\nM\tcrates/opi-ai/src/auth/store_oauth.rs\nM\tcrates/opi-ai/src/auth/values.rs\nM\tcrates/opi-ai/src/azure_openai.rs\nM\tcrates/opi-ai/src/bedrock/mod.rs\nD\tcrates/opi-ai/src/bedrock/retry.rs\nM\tcrates/opi-ai/src/callbacks.rs\nM\tcrates/opi-ai/src/catalog/mod.rs\nM\tcrates/opi-ai/src/catalog/wire.rs\nM\tcrates/opi-ai/src/classifier.rs\nM\tcrates/opi-ai/src/codex_resources.rs\nM\tcrates/opi-ai/src/deferred.rs\nM\tcrates/opi-ai/src/errors.rs\nM\tcrates/opi-ai/src/execution.rs\nM\tcrates/opi-ai/src/http.rs\nM\tcrates/opi-ai/src/lib.rs\nM\tcrates/opi-ai/src/models.rs\nM\tcrates/opi-ai/src/openai_chat.rs\nM\tcrates/opi-ai/src/openai_codex_responses.rs\nM\tcrates/opi-ai/src/openai_codex_responses/ws_transport.rs\nM\tcrates/opi-ai/src/openai_responses.rs\nM\tcrates/opi-ai/src/openai_responses_shared.rs\nM\tcrates/opi-ai/src/provider.rs\nM\tcrates/opi-ai/src/provider_env.rs\nM\tcrates/opi-ai/src/retry.rs\nM\tcrates/opi-ai/src/stream.rs\nM\tcrates/opi-ai/src/telemetry.rs\nM\tcrates/opi-ai/src/test_support.rs\nM\tcrates/opi-ai/src/transcript.rs\nM\tcrates/opi-ai/src/types/classifier.rs\nM\tcrates/opi-ai/src/types/deferred.rs\nM\tcrates/opi-ai/src/types/message.rs\nM\tcrates/opi-ai/src/types/model.rs\nM\tcrates/opi-ai/src/types/usage.rs\nM\tcrates/opi-ai/src/ws/frame.rs\nM\tcrates/opi-ai/src/ws/io.rs\nM\tcrates/opi-ai/src/ws/tests/io.rs\nM\tcrates/opi-ai/tests/ai_telemetry.rs\nM\tcrates/opi-ai/tests/anthropic_fixtures.rs\nM\tcrates/opi-ai/tests/azure_openai_fixtures.rs\nM\tcrates/opi-ai/tests/bedrock_fixtures.rs\nM\tcrates/opi-ai/tests/chat_pi_messages.rs\nM\tcrates/opi-ai/tests/custom_provider_registration.rs\nM\tcrates/opi-ai/tests/deferred_contract.rs\nM\tcrates/opi-ai/tests/execution_lifecycle.rs\nM\tcrates/opi-ai/tests/gemini_fixtures.rs\nM\tcrates/opi-ai/tests/http_acceptance.rs\nM\tcrates/opi-ai/tests/mistral_fixtures.rs\nM\tcrates/opi-ai/tests/openai_chat_fixtures.rs\nM\tcrates/opi-ai/tests/openai_codex_responses.rs\nM\tcrates/opi-ai/tests/openai_responses_fixtures.rs\nM\tcrates/opi-ai/tests/platform_delivery.rs\nM\tcrates/opi-ai/tests/public_utilities.rs\nM\tcrates/opi-ai/tests/stream_events.rs\nM\tcrates/opi-ai/tests/tool_result_wire.rs\nM\tcrates/opi-ai/tests/vertex_fixtures.rs\nM\tcrates/opi-ai/tests/whole_call_retry.rs\nM\tcrates/opi-coding-agent/README.md\nM\tcrates/opi-coding-agent/README.zh.md\nM\tcrates/opi-coding-agent/src/harness.rs\nM\tcrates/opi-coding-agent/src/session_coordinator.rs\nM\tcrates/opi-coding-agent/tests/json_mode.rs\nM\tcrates/opi-coding-agent/tests/session_runtime.rs\nD\tcrates/opi-coding-agent/tests/spec_ledger.rs\nM\tdocs/iterations/opi-ai-1-5-alignment/contract-index.json\nM\tdocs/iterations/opi-ai-1-5-alignment/decisions/04-public-contract.md\nM\tdocs/iterations/opi-ai-1-5-alignment/decisions/11-telemetry-lifecycle.md\nM\tdocs/iterations/opi-ai-1-5-alignment/spec.md\nM\tdocs/iterations/opi-ai-1-5-alignment/tools/freeze_acceptance_materials.py\nM\tdocs/iterations/opi-ai-1-5-alignment/tools/observe_upstream.mjs\nM\tdocs/iterations/opi-ai-1-5-alignment/tools/test_acceptance_materials.py\nM\tscripts/pi-sdk-conformance/consumer-readme/Cargo.toml\nM\tscripts/pi-sdk-conformance/consumer/Cargo.toml\nM\tscripts/pi-sdk-conformance/differential/README.md\nM\tscripts/pi-sdk-conformance/differential/compare_lifecycle.py\nM\tscripts/pi-sdk-conformance/differential/run_lifecycle_differential.py\nM\tscripts/pi-sdk-conformance/differential/test_lifecycle_differential.py\nM\tscripts/pi-sdk-conformance/differential/test_runner.py\nM\tscripts/pi-sdk-conformance/differential/test_rust_driver.py\nM\tscripts/pi-sdk-conformance/run_early_package_proof.py\nM\tscripts/pi-sdk-conformance/run_readme_examples.py\nM\tscripts/pi-sdk-conformance/test_package_proof.py\nM\tscripts/pi-sdk-conformance/test_run_readme_examples.py",
+    "untracked_before_receipt": "crates/opi-agent/tests/agent_chat_finish_timing.rs\ncrates/opi-ai/src/retry/smithy.rs\ncrates/opi-ai/src/streaming_json.rs\ncrates/opi-ai/tests/anthropic_usage_updates.rs\ncrates/opi-ai/tests/chat_argument_preview.rs\ncrates/opi-ai/tests/core_profile.rs\ncrates/opi-ai/tests/data/anthropic-usage-updates.json\ncrates/opi-ai/tests/data/chat-argument-preview.json\ncrates/opi-ai/tests/data/codex-connection-limit.json\ncrates/opi-ai/tests/data/codex-failed-recovery.json\ncrates/opi-ai/tests/data/codex-terminal.json\ncrates/opi-ai/tests/data/codex-websocket-identity.json\ncrates/opi-ai/tests/data/codex-websocket-idle-timeout.json\ncrates/opi-ai/tests/data/codex-websocket-idle.json\ncrates/opi-ai/tests/data/incremental-argument-preview.json\ncrates/opi-ai/tests/data/openai-chat-finish-timing.json\ncrates/opi-ai/tests/data/openai-chat-interleaved.sse\ncrates/opi-ai/tests/data/openai-chat-output-limits.json\ncrates/opi-ai/tests/data/partial-aliases.sse\ncrates/opi-ai/tests/data/responses-error.json\ncrates/opi-ai/tests/data/responses-failed.json\ncrates/opi-ai/tests/final_numeric_decoding.rs\ncrates/opi-ai/tests/incremental_argument_preview.rs\ncrates/opi-ai/tests/openai_chat_finish_timing.rs\ncrates/opi-ai/tests/openai_chat_interleaved.rs\ncrates/opi-ai/tests/openai_chat_output_limits.rs\ncrates/opi-ai/tests/openai_codex_responses/session_fallback_cleanup.rs\ncrates/opi-ai/tests/openai_codex_responses/terminal.rs\ncrates/opi-ai/tests/openai_codex_responses/websocket_idle.rs\ncrates/opi-ai/tests/openai_codex_responses/websocket_idle_timeout.rs\ncrates/opi-ai/tests/partial_aliases.rs\ncrates/opi-ai/tests/streaming_json.rs\ncrates/opi-coding-agent/tests/anthropic_usage_recovery.rs\ncrates/opi-coding-agent/tests/final_numeric_arguments.rs\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-final-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-final-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-anthropic-usage-regrade.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-baseline-repair-chat-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-baseline-repair-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-baseline-repair-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-baseline-repair-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-baseline-repair-schema-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-argument-preview-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-argument-preview-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-argument-preview-repair-verified.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-argument-preview-repair.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-argument-preview-repaired-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-finish-before-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-finish-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-finish-consumers-verified.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-finish-consumers.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-finish-timing.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-interleaving-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-interleaving.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-output-limits.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-preview-final-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-preview-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-preview-package-consumer.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-preview-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-history-preserved.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-final-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-verified-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired-verified.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-connection-limit-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-connection-limit-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-connection-limit-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-failed-recovery-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-failed-recovery-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-failed-recovery-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-session-fallback-cleanup-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-terminal-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-terminal-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-terminal-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-current-candidate-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-current-candidate-schema-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-auth-setup-consumer-and-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-auth-setup-failure-baseline-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-auth-setup-failure-baseline-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-auth-setup-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-auth-setup-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-auth-setup-failure-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-direct-consumer-stop-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-direct-consumer-stop-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-direct-drop-poll-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-direct-drop-poll-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-direct-eof-drain-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-direct-eof-drain-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-expiry-authority-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-failure-consumer.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-fetch-ready-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-fetch-ready-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-handle-expiry-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-handle-expiry-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-handle-route-mismatch-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-handle-route-mismatch-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-held-eof-fetch-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-job-failure-consumer-and-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-legacy-abort-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-legacy-abort-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-local-cancel-after-done-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-local-cancel-after-done-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-local-cancel-after-done-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-local-cancel-before-done-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-local-cancel-before-done-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-local-cancel-before-done-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-lookup-diagnostic-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-lookup-diagnostic-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-next-wait-resume-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-next-wait-resume-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-overflow-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-overflow-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-positive-wait-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-positive-wait-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-remote-cancel-before-identity-repair-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-remote-cancel-before-identity-repair-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-remote-cancel-then-fetch-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-remote-cancel-then-fetch-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-result-before-source-eof-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-result-before-source-eof-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-result-consumer.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-retry-classification.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-retry-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-retry-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-route-authority-observations.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-started-done-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-started-done-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-started-tail-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-started-tail-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-stream-source-cleanup-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-stream-source-cleanup-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-stream-source-cleanup-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-unknown-job-id-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-unknown-job-id-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-wait0-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-wait0-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-wait0-pending-then-ready-replay.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-package-consumer.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-first-chunk-duration-record-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-first-chunk-duration-record-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-first-chunk-event-write-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-first-chunk-event-write-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-frozen-lock-lifecycle-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-frozen-lock-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-frozen-lock-rebuild.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-package-consumer.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-isolated-candidate-lifecycle-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-isolated-candidate-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-matched-models-setup-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-matched-models-setup-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-before.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-complete.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-first.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-r2.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-r3.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-r4.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-verified.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-schema-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-source-applicability-v2.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-source-applicability.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-partial-aliases.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-callers.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-package-bindings.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-package-consumer.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-readme-package.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-verified.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-public-models-lifecycle-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-public-models-lifecycle-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-histogram-creation-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-histogram-creation-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-histogram-creation-recovery-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-histogram-creation-recovery-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-record-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-record-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-record-recovery-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-duration-record-recovery-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-span-start-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-request-span-start-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-error-classification.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-error-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-error-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-failed-classification.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-failed-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-failed-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-result-attribute-write-failure-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-result-attribute-write-failure-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-result-attribute-write-recovery-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-result-attribute-write-recovery-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-result-before-source-eof-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-result-before-source-eof-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-session-cost-and-package-checks.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-setup-failure-identity-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-setup-failure-identity-materials.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-terminal-and-span-before-source-eof-differential.json\ndocs/iterations/opi-ai-1-5-alignment/evidence/phase5-terminal-and-span-before-source-eof-materials.json\ndocs/iterations/opi-ai-1-5-alignment/issues/100-decide-deferred-auth-setup-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/101-decide-deferred-stream-result-and-drop.md\ndocs/iterations/opi-ai-1-5-alignment/issues/102-settle-deferred-poll-on-direct-drop.md\ndocs/iterations/opi-ai-1-5-alignment/issues/103-compare-stream-partial-aliases.md\ndocs/iterations/opi-ai-1-5-alignment/issues/104-align-openai-chat-interleaved-text.md\ndocs/iterations/opi-ai-1-5-alignment/issues/105-compare-chat-output-limits.md\ndocs/iterations/opi-ai-1-5-alignment/issues/106-clarify-session-cost-and-verify-current-packages.md\ndocs/iterations/opi-ai-1-5-alignment/issues/107-observe-chat-finish-terminal-boundary.md\ndocs/iterations/opi-ai-1-5-alignment/issues/108-repair-chat-terminal-boundary.md\ndocs/iterations/opi-ai-1-5-alignment/issues/109-repair-baseline-checks-and-refresh-packages.md\ndocs/iterations/opi-ai-1-5-alignment/issues/110-verify-chat-argument-previews-and-retain-literals.md\ndocs/iterations/opi-ai-1-5-alignment/issues/111-map-incremental-argument-previews.md\ndocs/iterations/opi-ai-1-5-alignment/issues/112-retain-complete-preview-at-representation-boundaries.md\ndocs/iterations/opi-ai-1-5-alignment/issues/113-preserve-final-numeric-decoding.md\ndocs/iterations/opi-ai-1-5-alignment/issues/114-enable-minimal-sdk-profile.md\ndocs/iterations/opi-ai-1-5-alignment/issues/115-preserve-anthropic-usage-updates.md\ndocs/iterations/opi-ai-1-5-alignment/issues/39-bind-isolated-candidate-lifecycle-replay.md\ndocs/iterations/opi-ai-1-5-alignment/issues/40-rebuild-frozen-lock-candidate.md\ndocs/iterations/opi-ai-1-5-alignment/issues/41-match-public-models-setup-failures.md\ndocs/iterations/opi-ai-1-5-alignment/issues/42-preserve-chat-setup-failure-identity.md\ndocs/iterations/opi-ai-1-5-alignment/issues/43-match-public-models-completion.md\ndocs/iterations/opi-ai-1-5-alignment/issues/44-observe-public-result-before-source-eof.md\ndocs/iterations/opi-ai-1-5-alignment/issues/45-observe-public-terminal-and-span-before-source-eof.md\ndocs/iterations/opi-ai-1-5-alignment/issues/46-observe-public-result-attribute-write-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/47-finish-request-span-after-result-attribute-write-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/48-observe-first-chunk-event-write-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/49-observe-request-duration-histogram-creation-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/50-create-ai-instruments-before-starting-span.md\ndocs/iterations/opi-ai-1-5-alignment/issues/51-observe-request-span-start-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/52-observe-first-chunk-duration-record-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/53-observe-request-duration-record-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/54-finish-request-span-after-duration-record-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/55-observe-deferred-wait0-pending-then-ready.md\ndocs/iterations/opi-ai-1-5-alignment/issues/56-observe-deferred-result-before-source-eof.md\ndocs/iterations/opi-ai-1-5-alignment/issues/57-observe-deferred-local-cancel-after-done.md\ndocs/iterations/opi-ai-1-5-alignment/issues/58-observe-deferred-local-cancel-before-done.md\ndocs/iterations/opi-ai-1-5-alignment/issues/59-verify-deferred-remote-cancel-then-fetch.md\ndocs/iterations/opi-ai-1-5-alignment/issues/60-align-first-chunk-on-typed-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/61-verify-deferred-positive-wait.md\ndocs/iterations/opi-ai-1-5-alignment/issues/62-observe-deferred-handle-expiry.md\ndocs/iterations/opi-ai-1-5-alignment/issues/63-compare-deferred-handle-route-mismatch.md\ndocs/iterations/opi-ai-1-5-alignment/issues/64-compare-deferred-unknown-job-id.md\ndocs/iterations/opi-ai-1-5-alignment/issues/65-clarify-deferred-api-lookup-diagnostic.md\ndocs/iterations/opi-ai-1-5-alignment/issues/66-review-deferred-fetch-result-and-source-cleanup.md\ndocs/iterations/opi-ai-1-5-alignment/issues/67-compare-deferred-stream-source-cleanup.md\ndocs/iterations/opi-ai-1-5-alignment/issues/68-drain-started-deferred-source-tail.md\ndocs/iterations/opi-ai-1-5-alignment/issues/69-observe-deferred-direct-consumer-stop.md\ndocs/iterations/opi-ai-1-5-alignment/issues/70-drain-deferred-source-before-direct-eof.md\ndocs/iterations/opi-ai-1-5-alignment/issues/71-resume-deferred-tail-after-pending-next.md\ndocs/iterations/opi-ai-1-5-alignment/issues/72-map-pi-eager-deferred-stream.md\ndocs/iterations/opi-ai-1-5-alignment/issues/73-observe-deferred-abort-after-ready.md\ndocs/iterations/opi-ai-1-5-alignment/issues/74-deliver-started-deferred-done-before-source-release.md\ndocs/iterations/opi-ai-1-5-alignment/issues/75-review-deferred-result-consumer.md\ndocs/iterations/opi-ai-1-5-alignment/issues/76-return-deferred-outcome-before-source-release.md\ndocs/iterations/opi-ai-1-5-alignment/issues/77-review-deferred-stream-eof-consumers.md\ndocs/iterations/opi-ai-1-5-alignment/issues/78-review-deferred-failure-classification.md\ndocs/iterations/opi-ai-1-5-alignment/issues/79-align-context-overflow-diagnostics.md\ndocs/iterations/opi-ai-1-5-alignment/issues/80-preserve-legacy-provider-abort.md\ndocs/iterations/opi-ai-1-5-alignment/issues/81-align-whole-call-retry-classification.md\ndocs/iterations/opi-ai-1-5-alignment/issues/82-preserve-responses-stream-failure-classification.md\ndocs/iterations/opi-ai-1-5-alignment/issues/83-preserve-responses-sse-error-classification.md\ndocs/iterations/opi-ai-1-5-alignment/issues/84-fallback-after-codex-connection-limit.md\ndocs/iterations/opi-ai-1-5-alignment/issues/85-recover-codex-response-failed-codes.md\ndocs/iterations/opi-ai-1-5-alignment/issues/86-align-codex-terminal-frames.md\ndocs/iterations/opi-ai-1-5-alignment/issues/87-isolate-codex-websocket-idle-input.md\ndocs/iterations/opi-ai-1-5-alignment/issues/88-attribute-codex-websocket-terminals.md\ndocs/iterations/opi-ai-1-5-alignment/issues/89-align-codex-websocket-application-idle-timeout.md\ndocs/iterations/opi-ai-1-5-alignment/issues/90-preserve-codex-session-cleanup-recovery.md\ndocs/iterations/opi-ai-1-5-alignment/issues/91-defer-expiry-to-provider-by-default.md\ndocs/iterations/opi-ai-1-5-alignment/issues/92-validate-deferred-routes-before-dispatch.md\ndocs/iterations/opi-ai-1-5-alignment/issues/93-assess-deferred-job-failure-classification.md\ndocs/iterations/opi-ai-1-5-alignment/issues/94-record-real-deferred-integration-gap.md\ndocs/iterations/opi-ai-1-5-alignment/issues/95-replay-deferred-auth-setup-failure.md\ndocs/iterations/opi-ai-1-5-alignment/issues/96-decide-deferred-wait0-poll-settlement.md\ndocs/iterations/opi-ai-1-5-alignment/issues/97-decide-deferred-fetch-held-eof.md\ndocs/iterations/opi-ai-1-5-alignment/issues/98-decide-deferred-local-cancel-after-done.md\ndocs/iterations/opi-ai-1-5-alignment/issues/99-decide-deferred-local-cancel-before-done.md\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_anthropic_usage.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_chat_argument_preview.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_chat_finish_consumers.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_chat_finish_timing.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_chat_interleaving.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_chat_output_limits.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_connection_limit.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_failed_recovery.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_session_fallback_cleanup.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_terminal.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_identity.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_idle.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_codex_websocket_idle_timeout.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_deferred_auth_failure_consumer.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_deferred_cancel_route.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_deferred_failure_consumer.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_deferred_job_failure_consumer.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_deferred_result_consumer.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_final_numeric_decoding.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_incremental_argument_preview.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_partial_aliases.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_responses_error.mjs\ndocs/iterations/opi-ai-1-5-alignment/tools/observe_responses_failed.mjs\nscripts/pi-sdk-conformance/differential/compare_anthropic_usage.py\nscripts/pi-sdk-conformance/differential/compare_chat_argument_preview.py\nscripts/pi-sdk-conformance/differential/compare_incremental_argument_preview.py\nscripts/pi-sdk-conformance/differential/replay_anthropic_usage.py\nscripts/pi-sdk-conformance/differential/replay_chat_finish_consumers.py\nscripts/pi-sdk-conformance/differential/replay_chat_finish_timing.py\nscripts/pi-sdk-conformance/differential/replay_chat_interleaving.py\nscripts/pi-sdk-conformance/differential/replay_chat_output_limits.py\nscripts/pi-sdk-conformance/differential/replay_partial_aliases.py\nscripts/pi-sdk-conformance/differential/test_anthropic_usage.py\nscripts/pi-sdk-conformance/differential/test_chat_argument_preview.py\nscripts/pi-sdk-conformance/differential/test_chat_finish_timing.py\nscripts/pi-sdk-conformance/differential/test_chat_interleaving.py\nscripts/pi-sdk-conformance/differential/test_chat_output_limits.py\nscripts/pi-sdk-conformance/differential/test_incremental_argument_preview.py\nscripts/pi-sdk-conformance/differential/test_partial_aliases.py\nscripts/pi-sdk-conformance/run_anthropic_package.py\nscripts/pi-sdk-conformance/run_minimal_package.py\nscripts/pi-sdk-conformance/test_anthropic_package.py\nscripts/pi-sdk-conformance/test_minimal_package.py",
+    "initial_deletions_preserved": [
+      "crates/opi-ai/src/bedrock/retry.rs",
+      "crates/opi-coding-agent/tests/spec_ledger.rs"
+    ],
+    "Cargo.lock": "78499c6681d06e72fc05659bc4cd18d72aae687a174c750435285838cde6dbe5"
+  },
+  "environment": {
+    "platform": "Windows-11-10.0.22631-SP0",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "node": "v24.13.0",
+    "python": "3.12.7",
+    "CARGO_TARGET_DIR": "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "incremental": "retained",
+    "cache_status": {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\cache-status-final.log",
+      "sha256": "1c5a73612eaa6f36eea5a47a2b63b741641e42e4538b16c0b5a8cc25237529a2"
+    }
+  },
+  "test_impact": {
+    "add": [
+      "Anthropic usage SDK route/partial/observer matrix",
+      "Actual Agent/session accounting regressions",
+      "Frozen Pi and package probes with adversarial admission tests"
+    ],
+    "update": [
+      "Existing cancellation fixture manual MessageDelta construction",
+      "Builtins-only integration target declaration"
+    ],
+    "delete": [],
+    "retain": "All earlier numeric, preview, terminal, cancellation, EOF and historical evidence"
+  },
+  "limitations": [
+    "Nested Anthropic 1h/reasoning usage mapping; other adapters and remaining observer fault sites.",
+    "Full fine-grained V/MSRV/native-platform/budget/live Deferred acceptance remains open.",
+    "Windows host default workspace excludes opi-eval; 5 ignored tests are not counted as pass. No new full V/MSRV/other-native-platform evidence.",
+    "No live provider calls, remote CI, publication or runtime Pi Agent/session differential; those Pi callers are source-bound controls.",
+    "Approved owned-snapshot and observer-fault differences remain non-strict; Unicode/nonfinite/depth/numeric/cancellation/EOF contracts are unchanged."
+  ],
+  "log_bindings": [
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\build-before-r2.log",
+      "sha256": "50c96a6950c5622b247f75218e04a8616d279f5517ac9343a415aa7721b1c525"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\build-before-r3.log",
+      "sha256": "b87c82364474aae10a11cea56c982795b96c4f39a3e571c7aebf047dbb9459e4"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\build-before.log",
+      "sha256": "89b287dc21e57d08325b9bd9bac14badc16ac3203b2d555f2ae1eece30bb47f8"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\cache-status-final.log",
+      "sha256": "1c5a73612eaa6f36eea5a47a2b63b741641e42e4538b16c0b5a8cc25237529a2"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\caller-first.log",
+      "sha256": "608516538456d0beaf770f4a8c347bb13a335ee4a5c12230b34d43388c966ca6"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\comparator-final-tests.log",
+      "sha256": "5cdc29c7de5df9a1a21e12cf6b9151199dcdafea96c60c3287fb7a8e5a5e0b4b"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\comparator-verified-tests.log",
+      "sha256": "5cdc29c7de5df9a1a21e12cf6b9151199dcdafea96c60c3287fb7a8e5a5e0b4b"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\diff-check-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\diff-check-published.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\doc-check-final.log",
+      "sha256": "f518e66df87c972a010b15b061c9c1bc900564fdcb4b983955c56347c408d2e6"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\doc-check-initial.log",
+      "sha256": "058e14f4a41df91dec666fc9b4c8ab4df93998813c6c00245f71e34b50f92d32"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\doc-check-published.log",
+      "sha256": "058e14f4a41df91dec666fc9b4c8ab4df93998813c6c00245f71e34b50f92d32"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\fmt-check.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\fmt-final-write.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\fmt-write.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\freeze-after.log",
+      "sha256": "c2933405ae7379acb155ce5217fd30461f8c7e63464ef56f50efdd91b07c35aa"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\freeze-final.log",
+      "sha256": "67e6902124c43e7cad4687ee5136cf0e85eb1ccef8c2bd770dbd1d266fb7b02c"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\freeze.log",
+      "sha256": "c74d60f5823d538f7930e5ab00db132f1caf9638f0168969614ef5dfee7618d2"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\node-check-final.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\package-final-tests.log",
+      "sha256": "f2aedc512e5cab06345de9bea8cf33496a61ac27e5d09115820abc3a77a4a3fa"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\package-first.log",
+      "sha256": "6bbfda1ab5a1e88f91626a3cb700083dd086a73e3087aed070281424433e6f5a"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\pi-first.log",
+      "sha256": "1974b2100167b124d3ab5769a9f3d61fe1c29443c60d43c3d97affdf79bb5465"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\pi-observer-r2.log",
+      "sha256": "0f84c63fd9ab494318b4606cfe55e9ec1a96c3801727d844df4896474ac794e2"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\pi-observer-r3.log",
+      "sha256": "eed091ecb6233e5207a96fcc1d4562c15b912b4dbc321c64a9b00853e6b1d0d1"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\pi-observer.log",
+      "sha256": "b4253d82fc08dc782450f93b2598572295673db1be0c5cbd8b184a550af056a2"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\python-differential-tests.log",
+      "sha256": "7fb5c6f6292570a54b13501fe000bf5a306393f5e6dda97fe8bd36c390bfadfd"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\python-package-tests.log",
+      "sha256": "4d81d4035d0f067c4623f13a72626c098e972a0e25b709505fa91565eb06a4b5"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\replay-final.log",
+      "sha256": "c116c3f03de4daf3d379cf201963f021410e11764f2b0b2504934f2e2d2f0dba"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\replay-first.log",
+      "sha256": "cbc47f6e5bf51c542d41f10235eab90155db6461696a96908bde1b905db5c601"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\replay-r2.log",
+      "sha256": "c116c3f03de4daf3d379cf201963f021410e11764f2b0b2504934f2e2d2f0dba"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\sdk-tests.log",
+      "sha256": "a1022abefdb727dc50041d066ea79bde08cbd4004e74987040c1bcaa84811eb2"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\usage-after-first.log",
+      "sha256": "1a2590bd4fadacd1ac26988202d6739bbe18795a953e114858219a9e09e80250"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\usage-after-r2.log",
+      "sha256": "b93151dc1321978b1e7f357cb45f1268b6d68555d573051c25aa6e00870087f8"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-clippy-final.log",
+      "sha256": "cc29877e60a024487654ada2fc055b4fc468b5037890ba079380171ad00b38f7"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-clippy.log",
+      "sha256": "e1a44f7e7ea6f309bdc7627572cb604dde2c9f11d44823ee3e2fb1d9b2e56f6b"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-doctests.log",
+      "sha256": "2a516cde3083fab9a025ac44ca1273016bf4aba865f9d13842334ec658119f11"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-rustdoc.log",
+      "sha256": "11ed77cf9beb8ee2835c23d40e4f615a10ad75b589cea266c0b5cc73244da4bb"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\workspace-tests.log",
+      "sha256": "9f6d735de09d536c3a2bfd592a62bf82f40dd7a186b9f0ba384a509a2a325d92"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\anthropic_usage_contract-before.stderr",
+      "sha256": "12178eb58289fd805fdc3b9051ec6877447365d23d681efa8e361dc0275ec33f"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\anthropic_usage_trace-before.stderr",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\cli-negative-0.stderr",
+      "sha256": "d60e2ad92ed67d4fc5296a1a192bbfebb84b35fdaf98dafcd2af7eb07f5a4e24"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\cli-negative-1.stderr",
+      "sha256": "6d21f06e3e28549aed7c88766966c5aba139cc8c44eb3c427cd06c606e75fe9d"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\anthropic_usage_contract-before.stdout",
+      "sha256": "d37786be9037c10a323897a1deb0533baa79e4130999e43002cb6e6b1d6cc2b0"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\anthropic_usage_trace-before.stdout",
+      "sha256": "b52ed6c19f4d6b65c4d8c24b70ba22a1bf694edf5dcaeef4652c4d4fc81464ff"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\cli-negative-0.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "C:\\Temp\\opi-entry-contracts-20261114\\cli-negative-1.stdout",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "evidence_bindings": [
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-differential.json",
+      "sha256": "52247297a45ff8ac8bbcc6c8d99d5568d26e0e1af2f54a98f639b0c89c93f016"
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-final-differential.json",
+      "sha256": "4818fde8c131bddb94ad5e1bfb34358ffc3fa6871831741d1a79ffb2db3c8549"
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-final-materials.json",
+      "sha256": "2ecd6c25199423a204aef67958243235c8a8eef4a888ee3f8f546b0eb84e5486"
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-materials.json",
+      "sha256": "9dce4a5ad28f4f2dc089e4ef6f57fefd0822ad34874da0c89998a5e02acbfb31"
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-package-bindings.json",
+      "sha256": "e072dc5f29e0b003e6b1f0d477bcf0e987d835db74c4567dbe716abdc69abcf5"
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-package.json",
+      "sha256": "ff4212992ced2194fd6afef064b44adf64fbbc1f121d7aca2789516f7dd54c9a"
+    },
+    {
+      "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-anthropic-usage-regrade.json",
+      "sha256": "1fba92a06db8960dc984f15a91d2611c3b15ad5e2fe17458db6ca1e33cb618c9"
+    }
+  ]
+}

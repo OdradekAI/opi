@@ -64,6 +64,24 @@ keys fail with a migration error.
 
 ## Public entry points
 
+Anthropic `message_delta` updates each reported token field, including zero;
+missing/null fields retain their previous values. An omitted stop reason also
+retains the previous reason. Catalog cost is refreshed at message start and
+after each accepted usage update, before a canonical partial or failure can be
+published. A malformed merged cache-write subset rejects the update atomically.
+Provider-reported totals retain their authority, including an explicit zero.
+Earlier owned event snapshots remain unchanged. Automatic Models observers
+read the canonical outcome; raw prepared attempts still require explicit
+observation and do not acquire an AI span merely by carrying a context.
+
+`Usage.cost` is serialized with its message as a response-time accounting
+snapshot. It retains the catalog components and the independent `total`, with
+`total_from_provider` identifying a provider-reported total (including zero).
+Deserializing an older usage object without `cost` supplies the default
+breakdown and does not claim a provider total. A host's cumulative cost estimate
+is a separate policy; serializing a message does not recompute its cost from a
+current catalog or establish that all prices are known.
+
 The primary public values are `Usage`, `CumulativeUsage`, `Pricing`,
 `PricingTier`, `SamplingParams`, `ModelInfo::sampling_params`, and
 `Request::sampling_params`. Cost calculation is exposed through

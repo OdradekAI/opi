@@ -23,7 +23,7 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
     let events: Vec<OpenAiChatEvent> = parse_sse_events(input)
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
-            ParsedEvent::UsageError(_) => Vec::new(),
+            ParsedEvent::Done | ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
@@ -38,9 +38,12 @@ fn map_fixture(input: &str) -> Vec<AssistantStreamEvent> {
         .flat_map(|e| mapper.process(e))
         .map(|item| item.expect("fixture maps to stream events"))
         .collect();
-    if let Some(done) = mapper.flush_pending_done() {
-        stream_events.push(done);
-    }
+    stream_events.extend(
+        mapper
+            .finish(true)
+            .into_iter()
+            .map(|item| item.expect("fixture terminal")),
+    );
     stream_events
 }
 
@@ -50,7 +53,7 @@ fn map_fixture_as(input: &str, api: opi_ai::ApiKind, provider: &str) -> Vec<Assi
     let events: Vec<OpenAiChatEvent> = parse_sse_events(input)
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
-            ParsedEvent::UsageError(_) => Vec::new(),
+            ParsedEvent::Done | ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
@@ -65,9 +68,12 @@ fn map_fixture_as(input: &str, api: opi_ai::ApiKind, provider: &str) -> Vec<Assi
         .flat_map(|e| mapper.process(e))
         .map(|item| item.expect("fixture maps to stream events"))
         .collect();
-    if let Some(done) = mapper.flush_pending_done() {
-        stream_events.push(done);
-    }
+    stream_events.extend(
+        mapper
+            .finish(true)
+            .into_iter()
+            .map(|item| item.expect("fixture terminal")),
+    );
     stream_events
 }
 
@@ -76,7 +82,7 @@ fn collect_valid_events(input: &str) -> Vec<OpenAiChatEvent> {
     parse_sse_events(input)
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
-            ParsedEvent::UsageError(_) => Vec::new(),
+            ParsedEvent::Done | ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect()
@@ -664,7 +670,7 @@ fn error_event_maps_to_stream_error() {
     let events: Vec<OpenAiChatEvent> = parse_sse_events(error_fixture())
         .flat_map(|p| match p {
             ParsedEvent::Valid(evts) => evts,
-            ParsedEvent::UsageError(_) => Vec::new(),
+            ParsedEvent::Done | ParsedEvent::UsageError(_) => Vec::new(),
             ParsedEvent::Malformed { .. } => Vec::new(),
         })
         .collect();
@@ -806,18 +812,27 @@ data: [DONE]
 fn mixed_fixture_produces_text_then_tool_call() {
     let stream_events = map_fixture(mixed_fixture());
 
-    // Start, TextStart, TextDelta, TextEnd, ToolCallStart, ToolCallDelta, ToolCallEnd, Done
     assert!(matches!(
-        stream_events[0],
-        AssistantStreamEvent::Start { .. }
-    ));
-    assert!(matches!(
-        stream_events[1],
-        AssistantStreamEvent::TextStart { .. }
-    ));
-    assert!(matches!(
-        stream_events[4],
-        AssistantStreamEvent::ToolCallStart { .. }
+        stream_events.as_slice(),
+        [
+            AssistantStreamEvent::Start { .. },
+            AssistantStreamEvent::TextStart {
+                content_index: 0,
+                ..
+            },
+            AssistantStreamEvent::TextDelta {
+                content_index: 0,
+                ..
+            },
+            AssistantStreamEvent::ToolCallStart { .. },
+            ..,
+            AssistantStreamEvent::TextEnd {
+                content_index: 0,
+                ..
+            },
+            AssistantStreamEvent::ToolCallEnd { .. },
+            AssistantStreamEvent::Done { .. }
+        ]
     ));
 
     if let Some(AssistantStreamEvent::Done { message, reason }) = stream_events.last() {
@@ -826,6 +841,72 @@ fn mixed_fixture_produces_text_then_tool_call() {
     } else {
         panic!("expected Done event");
     }
+}
+
+#[test]
+fn tool_deltas_keep_the_chat_text_block_open() {
+    let events = map_fixture(include_str!("data/openai-chat-interleaved.sse"));
+    assert!(
+        matches!(
+            events.as_slice(),
+            [
+                AssistantStreamEvent::Start { .. },
+                AssistantStreamEvent::TextStart { content_index: 0, .. },
+                AssistantStreamEvent::TextDelta { content_index: 0, .. },
+                AssistantStreamEvent::ToolCallStart { content_index: 1, .. },
+                AssistantStreamEvent::ToolCallDelta { content_index: 1, .. },
+                AssistantStreamEvent::TextDelta { content_index: 0, .. },
+                AssistantStreamEvent::ToolCallDelta { content_index: 1, .. },
+                AssistantStreamEvent::ToolCallDelta { content_index: 1, .. },
+                AssistantStreamEvent::TextEnd { content_index: 0, content, .. },
+                AssistantStreamEvent::ToolCallEnd { content_index: 1, .. },
+                AssistantStreamEvent::Done { message, reason: StopReason::ToolUse }
+            ] if content == "ABCD😀EF"
+                && matches!(message.content.as_slice(),
+                    [AssistantContent::Text { text, .. }, AssistantContent::ToolCall { tool_call }]
+                    if text == content && tool_call.id == "call_interleaved"
+                        && tool_call.arguments == r#"{"a":"BCDEF","n":2}"#)
+        ),
+        "{events:?}"
+    );
+}
+
+#[test]
+fn chat_continuation_preserves_whitespace_after_a_tool_delta() {
+    use opi_ai::message::{Message, OutputContent, ToolResultMessage};
+    use opi_ai::transcript::{Context, normalize_context};
+
+    let fixture = include_str!("data/openai-chat-interleaved.sse").replace("😀EF", " \\n");
+    let events = map_fixture(&fixture);
+    let Some(AssistantStreamEvent::Done { message, .. }) = events.into_iter().last() else {
+        panic!("expected Done event");
+    };
+    let mut request = make_test_request();
+    request.context = normalize_context(Context {
+        messages: vec![
+            Message::Assistant(message),
+            Message::ToolResult(ToolResultMessage {
+                tool_call_id: "call_interleaved".into(),
+                tool_name: "record".into(),
+                content: vec![OutputContent::Text { text: "ok".into() }],
+                details: None,
+                is_error: false,
+                not_executed: None,
+                truncated: false,
+                timestamp_ms: 0,
+            }),
+        ],
+        ..Default::default()
+    })
+    .unwrap();
+    let body = OpenAiChatProvider::new(None)
+        .build_request_body(&request)
+        .unwrap();
+    assert_eq!(body["messages"][0]["content"], "ABCD \n");
+    assert_eq!(
+        body["messages"][0]["tool_calls"][0]["id"],
+        "call_interleaved"
+    );
 }
 
 // --- Malformed SSE Tests ---
@@ -2986,6 +3067,7 @@ fn initial_chat_tool_call_arguments_are_emitted_after_start() {
         .expect("one frame")
     {
         opi_ai::openai_chat::ParsedEvent::Valid(events) => events,
+        opi_ai::openai_chat::ParsedEvent::Done => panic!("expected a data frame"),
         opi_ai::openai_chat::ParsedEvent::UsageError(error) => panic!("{error}"),
         opi_ai::openai_chat::ParsedEvent::Malformed { error, .. } => panic!("{error}"),
     };

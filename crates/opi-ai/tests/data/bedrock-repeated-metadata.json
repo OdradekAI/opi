@@ -1,0 +1,34 @@
+{
+  "id": "bedrock-repeated-metadata",
+  "events": [
+    { "type": "messageStart", "payload": { "role": "assistant" } },
+    {
+      "type": "contentBlockStart",
+      "payload": { "start": { "text": {} }, "contentBlockIndex": 0 }
+    },
+    {
+      "type": "contentBlockDelta",
+      "payload": { "delta": { "text": "latest metadata wins" }, "contentBlockIndex": 0 }
+    },
+    { "type": "contentBlockStop", "payload": { "contentBlockIndex": 0 } },
+    { "type": "messageStop", "payload": { "stopReason": "end_turn" } },
+    {
+      "type": "metadata",
+      "payload": { "usage": { "inputTokens": 10, "outputTokens": 2 } }
+    },
+    {
+      "type": "metadata",
+      "payload": {
+        "usage": { "inputTokens": 12, "outputTokens": 7, "cacheReadInputTokens": 3 }
+      }
+    }
+  ],
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "end_turn",
+    "input_tokens": 12,
+    "output_tokens": 7,
+    "cache_read_tokens": 3,
+    "done_count": 1
+  }
+}

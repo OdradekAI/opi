@@ -1,0 +1,293 @@
+{
+  "verdict": "PASS",
+  "scope": "OpenAI Responses repeated terminal usage and tail observer ordering consumed from actual SDK archives in builtins/no-tracing and defaults profiles",
+  "steps": [
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "56480"
+      ],
+      "exit": 0,
+      "seconds": 0.17,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\lease-start.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\lease-start.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "opi-telemetry",
+        "-p",
+        "opi-ai",
+        "--allow-dirty",
+        "--no-verify",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "seconds": 0.64,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\package.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\package.stderr",
+        "sha256": "ab55073537a0835d53714d48b6bc8d7ac08585ab985a9fc18ddfd575ce132e8a"
+      }
+    },
+    {
+      "name": "lock",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "seconds": 0.47,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\lock.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\lock.stderr",
+        "sha256": "3f0ffaf8ca110133b97c83a28bd612c24cb578e64f87a11e74ce68e92bc0eee1"
+      }
+    },
+    {
+      "name": "builtins-no-tracing-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "metadata",
+        "--offline",
+        "--locked",
+        "--format-version",
+        "1"
+      ],
+      "exit": 0,
+      "seconds": 0.22,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\builtins-no-tracing-metadata.stdout",
+        "sha256": "6bfb09ce2d9551c1cbf5e0ff00d0c92c96e8fae4067a9f342b2b99054fa40615"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\builtins-no-tracing-metadata.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "builtins-no-tracing-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "--offline",
+        "--locked",
+        "--tests",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 12.95,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\builtins-no-tracing-clippy.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\builtins-no-tracing-clippy.stderr",
+        "sha256": "2f71ca65ce47d440fddbb6c97b3d4b878234f8f1032924d3e57a8578b0a07b55"
+      }
+    },
+    {
+      "name": "builtins-no-tracing-tests",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "responses_repeated_terminal",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 28.81,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\builtins-no-tracing-tests.stdout",
+        "sha256": "9f91cd8b4cb9a82d4d4f5735bb09d157c4627ad98e0cabba2185d5f38fe39453"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\builtins-no-tracing-tests.stderr",
+        "sha256": "94c6ca60bdc974664b8eb680da0357b8592078631fa234ed62fea7b9f1e30210"
+      }
+    },
+    {
+      "name": "defaults-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "metadata",
+        "--offline",
+        "--locked",
+        "--format-version",
+        "1",
+        "--features",
+        "caller-defaults"
+      ],
+      "exit": 0,
+      "seconds": 0.17,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\defaults-metadata.stdout",
+        "sha256": "8a528dd9432072a172a17a3d7c691c7a509fac136e90b2f742745a1ff4ab2ed7"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\defaults-metadata.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "defaults-clippy",
+      "command": [
+        "cargo",
+        "clippy",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "--offline",
+        "--locked",
+        "--tests",
+        "--features",
+        "caller-defaults",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "seconds": 8.27,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\defaults-clippy.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\defaults-clippy.stderr",
+        "sha256": "6be03e4d4f04390a5eb77e2a41a74296c8629a065ce7556b063442df3f0a9ba6"
+      }
+    },
+    {
+      "name": "defaults-tests",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\candidate-telemetry.toml",
+        "test",
+        "--offline",
+        "--locked",
+        "--test",
+        "responses_repeated_terminal",
+        "--features",
+        "caller-defaults",
+        "--",
+        "--nocapture"
+      ],
+      "exit": 0,
+      "seconds": 27.84,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\defaults-tests.stdout",
+        "sha256": "9f91cd8b4cb9a82d4d4f5735bb09d157c4627ad98e0cabba2185d5f38fe39453"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\defaults-tests.stderr",
+        "sha256": "4597ea3d465b29f61d314191bd69aaa5e0a73a3891e7d8a78c02fa65de13fc7c"
+      }
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "56480"
+      ],
+      "exit": 0,
+      "seconds": 0.19,
+      "stdout": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\lease-end.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-responses-repeated-terminal-package-20261115-v1\\lease-end.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "profiles": [
+    {
+      "name": "builtins-no-tracing",
+      "version": "0.8.3",
+      "features": [
+        "builtins"
+      ],
+      "telemetry_features": []
+    },
+    {
+      "name": "defaults",
+      "version": "0.8.3",
+      "features": [
+        "builtins",
+        "default",
+        "telemetry-tracing"
+      ],
+      "telemetry_features": [
+        "tracing"
+      ]
+    }
+  ],
+  "cargo_configs": [
+    {
+      "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+      "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+    }
+  ],
+  "package": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "a044fdd5a93f631ceaf98c495f0fb5dc2c775db78d5240f089f15c8fe4a0867a",
+    "dependencies": [
+      {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "54ffe66285c677661c4f64991b53fa580f69fe8f0a9e370588bc6af285d2fd7a",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      }
+    ]
+  },
+  "executed_sources": {
+    "tests/responses_repeated_terminal.rs": "ecc7653ab8d458e7689930cdc7d01db2806183a8e6e907f3a9634a075fec6938",
+    "tests/data/responses-repeated-terminal.json": "3021245a35067f76be0dc72f2a8db52413cc212ce2b242c7f4682a1fffe85d6a"
+  },
+  "runner_sha256": "67b14be6330895243c697af7a67429594d238097bfa7389a608dd7cf1c90fefa"
+}

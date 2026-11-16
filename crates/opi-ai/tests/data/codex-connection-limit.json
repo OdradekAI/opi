@@ -1,0 +1,19 @@
+{
+  "error": {
+    "type": "error",
+    "code": "websocket_connection_limit_reached",
+    "error": {
+      "code": "invalid_request_error",
+      "message": "Upstream HTTP/2 stream failed. PRIVATE_CANARY"
+    }
+  },
+  "progress": {"type":"response.in_progress","response":{"id":"resp_ws","status":"in_progress"}},
+  "warmup": {"type":"response.completed","response":{"id":"resp_warm","model":"gpt-5.4","status":"completed","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}},
+  "completion": [
+    {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_sse","role":"assistant","status":"in_progress","content":[]}},
+    {"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}},
+    {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hello from SSE"},
+    {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_sse","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello from SSE","annotations":[]}]}},
+    {"type":"response.completed","response":{"id":"resp_sse","model":"gpt-5.4","status":"completed","usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}
+  ]
+}

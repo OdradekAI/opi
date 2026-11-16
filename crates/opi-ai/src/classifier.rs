@@ -17,6 +17,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::callbacks::RequestCallbacks;
 use crate::provider::ProviderError;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 use crate::stream::Usage;
 use crate::telemetry::TelemetryContext;
 
@@ -80,6 +81,7 @@ pub(crate) fn validate_classifier_request(
 /// Classifier protocols report input/output parent counts without cache
 /// buckets. Preserve usable counts while marking a partial report unknown;
 /// a malformed or absent bucket must not become a reliable reported zero.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn parse_classifier_usage(value: Option<&serde_json::Value>) -> Option<Usage> {
     let value = value?.as_object()?;
     let count = |name: &str| {
@@ -105,5 +107,6 @@ pub(crate) fn parse_classifier_usage(value: Option<&serde_json::Value>) -> Optio
     })
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) use crate::types::classifier::cost_for_usage;
 pub use crate::types::classifier::*;

@@ -1,0 +1,30 @@
+{
+  "idleMs": 200,
+  "tickMs": 40,
+  "ticks": 10,
+  "callbackHoldMs": 320,
+  "frames": {
+    "none": [],
+    "progress": [{"type":"response.in_progress","response":{"status":"in_progress"}}],
+    "partial": [
+      {"type":"response.created","response":{"id":"resp_partial","status":"in_progress","output":[]}},
+      {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_partial","role":"assistant","status":"in_progress","content":[]}},
+      {"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}},
+      {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"partial answer"}
+    ],
+    "late": [{"type":"response.done","response":{"id":"resp_late","status":"completed","output":[],"usage":{"input_tokens":4,"output_tokens":3,"total_tokens":7}}}],
+    "sse": [{"type":"response.done","response":{"id":"resp_sse","status":"completed","output":[],"usage":{"input_tokens":2,"output_tokens":1,"total_tokens":3}}}],
+    "next": [{"type":"response.done","response":{"id":"resp_next_ws","status":"completed","output":[],"usage":{"input_tokens":5,"output_tokens":2,"total_tokens":7}}}]
+  },
+  "cases": [
+    {"name":"silent_before","prefix":"none","traffic":"silent","outcome":"fallback"},
+    {"name":"ping_before","prefix":"none","traffic":"ping","outcome":"fallback"},
+    {"name":"pong_before","prefix":"none","traffic":"pong","outcome":"fallback"},
+    {"name":"silent_after_text","prefix":"partial","traffic":"silent","outcome":"terminal"},
+    {"name":"ping_after_text","prefix":"partial","traffic":"ping","outcome":"terminal"},
+    {"name":"pong_after_progress","prefix":"progress","traffic":"pong","outcome":"terminal"},
+    {"name":"progress_rearms","prefix":"none","traffic":"progress","outcome":"complete"},
+    {"name":"zero_with_ping","prefix":"none","traffic":"ping","timeoutMs":0,"outcome":"complete"},
+    {"name":"callback_pauses_wait","prefix":"progress","traffic":"silent","holdCallback":true,"outcome":"complete"}
+  ]
+}

@@ -7,7 +7,8 @@ use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::retry::AcquisitionPolicy;
 use opi_ai::stream::{AssistantStreamEvent, ChatStream, StopReason};
 use opi_ai::telemetry::{
-    AI_BLOCK, AI_FIRST_CHUNK, AiRequestAttributes, AiRequestTelemetry, ai_telemetry_schema,
+    AI_BLOCK, AI_FIRST_CHUNK, AI_FIRST_CHUNK_DURATION, AiRequestAttributes, AiRequestTelemetry,
+    TelemetryContext, ai_telemetry_schema,
 };
 use opi_ai::test_support::{
     MockProvider, MockResponse, ScriptedDeferredBackend, base_assistant, single_route_collection,
@@ -52,30 +53,10 @@ async fn ordinary_models_chat_auto_records_ai_request() {
     );
     let model = provider.models()[0].clone();
     let models = single_route_collection(Box::new(provider));
-    let request = Request {
-        model: "probe:mock-model".into(),
-        context: normalize_context(Default::default()).expect("empty context normalizes"),
-        projection: Default::default(),
-        transport: Default::default(),
-        max_tokens: None,
-        temperature: None,
-        sampling_params: None,
-        thinking: Default::default(),
-        stop_sequences: vec![],
-        metadata: None,
-        cancel: Default::default(),
-        timeout: None,
-        extra_headers: vec![],
-        cache_retention: Default::default(),
-        session_id: None,
-        telemetry_context: Some(telemetry_context),
-        callbacks: Default::default(),
-    };
-
     let result = models
         .complete_simple(
             ChatModelRecord::new("probe", model),
-            request,
+            observed_request("probe:mock-model", telemetry_context),
             SimpleOptions::default(),
         )
         .await
@@ -104,6 +85,62 @@ async fn ordinary_models_chat_auto_records_ai_request() {
         spans[0].attributes.get("stop"),
         Some(&AttributeValue::String("stop".into()))
     );
+}
+
+fn observed_request(model: &str, telemetry_context: TelemetryContext) -> Request {
+    Request {
+        model: model.into(),
+        context: normalize_context(Default::default()).expect("empty context normalizes"),
+        projection: Default::default(),
+        transport: Default::default(),
+        max_tokens: None,
+        temperature: None,
+        sampling_params: None,
+        thinking: Default::default(),
+        stop_sequences: vec![],
+        metadata: None,
+        cancel: Default::default(),
+        timeout: None,
+        extra_headers: vec![],
+        cache_retention: Default::default(),
+        session_id: None,
+        telemetry_context: Some(telemetry_context),
+        callbacks: Default::default(),
+    }
+}
+
+#[tokio::test]
+async fn ordinary_models_setup_failure_records_first_chunk() {
+    use futures_util::StreamExt;
+
+    let recorder = Recorder::default();
+    let model = MockProvider::new("seed", vec![]).models()[0].clone();
+    let mut call = opi_ai::Models::new().stream_simple(
+        ChatModelRecord::new("missing", model),
+        observed_request("missing:mock-model", recorder.context()),
+        SimpleOptions::default(),
+    );
+    let failure = call.next().await.unwrap().unwrap_err();
+    assert!(matches!(failure.cause(), ProviderError::Config(_)));
+    assert_eq!(failure.message().provider, "missing");
+    assert!(call.next().await.is_none());
+    assert_eq!(call.result().await.unwrap_err(), failure);
+
+    let spans = recorder.spans();
+    let [span] = spans.as_slice() else {
+        panic!("expected one request span");
+    };
+    assert_eq!(span.name, "pi.ai.request");
+    assert!(span.end_sequence.is_some());
+    assert_eq!(span.events.len(), 1);
+    assert_eq!(span.events[0].name, AI_FIRST_CHUNK);
+    let first_chunk: Vec<_> = recorder
+        .measurements()
+        .into_iter()
+        .filter(|measurement| measurement.definition.name == AI_FIRST_CHUNK_DURATION)
+        .collect();
+    assert_eq!(first_chunk.len(), 1);
+    assert_eq!(first_chunk[0].span_id, Some(span.id));
 }
 
 #[tokio::test]

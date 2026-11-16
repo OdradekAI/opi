@@ -1,0 +1,68 @@
+{
+  "id": "mistral-repeated-finish",
+  "chunks": [
+    {
+      "id": "chatcmpl-mistral-repeat",
+      "choices": [
+        {
+          "delta": {
+            "role": "assistant",
+            "content": ""
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {
+            "content": "Hi"
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "error"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "total_tokens": 15
+      }
+    },
+    {
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 7,
+        "total_tokens": 17
+      }
+    },
+    {
+      "choices": [
+        {
+          "delta": {},
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 9,
+        "total_tokens": 19
+      }
+    }
+  ],
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "stop",
+    "input": 10,
+    "output": 9,
+    "total": 19
+  }
+}

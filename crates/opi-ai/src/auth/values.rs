@@ -1,5 +1,6 @@
 //! Resolved authentication values and non-secret provenance.
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 use crate::errors::{ProviderError, ProviderErrorSummary};
 use secrecy::SecretString;
 use time::OffsetDateTime;
@@ -128,6 +129,7 @@ pub enum AuthInvalidPolicy {
 }
 
 impl AuthInvalidPolicy {
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn error(self, provider_id: &str) -> ProviderError {
         match self {
             Self::CredentialManaged => ProviderError::CredentialRevoked {

@@ -1,0 +1,320 @@
+{
+  "schemaVersion": 1,
+  "issue": "#126",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": "Native Linux and Windows verification plus exhaustive declared opi-ai feature-union V and all-features execution; capability-granular V and native macOS remain open.",
+  "sources": {
+    "Cargo.toml": "9332f1cbabb1a2adb0d333ff616c3e1c4e6ab9a99f2ad4e6c5282fa97fa7bf72",
+    "Cargo.lock": "78499c6681d06e72fc05659bc4cd18d72aae687a174c750435285838cde6dbe5",
+    "crates/opi-ai/Cargo.toml": "f66b3c4938ba8004657f4a00be8a85ff044d2c04b0de8350ee52d206e13f31f7",
+    "crates/opi-telemetry/Cargo.toml": "2bce94982f0a30767e4141538026ed9c06272318785784f0c7a40b58b41f8018",
+    "crates/opi-ai/tests/platform_delivery.rs": "b38ada5c9b5e662c8215e410dd58c9fc99172cde3860ad6468d6f5e64d66e18a",
+    "crates/opi-ai/tests/core_profile.rs": "890cb51aa183a7eee186e4acab196c6da77cbe0e3e36941f2665101d2abb17d7"
+  },
+  "hosts": {
+    "linux": {
+      "platform": "WSL2 Ubuntu 24.04.4 LTS",
+      "kernel": "Linux Luiz-tb16p 6.18.58.1-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Tue Oct 27 00:24:11 UTC 2026 x86_64 x86_64 x86_64 GNU/Linux",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.97.1\nLLVM version: 22.1.6",
+      "target": "x86_64-unknown-linux-gnu",
+      "cache": "C:/Temp/opi-cargo-targets/opi-8abcf38f9871653e",
+      "cache_status_sha256": "83204c6231ab35962d9083afbc4a4a49e0a529e5a7fbc24d60c5aa2d23023aff"
+    },
+    "windows": {
+      "platform": "Microsoft Windows [Version 10.0.22631.6199]",
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+      "target": "x86_64-pc-windows-msvc",
+      "cache": "C:/Temp/opi-cargo-targets/opi-72fa37a0fa044958",
+      "cache_status_sha256": "65ea7e51f4167da383be82bdff6710a02accba70a6cb6a4ceebaaf3c817ed16d"
+    },
+    "macos": {
+      "status": "BLOCKED",
+      "reason": "User confirmed no macOS environment; no configured self-hosted Actions runner or SSH host is available. Hosted platform-verify accepts only a pushed 40-character commit, while this candidate is uncommitted.",
+      "decision": "defer until a native macOS environment is available"
+    }
+  },
+  "native_regression": {
+    "linux_initial": {
+      "status": "FAIL_REPAIRED",
+      "reason": "platform_delivery root dependency freeze expected pre-#126 exact string; auth_process_lifecycle 6 tests and observer 1 test passed in the same native run.",
+      "receipt": "C:/Temp/opi-126-native-20261115/linux-initial-results.json",
+      "stdout_sha256": "2a214422a2ef02dec3c90a0832e50c83ab1a1200c65bf993939e36fd547ed096",
+      "stderr_sha256": "e2334f35f2de3572482fe39b4a72be649f8edd1d0abd143ca55e1f2d1047ddcd"
+    },
+    "linux_after_test_contract_fix": [
+      {
+        "id": "linux-native-platform_delivery",
+        "exit": 0,
+        "seconds": 114.1,
+        "test_results": [
+          "test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.52s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-native-platform_delivery.stdout",
+          "sha256": "34a9ac6a4a19f1067a033ff3fef5f5ea0f533ea3c14c3fdb08015caa30b415f6"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-native-platform_delivery.stderr",
+          "sha256": "975385f7855fca6d478439ea03abe8c6e19354e2a2a524f9c261cb22f84a5396"
+        }
+      },
+      {
+        "id": "linux-native-auth_process_lifecycle",
+        "exit": 0,
+        "seconds": 95.05,
+        "test_results": [
+          "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.53s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-native-auth_process_lifecycle.stdout",
+          "sha256": "ff93117b547351f837bf143049dfc96994fbbea131d72fb63ffbdea9ef32a582"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-native-auth_process_lifecycle.stderr",
+          "sha256": "941521b0065034c2d77f87701ce763f7f647f9f8ff3a9ed7331d10566574f99c"
+        }
+      },
+      {
+        "id": "linux-native-openai_chat_response_observer",
+        "exit": 0,
+        "seconds": 25.6,
+        "test_results": [
+          "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-native-openai_chat_response_observer.stdout",
+          "sha256": "4906161c4bdb840b402108843b0a7062792ba6e366dc83f47f76fec8fa345b05"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-native-openai_chat_response_observer.stderr",
+          "sha256": "d06c5fdc25d1405e871ca74aa25966f9cc418892b0be0dc0461263c6c97f297d"
+        }
+      }
+    ],
+    "windows_platform_delivery": {
+      "status": "PASS",
+      "tests": "9 passed",
+      "stdout_path": "C:/Temp/opi-126-native-20261115/windows-platform-delivery.stdout",
+      "stdout_sha256": "25c77babe3a6bc6d3b5aa941d076fed87591e2d0ae8588a445c4cf5851950fe4",
+      "stderr_sha256": "aab660786c97fb3175ae279e529ae571e2053eed95a4e69d63e0f87870f5f7eb"
+    }
+  },
+  "declared_feature_v": {
+    "profiles": [
+      "core",
+      "core-tracing",
+      "builtins-no-tracing",
+      "defaults"
+    ],
+    "windows": [
+      {
+        "id": "windows-v-core",
+        "exit": 0,
+        "seconds": 2.39,
+        "test_results": [
+          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-core.stdout",
+          "sha256": "fb36a8acd530b10100c39e1aeba54c3c841b8129ece7b72adc08113b3f2ae5e3"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-core.stderr",
+          "sha256": "a5031534adf86ef6df8293f89345448aa40b792520376fd76a9f27f27eb165fc"
+        }
+      },
+      {
+        "id": "windows-v-core-tracing",
+        "exit": 0,
+        "seconds": 1.94,
+        "test_results": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-core-tracing.stdout",
+          "sha256": "8c1d0ef91eb747538df6383ba597b540ec154ffc61ddeece576edcdcee2e5f9c"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-core-tracing.stderr",
+          "sha256": "63ef1679193dac0bbaba68bcc242d7200479b9e62e31b97c5ffbcfa52baf2b6e"
+        }
+      },
+      {
+        "id": "windows-v-builtins-no-tracing",
+        "exit": 0,
+        "seconds": 2.0,
+        "test_results": [
+          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-builtins-no-tracing.stdout",
+          "sha256": "f54876e9ebc45a235cd0842f800e168a6ad120d959a6807f101efa93e10b2c04"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-builtins-no-tracing.stderr",
+          "sha256": "3683dfbd66203f0d35e0cb663c37e2465a9fbf24b305efd395a7ce88056a94d0"
+        }
+      },
+      {
+        "id": "windows-v-defaults",
+        "exit": 0,
+        "seconds": 2.03,
+        "test_results": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-defaults.stdout",
+          "sha256": "02a10fe2b3d7c2a5eb90bba127c347728bce259c1090adc2bb566fcf7f8fce48"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-defaults.stderr",
+          "sha256": "a4a97daf47a654d62a72a8867b5644fa0b8aebe3ac73042fde432322a906d310"
+        }
+      },
+      {
+        "id": "windows-v-all-features-lib",
+        "exit": 0,
+        "seconds": 56.66,
+        "test_results": [
+          "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 26.62s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-all-features-lib.stdout",
+          "sha256": "280280a9ee8c07a6f9bbbc6b7785a8d8286d0b0038788b841936a5f9f0fe8089"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\windows-v-all-features-lib.stderr",
+          "sha256": "8828a12fe0b70e72e099507f23ffdb242af45a2e20bf1638dcbb24c257cc58b5"
+        }
+      }
+    ],
+    "linux": [
+      {
+        "id": "linux-v-core",
+        "exit": 0,
+        "seconds": 39.94,
+        "test_results": [
+          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-core.stdout",
+          "sha256": "db6b0a248ec2e47a187708f59e2d93bfe1cf299204311f8ef5b7f5373b80eabb"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-core.stderr",
+          "sha256": "224f71359b754e1239c98aa1f4c201d1eed16a5f76f950f8316ea0e57b5667c6"
+        }
+      },
+      {
+        "id": "linux-v-core-tracing",
+        "exit": 0,
+        "seconds": 36.18,
+        "test_results": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-core-tracing.stdout",
+          "sha256": "284400fe04c775c16417d56eb74ab3ad4cc6d2c95fe909d4894351af5f1f0cd2"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-core-tracing.stderr",
+          "sha256": "59e2ff4fb5a4d0c37cf235546d445450ae313cf7b09bbdcb8c015f02a10d692a"
+        }
+      },
+      {
+        "id": "linux-v-builtins-no-tracing",
+        "exit": 0,
+        "seconds": 53.08,
+        "test_results": [
+          "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-builtins-no-tracing.stdout",
+          "sha256": "cc917347425a5f1f10d0343fceec4b8c6ad70c3ad4e21f9ed4188832a9afbee6"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-builtins-no-tracing.stderr",
+          "sha256": "d5a6689d5aebb0548aa1e3b43bb391073deae9fdb62a707932b3fc543517e2ec"
+        }
+      },
+      {
+        "id": "linux-v-defaults",
+        "exit": 0,
+        "seconds": 25.5,
+        "test_results": [
+          "test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-defaults.stdout",
+          "sha256": "bca831945f816546dc47ad3eddd482f4fadf579a85716d4776a219355bb3b597"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-defaults.stderr",
+          "sha256": "a85278066e594b3353026953e2094232b3bc638ab9289aa57f02eddd2cb5e24c"
+        }
+      },
+      {
+        "id": "linux-v-all-features-lib",
+        "exit": 0,
+        "seconds": 82.4,
+        "test_results": [
+          "test result: ok. 374 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 23.90s"
+        ],
+        "stdout": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-all-features-lib.stdout",
+          "sha256": "10a602b7429f278d9a9999aa06f7127aa69b36442b9bfd631953be761d1223f7"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-126-native-20261115\\linux-v-all-features-lib.stderr",
+          "sha256": "672fa07fe8552c29142d1a147807abff81ab7ffa0db8e854b2aa5dda3ee738ec"
+        }
+      }
+    ],
+    "all_features": {
+      "windows_all_targets_check": {
+        "status": "PASS",
+        "receipt": "C:/Temp/opi-126-native-20261115/windows-matrix-results.json",
+        "step": "windows-all-features-check"
+      },
+      "windows_lib_test": {
+        "status": "PASS",
+        "passed": 374
+      },
+      "linux_all_targets_check": {
+        "status": "PASS",
+        "exit_path": "C:/Temp/opi-126-native-20261115/linux-v-all-features-check.exit",
+        "stdout_sha256": "e2944a4e14815de128984bd4f52b5f6169b817fa47441ae1614b10c46b74ed17",
+        "stderr_sha256": "b69daef25cc8f633262495b5a68ac100fed6098e2cbf6b4db31f7f56a2cbbbc0"
+      },
+      "linux_lib_test": {
+        "status": "PASS",
+        "passed": 374
+      },
+      "windows_final_all_targets_check": {
+        "status": "PASS",
+        "command": "cargo check -p opi-ai --offline --locked --all-features --all-targets",
+        "receipt": "C:/Temp/opi-126-native-20261115/windows-final-manifest-results.json",
+        "stdout_sha256": "36d16cfaf6e07d8dc22305c6cf78f448a03b90772456a7999d58929d4c244b7c",
+        "stderr_sha256": "29162d76fb109d9c6005d8544d63a4a438d15235d4f9b8e73d51adc9ba6e95d7"
+      }
+    },
+    "disposition": "The four manifest-declared feature unions and all-features are executable on native Linux and Windows. This freezes the declared manifest V, not the capability-granular V requested by the milestone: builtins remains a coarse group, so independent protocol/auth/catalog/TLS/WS/OAuth/Store/telemetry combinations and higher-order runtime coverage remain open."
+  },
+  "test_impact": {
+    "add": [
+      "native Linux/Windows runner receipts",
+      "declared profile/all-features V evidence"
+    ],
+    "update": [
+      "platform_delivery root dependency assertion to accept the Cargo 1.97-compatible workspace-owned default-features=false edge"
+    ],
+    "delete": [],
+    "retain": "Initial Linux failure, all earlier MSRV, Pi differential, adapter, observer, package and cache evidence"
+  },
+  "open_scope": [
+    "Native macOS runner execution deferred by user until a host is available.",
+    "Capability-granular V beyond the two manifest switches, including independent backend/auth/catalog/TLS/WS/OAuth/Store combinations.",
+    "Quantitative budgets, complete six-gate acceptance and real Deferred integration (#94).",
+    "No Pi strict-equivalence or full three-OS claim."
+  ]
+}

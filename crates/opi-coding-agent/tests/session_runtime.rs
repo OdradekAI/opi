@@ -1993,7 +1993,7 @@ fn embedded_model_pricing_overrides_legacy_fallback() {
 fn embedded_model_pricing_updates_on_model_switch_and_resume() {
     use opi_agent::compaction::CompactionConfig;
     use opi_ai::model_info::ModelPricing;
-    use opi_ai::stream::{Pricing, Usage};
+    use opi_ai::stream::{CostBreakdown, Pricing, Usage};
 
     let dir = tempfile::tempdir().unwrap();
     let mut coord = SessionCoordinator::new_for_test(
@@ -2017,7 +2017,13 @@ fn embedded_model_pricing_updates_on_model_switch_and_resume() {
     )
     .unwrap();
     coord.set_cost_model("future:second", Some(embedded.clone()));
-    let usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None);
+    let usage = Usage::reported(1_000_000, 1_000_000, 0, 0, None, None).with_cost(CostBreakdown {
+        input_cost: 0.5,
+        output_cost: 0.25,
+        total: 0.125,
+        total_from_provider: true,
+        ..CostBreakdown::default()
+    });
     let mut assistant = test_support::base_assistant();
     assistant.usage = usage.clone();
     coord
@@ -2040,7 +2046,7 @@ fn embedded_model_pricing_updates_on_model_switch_and_resume() {
     let (_, entries) = SessionReader::read_all(&path).unwrap();
 
     let mut resumed = SessionCoordinator::open_existing(
-        path,
+        path.clone(),
         session_id,
         &entries,
         0,
@@ -2054,6 +2060,40 @@ fn embedded_model_pricing_updates_on_model_switch_and_resume() {
     resumed.set_cost_model("future:second", Some(embedded));
     let cost = resumed.cost_summary().unwrap();
     assert!((cost.total_cost() - 18.0).abs() < 1e-6);
+    assert!(!cost.total_from_provider);
+
+    // Session summaries use current pricing; message accounting remains the
+    // original response snapshot even when its provider total is different.
+    resumed.set_cost_model(
+        "future:second",
+        Some(
+            ModelPricing::try_new(
+                Pricing {
+                    input_cost_per_mtok: 14.0,
+                    output_cost_per_mtok: 22.0,
+                    cache_read_cost_per_mtok: 0.0,
+                    cache_write_cost_per_mtok: 0.0,
+                },
+                Vec::new(),
+            )
+            .unwrap(),
+        ),
+    );
+    assert!((resumed.cost_summary().unwrap().total_cost() - 36.0).abs() < 1e-6);
+    drop(resumed);
+    let (_, unchanged_entries, recovery) = SessionReader::read_with_recovery(&path).unwrap();
+    assert!(recovery.is_clean());
+    let reconstructed =
+        opi_agent::session_context::reconstruct_context(&unchanged_entries, &recovery);
+    let restored_usage = reconstructed
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(assistant)) => Some(&assistant.usage),
+            _ => None,
+        })
+        .expect("resumed assistant usage");
+    assert_eq!(restored_usage, &usage);
 }
 
 #[test]
@@ -3218,7 +3258,7 @@ fn phase14_usage_subsets_survive_session_resume() {
     use opi_agent::session::FORMAT_VERSION;
     use opi_ai::message::AssistantContent;
     use opi_ai::model_info::{ModelInfo, WireApi};
-    use opi_ai::stream::Usage;
+    use opi_ai::stream::{CostBreakdown, Usage};
     use opi_coding_agent::harness::ResumeInfo;
 
     let dir = tempfile::tempdir().unwrap();
@@ -3242,7 +3282,15 @@ fn phase14_usage_subsets_survive_session_resume() {
         100_000,
         Some(25_000),
         Some(100_000),
-    );
+    )
+    .with_cost(CostBreakdown {
+        input_cost: 0.5,
+        output_cost: 0.25,
+        cache_read_cost: 0.125,
+        cache_write_cost: 0.0625,
+        total: 0.0,
+        total_from_provider: true,
+    });
     let mut assistant = test_support::base_assistant();
     assistant.content.push(AssistantContent::Text {
         text: "persisted".into(),
@@ -3272,16 +3320,29 @@ fn phase14_usage_subsets_survive_session_resume() {
         std::fs::create_dir_all(&artifact_dir).unwrap();
         std::fs::write(artifact_dir.join("phase14-session-resume.jsonl"), &raw).unwrap();
     }
-    assert!(
-        !raw.contains("\"cost\""),
-        "calculated cost must not be persisted in session JSONL"
-    );
+    let stored_usage = raw
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find_map(|entry| entry.pointer("/entry/message/usage").cloned())
+        .expect("assistant usage in session JSONL");
+    assert_eq!(stored_usage, serde_json::to_value(&usage).unwrap());
+    assert_ne!(original_cost.total_cost(), usage.cost.total_cost());
+    assert!(!original_cost.total_from_provider);
     let (header, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
     assert!(recovery.is_clean());
     assert_eq!(header.version, FORMAT_VERSION);
     assert_eq!(FORMAT_VERSION, 2, "durable session bindings use schema v2");
 
     let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let restored_usage = reconstructed
+        .messages
+        .iter()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(assistant)) => Some(&assistant.usage),
+            _ => None,
+        })
+        .expect("reconstructed assistant usage");
+    assert_eq!(restored_usage, &usage);
     let resumed_harness = CodingHarness::builder(
         Box::new(MockProvider::new_with_models(
             "anthropic",
@@ -3337,6 +3398,7 @@ fn phase14_usage_subsets_survive_session_resume() {
             serde_json::Value::Object(map) => {
                 map.remove("cache_write_1h_tokens");
                 map.remove("reasoning_tokens");
+                map.remove("cost");
                 for child in map.values_mut() {
                     remove_optional_usage_fields(child);
                 }
@@ -3383,6 +3445,7 @@ fn phase14_usage_subsets_survive_session_resume() {
         .expect("legacy assistant usage deserialized");
     assert_eq!(legacy_usage.cache_write_1h_tokens, None);
     assert_eq!(legacy_usage.reasoning_tokens, None);
+    assert_eq!(legacy_usage.cost, CostBreakdown::default());
 }
 
 // ---------------------------------------------------------------------------

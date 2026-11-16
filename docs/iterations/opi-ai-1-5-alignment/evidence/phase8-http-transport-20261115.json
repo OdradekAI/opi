@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "issue": "#129",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": "Shared HTTP transport capability split with default/builtins compatibility, native/package proof, and repository caller audit.",
+  "host": {
+    "os": "Windows",
+    "target": "x86_64-pc-windows-msvc",
+    "target_dir": "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+  },
+  "sources": {
+    "crates/opi-ai/Cargo.toml": "ee10d00ddb1a983b0b0675135793fd6c83ab88fc2bccfd2509abdcec42adce44",
+    "crates/opi-ai/src/lib.rs": "b8fb9a89e0300cb882daa1506b0f7a61d233d8f6b1975094a7a88bb7b0a4d4b2",
+    "crates/opi-ai/src/http.rs": "c3a6393ff6b1f069ab35c63d2d5063dd527253cd778086cf2cac3b14011c048a",
+    "crates/opi-ai/src/tls/mod.rs": "ba96a12a89ae10faeefc42385d37277eefee10bbc1a406e7ad0e22ad029b3090",
+    "crates/opi-ai/src/crypto/mod.rs": "59c3f45c154e484e4dc20c9ccd0b8453d4cfde375657d1bf3dbc0b93da8ba39c",
+    "crates/opi-ai/src/stream.rs": "ff6065f4a23341a7e8e370c12bcecbe7e0cfae560552837a9f29e47fab2f4bfd",
+    "crates/opi-ai/tests/http_transport_profile.rs": "d6529f0ccb5d20dd20c296c121106667affff5a1dc1244f1879b0d6664da6209",
+    "scripts/pi-sdk-conformance/run_http_transport_package.py": "268fc37dfb7ccd6802efd40fb0a252ef397ae5c64663a8dc3ab7ef6164b34f03",
+    "scripts/pi-sdk-conformance/test_http_transport_package.py": "c46bbc4c48f795977e2b4c87c6a7b7f14ad2a297ec53c72904dcb97ac3916a6c",
+    "crates/opi-ai/README.md": "53de662776212cf9a429782cf06b2cbe8abea0188715e27f9a8b48bf5c3a99e7",
+    "crates/opi-ai/README.zh.md": "68a612488edd887fc50b1bb6f62283e4474e101be8a4584488ff8de92edb184d",
+    "docs/iterations/opi-ai-1-5-alignment/issues/129-split-http-transport-owner.md": "8efa4ba683dfe9a5f421eccc00402938f0d1b251537de25b4665868940edeaeb",
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": "926d3f1cce075d2424da52429be974a8827cf9b678fa7386372d09c0907d94a5"
+  },
+  "historical_inputs": {
+    "capability_v_v2": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v2.json",
+      "sha256": "fefbe9d55536a591ea5b074f86468c0e85e1396e373b367f46644fb02a027668"
+    },
+    "catalog_issue": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/128-split-catalog-bundled-feature.md",
+      "sha256": "a9fcd084d3600bc8d9124e839d6cd022fe539f20d214ddc618919870aebe37c4"
+    }
+  },
+  "feature_contract": {
+    "http-transport": {
+      "selects": [
+        "dep:reqwest",
+        "dep:rustls",
+        "dep:aws-lc-rs",
+        "dep:rustls-native-certs",
+        "dep:windows-sys"
+      ],
+      "does_not_select": [
+        "provider protocol modules",
+        "cloud-auth codecs",
+        "catalog-bundled",
+        "compression owners"
+      ]
+    },
+    "builtins": {
+      "selects_transitively": [
+        "catalog-bundled",
+        "http-transport"
+      ],
+      "compatibility": "existing explicit builtins and default callers retain the previous surface"
+    }
+  },
+  "checks": {
+    "windows-http-transport": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features http-transport --test http_transport_profile -- --nocapture",
+      "exit": 0,
+      "tests": "3 passed",
+      "log": "C:/Temp/opi-http-transport-package-20261115-v2/native-http-transport.log",
+      "log_sha256": "d837b41933930d22a615002c4ef53113625d72c8b6b049943cb39da85c410508"
+    },
+    "windows-http-transport-clippy": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- clippy -p opi-ai --locked --offline --no-default-features --features http-transport --tests -- -D warnings",
+      "exit": 0,
+      "log": "C:/Temp/opi-http-transport-package-20261115-v2/clippy-http-transport.log",
+      "log_sha256": "b372caea50629ec681ab7a6327bf6ff18d2a85e1333e4f3bed726dc65621ad37"
+    },
+    "windows-default-compatibility": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --test http_transport_profile -- --nocapture",
+      "exit": 0,
+      "tests": "3 passed",
+      "log": "C:/Temp/opi-http-transport-package-20261115-v2/native-default.log",
+      "log_sha256": "3f113c1ab76df2b1d4611ea5190d510cfee35ae926f0ebacd2886a3d3785f421"
+    },
+    "windows-builtins-compatibility": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features builtins --test http_transport_profile -- --nocapture",
+      "exit": 0,
+      "tests": "3 passed",
+      "log": "C:/Temp/opi-http-transport-package-20261115-v2/native-builtins.log",
+      "log_sha256": "d6b16ff2bdecb12dc6c7db8d28d2228026418a1de7e18123de78fb0012635da8"
+    },
+    "windows-builtins-http-acceptance": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features builtins --test http_acceptance -- --nocapture",
+      "exit": 0,
+      "tests": "21 passed",
+      "log": "C:/Temp/opi-http-transport-package-20261115-v2/http-acceptance-builtins.log",
+      "log_sha256": "9478d0a64e963cc3e3882e4bbb5469d8aecdb04dea8550def017b470513c52df",
+      "interpretation": "existing shared HTTP acceptance callers remain green under explicit builtins"
+    }
+  },
+  "package": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v3.json",
+    "sha256": "fe6740ac46b00dbc192a8444dd7501b3ea925006cb72d9d35eb5ad1ed6a125f6",
+    "verdict": "PASS",
+    "feature_union": [
+      "http-transport"
+    ],
+    "transport_present": [
+      "aws-lc-rs",
+      "reqwest",
+      "rustls",
+      "rustls-native-certs"
+    ],
+    "forbidden_absent": [
+      "aws-smithy-query",
+      "aws-smithy-xml",
+      "flate2",
+      "hmac",
+      "libz-rs-sys",
+      "p256",
+      "sha1",
+      "xmlparser"
+    ]
+  },
+  "metadata": {
+    "command": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps --offline --no-default-features --features http-transport",
+    "exit": 0,
+    "log": "C:/Temp/opi-http-transport-package-20261115-v2/metadata-http.json",
+    "sha256": "14ff63eb3117639e4858f9a886dda9ebe7ecde2d9371410763fd75e4e1a5f12f"
+  },
+  "caller_audit": {
+    "inventory": "C:/Temp/opi-http-transport-package-20261115-v2/caller-inventory.json",
+    "inventory_sha256": "086cbdf16ebd091c2d387d4f61394dc6b35ad0045468ae0946544e10eb9e6bfb",
+    "files": 90,
+    "interpretation": "provider, catalog and auth callers remain under builtins and inherit http-transport; the new external caller is the only supported transport-only shape"
+  },
+  "test_impact": {
+    "add": "http-transport feature, transport-only contract target, package runner/unit tests and caller inventory",
+    "update": "manifest cfg gates, bilingual feature profiles, capability mapping",
+    "delete": "none",
+    "retain": "historical builtins/default, Pi pairing, adapter/observer, platform and catalog receipts"
+  },
+  "verdict": "PASS",
+  "historical_package_receipts": [
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v2.json",
+      "sha256": "671d44f2c6c5f6a77beecb33ee9959f9a38af929b64cbae4773c2cb4ade4cafd",
+      "status": "superseded by v3 after documentation/changelog updates"
+    }
+  ]
+}

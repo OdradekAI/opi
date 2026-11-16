@@ -22,8 +22,8 @@ use rustls::pki_types::CertificateDer;
 use rustls::pki_types::pem::PemObject;
 use secrecy::{ExposeSecret, SecretString};
 
+use crate::auth::aws::sigv4::sign_request;
 use crate::auth::{AuthContext, AwsSigV4Credentials};
-use crate::bedrock::sigv4::sign_request;
 
 use super::native::{
     AdcClock, AdcResolutionError, AdcSourceRequest, AdcSourceResponse, AdcSourceTransport,

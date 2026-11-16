@@ -1,0 +1,86 @@
+{
+  "schemaVersion": "phase8-all-features-current-v1",
+  "issue": "#138",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": "Current candidate native Windows all-features library and all-target compilation after the shared-owner pair slice; this revalidates the manifest-wide union and does not close native macOS, quantitative budgets or the real Deferred route.",
+  "environment": {
+    "host": "Windows MSVC",
+    "target": "x86_64-pc-windows-msvc",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "workspace_head": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+    "target_dir": "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+  },
+  "inputs": {
+    "workspace_manifest_sha256": "9332f1cbabb1a2adb0d333ff616c3e1c4e6ab9a99f2ad4e6c5282fa97fa7bf72",
+    "opi_ai_manifest_sha256": "0be4deaa903b17682bea19b5d5968f1fd9f1c2b50921d3fc289ffef2e0489095",
+    "cargo_lock_sha256": "78499c6681d06e72fc05659bc4cd18d72aae687a174c750435285838cde6dbe5",
+    "features": [
+      "builtins",
+      "catalog-bundled",
+      "cloud-auth",
+      "default",
+      "http-transport",
+      "oauth-store",
+      "protocol-adapters",
+      "provider-anthropic",
+      "provider-azure-openai",
+      "provider-bedrock",
+      "provider-gemini",
+      "provider-mistral",
+      "provider-openai-chat",
+      "provider-openai-codex-responses",
+      "provider-openai-responses",
+      "provider-openai-responses-shared",
+      "provider-openrouter",
+      "provider-openrouter-usage",
+      "provider-pi-messages",
+      "provider-protocol-common",
+      "provider-vertex",
+      "telemetry-tracing",
+      "tls-backend",
+      "websocket-compression"
+    ]
+  },
+  "verification": {
+    "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- check -p opi-ai --locked --offline --all-features --all-targets",
+    "exit": 0,
+    "log": "C:/Temp/opi-all-features-current-20261116-v1.log",
+    "log_sha256": "bc4236dd326b33f37ac6ec28d5b244bf025599d040778ba1ca515d55ce0f9e4c",
+    "result": "cargo check completed successfully for opi-ai library and all declared test/example targets; Cargo emitted the existing shared provider_protocol_profile target warning."
+  },
+  "historical_receipts": {
+    "phase8_native_v": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-native-v.json",
+      "sha256": "e616c2748b94132c8287dffb921363c782ce01a3018d7df3b4c5777ef6d9c516",
+      "status": "prior Linux/Windows declared V and all-features baseline"
+    },
+    "phase8_capability_v_v11": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261116-v11.json",
+      "sha256": "4d452310a1030fae18f644c56f1993eaa5aff396f5038f7b98b891ab58267bce",
+      "status": "prior capability matrix before this current-candidate revalidation"
+    },
+    "shared_owner_pairs_combined": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-shared-owner-pairs-20261116.json",
+      "sha256": "496d0738641702a13b736fa0fc4bfd00dcac5834164bda1999b3c28feed18ae6",
+      "status": "shared-owner pair evidence retained unchanged"
+    }
+  },
+  "open_scope": {
+    "native_macos": "BLOCKED: user confirmed no macOS host or runner",
+    "real_deferred": "OPEN: #94 still has no production caller that registers a real deferred backend",
+    "quantitative_budgets": "OPEN: calibration and formal resource/performance thresholds are not frozen acceptance"
+  },
+  "test_impact": {
+    "add": [
+      "current-candidate all-features/all-target check receipt"
+    ],
+    "update": [
+      "capability V current-validation pointer"
+    ],
+    "delete": [],
+    "retain": [
+      "prior Pi 1.5.0 paired differential, provider-owner matrix, shared-owner pair, package-consumer, platform and cache receipts"
+    ]
+  }
+}

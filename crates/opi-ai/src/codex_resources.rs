@@ -23,6 +23,7 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -127,6 +128,7 @@ pub trait SessionResourceOwner: Send + Sync {
 /// Lifecycle phase of one registered generation, mirroring the work classes
 /// the cleanup cutoff has to cancel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) enum GenerationPhase {
     /// Registered, before any connection work.
     Prepared,
@@ -140,6 +142,7 @@ pub(crate) enum GenerationPhase {
     ActiveFallback,
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 impl GenerationPhase {
     fn as_u8(self) -> u8 {
         match self {
@@ -153,16 +156,22 @@ impl GenerationPhase {
 }
 
 struct Generation {
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     session: Option<String>,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     cancel: CancellationToken,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     phase: AtomicU8,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     active: usize,
 }
 
 #[derive(Default)]
 struct RegistryInner {
     generations: HashMap<u64, Generation>,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     next_id: u64,
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     release_errors: HashMap<u64, (Option<String>, Vec<String>)>,
 }
 
@@ -193,11 +202,13 @@ struct GenerationRegistration {
 /// independent of the caller's parent token and of transport cache affinity.
 #[derive(Clone)]
 pub struct CallResourceLease {
+    #[cfg(feature = "provider-openai-codex-responses")]
     pub(crate) state: Arc<crate::openai_codex_responses::ws_transport::WsTransportState>,
     pub(crate) guard: GenerationGuard,
 }
 
 impl CallResourceLease {
+    #[cfg(feature = "provider-openai-codex-responses")]
     pub(crate) fn new(
         state: Arc<crate::openai_codex_responses::ws_transport::WsTransportState>,
         request: &crate::provider::Request,
@@ -212,6 +223,7 @@ impl CallResourceLease {
         self.guard.token()
     }
 
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn activity(&self) -> Option<GenerationActivity> {
         self.guard.activity()
     }
@@ -219,10 +231,12 @@ impl CallResourceLease {
 
 /// A local producer that cleanup must observe exiting. Merely
 /// retaining a caller-owned PreparedCall is not active library work.
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) struct GenerationActivity {
     guard: GenerationGuard,
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 impl Drop for GenerationActivity {
     fn drop(&mut self) {
         let mut inner = self.guard.0.registry.inner.lock().unwrap();
@@ -239,6 +253,7 @@ impl Drop for GenerationActivity {
 }
 
 impl GenerationGuard {
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn record_unconfirmed(&self, detail: String) {
         let mut inner = self.0.registry.inner.lock().unwrap();
         let session = inner
@@ -259,6 +274,7 @@ impl GenerationGuard {
     }
 
     /// Record the current lifecycle phase.
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn set_phase(&self, phase: GenerationPhase) {
         if let Some(generation) = self
             .0
@@ -275,6 +291,7 @@ impl GenerationGuard {
 
     /// Serialize publication with the cutoff. Cleanup cancels under this same
     /// lock before draining pooled state, so old work cannot publish afterward.
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     pub(crate) fn with_live<T>(&self, f: impl FnOnce() -> T) -> Option<T> {
         let inner = self.0.registry.inner.lock().unwrap();
         let generation = inner.generations.get(&self.0.id)?;
@@ -284,6 +301,7 @@ impl GenerationGuard {
         Some(f())
     }
 
+    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     fn activity(&self) -> Option<GenerationActivity> {
         let mut inner = self.0.registry.inner.lock().unwrap();
         let generation = inner.generations.get_mut(&self.0.id)?;
@@ -310,6 +328,7 @@ impl Drop for GenerationRegistration {
     }
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 impl ResourceRegistry {
     /// Register one generation against an `Arc` registry. Returns the guard
     /// owning the entry and the generation's cancellation token.

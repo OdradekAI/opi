@@ -1,0 +1,42 @@
+{
+  "frames": {
+    "first": [
+      {"type":"response.done","response":{"id":"resp_first","status":"completed","end_turn":false,"output":[],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}}
+    ],
+    "created": [{"type":"response.created","response":{"id":"resp_second","status":"in_progress","output":[]}}],
+    "created_repeated": [{"type":"response.created","response":{"id":"resp_first","status":"in_progress","output":[]}}],
+    "answer": [
+      {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_second","role":"assistant","status":"in_progress","content":[]}},
+      {"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}},
+      {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"second answer"},
+      {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_second","role":"assistant","status":"completed","content":[{"type":"output_text","text":"second answer"}]}}
+    ],
+    "done": [{"type":"response.done","response":{"id":"resp_second","status":"completed","end_turn":true,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}],
+    "done_repeated": [{"type":"response.done","response":{"id":"resp_first","status":"completed","end_turn":true,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}],
+    "done_other": [{"type":"response.done","response":{"id":"resp_reported","status":"completed","end_turn":true,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}],
+    "done_top_level_id": [{"type":"response.done","response_id":"resp_first","response":{"status":"completed","end_turn":true,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}],
+    "current_limit": [{"type":"response.failed","response":{"id":"resp_second","status":"failed","error":{"code":"websocket_connection_limit_reached","message":"current limit"}}}],
+    "late_completed": [{"type":"response.completed","response":{"id":"resp_first","status":"completed","end_turn":false,"output":[],"usage":{"input_tokens":70,"output_tokens":9,"total_tokens":79}}}],
+    "late_done": [{"type":"response.done","response":{"id":"resp_first","status":"completed","end_turn":false,"output":[],"usage":{"input_tokens":70,"output_tokens":9,"total_tokens":79}}}],
+    "late_incomplete": [{"type":"response.incomplete","response":{"id":"resp_first","status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},"end_turn":false,"output":[],"usage":{"input_tokens":70,"output_tokens":9,"total_tokens":79}}}],
+    "late_limit": [{"type":"response.failed","response":{"id":"resp_first","status":"failed","error":{"code":"websocket_connection_limit_reached","message":"late limit"}}}],
+    "late_idless": [{"type":"response.done","response":{"status":"completed","output":[],"usage":{"input_tokens":70,"output_tokens":9,"total_tokens":79}}}],
+    "third": [
+      {"type":"response.done","response":{"id":"resp_third","status":"completed","end_turn":true,"output":[],"usage":{"input_tokens":7,"output_tokens":4,"total_tokens":11}}}
+    ]
+  },
+  "cases": [
+    {"name":"clean","second":["created","answer","done"],"followUp":true},
+    {"name":"before_created","second":["late_completed","created","answer","done"],"accepted":["late_completed"]},
+    {"name":"old_completed","second":["created","late_completed","answer","done"],"accepted":["created","answer","done"]},
+    {"name":"old_done_after_text","second":["created","answer","late_done","done"],"accepted":["created","answer","done"],"followUp":true},
+    {"name":"old_incomplete","second":["created","late_incomplete","answer","done"],"accepted":["created","answer","done"]},
+    {"name":"old_limit_after_text","second":["created","answer","late_limit","done"],"accepted":["created","answer","done"]},
+    {"name":"idless_after_created","second":["created","late_idless","answer","done"],"accepted":["created","late_idless"]},
+    {"name":"repeat_created_id","second":["created_repeated","answer","done_repeated"]},
+    {"name":"repeat_without_created","second":["answer","done_repeated"]},
+    {"name":"different_terminal_id","second":["created","answer","done_other"]},
+    {"name":"only_top_level_id","second":["created","answer","done_top_level_id"]},
+    {"name":"current_limit_after_text","second":["created","answer","current_limit"]}
+  ]
+}

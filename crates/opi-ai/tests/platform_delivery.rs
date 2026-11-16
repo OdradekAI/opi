@@ -275,39 +275,42 @@ fn root_workspace_graph_is_frozen() {
         "opi-protocol",
         "opi-tui",
     ] {
+        let edge = if dep == "opi-telemetry" {
+            // Cargo 1.97 cannot parse a package-local default-features
+            // override inherited from this workspace dependency. The
+            // workspace edge owns the empty default explicitly instead.
+            format!(
+                "{dep} = {{ path = \"crates/{dep}\", version = \"0.8.3\", default-features = false }}"
+            )
+        } else {
+            format!("{dep} = {{ path = \"crates/{dep}\", version = \"0.8.3\" }}")
+        };
         assert!(
-            src.contains(&format!(
-                "{dep} = {{ path = \"crates/{dep}\", version = \"0.8.3\" }}"
-            )),
+            src.contains(&edge),
             "internal dep {dep} lost its lockstep path+version edge"
         );
     }
 }
 
 #[test]
-fn opi_ai_manifest_has_a_single_feature_union() {
+fn opi_ai_manifest_exposes_independent_builtin_and_tracing_profiles() {
     let src = read("crates/opi-ai/Cargo.toml");
 
-    // The SDK publishes one documented feature union: the default build turns
-    // on the optional tracing adapter, while `--no-default-features` keeps the
-    // backend-neutral AI surface. Any additional feature or optional
-    // dependency would fork the delivered API surface and must be deliberate.
+    // External package tests verify the actual resolved minimum graph. This
+    // guard keeps default compatibility and workspace dependency ownership.
     assert!(
         src.contains("[features]"),
         "opi-ai feature table is required"
     );
     assert!(
-        src.contains("default = [\"telemetry-tracing\"]"),
+        src.contains("default = [\"builtins\", \"telemetry-tracing\"]"),
         "opi-ai default feature union drifted"
     );
     assert!(
         src.contains("telemetry-tracing = [\"opi-telemetry/tracing\"]"),
         "opi-ai tracing adapter feature drifted"
     );
-    assert!(
-        !src.contains("optional = true"),
-        "opi-ai grew an optional dependency; single-union contract broken"
-    );
+    assert!(src.contains("builtins = ["));
 
     // Everything except the documented cfg(windows) target table resolves
     // through the root workspace so the root graph stays the only source of

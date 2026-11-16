@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "issue": "#124",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "snapshot": "D:/Luiz/Odradek/opi/.pi/pi-1.5.0",
+  "contract": [
+    "response observer runs once after successful headers and before body processing",
+    "observer failure yields typed CallbackPhase failure without normalized event or Done",
+    "failed response release permits a later request through the same provider"
+  ],
+  "sources": {
+    "crates/opi-ai/Cargo.toml": "c7116b82e34000db75ddcd346ba55325574097bd20e6ec0bae51b5c36d1a965c",
+    "crates/opi-ai/tests/openai_chat_response_observer.rs": "62298578a4924c64647e40e66484729bf98eb0fc68578848363ddaa34887c45e",
+    "crates/opi-ai/tests/data/openai-chat-response-observer.json": "6e497bf045096829f468b194e2fd0e214b9f529534a5ea775c2fb34cd7728c3a",
+    "docs/iterations/opi-ai-1-5-alignment/issues/124-openai-chat-response-observer-release.md": "63851e1ec8636629fe125ec5f070ea6b67164915e0239a9cc7f86d6c9ad34205",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_chat_response_observer.mjs": "500cd04b70b1ea4dfcf44e0af7a3ca68c0441296275a734f12a4ef8629b267e4",
+    "scripts/pi-sdk-conformance/differential/compare_openai_chat_response_observer.py": "13bf564ffd8c3f5abdc9febdcf82d3b9404d747f56ba24ab1be50288c7815ac5",
+    "scripts/pi-sdk-conformance/differential/test_openai_chat_response_observer.py": "6b66c0f9c28f69ef18d37e8f3ae4c13b7b8edf6e1f3339523d885b971ece7fdf",
+    "scripts/pi-sdk-conformance/run_openai_chat_response_observer_package.py": "15e74e1ac2377e8f4c46f715fc7954bedcedcc720f7dbe86b6000513497cbf15",
+    "scripts/pi-sdk-conformance/test_openai_chat_response_observer_package.py": "90c6ac2702d507e20657f0195ca011ddef4ae33ee1e6fcdd4ebb3b77c4509c45"
+  },
+  "frozen_pi_source_sha256": {
+    "packages/ai/src/api/openai-completions.ts": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a"
+  },
+  "rust_executable": {
+    "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_chat_response_observer-7b738f18618fe062.exe",
+    "sha256": "9d5c28fef231d7fdefe3bfd1c370b9e26804c2b72da66676d87cc98cc6841b40"
+  },
+  "evidence": {
+    "differential": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-differential.json",
+    "package": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-package.json",
+    "historical_package_v1": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-package-v1.json",
+    "package_v2": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-package-v2.json",
+    "checks": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-checks.json"
+  },
+  "observed_trace": {
+    "observer_statuses": [
+      200,
+      200
+    ],
+    "first": {
+      "stop": "error",
+      "event_types": [
+        "error"
+      ],
+      "typed_cause": "CallbackPhase"
+    },
+    "second": {
+      "stop": "stop",
+      "usage": {
+        "input": 2,
+        "output": 1,
+        "total": 3
+      }
+    },
+    "requests": 2,
+    "repetitions": 3
+  },
+  "approved_differences": [
+    "Pi emits an error AssistantMessage event and resolves result(); Rust exposes a typed CallbackPhase CallFailure.",
+    "Pi's event stream includes no Rust-normalized partial message on the callback-failure path."
+  ],
+  "cache_maintenance": {
+    "scope": "user-authorized reviewed incremental cache recycling",
+    "stale_plan_rejected": "C:/Temp/opi-cache-maintenance-20261115/plan-eviction-v1.json",
+    "plan": "C:/Temp/opi-cache-maintenance-20261115/plan-eviction-v2.json",
+    "plan_sha256": "0745e2cbbc31eacb03a0f01fc85231cae66f72ffbd6d53fa0dc46af538fdfed0",
+    "removed_files": 5024,
+    "reclaimable_bytes": 7924057672,
+    "free_after_bytes": 7924396032,
+    "evidence_preserved": true
+  },
+  "history": {
+    "prior_receipts_untouched": true,
+    "package_v1_failure_retained": true
+  },
+  "test_impact": {
+    "add": [
+      "OpenAI Chat response observer failure/release regression",
+      "Frozen Pi probe/comparator",
+      "Actual archive consumer"
+    ],
+    "update": [
+      "Cargo test target list"
+    ],
+    "delete": [],
+    "retain": "All prior adapter, observer, Chat terminal/preview, usage, numeric, cancellation, deferred and package evidence"
+  }
+}

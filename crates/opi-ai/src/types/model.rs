@@ -1454,3 +1454,34 @@ pub enum ModelInfoError {
     #[error("invalid model pricing: {0}")]
     InvalidPricing(String),
 }
+
+/// Lowercased id/name candidates with pi's separator normalization
+/// (`[\s_.:]+` -> `-`) so application inference profile ARNs and catalog
+/// names match the same substring rules as model ids.
+pub(crate) fn bedrock_model_candidates(id: &str, name: &str) -> Vec<String> {
+    let mut candidates = Vec::new();
+    for value in [id, name] {
+        if value.is_empty() {
+            continue;
+        }
+        let lower = value.to_lowercase();
+        candidates.push(lower.clone());
+        candidates.push(lower.replace([' ', '_', '.', ':'], "-"));
+    }
+    candidates
+}
+
+/// Adaptive-thinking Claude models (pi `supportsAdaptiveThinking`):
+/// Opus 4.6+, Sonnet 4.6+, Claude 5.
+pub(crate) fn supports_bedrock_adaptive_thinking(id: &str, name: &str) -> bool {
+    bedrock_model_candidates(id, name).iter().any(|s| {
+        s.contains("opus-4-6")
+            || s.contains("opus-4-7")
+            || s.contains("opus-4-8")
+            || s.contains("opus-5")
+            || s.contains("sonnet-4-6")
+            || s.contains("sonnet-5")
+            || s.contains("haiku-5")
+            || s.contains("fable-5")
+    })
+}

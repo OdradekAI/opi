@@ -1185,6 +1185,114 @@ async fn azure_responses_text_lifecycle_uses_deployment_url_and_api_key_auth() {
 }
 
 #[tokio::test]
+async fn azure_responses_tail_raw_callback_failure_precedes_pending_done() {
+    let server = wiremock::MockServer::start().await;
+    let body = concat!(
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_tail\",\"status\":\"in_progress\",\"model\":\"my-gpt4o\",\"output\":[]}}\n\n",
+        "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_tail\",\"status\":\"completed\",\"model\":\"my-gpt4o\",\"output\":[],\"usage\":{\"input_tokens\":10,\"output_tokens\":5}}}\n\n",
+        "data: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_tail\",\"status\":\"completed\",\"model\":\"my-gpt4o\",\"output\":[]}}\n\n",
+    )
+    .to_owned();
+    mount_azure_responses_mock(&server, body).await;
+
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let callback_seen = seen.clone();
+    let mut request = azure_responses_request("my-gpt4o", None);
+    request.callbacks = opi_ai::callbacks::RequestCallbacks::new().with_on_raw(
+        std::sync::Arc::new(move |_event| {
+            let count = callback_seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            if count == 3 {
+                Err(opi_ai::callbacks::CallbackError::new(
+                    "tail observer failed",
+                ))
+            } else {
+                Ok(())
+            }
+        }),
+    );
+
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
+    let results: Vec<_> = provider
+        .stream_prepared(request, azure_api_key_auth())
+        .collect()
+        .await;
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 3);
+    assert!(
+        !results
+            .iter()
+            .any(|result| matches!(result, Ok(AssistantStreamEvent::Done { .. })))
+    );
+    assert!(results.iter().any(|result| matches!(
+        result,
+        Err(ProviderError::StreamFailure(failure))
+            if matches!(failure.cause(), ProviderError::CallbackPhase(_))
+    )));
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn azure_responses_failed_sse_preserves_the_code_classification() {
+    use opi_ai::retry::{WholeCallRetryClassification, classify_whole_call_retry};
+    let server = wiremock::MockServer::start().await;
+    mount_azure_responses_mock(
+        &server,
+        "data: {\"type\":\"response.failed\",\"response\":{\"status\":\"failed\",\"error\":{\"code\":\"upstream_stream_read_error\",\"message\":\"PRIVATE_CANARY\"}}}\n\n".into(),
+    )
+    .await;
+    let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
+    let failure = opi_ai::stream::ChatStream::new(provider.stream_prepared(
+        azure_responses_request("my-gpt4o", None),
+        azure_api_key_auth(),
+    ))
+    .result()
+    .await
+    .unwrap_err();
+    assert!(matches!(failure.cause(), ProviderError::StreamError(_)));
+    assert_eq!(failure.message().wire, Some(WireApi::AzureOpenAiResponses));
+    assert_eq!(failure.message().raw_stop_reason.as_deref(), Some("failed"));
+    assert_eq!(
+        classify_whole_call_retry(failure.message()),
+        WholeCallRetryClassification::Transient
+    );
+    assert!(!format!("{failure:?}").contains("PRIVATE_CANARY"));
+    server.verify().await;
+}
+
+#[tokio::test]
+async fn azure_responses_sse_error_uses_the_sdk_field_selection() {
+    use opi_ai::retry::{WholeCallRetryClassification, classify_whole_call_retry};
+    use serde_json::Value;
+    let cases: Vec<Value> =
+        serde_json::from_str(include_str!("data/responses-error.json")).unwrap();
+    for case in cases.iter().filter(|case| case["alsoAzure"] == true) {
+        let mut body = String::new();
+        if let Some(event) = case["event"].as_str() {
+            body.push_str(&format!("event: {event}\n"));
+        }
+        body.push_str(&format!("data: {}\n\n", case["data"]));
+        let server = wiremock::MockServer::start().await;
+        mount_azure_responses_mock(&server, body).await;
+        let provider = azure_responses_provider(format!("{}/openai/v1", server.uri()));
+        let failure = opi_ai::stream::ChatStream::new(provider.stream_prepared(
+            azure_responses_request("my-gpt4o", None),
+            azure_api_key_auth(),
+        ))
+        .result()
+        .await
+        .unwrap_err();
+        assert!(matches!(failure.cause(), ProviderError::StreamError(_)));
+        assert_eq!(failure.message().wire, Some(WireApi::AzureOpenAiResponses));
+        assert_eq!(failure.message().raw_stop_reason, None);
+        assert_eq!(
+            classify_whole_call_retry(failure.message()),
+            WholeCallRetryClassification::Transient
+        );
+        assert!(!format!("{failure:?}").contains("PRIVATE_CANARY"));
+        server.verify().await;
+    }
+}
+
+#[tokio::test]
 async fn azure_responses_tool_call_lifecycle_reaches_the_wire() {
     let server = wiremock::MockServer::start().await;
     mount_azure_responses_mock(&server, azure_responses_sse_tool()).await;

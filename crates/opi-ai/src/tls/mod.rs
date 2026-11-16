@@ -16,8 +16,8 @@
 //! configuration is ever installed or mutated. WebPKI chain, hostname and
 //! time verification always stay on.
 //!
-//! Default trust is the packaged pinned Node reference CA bundle in
-//! [`node_trust`]; extra roots extend it, explicit roots replace it, and
+//! Default trust is the packaged pinned Node reference CA bundle defined by this module;
+//! extra roots extend it, explicit roots replace it, and
 //! host-system roots are an explicit opt-in. No ambient credential, trust or
 //! proxy discovery exists in this path.
 
@@ -294,6 +294,7 @@ impl TlsOptions {
 /// The frozen instance `aws-lc-rs` provider with the declared key-exchange
 /// group order. Explicit instance only: nothing here is installed
 /// process-globally.
+#[cfg_attr(not(feature = "http-transport"), allow(dead_code))]
 pub(crate) fn provider_instance() -> Arc<CryptoProvider> {
     let mut provider = rustls::crypto::aws_lc_rs::default_provider();
     provider.kx_groups = vec![X25519MLKEM768, X25519, SECP256R1, SECP384R1];
@@ -301,6 +302,7 @@ pub(crate) fn provider_instance() -> Arc<CryptoProvider> {
 }
 
 /// A frozen, validated TLS configuration ready to hand to the HTTP backend.
+#[cfg_attr(not(feature = "http-transport"), allow(dead_code))]
 pub(crate) struct FrozenTls {
     /// Preconfigured rustls client configuration (instance AWS-LC provider,
     /// frozen roots/identity/ALPN).
@@ -315,6 +317,7 @@ impl TlsOptions {
     /// This is the single pre-I/O freeze point: root decoding, host-store
     /// availability, identity assembly and the frozen profile are all
     /// resolved here, returning typed redacted failures.
+    #[cfg_attr(not(feature = "http-transport"), allow(dead_code))]
     pub(crate) fn freeze(&self) -> Result<FrozenTls, TlsConfigError> {
         let mut roots = RootCertStore::empty();
         match &self.trust {

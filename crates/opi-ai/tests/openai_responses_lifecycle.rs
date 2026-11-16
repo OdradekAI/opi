@@ -183,6 +183,89 @@ async fn stream_accepts_canonical_data_only_responses_frames() {
     );
 }
 
+#[tokio::test]
+async fn responses_tail_raw_callback_failure_precedes_pending_done() {
+    let server = MockServer::start().await;
+    let fixture = [
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_tail","status":"in_progress","model":"gpt-4o","output":[]}}"#,
+        r#"event: response.completed
+data: {"type":"response.completed","response":{"id":"resp_tail","status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":10,"output_tokens":5}}}"#,
+        r#"event: response.created
+data: {"type":"response.created","response":{"id":"resp_tail","status":"completed","model":"gpt-4o","output":[]}}"#,
+    ]
+    .join("\n\n");
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_string(format!("{fixture}\n\n"))
+                .insert_header("content-type", "text/event-stream"),
+        )
+        .mount(&server)
+        .await;
+
+    let seen = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let callback_seen = seen.clone();
+    let mut request = make_request(CancellationToken::new());
+    request.callbacks = opi_ai::callbacks::RequestCallbacks::new().with_on_raw(
+        std::sync::Arc::new(move |_event| {
+            let count = callback_seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            if count == 3 {
+                Err(opi_ai::callbacks::CallbackError::new(
+                    "tail observer failed",
+                ))
+            } else {
+                Ok(())
+            }
+        }),
+    );
+
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let results: Vec<_> = provider
+        .stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())
+        .collect()
+        .await;
+
+    assert_eq!(seen.load(std::sync::atomic::Ordering::SeqCst), 3);
+    assert!(
+        !results
+            .iter()
+            .any(|result| matches!(result, Ok(AssistantStreamEvent::Done { .. }))),
+        "tail callback failure must prevent Done publication: {results:?}"
+    );
+    assert!(results.iter().any(|result| matches!(
+        result,
+        Err(ProviderError::StreamFailure(failure))
+            if matches!(failure.cause(), ProviderError::CallbackPhase(_))
+    )));
+}
+
+#[tokio::test]
+async fn responses_repeated_terminal_usage_last_snapshot_wins_before_done() {
+    let body = [
+        r#"data: {"type":"response.created","response":{"id":"resp_repeat","status":"in_progress","model":"gpt-4o","output":[]}}"#,
+        r#"data: {"type":"response.completed","response":{"id":"resp_repeat","status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":10,"output_tokens":5}}}"#,
+        r#"data: {"type":"response.completed","response":{"id":"resp_repeat","status":"completed","model":"gpt-4o","output":[],"usage":{"input_tokens":12,"output_tokens":7}}}"#,
+    ]
+    .join("\n\n");
+    let provider = OpenAiResponsesProvider::new(None);
+    let events: Vec<_> = provider
+        .stream_from_sse(&body, CancellationToken::new())
+        .collect()
+        .await;
+    let dones: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            Ok(AssistantStreamEvent::Done { message, .. }) => Some(message),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(dones.len(), 1, "repeated terminal frames emit one Done");
+    assert_eq!(dones[0].usage.input_tokens, 12);
+    assert_eq!(dones[0].usage.output_tokens, 7);
+}
+
 // ---------------------------------------------------------------------------
 // HTTP error mapping: 401 -> AuthFailed
 // ---------------------------------------------------------------------------

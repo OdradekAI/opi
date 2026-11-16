@@ -569,6 +569,7 @@ impl Provider for MockProvider {
 /// Records every send (method/url/headers/body/timeout) and replays scripted
 /// responses in order; unscripted sends replay `default`. Header and body
 /// values stay out of `Debug` output — requests carry credential material.
+#[cfg(feature = "builtins")]
 #[derive(Default)]
 pub struct FakeSourceTransport {
     sends: std::sync::Mutex<Vec<crate::auth::aws::source_http::SourceHttpRequest>>,
@@ -590,6 +591,7 @@ pub struct FakeSourceTransport {
     >,
 }
 
+#[cfg(feature = "builtins")]
 impl FakeSourceTransport {
     /// Script the responses replayed in send order.
     pub fn new(
@@ -627,6 +629,7 @@ impl FakeSourceTransport {
     }
 }
 
+#[cfg(feature = "builtins")]
 impl crate::auth::aws::source_http::AwsSourceTransport for FakeSourceTransport {
     fn send(
         &self,
@@ -653,6 +656,7 @@ impl crate::auth::aws::source_http::AwsSourceTransport for FakeSourceTransport {
     }
 }
 
+#[cfg(feature = "builtins")]
 impl std::fmt::Debug for FakeSourceTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FakeSourceTransport")
@@ -663,8 +667,10 @@ impl std::fmt::Debug for FakeSourceTransport {
 
 /// A source transport that always fails (for fixtures that must never
 /// perform a real exchange).
+#[cfg(feature = "builtins")]
 pub struct NeverTransport;
 
+#[cfg(feature = "builtins")]
 impl crate::auth::aws::source_http::AwsSourceTransport for NeverTransport {
     fn send(
         &self,

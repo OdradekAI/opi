@@ -21,11 +21,11 @@ use tokio_util::sync::CancellationToken;
 
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
-use crate::openai_chat::{CompatConfig, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent};
+use crate::openai_chat::{CompatConfig, OpenAiChatMapper, OpenAiChatProvider, drain_sse_events};
 use crate::openai_responses::{
     OpenAiResponsesOptions, OpenAiResponsesProvider, ResponsesReasoningSummary, ResponsesToolChoice,
 };
-use crate::openai_responses_shared::{ResponsesEvent, ResponsesMapper, drain_sse_frames};
+use crate::openai_responses_shared::{ResponsesMapper, drain_sse_frames};
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
@@ -574,23 +574,22 @@ impl AzureOpenAIProvider {
             "",
         );
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
+        let supports_finish_reason = self
+            .inner
+            .resolve_compat_for("", None)
+            .supports_finish_reason
+            .unwrap_or(true);
         for (parsed, _raw) in crate::openai_chat::parse_sse_events_with_raw(sse_body) {
-            match parsed {
-                ParsedEvent::Valid(events) => {
-                    for event in events {
-                        stream_events.extend(mapper.process(event));
-                    }
-                }
-                ParsedEvent::UsageError(error) => stream_events.push(Err(mapper.failure(error))),
-                ParsedEvent::Malformed { .. } => {
-                    stream_events.push(Err(mapper.failure(ProviderError::StreamError(
-                        ProviderErrorSummary::attested_static(
-                            "Azure OpenAI returned a malformed streaming frame",
-                        ),
-                    ))));
-                }
+            let items = mapper.process_frame(parsed, supports_finish_reason);
+            let terminal = items
+                .iter()
+                .any(|item| item.as_ref().map_or(true, |event| event.is_terminal()));
+            stream_events.extend(items);
+            if terminal {
+                break;
             }
         }
+        stream_events.extend(mapper.finish(supports_finish_reason));
 
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
@@ -633,16 +632,11 @@ impl Provider for AzureOpenAIProvider {
         let mut configured =
             self.dispatch_configured(model.clone(), AzureOpenAIOptions::from_simple(&options));
         configured.models = vec![model.clone()];
-        configured.inner = OpenAiChatProvider::for_route(
-            model
-                .base_url
-                .clone()
-                .or_else(|| Some(self.endpoint.clone())),
-            "azure".into(),
-            ProviderHeaders::default(),
-            vec![model],
-            self.client.clone(),
-        );
+        // The inner provider owns profile compatibility; replace only the
+        // selected model so simple dispatch retains with_compat settings.
+        if let Err(error) = configured.inner.replace_model_catalog(vec![model]) {
+            return Box::pin(stream::once(async move { Err(error) }));
+        }
         configured.stream_resource_attempt(request, auth, attempt, resources)
     }
 
@@ -706,6 +700,16 @@ impl Provider for AzureOpenAIProvider {
 
             let url = self.build_azure_url(&model_id);
             let requested_model = model_id.clone();
+            let supports_finish_reason = self
+                .inner
+                .resolve_compat_for(
+                    &model_id,
+                    self.active_record
+                        .as_ref()
+                        .or_else(|| self.models.iter().find(|model| model.id == model_id)),
+                )
+                .supports_finish_reason
+                .unwrap_or(true);
             let body = match self
                 .inner
                 .clone()
@@ -755,6 +759,7 @@ impl Provider for AzureOpenAIProvider {
                             api_key,
                             &url,
                             requested_model,
+                            supports_finish_reason,
                             &body,
                             producer_cancel.clone(),
                             timeout,
@@ -800,6 +805,7 @@ async fn stream_azure_http(
     api_key: String,
     url: &str,
     requested_model: String,
+    supports_finish_reason: bool,
     body: &serde_json::Value,
     cancel: CancellationToken,
     timeout: Option<std::time::Duration>,
@@ -885,7 +891,6 @@ async fn stream_azure_http(
         crate::model_info::WireApi::AzureOpenAiCompletions,
         &requested_model,
     );
-    let mut saw_done = false;
 
     mapper.set_snapshot(snapshot);
     callbacks
@@ -916,45 +921,18 @@ async fn stream_azure_http(
             })?;
             buffer.push_str(&decoder.push(&chunk));
 
-            for (parsed, raw) in drain_sse_events(&mut buffer) {
+            for (parsed, raw) in drain_sse_events(&mut buffer, false) {
                 // Raw observer (task 20.51): parsed wire JSON before
                 // normalization; failure preserves the partial.
-                if !saw_done
-                    && let Some(raw) = raw.as_ref()
+                if let Some(raw) = raw.as_ref()
                     && let Err(error) = callbacks.notify_raw_async(raw).await
                 {
                     return Err(mapper.failure(error));
                 }
-                match parsed {
-                    ParsedEvent::Valid(events) => {
-                        for event in events {
-                            for item in mapper.process(event) {
-                                let is_terminal = match &item {
-                                    Ok(terminal_event) => terminal_event.is_terminal(),
-                                    Err(_) => true,
-                                };
-                                if !send_or_cancel(&cancel, tx, item).await? {
-                                    return Ok(());
-                                }
-                                if is_terminal {
-                                    saw_done = true;
-                                }
-                            }
-                        }
-                    }
-                    ParsedEvent::UsageError(error) => {
-                        if !send_or_cancel(&cancel, tx, Err(mapper.failure(error))).await? {
-                            return Ok(());
-                        }
-                    }
-                    ParsedEvent::Malformed { .. } => {
-                        let err =
-                            ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                                "Azure OpenAI returned a malformed streaming frame",
-                            ));
-                        if !send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await? {
-                            return Ok(());
-                        }
+                for item in mapper.process_frame(parsed, supports_finish_reason) {
+                    let terminal = item.as_ref().map_or(true, |event| event.is_terminal());
+                    if !send_or_cancel(&cancel, tx, item).await? || terminal {
+                        return Ok(());
                     }
                 }
             }
@@ -962,31 +940,16 @@ async fn stream_azure_http(
 
         let eof_tail = decoder.finish();
         buffer.push_str(&eof_tail);
-        if !saw_done {
-            let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                "stream ended without a terminal event",
-            ));
-            let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await?;
+        for item in mapper.finish(supports_finish_reason) {
+            if !send_or_cancel(&cancel, tx, item).await? {
+                return Ok(());
+            }
         }
 
         Ok(())
     }
     .await;
     result.map_err(|cause| mapper.failure(cause))
-}
-
-fn drain_sse_events(buffer: &mut String) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {
-    if buffer.contains('\r') {
-        *buffer = buffer.replace("\r\n", "\n").replace('\r', "\n");
-    }
-
-    let mut events = Vec::new();
-    while let Some(idx) = buffer.find("\n\n") {
-        let end = idx + 2;
-        let chunk: String = buffer.drain(..end).collect();
-        events.extend(crate::openai_chat::parse_sse_events_with_raw(&chunk));
-    }
-    events
 }
 
 fn map_azure_status(
@@ -1103,7 +1066,8 @@ async fn stream_azure_responses_http(
     let mut buffer = String::new();
     let mut decoder = crate::text_decode::StreamTextDecoder::new();
     let mut response_activated_at: Option<std::time::Instant> = None;
-    let mut mapper = ResponsesMapper::new("azure", WireApi::AzureOpenAiResponses, &requested_model);
+    let mut mapper = ResponsesMapper::new("azure", WireApi::AzureOpenAiResponses, &requested_model)
+        .with_deferred_terminal();
     if let Some(wire) = wire_facts {
         mapper.set_grammar_tools(wire.grammar_input_properties);
         mapper.set_strict_tools(wire.strict_tools);
@@ -1144,13 +1108,12 @@ async fn stream_azure_responses_http(
             for frame in drain_sse_frames(&mut buffer) {
                 // Raw observer (task 20.51): parsed wire JSON before
                 // normalization; failure preserves the partial.
-                if !mapper.saw_done
-                    && let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
+                if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
                     && let Err(error) = callbacks.notify_raw_async(&raw).await
                 {
                     return Err(mapper.failure(error));
                 }
-                match ResponsesEvent::try_from_frame(&frame) {
+                match mapper.decode_frame(&frame) {
                     crate::openai_responses_shared::ParsedEvent::Valid(event) => {
                         for item in mapper.process(event) {
                             let item = OpenAiResponsesProvider::stamp_done_duration(
@@ -1187,7 +1150,15 @@ async fn stream_azure_responses_http(
 
         let eof_tail = decoder.finish();
         buffer.push_str(&eof_tail);
-        if !mapper.saw_done {
+        if mapper.has_pending_terminal() {
+            for item in mapper.flush_pending_terminal() {
+                let item =
+                    OpenAiResponsesProvider::stamp_done_duration(item, response_activated_at);
+                if !send_or_cancel(&cancel, tx, item).await? {
+                    return Ok(());
+                }
+            }
+        } else if !mapper.saw_done {
             let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
                 "stream ended without a terminal event",
             ));

@@ -570,6 +570,58 @@ async fn chat_stream_converts_legacy_error_event_to_call_failure() {
 }
 
 #[tokio::test]
+async fn chat_stream_normalizes_legacy_abort_reasons() {
+    for (reason, message_stop, diagnostic, expected_stop) in [
+        (
+            StopReason::Aborted,
+            StopReason::Aborted,
+            Some("503 Service Unavailable"),
+            StopReason::Aborted,
+        ),
+        (
+            StopReason::Aborted,
+            StopReason::Aborted,
+            None,
+            StopReason::Aborted,
+        ),
+        (
+            StopReason::Error,
+            StopReason::Aborted,
+            None,
+            StopReason::Error,
+        ),
+        (
+            StopReason::Aborted,
+            StopReason::Error,
+            None,
+            StopReason::Error,
+        ),
+    ] {
+        let mut message = sample_assistant_message();
+        message.stop_reason = message_stop;
+        message.error_message = diagnostic.map(str::to_owned);
+        message.usage = Usage::reported(3, 5, 0, 0, None, None);
+        message.response_id = Some("legacy-terminal".into());
+        let mut expected = message.clone();
+        expected.stop_reason = expected_stop;
+        let mut stream = chat_stream(vec![
+            Ok(AssistantStreamEvent::Error { reason, message }),
+            Ok(done_terminal("late result", StopReason::Stop)),
+        ]);
+        let failure = stream.next().await.unwrap().unwrap_err();
+        assert_eq!(failure.message(), &expected, "{reason:?}/{message_stop:?}");
+        let expected_cause = match expected_stop {
+            StopReason::Aborted => ProviderError::Cancelled,
+            _ => ProviderError::StreamError(ProviderErrorSummary::redacted()),
+        };
+        assert_eq!(failure.cause(), &expected_cause);
+        assert!(stream.next().await.is_none());
+        assert!(stream.next().await.is_none());
+        assert_eq!(stream.result().await, Err(failure));
+    }
+}
+
+#[tokio::test]
 async fn chat_stream_error_and_aborted_done_reasons_are_failures() {
     // AIR-047: Stop/Length/ToolUse/Deferred are Ok;
     // Error/Aborted are Err.

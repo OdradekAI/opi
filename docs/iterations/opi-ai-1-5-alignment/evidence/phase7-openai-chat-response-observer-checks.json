@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "issue": "#124",
+  "commands": [
+    {
+      "command": "cargo fmt --all",
+      "status": "PASS"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 test -p opi-ai --test openai_chat_response_observer --features builtins -- --nocapture",
+      "status": "PASS",
+      "tests": "1 passed"
+    },
+    {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 clippy -p opi-ai --test openai_chat_response_observer --features builtins -- -D warnings",
+      "status": "PASS"
+    },
+    {
+      "command": "node --check docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_chat_response_observer.mjs",
+      "status": "PASS"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/differential/compare_openai_chat_response_observer.py --rust-exe <sealed executable> --repetitions 3",
+      "status": "PASS"
+    },
+    {
+      "command": "python -m unittest scripts/pi-sdk-conformance/differential/test_openai_chat_response_observer.py scripts/pi-sdk-conformance/test_openai_chat_response_observer_package.py",
+      "status": "PASS",
+      "tests": "2 passed"
+    },
+    {
+      "command": "python -B scripts/pi-sdk-conformance/run_openai_chat_response_observer_package.py ...",
+      "status": "PASS",
+      "profiles": [
+        "builtins-no-tracing",
+        "defaults"
+      ]
+    },
+    {
+      "command": "cargo fmt --all -- --check",
+      "status": "PASS"
+    },
+    {
+      "command": "python scripts/opi-doc-check.py",
+      "status": "PASS"
+    },
+    {
+      "command": "git diff --check -- <phase7 slice paths>",
+      "status": "PASS"
+    },
+    {
+      "command": "git diff --check",
+      "status": "BLOCKED_BY_PREEXISTING_WORKTREE_NOISE",
+      "detail": "The existing contract-index.json whole-file rewrite emits trailing-whitespace diagnostics; the phase7 slice paths pass the scoped check."
+    }
+  ],
+  "historical_failures": [
+    {
+      "receipt": "phase7-openai-chat-response-observer-package-v1.json",
+      "cause": "shared incremental target exhausted E: during defaults compilation",
+      "status": "retained"
+    },
+    {
+      "cache_plan": "C:/Temp/opi-cache-maintenance-20261115/plan-eviction-v1.json",
+      "cause": "workspace scope changed before apply; no deletion",
+      "status": "retained"
+    }
+  ],
+  "evidence": [
+    "phase7-openai-chat-response-observer-materials.json",
+    "phase7-openai-chat-response-observer-differential.json",
+    "phase7-openai-chat-response-observer-package.json"
+  ]
+}

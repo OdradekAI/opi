@@ -76,14 +76,27 @@ const DEFAULT_POOL_MAX_IDLE_PER_HOST: usize = 10;
 /// Default idle timeout for pooled connections.
 const DEFAULT_POOL_IDLE_TIMEOUT: Duration = Duration::from_secs(90);
 
+#[cfg_attr(
+    not(any(feature = "builtins", feature = "provider-protocol-common")),
+    allow(dead_code)
+)]
 const ERROR_BODY_CLASSIFICATION_MAX_BYTES: usize = 8 * 1024;
+#[cfg_attr(
+    not(any(feature = "builtins", feature = "provider-protocol-common")),
+    allow(dead_code)
+)]
 const ERROR_BODY_CLASSIFICATION_DEADLINE: Duration = Duration::from_secs(1);
 
 /// Preserve quota/billing/usage-limit facts on OpenAI-family 429 failures for
-/// the explicit whole-call classifier. The typed status/hint cause stays intact:
-/// acquisition policy still owns whether another send is admitted. Only the
-/// designated error fields are inspected; raw text never leaves this boundary.
+/// the explicit whole-call classifier. The typed cause and retry hint carry
+/// the inputs to acquisition policy. Read code, type and message from an
+/// error object or flat error body and represent a recognized limit with a
+/// fixed diagnostic.
 /// The existing request timeout and caller cancellation govern the body read.
+#[cfg_attr(
+    not(any(feature = "builtins", feature = "provider-protocol-common")),
+    allow(dead_code)
+)]
 pub(crate) async fn openai_rate_limit_detail(
     response: reqwest::Response,
     cause: ProviderError,
@@ -98,12 +111,17 @@ pub(crate) async fn openai_rate_limit_detail(
     let Ok(body) = serde_json::from_slice::<serde_json::Value>(&body) else {
         return cause;
     };
-    let veto = ["code", "type", "message"].into_iter().any(|field| {
-        body.get("error")
-            .and_then(|error| error.get(field))
-            .and_then(serde_json::Value::as_str)
-            .is_some_and(|detail| crate::retry::non_retryable_limit_pattern().is_match(detail))
-    });
+    let error = body.get("error").unwrap_or(&body);
+    let zhipu_limit = error
+        .get("code")
+        .is_some_and(|code| code.as_str() == Some("1308") || code.as_u64() == Some(1308));
+    let veto = zhipu_limit
+        || ["code", "type", "message"].into_iter().any(|field| {
+            error
+                .get(field)
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|detail| crate::retry::non_retryable_limit_pattern().is_match(detail))
+        });
     if veto {
         crate::stream::setup_failure_with_detail(cause, "rate limited: quota exceeded")
     } else {
@@ -119,6 +137,10 @@ pub(crate) async fn openai_rate_limit_detail(
 /// respects a stricter request timeout, and remains cancellation-aware. Errors
 /// never include provider-controlled response text. A declared or observed
 /// overflow returns `Ok(None)`, so callers skip embedded-code classification.
+#[cfg_attr(
+    not(any(feature = "builtins", feature = "provider-protocol-common")),
+    allow(dead_code)
+)]
 pub(crate) async fn read_bounded_error_body(
     mut response: reqwest::Response,
     cancel: &CancellationToken,
@@ -209,6 +231,10 @@ impl ProxyConfig {
 #[derive(Debug, Clone)]
 pub struct HttpClient {
     inner: reqwest::Client,
+    #[cfg_attr(
+        not(any(feature = "builtins", feature = "provider-protocol-common")),
+        allow(dead_code)
+    )]
     websocket: reqwest::Client,
     max_idle_per_host: usize,
     idle_timeout: Duration,
@@ -238,6 +264,10 @@ impl HttpClient {
     /// Classic WebSocket Upgrade uses H1 with the same frozen trust, identity,
     /// and proxy as ordinary HTTP, with redirects disabled for strict Upgrade.
     /// Its pool cannot reuse an H2 connection negotiated for another request.
+    #[cfg_attr(
+        not(any(feature = "builtins", feature = "provider-protocol-common")),
+        allow(dead_code)
+    )]
     pub(crate) fn websocket_client(&self) -> &reqwest::Client {
         &self.websocket
     }

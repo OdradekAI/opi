@@ -1,0 +1,107 @@
+[
+  {
+    "name":"flat-data-only-code",
+    "route":"responses",
+    "data":{"type":"error","code":"upstream_stream_read_error","message":"Invalid request. PRIVATE_CANARY"},
+    "decision":"transient"
+  },
+  {
+    "name":"named-message-precedes-code",
+    "route":"responses",
+    "event":"error",
+    "data":{"type":"error","code":"upstream_stream_read_error","message":"Invalid request. PRIVATE_CANARY"},
+    "decision":"terminal"
+  },
+  {
+    "name":"named-nested-message",
+    "route":"responses",
+    "event":"error",
+    "data":{"type":"error","code":"insufficient_quota","message":"Quota exceeded. PRIVATE_CANARY","error":{"code":"insufficient_quota","message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"}},
+    "decision":"transient",
+    "alsoAzure":true
+  },
+  {
+    "name":"data-only-envelope-quota",
+    "route":"responses",
+    "data":{"error":{"code":1308,"type":"rate_limit_error","message":"","metadata":{"trace":"PRIVATE_CANARY"}}},
+    "decision":"quota"
+  },
+  {
+    "name":"named-leading-413",
+    "route":"responses",
+    "event":"error",
+    "data":{"type":"error","code":"invalid_request_error","message":"413 Request Too Large. PRIVATE_CANARY"},
+    "decision":"overflow"
+  },
+  {
+    "name":"flat-leading-413",
+    "route":"responses",
+    "data":{"type":"error","code":"invalid_request_error","message":"413 Request Too Large. PRIVATE_CANARY"},
+    "decision":"terminal"
+  },
+  {
+    "name":"data-only-nested-code",
+    "route":"responses",
+    "data":{"type":"error","error":{"code":"upstream_stream_read_error","param":"PRIVATE_CANARY"}},
+    "decision":"transient"
+  },
+  {
+    "name":"data-only-nested-type",
+    "route":"responses",
+    "data":{"type":"error","error":{"type":"rate_limit_error","code":"unknown","param":"PRIVATE_CANARY"}},
+    "decision":"transient",
+    "alsoAzure":true
+  },
+  {
+    "name":"named-error-with-lifecycle-type",
+    "route":"responses",
+    "event":"error",
+    "data":{"type":"response.in_progress","message":"Stream was interrupted. PRIVATE_CANARY"},
+    "decision":"transient"
+  },
+  {
+    "name":"data-only-metadata",
+    "route":"responses",
+    "data":{"error":{"code":"invalid_request_error","metadata":{"message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"}}},
+    "decision":"terminal",
+    "piDecision":"transient"
+  },
+  {
+    "name":"codex-code-only",
+    "route":"codex",
+    "data":{"type":"error","code":"upstream_stream_read_error","metadata":{"trace":"PRIVATE_CANARY"}},
+    "decision":"transient"
+  },
+  {
+    "name":"codex-empty-flat-message",
+    "route":"codex",
+    "data":{"type":"error","code":"insufficient_quota","message":"","error":{"code":"upstream_stream_read_error","message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"}},
+    "decision":"quota"
+  },
+  {
+    "name":"codex-nonstring-flat-fields",
+    "route":"codex",
+    "event":"error",
+    "data":{"type":"error","code":19,"message":23,"error":{"code":"insufficient_quota","message":"Upstream HTTP/2 stream failed. PRIVATE_CANARY"}},
+    "decision":"transient"
+  },
+  {
+    "name":"codex-message-precedes-code",
+    "route":"codex",
+    "data":{"type":"error","code":"upstream_stream_read_error","message":"Invalid request. PRIVATE_CANARY","error":{"message":"Upstream HTTP/2 stream failed"}},
+    "decision":"terminal"
+  },
+  {
+    "name":"codex-leading-413",
+    "route":"codex",
+    "data":{"type":"error","message":"413 Request Too Large. PRIVATE_CANARY"},
+    "decision":"terminal"
+  },
+  {
+    "name":"codex-empty-flat-code",
+    "route":"codex",
+    "data":{"type":"error","code":"","error":{"code":"upstream_stream_read_error","param":"PRIVATE_CANARY"}},
+    "decision":"terminal",
+    "piDecision":"transient"
+  }
+]

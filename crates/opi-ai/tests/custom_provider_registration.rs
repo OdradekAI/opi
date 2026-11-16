@@ -1382,6 +1382,8 @@ async fn models_type_mismatch_and_unregistered_api_fail_before_auth() {
         "{}",
         failure.cause()
     );
+    assert_eq!(failure.message().provider, "elsewhere");
+    assert_eq!(failure.message().model, "echo-model");
     assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
 }
 
@@ -1475,5 +1477,7 @@ async fn models_pre_cancelled_request_fails_before_auth() {
         ProviderError::Cancelled | ProviderError::LoginCancelled { .. }
     ));
     assert_eq!(failure.message().stop_reason.as_str(), "aborted");
+    assert_eq!(failure.message().provider, "custom");
+    assert_eq!(failure.message().model, "echo-model");
     assert_eq!(reads.calls.load(Ordering::SeqCst), 0);
 }

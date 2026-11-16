@@ -74,8 +74,8 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
 
     def test_consumer_template_declares_both_opi_ai_feature_profiles(self):
         manifest = (SCRIPT.parent / "consumer-readme" / "Cargo.toml").read_text(encoding="utf-8")
-        self.assertIn('opi-ai = { path = "@PACKAGE@", default-features = false }', manifest)
-        self.assertIn('[features]\ncaller-default-opi-ai = ["opi-ai/telemetry-tracing"]', manifest)
+        self.assertIn('opi-ai = { path = "@PACKAGE@", default-features = false, features = ["builtins"] }', manifest)
+        self.assertIn('[features]\ncaller-default-opi-ai = ["opi-ai/default"]', manifest)
 
     def test_packaged_onboarding_sources_use_consumer_commands(self):
         examples = Path(__file__).parents[2] / "crates" / "opi-ai" / "examples"
@@ -289,18 +289,18 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         chinese = (root / "README.zh.md").read_text(encoding="utf-8")
         for fragment in (
             "## Feature profiles",
-            "`default` / `telemetry-tracing`",
+            "`catalog-bundled`, `http-transport` and `telemetry-tracing` are independently",
             "`default-features = false`",
-            "does not remove built-in providers or network\ndependencies",
-            "`opi-telemetry`'s optional tracing carrier",
+            "The minimum excludes reqwest, TLS",
+            "add `features = [\"builtins\"]`",
         ):
             self.assertIn(fragment, english, f"README.md omits feature-profile contract: {fragment}")
         for fragment in (
             "## Feature profile",
-            "`default` / `telemetry-tracing`",
+            "`catalog-bundled`、`http-transport` 与 `telemetry-tracing` 可独立选择",
             "`default-features = false`",
-            "不会移除内置 Provider 或网络依赖",
-            "`opi-telemetry` 的可选 tracing carrier",
+            "最小配置的依赖图排除 reqwest、TLS",
+            "须增加 `features = [\"builtins\"]`",
         ):
             self.assertIn(fragment, chinese, f"README.zh.md omits feature-profile contract: {fragment}")
 

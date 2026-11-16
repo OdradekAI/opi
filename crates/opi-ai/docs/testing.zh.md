@@ -40,9 +40,94 @@ python -B scripts/pi-sdk-conformance/run_readme_examples.py --offline --scratch 
 ```
 
 证明会打包 `opi-telemetry` 与 `opi-ai`，创建普通外部 Cargo consumer，验证默认和
-`default-features = false` 两种 profile，确认 setup 不做 source/store/request I/O，并执行
+显式 `builtins` 无 tracing 两种 profile，确认 setup 不做 source/store/request I/O，并执行
 README 中的逐字示例。JSON verdict 写入
 `scripts/pi-sdk-conformance/evidence/readme-examples-proof.json`。
+
+最小配置使用 `scripts/pi-sdk-conformance/run_minimal_package.py`，指定新的
+`--scratch`、共享 `--target-dir` 和新的 `--evidence-output`。它核对实际归档在
+tracing 关闭/开启时的依赖图，执行核心 Faux 工具续轮、自定义登录 Store ACK 和
+参数/数字契约，并拒绝意外的后端依赖。这不代表完整 Pi Faux 行为或所有
+feature/platform 验收行已闭合。README runner 也应使用 `--evidence-output` 保留旧收据。
+
+共享 HTTP transport profile 使用
+`scripts/pi-sdk-conformance/run_http_transport_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在 workspace 外以 `default-features = false, features = ["http-transport"]`
+消费实际归档，核对 transport-only 依赖图，并执行公共 pool、proxy 和 redirect 合同。
+
+TLS backend profile 使用
+`scripts/pi-sdk-conformance/run_tls_backend_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在 workspace 外以 `default-features = false, features = ["tls-backend"]`
+消费实际归档，核对精确的 rustls/AWS-LC/native-certs 依赖闭包，确认 reqwest
+和 provider owner 未泄漏，并执行公共 `opi_ai::tls` trust/ALPN 合同。
+HTTP transport profile 另行证明 `http-transport` 仍传递选择该 backend。
+
+WebSocket/compression profile 使用
+`scripts/pi-sdk-conformance/run_websocket_compression_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在 workspace 外以 `default-features = false, features = ["websocket-compression"]`
+消费实际归档，核对精确的 HTTP/TLS/PMD 依赖闭包且不带 provider adapter，并执行
+workspace 外的 HTTP/1.1 Upgrade 与 permessage-deflate 协商。原生 profile 还运行
+公共 Upgrade/WSS 合同和私有 frame/PMD 回归套件。
+
+
+云认证 profile 使用
+`scripts/pi-sdk-conformance/run_cloud_auth_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在 workspace 外以 `default-features = false, features = ["cloud-auth"]`
+消费实际归档，核对 HTTP/TLS 与 AWS/GCP source/signing codec 的精确闭包，
+确认 provider protocol/compression owner 未泄漏，并执行公共 AWS endpoint、
+SigV4 和 GCP ADC 常量调用。
+
+Provider protocol adapter profile 使用
+`scripts/pi-sdk-conformance/run_protocol_adapters_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在 workspace 外以 `default-features = false, features = ["protocol-adapters"]`
+消费实际归档，核对包含传递选择 `cloud-auth`/`http-transport`/`tls-backend` 且不含内嵌
+catalog 的 provider protocol 依赖闭包，并执行
+直接 adapter、auth-store 和 WebSocket surface 调用。Provider collection 与
+内置 OAuth/AWS/Vertex credential factory 仍通过 `builtins` profile 证明。
+
+Provider OAuth/store profile 使用
+`scripts/pi-sdk-conformance/run_oauth_store_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在 workspace 外以 `default-features = false, features = ["oauth-store"]`
+消费实际归档，核对精确的 `http-transport` feature union，拒绝内嵌 catalog
+和 protocol/cloud-signing owner，并执行 provider OAuth 与
+`StoreOAuthResolver` 的 workspace 外调用。中立 credential、mutation、Store
+和 OAuth 合同由最小 profile 继续覆盖；provider collection 与平台
+credential-source factory 仍通过 `builtins` profile 证明。
+
+Provider protocol/source owner 使用
+`scripts/pi-sdk-conformance/run_provider_protocol_package.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+runner 在 workspace 外消费实际归档，分别核对以下十一项 owner：
+`provider-anthropic`、`provider-azure-openai`、`provider-bedrock`、
+`provider-gemini`、`provider-mistral`、`provider-openai-chat`、
+`provider-openai-codex-responses`、`provider-openai-responses`、
+`provider-openrouter`、`provider-pi-messages` 与 `provider-vertex`。
+瞬时包构建失败可用 `--owner provider-vertex` 单独重跑，不覆盖旧回执。
+原生 profile 测试和 warnings-denied Clippy 使用同样的 feature 写法。
+
+
+Provider owner 的 pair 与高阶 capability V 使用
+`scripts/pi-sdk-conformance/run_provider_protocol_matrix.py`，指定新的
+`--scratch`、带标记的 workspace `--target-dir` 和新的 `--evidence-output`。
+它在原生环境验证全部 55 个无序 provider-owner pair 与两个受支持的高阶
+组合，再从实际归档由 workspace 外 Cargo consumer 重复验证同一批配置。
+回执保留冻结 Pi 1.5.0 配对差分引用；没有 runner 时将原生 macOS 明确记录为
+blocked，不用交叉编译代替。
+
+剩余 shared-owner pair 使用
+scripts/pi-sdk-conformance/run_shared_owner_pairs.py，指定新的
+--scratch、带标记的 workspace --target-dir 和新的 --evidence-output。
+它验证 cloud-auth+catalog-bundled 与 websocket-compression+oauth-store 的
+owner profile test，再从实际归档由 workspace 外 consumer 验证精确 feature
+closure 和禁止 owner 边界。可用 --only 单独重跑一个 pair，不覆盖另一个
+pair 的历史回执。回执保留冻结 Pi 1.5.0 引用；没有 runner 时继续把原生
+macOS 记录为 blocked。
 
 ## 开发检查
 

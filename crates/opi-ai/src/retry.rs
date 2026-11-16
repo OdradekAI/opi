@@ -11,6 +11,9 @@
 //! [`start_attempt`](crate::models::PreparedProviderCall::start_attempt) and
 //! read [`RetryAdmission`] decisions instead of re-classifying failures.
 
+/// Pure Smithy retry policy and state, usable without a network backend.
+pub mod smithy;
+
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -70,7 +73,7 @@ pub fn calculate_backoff_delay(attempt: u32, base_ms: u64, max_delay_ms: u64) ->
 /// 2. `x-ratelimit-reset` — Unix timestamp
 ///
 /// Returns delay in milliseconds, or `None` if no usable header is found.
-pub fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+pub fn parse_retry_after(headers: &http::header::HeaderMap) -> Option<u64> {
     // Priority 1: Retry-After header
     if let Some(val) = headers.get("retry-after")
         && let Ok(s) = val.to_str()
@@ -197,7 +200,7 @@ fn date_to_unix(year: u32, month: u32, day: u32, hour: u32, minute: u32, second:
 /// `x-should-retry`, `min(500ms * 2^i, 8s)` backoff with `[0.75, 1.0)`
 /// jitter, 60-second advisory-hint bound). `Smithy` applies the pinned AWS
 /// Smithy V2 modes for Bedrock through
-/// [`SmithyRetryConfig`](crate::bedrock::retry::SmithyRetryConfig):
+/// [`SmithyRetryConfig`](crate::retry::smithy::SmithyRetryConfig):
 /// exact error-trait/network classification, the per-call quota, the
 /// bounded `+5s` hint rule, and (adaptive) the CUBIC client-side rate
 /// limiter. The helper 60-second hint bound and helper jitter are never
@@ -207,7 +210,7 @@ pub enum RetrySourcePolicy {
     /// Helper/Codex family rules (the default for every non-AWS wire).
     Helper,
     /// AWS Smithy V2 rules with the frozen mode/flavor/attempt budget.
-    Smithy(crate::bedrock::retry::SmithyRetryConfig),
+    Smithy(crate::retry::smithy::SmithyRetryConfig),
 }
 
 /// Per-logical-call acquisition policy frozen at
@@ -236,13 +239,13 @@ pub struct AcquisitionPolicy {
     pub jitter_seed: Option<u64>,
     /// Which retry-family rules apply (task 20.20). Defaults to the helper
     /// family; Bedrock providers freeze their resolved
-    /// [`SmithyRetryConfig`](crate::bedrock::retry::SmithyRetryConfig)
+    /// [`SmithyRetryConfig`](crate::retry::smithy::SmithyRetryConfig)
     /// here.
     pub source: RetrySourcePolicy,
     /// Time source for the adaptive rate limiter when `source` is an
     /// adaptive Smithy config. Production uses the wall clock; deterministic
     /// tests script manual ticks.
-    pub smithy_clock: crate::bedrock::retry::SmithyClock,
+    pub smithy_clock: crate::retry::smithy::SmithyClock,
 }
 
 impl Default for AcquisitionPolicy {
@@ -252,7 +255,7 @@ impl Default for AcquisitionPolicy {
             max_retry_delay_ms: 60_000,
             jitter_seed: None,
             source: RetrySourcePolicy::Helper,
-            smithy_clock: crate::bedrock::retry::SmithyClock::default(),
+            smithy_clock: crate::retry::smithy::SmithyClock::default(),
         }
     }
 }
@@ -344,9 +347,9 @@ pub(crate) struct AcquisitionCore {
 /// Per-attempt Smithy mode state (task 20.20). One instance per logical
 /// call; the quota and rate limiter never outlive the call.
 struct SmithyAttemptState {
-    config: crate::bedrock::retry::SmithyRetryConfig,
-    quota: crate::bedrock::retry::SmithyRetryQuota,
-    limiter: crate::bedrock::retry::AdaptiveRateLimiter,
+    config: crate::retry::smithy::SmithyRetryConfig,
+    quota: crate::retry::smithy::SmithyRetryQuota,
+    limiter: crate::retry::smithy::AdaptiveRateLimiter,
     completed_retries: u32,
     spent: Option<u32>,
     refunded: bool,
@@ -354,15 +357,15 @@ struct SmithyAttemptState {
 
 impl SmithyAttemptState {
     fn new(
-        config: crate::bedrock::retry::SmithyRetryConfig,
-        clock: crate::bedrock::retry::SmithyClock,
+        config: crate::retry::smithy::SmithyRetryConfig,
+        clock: crate::retry::smithy::SmithyClock,
     ) -> Self {
         // The limiter only gates sends in adaptive mode; a dormant instance
         // keeps the state shape uniform for standard mode.
-        let limiter = crate::bedrock::retry::AdaptiveRateLimiter::new(clock);
+        let limiter = crate::retry::smithy::AdaptiveRateLimiter::new(clock);
         Self {
             config,
-            quota: crate::bedrock::retry::SmithyRetryQuota::default(),
+            quota: crate::retry::smithy::SmithyRetryQuota::default(),
             limiter,
             completed_retries: 0,
             spent: None,
@@ -529,7 +532,7 @@ impl AcquisitionCore {
             && !state.refunded
         {
             state.refunded = true;
-            if state.config.mode == crate::bedrock::retry::SmithyRetryMode::Adaptive {
+            if state.config.mode == crate::retry::smithy::SmithyRetryMode::Adaptive {
                 state.limiter.update_client_sending_rate(false);
             }
             state.quota.refund(state.spent);
@@ -621,9 +624,9 @@ impl AcquisitionCore {
     /// bounded hint rule, and (adaptive) the send-token wait folded into the
     /// readiness deadline.
     fn note_smithy_failure(inner: &mut AcquisitionInner, cause: &ProviderError) {
-        use crate::bedrock::retry::SmithyErrorClass;
+        use crate::retry::smithy::SmithyErrorClass;
 
-        let class = crate::bedrock::retry::classify_attempt_failure(cause);
+        let class = crate::retry::smithy::classify_attempt_failure(cause);
         if !class.is_retryable() {
             inner.admission = None;
             inner.sealed = Some(AcquisitionSeal::Finished);
@@ -639,7 +642,7 @@ impl AcquisitionCore {
             inner.sealed = Some(AcquisitionSeal::Exhausted);
             return;
         }
-        let cost = crate::bedrock::retry::smithy_capacity_cost(class, state.config.smithy_2026);
+        let cost = crate::retry::smithy::smithy_capacity_cost(class, state.config.smithy_2026);
         if !state.quota.has_capacity(cost) {
             // The source refuses the refresh token here; the spent budget
             // surfaces with the last failure.
@@ -649,7 +652,7 @@ impl AcquisitionCore {
         }
         state.quota.acquire(cost);
         state.spent = Some(cost);
-        let adaptive = state.config.mode == crate::bedrock::retry::SmithyRetryMode::Adaptive;
+        let adaptive = state.config.mode == crate::retry::smithy::SmithyRetryMode::Adaptive;
         if adaptive {
             state
                 .limiter
@@ -657,7 +660,7 @@ impl AcquisitionCore {
         }
         let hint = cause.retry_after_ms();
         let unit = inner.jitter.fraction_unit();
-        let mut delay_ms = crate::bedrock::retry::smithy_backoff_delay_ms(
+        let mut delay_ms = crate::retry::smithy::smithy_backoff_delay_ms(
             state.completed_retries,
             class,
             state.config.smithy_2026,
@@ -860,9 +863,9 @@ mod acquisition_tests {
 // helper never re-dispatches an old one, never mutates transcripts, never
 // re-executes tools and never resets a prepared call's budget); omission or
 // a disabled policy means exactly one call. Classification follows the
-// pinned source pattern lists: quota/billing/usage-limit exhaustion vetoes
-// first, then the transient families (provider load, gateway forwarding,
-// network/transport, premature stream endings, explicit retry guidance).
+// Pi 1.5.0 provider-error patterns: quota, billing, usage limits and context
+// overflow veto first, then provider load, gateway forwarding, transport,
+// premature stream endings and explicit retry guidance.
 
 /// Default cap for whole-call retry backoff delays (60s). Product recovery
 /// policy stays with the host; the SDK helper only bounds a caller-supplied
@@ -926,6 +929,7 @@ pub(crate) fn non_retryable_limit_pattern() -> &'static regex::Regex {
                 "billing",
                 // Subscription-shared usage limits that reset after hours.
                 "subscription_sharing_usage_limit_exceeded",
+                "subscription_sharing_workplace_individual_usage_limit_exceeded",
             ]
             .join("|")
             .as_str(),
@@ -935,6 +939,18 @@ pub(crate) fn non_retryable_limit_pattern() -> &'static regex::Regex {
         .expect("vetted literal pattern set")
     })
 }
+
+// The serialized diagnostic has a JSON field boundary. HTTP adapters can
+// read the actual code from their parsed error body.
+static ZHIPU_USAGE_LIMIT_PATTERN: std::sync::LazyLock<regex::Regex> =
+    std::sync::LazyLock::new(|| {
+        regex::RegexBuilder::new(
+            r#""code"[\s\u{FEFF}--\u{0085}]*:[\s\u{FEFF}--\u{0085}]*"?1308(?:[^0-9]|$)"#,
+        )
+        .case_insensitive(true)
+        .build()
+        .expect("valid Zhipu usage-limit message pattern")
+    });
 
 fn retryable_transient_pattern() -> &'static regex::Regex {
     static PATTERN: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
@@ -949,13 +965,8 @@ fn retryable_transient_pattern() -> &'static regex::Regex {
                 "model is at capacity",
                 "rate.?limit",
                 "too many requests",
-                "429",
-                "500",
-                "502",
-                "503",
-                "504",
-                "520",
-                "524",
+                // ASCII alphanumeric boundaries leave underscores as delimiters.
+                r"(?:^|(?-i:[^[:alnum:]]))(?:429|500|502|503|504|520|524)(?:$|(?-i:[^[:alnum:]]))",
                 "service.?(?:is.?)?(?:temporarily.?)?unavailable",
                 "server.?error",
                 "internal.?error",
@@ -963,6 +974,10 @@ fn retryable_transient_pattern() -> &'static regex::Regex {
                 "provider.?returned.?(?:an.?)?error",
                 "exceeded request buffer limit while retrying upstream",
                 "unable to forward upstream",
+                r"upstream[^\r\n\u{2028}\u{2029}]?request[^\r\n\u{2028}\u{2029}]?failed",
+                "upstream_stream_read_error",
+                "stream was interrupted",
+                "http/?2 stream failed",
                 // Network, proxy and fetch transport failures.
                 "network.?error",
                 "connection.?error",
@@ -970,6 +985,7 @@ fn retryable_transient_pattern() -> &'static regex::Regex {
                 "connection.?lost",
                 "other side closed",
                 "fetch failed",
+                r"request to [\S\u{0085}--\u{FEFF}]+ failed, reason:",
                 "getaddrinfo",
                 "ENOTFOUND",
                 "EAI_AGAIN",
@@ -988,6 +1004,7 @@ fn retryable_transient_pattern() -> &'static regex::Regex {
                 "stream ended before message_stop",
                 "stream ended before a terminal response event",
                 "http2 request did not get a response",
+                "stream disconnected before completion",
                 "pending stream has been canceled",
                 // Provider-requested retry-delay caps flow through the outer
                 // policy so callers can surface or abort the backoff.
@@ -1011,9 +1028,10 @@ fn retryable_transient_pattern() -> &'static regex::Regex {
     })
 }
 
-/// Classify a finished message for whole-call retry: quota/billing/usage
-/// limits and context overflow veto first; only then may a transient family classify as
-/// retryable. Messages that are not failures are valid; aborts are terminal.
+/// Classify a finished message for whole-call retry. Quota, billing, usage
+/// limits and context overflow take precedence over transient diagnostics.
+/// Aborted messages have a terminal cancellation classification. A
+/// [`crate::stream::CallFailure`] supplies the input through its message.
 pub fn classify_whole_call_retry(
     message: &crate::message::AssistantMessage,
 ) -> WholeCallRetryClassification {
@@ -1023,17 +1041,42 @@ pub fn classify_whole_call_retry(
             let Some(error_message) = message.error_message.as_deref() else {
                 return WholeCallRetryClassification::Terminal;
             };
-            if non_retryable_limit_pattern().is_match(error_message)
-                || crate::message::is_context_overflow(message, None)
-            {
-                WholeCallRetryClassification::Terminal
-            } else if retryable_transient_pattern().is_match(error_message) {
+            if matches!(
+                classify_whole_call_error(&message.provider, error_message),
+                CallErrorClassification::Transient
+            ) {
                 WholeCallRetryClassification::Transient
             } else {
                 WholeCallRetryClassification::Terminal
             }
         }
         _ => WholeCallRetryClassification::Valid,
+    }
+}
+
+pub(crate) enum CallErrorClassification {
+    ContextOverflow,
+    Quota,
+    Transient,
+    Terminal,
+}
+
+/// Interpret an error diagnostic before an adapter projects it into safe text.
+/// Overflow takes precedence in the generation consumer's recovery order.
+pub(crate) fn classify_whole_call_error(
+    provider: &str,
+    error_message: &str,
+) -> CallErrorClassification {
+    if crate::message::is_context_overflow_error(provider, error_message) {
+        CallErrorClassification::ContextOverflow
+    } else if non_retryable_limit_pattern().is_match(error_message)
+        || ZHIPU_USAGE_LIMIT_PATTERN.is_match(error_message)
+    {
+        CallErrorClassification::Quota
+    } else if retryable_transient_pattern().is_match(error_message) {
+        CallErrorClassification::Transient
+    } else {
+        CallErrorClassification::Terminal
     }
 }
 

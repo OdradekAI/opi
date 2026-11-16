@@ -424,7 +424,21 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     let cargo_toml = include_str!("../Cargo.toml");
     let lib_rs = include_str!("../src/lib.rs");
 
-    let cargo_lower = cargo_toml.to_lowercase();
+    // Feature documentation and required-feature target declarations name
+    // capabilities already admitted by later work. Only dependency keys can
+    // add dependency breadth; comments and test names are not dependencies.
+    let mut dependencies = Vec::new();
+    let mut in_dependencies = false;
+    for line in cargo_toml.lines().map(str::trim) {
+        if line.starts_with('[') {
+            in_dependencies = line.ends_with("dependencies]");
+        } else if in_dependencies
+            && !line.starts_with('#')
+            && let Some((name, _)) = line.split_once('=')
+        {
+            dependencies.push(name.trim().to_ascii_lowercase());
+        }
+    }
     for forbidden in [
         "oauth",
         "image-gen",
@@ -436,7 +450,7 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "billing",
     ] {
         assert!(
-            !cargo_lower.contains(forbidden),
+            !dependencies.iter().any(|name| name.contains(forbidden)),
             "opi-ai Cargo.toml must not add Phase 12 breadth (forbidden dependency/surface '{forbidden}'):\n{cargo_toml}"
         );
     }
@@ -534,6 +548,8 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "retry",
         "schema",
         "stream",
+        // Caller-owned incremental argument previews are a public utility.
+        "streaming_json",
         // Task 20.54: the telemetry carrier is a deliberate addition.
         "telemetry",
         "test_support",

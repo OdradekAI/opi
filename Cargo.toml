@@ -20,7 +20,7 @@ repository = "https://github.com/OdradekAI/opi"
 authors = ["OdradekAI"]
 
 [workspace.dependencies]
-opi-telemetry = { path = "crates/opi-telemetry", version = "0.8.3" }
+opi-telemetry = { path = "crates/opi-telemetry", version = "0.8.3", default-features = false }
 opi-ai = { path = "crates/opi-ai", version = "0.8.3" }
 opi-agent = { path = "crates/opi-agent", version = "0.8.3" }
 opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.8.3" }

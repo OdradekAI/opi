@@ -1,0 +1,1426 @@
+{
+  "schemaVersion": 1,
+  "scope": "Controlled top-level SSE error selection and public classification, with Rust Codex WebSocket boundary controls.",
+  "piRevision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "snapshot": "C:\\Temp\\opi-ai-frozen-lock-20261111",
+  "materialManifest": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-error-materials.json",
+    "sha256": "b95a1983630c6a6731f859acb2f17877b4b0fccab28b249d615ca156890592ea"
+  },
+  "pairedLifecycleReplay": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-responses-error-differential.json",
+    "sha256": "23113ae9d674766f6f157c4317a4cd65504e4a4cbf2c592158a19d08f57ce321"
+  },
+  "fixtures": [
+    {
+      "path": "crates/opi-ai/tests/data/responses-error.json",
+      "sha256": "84be5049df33a7e2f04c66416fc004fdc5185a75952e7af0b0aaafa34e77c6df"
+    },
+    {
+      "path": "crates/opi-ai/tests/data/responses-failed.json",
+      "sha256": "41c2afe242e30749c35021080c5d6335fb071f936fbf9d8f64550fdbd11390fd"
+    }
+  ],
+  "piProbe": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/tools/observe_responses_error.mjs",
+    "sha256": "f13b4e12e4242bf4190818af08570135cfe569cca3be4937ffbb4bd8cd304529"
+  },
+  "pinnedFiles": {
+    "package-lock.json": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a",
+    "packages/ai/src/api/openai-responses.ts": "20a2a355191df9c171e3e91c462fc771ff09cdfa40bf671eaf5a6cabd68b549b",
+    "packages/ai/src/api/openai-responses-shared.ts": "f5198fe8a6438008e0f57b149e4d2db4c93d839d30d904ddee33e44f6560e083",
+    "packages/ai/src/api/azure-openai-responses.ts": "b8c92a0b2f37ab92b8eec263136048e41319f4b8068f6f82203227d931617ef7",
+    "packages/ai/src/api/openai-codex-responses.ts": "2c9c21a87387e3547ab1095eed73ff3b8cfe43fc26c5964128eb65de9162fdc5",
+    "packages/ai/src/utils/error-body.ts": "1aceb5ccce8341bdbcb9c6960e90833e83f792eb73a5205e26e91cbf63a24e21",
+    "packages/ai/src/utils/overflow.ts": "c0ff08ba392e99b628226e62db1ca74aef5c459c0d1dab1fc2c60d6c48e0299a",
+    "packages/ai/src/utils/retry.ts": "3316a190562bda1e2a7905a3fb44ec2504fea6f800a85c7bc3396b6546fecea2",
+    "packages/ai/test/openai-responses-terminal-event.test.ts": "4d103cbc865cf661c8c3e47d570548b234aeccead9530d3422ee50649f272dae",
+    "packages/ai/test/openai-responses-usage-limit.test.ts": "9de03d95b5546b693a0db654792865cf78f27cde62330e960139767222555300",
+    "packages/ai/test/openai-codex-stream.test.ts": "608ccccebafbb0358fde117e8a03e41e06c6d91900ec0acc6ea0f7a5bd2a58e1",
+    "packages/ai/test/retry.test.ts": "c90ad621b86363f7111adb2ac40b86a0ff319a705333dd0e26320d8bc4a42cdb"
+  },
+  "sdk": {
+    "lock": {
+      "version": "7.19.0",
+      "resolved": "https://registry.npmjs.org/openai/-/openai-7.19.0.tgz",
+      "integrity": "sha512-MX2s3u2L5racTO0CC/SWpCOasJQBCJrqLKXK+l82cAhdeF8mPMBEe/gxMm0ZFa2xpKpOFLRjxv5afYEZbBXmbQ==",
+      "license": "Apache-2.0",
+      "engines": {
+        "node": ">=22.0.0"
+      },
+      "peerDependencies": {
+        "@aws-sdk/credential-provider-node": ">=3.972.0 <4",
+        "@smithy/hash-node": ">=4.3.0 <5",
+        "@smithy/signature-v4": ">=5.4.0 <6",
+        "undici": ">=5 <9",
+        "ws": "^8.21.0",
+        "zod": "^3.25 || ^4.0"
+      },
+      "peerDependenciesMeta": {
+        "@aws-sdk/credential-provider-node": {
+          "optional": true
+        },
+        "@smithy/hash-node": {
+          "optional": true
+        },
+        "@smithy/signature-v4": {
+          "optional": true
+        },
+        "undici": {
+          "optional": true
+        },
+        "ws": {
+          "optional": true
+        },
+        "zod": {
+          "optional": true
+        }
+      }
+    },
+    "files": {
+      "packages/ai/node_modules/openai/package.json": "8a855f81669a434ce894e2d1ae2f18e9050e93c57d14091f155cd543056bdc30",
+      "packages/ai/node_modules/openai/core/streaming.mjs": "1b8fa8338dc28913351993382187962082f0af42c5274a009060de3263579842",
+      "packages/ai/node_modules/openai/core/error.mjs": "f9af78fa51cabb0128ebdd820259ba93a38d405434e698381b9dbc5b7ca55174",
+      "packages/ai/node_modules/openai/src/core/streaming.ts": "1adcae5549f3bcb2cb6feae31385045c5d9a50c820d83e69e607e2ffed688f90",
+      "packages/ai/node_modules/openai/src/core/error.ts": "aea17690aeb31b3e46fa79f04d43c448134416a2f416d97e0f5d3accc0742257"
+    }
+  },
+  "piRuns": [
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_error.mjs",
+        "--snapshot",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111"
+      ],
+      "exit_code": 0,
+      "stdout": "[{\"name\":\"flat-data-only-code\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Error Code upstream_stream_read_error: Invalid request. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-message-precedes-code\",\"api\":\"openai-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Invalid request. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-nested-message\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-nested-message\",\"api\":\"azure-openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-envelope-quota\",\"api\":\"openai-responses\",\"expected\":\"quota\",\"diagnostic\":\"{\\\"code\\\":1308,\\\"type\\\":\\\"rate_limit_error\\\",\\\"message\\\":\\\"\\\",\\\"metadata\\\":{\\\"trace\\\":\\\"PRIVATE_CANARY\\\"}}\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-leading-413\",\"api\":\"openai-responses\",\"expected\":\"overflow\",\"diagnostic\":\"413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":true,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"flat-leading-413\",\"api\":\"openai-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Error Code invalid_request_error: 413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-code\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"code\\\":\\\"upstream_stream_read_error\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-type\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"type\\\":\\\"rate_limit_error\\\",\\\"code\\\":\\\"unknown\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-type\",\"api\":\"azure-openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"type\\\":\\\"rate_limit_error\\\",\\\"code\\\":\\\"unknown\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-error-with-lifecycle-type\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Stream was interrupted. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-metadata\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"code\\\":\\\"invalid_request_error\\\",\\\"metadata\\\":{\\\"message\\\":\\\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\\\"}}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-code-only\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: upstream_stream_read_error\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-empty-flat-message\",\"api\":\"openai-codex-responses\",\"expected\":\"quota\",\"diagnostic\":\"Codex error: insufficient_quota\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-nonstring-flat-fields\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-message-precedes-code\",\"api\":\"openai-codex-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Codex error: Invalid request. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-leading-413\",\"api\":\"openai-codex-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Codex error: 413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-empty-flat-code\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: {\\\"type\\\":\\\"error\\\",\\\"code\\\":\\\"\\\",\\\"error\\\":{\\\"code\\\":\\\"upstream_stream_read_error\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0}]\n",
+      "stderr": "",
+      "stdout_sha256": "3b6ce46eeea501db0998de25e0eb354a2bf9245d4f2f27fa9cfb993350ea6dbc",
+      "trace": [
+        {
+          "name": "flat-data-only-code",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Error Code upstream_stream_read_error: Invalid request. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-message-precedes-code",
+          "api": "openai-responses",
+          "expected": "terminal",
+          "diagnostic": "Invalid request. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-nested-message",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-nested-message",
+          "api": "azure-openai-responses",
+          "expected": "transient",
+          "diagnostic": "Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-envelope-quota",
+          "api": "openai-responses",
+          "expected": "quota",
+          "diagnostic": "{\"code\":1308,\"type\":\"rate_limit_error\",\"message\":\"\",\"metadata\":{\"trace\":\"PRIVATE_CANARY\"}}",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-leading-413",
+          "api": "openai-responses",
+          "expected": "overflow",
+          "diagnostic": "413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": true,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "flat-leading-413",
+          "api": "openai-responses",
+          "expected": "terminal",
+          "diagnostic": "Error Code invalid_request_error: 413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-code",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"code\":\"upstream_stream_read_error\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-type",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"type\":\"rate_limit_error\",\"code\":\"unknown\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-type",
+          "api": "azure-openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"type\":\"rate_limit_error\",\"code\":\"unknown\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-error-with-lifecycle-type",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Stream was interrupted. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-metadata",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"code\":\"invalid_request_error\",\"metadata\":{\"message\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\"}}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-code-only",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: upstream_stream_read_error",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-empty-flat-message",
+          "api": "openai-codex-responses",
+          "expected": "quota",
+          "diagnostic": "Codex error: insufficient_quota",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-nonstring-flat-fields",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-message-precedes-code",
+          "api": "openai-codex-responses",
+          "expected": "terminal",
+          "diagnostic": "Codex error: Invalid request. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-leading-413",
+          "api": "openai-codex-responses",
+          "expected": "terminal",
+          "diagnostic": "Codex error: 413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-empty-flat-code",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: {\"type\":\"error\",\"code\":\"\",\"error\":{\"code\":\"upstream_stream_read_error\",\"param\":\"PRIVATE_CANARY\"}}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        }
+      ]
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_error.mjs",
+        "--snapshot",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111"
+      ],
+      "exit_code": 0,
+      "stdout": "[{\"name\":\"flat-data-only-code\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Error Code upstream_stream_read_error: Invalid request. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-message-precedes-code\",\"api\":\"openai-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Invalid request. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-nested-message\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-nested-message\",\"api\":\"azure-openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-envelope-quota\",\"api\":\"openai-responses\",\"expected\":\"quota\",\"diagnostic\":\"{\\\"code\\\":1308,\\\"type\\\":\\\"rate_limit_error\\\",\\\"message\\\":\\\"\\\",\\\"metadata\\\":{\\\"trace\\\":\\\"PRIVATE_CANARY\\\"}}\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-leading-413\",\"api\":\"openai-responses\",\"expected\":\"overflow\",\"diagnostic\":\"413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":true,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"flat-leading-413\",\"api\":\"openai-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Error Code invalid_request_error: 413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-code\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"code\\\":\\\"upstream_stream_read_error\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-type\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"type\\\":\\\"rate_limit_error\\\",\\\"code\\\":\\\"unknown\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-type\",\"api\":\"azure-openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"type\\\":\\\"rate_limit_error\\\",\\\"code\\\":\\\"unknown\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-error-with-lifecycle-type\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Stream was interrupted. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-metadata\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"code\\\":\\\"invalid_request_error\\\",\\\"metadata\\\":{\\\"message\\\":\\\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\\\"}}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-code-only\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: upstream_stream_read_error\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-empty-flat-message\",\"api\":\"openai-codex-responses\",\"expected\":\"quota\",\"diagnostic\":\"Codex error: insufficient_quota\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-nonstring-flat-fields\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-message-precedes-code\",\"api\":\"openai-codex-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Codex error: Invalid request. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-leading-413\",\"api\":\"openai-codex-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Codex error: 413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-empty-flat-code\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: {\\\"type\\\":\\\"error\\\",\\\"code\\\":\\\"\\\",\\\"error\\\":{\\\"code\\\":\\\"upstream_stream_read_error\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0}]\n",
+      "stderr": "",
+      "stdout_sha256": "3b6ce46eeea501db0998de25e0eb354a2bf9245d4f2f27fa9cfb993350ea6dbc",
+      "trace": [
+        {
+          "name": "flat-data-only-code",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Error Code upstream_stream_read_error: Invalid request. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-message-precedes-code",
+          "api": "openai-responses",
+          "expected": "terminal",
+          "diagnostic": "Invalid request. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-nested-message",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-nested-message",
+          "api": "azure-openai-responses",
+          "expected": "transient",
+          "diagnostic": "Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-envelope-quota",
+          "api": "openai-responses",
+          "expected": "quota",
+          "diagnostic": "{\"code\":1308,\"type\":\"rate_limit_error\",\"message\":\"\",\"metadata\":{\"trace\":\"PRIVATE_CANARY\"}}",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-leading-413",
+          "api": "openai-responses",
+          "expected": "overflow",
+          "diagnostic": "413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": true,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "flat-leading-413",
+          "api": "openai-responses",
+          "expected": "terminal",
+          "diagnostic": "Error Code invalid_request_error: 413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-code",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"code\":\"upstream_stream_read_error\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-type",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"type\":\"rate_limit_error\",\"code\":\"unknown\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-type",
+          "api": "azure-openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"type\":\"rate_limit_error\",\"code\":\"unknown\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-error-with-lifecycle-type",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Stream was interrupted. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-metadata",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"code\":\"invalid_request_error\",\"metadata\":{\"message\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\"}}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-code-only",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: upstream_stream_read_error",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-empty-flat-message",
+          "api": "openai-codex-responses",
+          "expected": "quota",
+          "diagnostic": "Codex error: insufficient_quota",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-nonstring-flat-fields",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-message-precedes-code",
+          "api": "openai-codex-responses",
+          "expected": "terminal",
+          "diagnostic": "Codex error: Invalid request. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-leading-413",
+          "api": "openai-codex-responses",
+          "expected": "terminal",
+          "diagnostic": "Codex error: 413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-empty-flat-code",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: {\"type\":\"error\",\"code\":\"\",\"error\":{\"code\":\"upstream_stream_read_error\",\"param\":\"PRIVATE_CANARY\"}}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        }
+      ]
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_responses_error.mjs",
+        "--snapshot",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111"
+      ],
+      "exit_code": 0,
+      "stdout": "[{\"name\":\"flat-data-only-code\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Error Code upstream_stream_read_error: Invalid request. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-message-precedes-code\",\"api\":\"openai-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Invalid request. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-nested-message\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-nested-message\",\"api\":\"azure-openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-envelope-quota\",\"api\":\"openai-responses\",\"expected\":\"quota\",\"diagnostic\":\"{\\\"code\\\":1308,\\\"type\\\":\\\"rate_limit_error\\\",\\\"message\\\":\\\"\\\",\\\"metadata\\\":{\\\"trace\\\":\\\"PRIVATE_CANARY\\\"}}\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-leading-413\",\"api\":\"openai-responses\",\"expected\":\"overflow\",\"diagnostic\":\"413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":true,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"flat-leading-413\",\"api\":\"openai-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Error Code invalid_request_error: 413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-code\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"code\\\":\\\"upstream_stream_read_error\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-type\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"type\\\":\\\"rate_limit_error\\\",\\\"code\\\":\\\"unknown\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-nested-type\",\"api\":\"azure-openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"type\\\":\\\"rate_limit_error\\\",\\\"code\\\":\\\"unknown\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"named-error-with-lifecycle-type\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"Stream was interrupted. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"data-only-metadata\",\"api\":\"openai-responses\",\"expected\":\"transient\",\"diagnostic\":\"{\\\"code\\\":\\\"invalid_request_error\\\",\\\"metadata\\\":{\\\"message\\\":\\\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\\\"}}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-code-only\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: upstream_stream_read_error\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-empty-flat-message\",\"api\":\"openai-codex-responses\",\"expected\":\"quota\",\"diagnostic\":\"Codex error: insufficient_quota\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-nonstring-flat-fields\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: Upstream HTTP/2 stream failed. PRIVATE_CANARY\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-message-precedes-code\",\"api\":\"openai-codex-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Codex error: Invalid request. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-leading-413\",\"api\":\"openai-codex-responses\",\"expected\":\"terminal\",\"diagnostic\":\"Codex error: 413 Request Too Large. PRIVATE_CANARY\",\"retryable\":false,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0},{\"name\":\"codex-empty-flat-code\",\"api\":\"openai-codex-responses\",\"expected\":\"transient\",\"diagnostic\":\"Codex error: {\\\"type\\\":\\\"error\\\",\\\"code\\\":\\\"\\\",\\\"error\\\":{\\\"code\\\":\\\"upstream_stream_read_error\\\",\\\"param\\\":\\\"PRIVATE_CANARY\\\"}}\",\"retryable\":true,\"overflow\":false,\"partial\":\"partial\",\"rawStop\":null,\"stop\":\"error\",\"sends\":1,\"terminals\":1,\"responseId\":\"resp_partial\",\"totalTokens\":0}]\n",
+      "stderr": "",
+      "stdout_sha256": "3b6ce46eeea501db0998de25e0eb354a2bf9245d4f2f27fa9cfb993350ea6dbc",
+      "trace": [
+        {
+          "name": "flat-data-only-code",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Error Code upstream_stream_read_error: Invalid request. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-message-precedes-code",
+          "api": "openai-responses",
+          "expected": "terminal",
+          "diagnostic": "Invalid request. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-nested-message",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-nested-message",
+          "api": "azure-openai-responses",
+          "expected": "transient",
+          "diagnostic": "Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-envelope-quota",
+          "api": "openai-responses",
+          "expected": "quota",
+          "diagnostic": "{\"code\":1308,\"type\":\"rate_limit_error\",\"message\":\"\",\"metadata\":{\"trace\":\"PRIVATE_CANARY\"}}",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-leading-413",
+          "api": "openai-responses",
+          "expected": "overflow",
+          "diagnostic": "413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": true,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "flat-leading-413",
+          "api": "openai-responses",
+          "expected": "terminal",
+          "diagnostic": "Error Code invalid_request_error: 413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-code",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"code\":\"upstream_stream_read_error\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-type",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"type\":\"rate_limit_error\",\"code\":\"unknown\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-nested-type",
+          "api": "azure-openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"type\":\"rate_limit_error\",\"code\":\"unknown\",\"param\":\"PRIVATE_CANARY\"}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "named-error-with-lifecycle-type",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "Stream was interrupted. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "data-only-metadata",
+          "api": "openai-responses",
+          "expected": "transient",
+          "diagnostic": "{\"code\":\"invalid_request_error\",\"metadata\":{\"message\":\"Upstream HTTP/2 stream failed. PRIVATE_CANARY\"}}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-code-only",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: upstream_stream_read_error",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-empty-flat-message",
+          "api": "openai-codex-responses",
+          "expected": "quota",
+          "diagnostic": "Codex error: insufficient_quota",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-nonstring-flat-fields",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: Upstream HTTP/2 stream failed. PRIVATE_CANARY",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-message-precedes-code",
+          "api": "openai-codex-responses",
+          "expected": "terminal",
+          "diagnostic": "Codex error: Invalid request. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-leading-413",
+          "api": "openai-codex-responses",
+          "expected": "terminal",
+          "diagnostic": "Codex error: 413 Request Too Large. PRIVATE_CANARY",
+          "retryable": false,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        },
+        {
+          "name": "codex-empty-flat-code",
+          "api": "openai-codex-responses",
+          "expected": "transient",
+          "diagnostic": "Codex error: {\"type\":\"error\",\"code\":\"\",\"error\":{\"code\":\"upstream_stream_read_error\",\"param\":\"PRIVATE_CANARY\"}}",
+          "retryable": true,
+          "overflow": false,
+          "partial": "partial",
+          "rawStop": null,
+          "stop": "error",
+          "sends": 1,
+          "terminals": 1,
+          "responseId": "resp_partial",
+          "totalTokens": 0
+        }
+      ]
+    }
+  ],
+  "piCodexRecoveryTests": "Tests  3 passed | 37 skipped (40)",
+  "rustInputs": {
+    "crates/opi-ai/src/openai_responses_shared.rs": "de502cc8ffd3aea646b23d7bf37469fbcfea2d6e4b312e5a404550a5a055f7bb",
+    "crates/opi-ai/src/openai_responses.rs": "610c33aebf41d192d6a9b0f0682caf8bd55e98159e02a5aef83501cf4c2a80fd",
+    "crates/opi-ai/src/azure_openai.rs": "e367a678f835833616fac0e4ac50d51877172b939bc265cd29582e19ebd53048",
+    "crates/opi-ai/src/openai_codex_responses.rs": "65e932d0d4e94af90b3584fddd047ee12559af2ab64f5615050cb5143ad44068",
+    "crates/opi-ai/src/openai_codex_responses/ws_transport.rs": "155bd0d4aa7ce749d37bad6f5834e1e6320db88594952d068f6b7b1e37742af2",
+    "crates/opi-ai/tests/openai_responses_fixtures.rs": "757797306dd9f61cbeac4518bc5e42f46d81f31cace99e5532cef248dcd61261",
+    "crates/opi-ai/tests/azure_openai_fixtures.rs": "30591a3b7eb085f0699fb882d3af3a1a7af47dac93924b65f7d0b5e83dacd655",
+    "crates/opi-ai/tests/openai_codex_responses.rs": "aa83b0335bd3ec4e8f46d60eead3f574d0081966a44b944aa4e13d575168fb6a"
+  },
+  "rustBaseline": {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "-B",
+      "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--test",
+      "openai_responses_fixtures",
+      "--test",
+      "openai_codex_responses",
+      "--test",
+      "azure_openai_fixtures",
+      "--locked",
+      "--offline",
+      "-j4",
+      "--no-fail-fast",
+      "--",
+      "sse_error_",
+      "--nocapture"
+    ],
+    "exitCode": 101,
+    "executable": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_responses_fixtures-1e7d23860cf65056.exe",
+    "executableSha256": "23e52948d7763c437b7387c7453ad37f57b2fa6bbfaeff80f43c173bf6774ee2",
+    "stdout": "\nrunning 1 test\ntest azure_responses_sse_error_uses_the_sdk_field_selection ... FAILED\n\nfailures:\n\nfailures:\n    azure_responses_sse_error_uses_the_sdk_field_selection\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 44 filtered out; finished in 0.06s\n\n\nrunning 1 test\ncodex sse error observation {\"name\":\"codex-code-only\",\"decision\":\"transient\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ncodex sse error observation {\"name\":\"codex-empty-flat-message\",\"decision\":\"quota\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ncodex sse error observation {\"name\":\"codex-nonstring-flat-fields\",\"decision\":\"transient\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ncodex sse error observation {\"name\":\"codex-message-precedes-code\",\"decision\":\"terminal\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ncodex sse error observation {\"name\":\"codex-leading-413\",\"decision\":\"terminal\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ncodex sse error observation {\"name\":\"codex-empty-flat-code\",\"decision\":\"terminal\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ntest dedicated_codex_sse_error_uses_the_selected_code_and_message ... FAILED\n\nfailures:\n\nfailures:\n    dedicated_codex_sse_error_uses_the_selected_code_and_message\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 76 filtered out; finished in 0.09s\n\n\nrunning 1 test\nresponses error observation {\"name\":\"flat-data-only-code\",\"decision\":\"transient\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"named-message-precedes-code\",\"decision\":\"terminal\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"named-nested-message\",\"decision\":\"transient\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"data-only-envelope-quota\",\"decision\":\"quota\",\"failed\":false,\"diagnostic\":\"\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"named-leading-413\",\"decision\":\"overflow\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"flat-leading-413\",\"decision\":\"terminal\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"data-only-nested-code\",\"decision\":\"transient\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"data-only-nested-type\",\"decision\":\"transient\",\"failed\":true,\"diagnostic\":\"stream error: openai responses stream error\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"named-error-with-lifecycle-type\",\"decision\":\"transient\",\"failed\":false,\"diagnostic\":\"\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\nresponses error observation {\"name\":\"data-only-metadata\",\"decision\":\"terminal\",\"failed\":false,\"diagnostic\":\"\",\"retryable\":false,\"overflow\":false,\"quota\":false,\"sends\":1}\ntest responses_sse_error_preserves_the_callers_recovery_decision ... FAILED\n\nfailures:\n\nfailures:\n    responses_sse_error_preserves_the_callers_recovery_decision\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 83 filtered out; finished in 0.12s\n\n",
+    "stderr": "   Compiling opi-ai v0.8.3 (D:\\Luiz\\Odradek\\opi\\crates\\opi-ai)\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.15s\n     Running tests\\azure_openai_fixtures.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\azure_openai_fixtures-412cc9ec06ee1167.exe)\n\nthread 'azure_responses_sse_error_uses_the_sdk_field_selection' (51036) panicked at crates\\opi-ai\\tests\\azure_openai_fixtures.rs:1240:9:\nassertion `left == right` failed\n  left: Terminal\n right: Transient\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nerror: test failed, to rerun pass `-p opi-ai --test azure_openai_fixtures`\n     Running tests\\openai_codex_responses.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe)\n\nthread 'dedicated_codex_sse_error_uses_the_selected_code_and_message' (45100) panicked at crates\\opi-ai\\tests\\openai_codex_responses.rs:568:5:\nSSE error decision mismatches: [\"codex-code-only\", \"codex-empty-flat-message\", \"codex-nonstring-flat-fields\"]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nerror: test failed, to rerun pass `-p opi-ai --test openai_codex_responses`\n     Running tests\\openai_responses_fixtures.rs (E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_responses_fixtures-1e7d23860cf65056.exe)\n\nthread 'responses_sse_error_preserves_the_callers_recovery_decision' (49264) panicked at crates\\opi-ai\\tests\\openai_responses_fixtures.rs:845:5:\nSSE error decision mismatches: [\"flat-data-only-code\", \"named-nested-message\", \"data-only-envelope-quota\", \"named-leading-413\", \"data-only-nested-code\", \"data-only-nested-type\", \"named-error-with-lifecycle-type\", \"data-only-metadata\"]\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\nerror: test failed, to rerun pass `-p opi-ai --test openai_responses_fixtures`\nerror: 3 targets failed:\n    `-p opi-ai --test azure_openai_fixtures`\n    `-p opi-ai --test openai_codex_responses`\n    `-p opi-ai --test openai_responses_fixtures`\n",
+    "rows": [
+      {
+        "name": "codex-code-only",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-empty-flat-message",
+        "decision": "quota",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-nonstring-flat-fields",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-message-precedes-code",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-leading-413",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-empty-flat-code",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "flat-data-only-code",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "named-message-precedes-code",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "named-nested-message",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "data-only-envelope-quota",
+        "decision": "quota",
+        "failed": false,
+        "diagnostic": "",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "named-leading-413",
+        "decision": "overflow",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "flat-leading-413",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "data-only-nested-code",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "data-only-nested-type",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "named-error-with-lifecycle-type",
+        "decision": "transient",
+        "failed": false,
+        "diagnostic": "",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "data-only-metadata",
+        "decision": "terminal",
+        "failed": false,
+        "diagnostic": "",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      }
+    ]
+  },
+  "rustVerified": {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "-B",
+      "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--locked",
+      "--offline",
+      "-j4",
+      "--no-fail-fast",
+      "--test",
+      "whole_call_retry",
+      "--test",
+      "openai_responses_fixtures",
+      "--test",
+      "openai_codex_responses",
+      "--test",
+      "azure_openai_fixtures",
+      "--",
+      "--nocapture"
+    ],
+    "exitCode": 0,
+    "executables": {
+      "azure_openai_fixtures": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\azure_openai_fixtures-412cc9ec06ee1167.exe",
+        "sha256": "3ec5e979c6c059937e89eac4c1592ba9a92f8692cd509fa9f90443265dc58f2d"
+      },
+      "whole_call_retry": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\whole_call_retry-a7c3eee005c83051.exe",
+        "sha256": "4dc34e63e56fac73b213ca4e44456ee0421824b662483bee66066e6cbf39f9aa"
+      },
+      "openai_responses_fixtures": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_responses_fixtures-1e7d23860cf65056.exe",
+        "sha256": "03a9c32b23396d0e4f1d35c71e039412e387ab44bcc2ff709aeca22e4e404e26"
+      },
+      "openai_codex_responses": {
+        "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_codex_responses-ba98e7027e0237df.exe",
+        "sha256": "c1fa7ed0208a58b582e1c8c264a2876eb4c0ce6a9936548578c4a5d0a20ef455"
+      }
+    },
+    "passedTests": {
+      "azure_openai_fixtures": 45,
+      "openai_codex_responses": 79,
+      "openai_responses_fixtures": 84,
+      "whole_call_retry": 23
+    },
+    "stdoutSha256": "a9648edf770b8a95feeb7be9d61b2850ff972f7d62d958e9efa4a3e5afcd09d6",
+    "observations": [
+      {
+        "name": "codex-code-only",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-empty-flat-message",
+        "decision": "quota",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: quota exceeded",
+        "retryable": false,
+        "overflow": false,
+        "quota": true,
+        "sends": 1
+      },
+      {
+        "name": "codex-nonstring-flat-fields",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-message-precedes-code",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-leading-413",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "codex-empty-flat-code",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "flat-data-only-code",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 2
+      },
+      {
+        "name": "named-message-precedes-code",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "named-nested-message",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 2
+      },
+      {
+        "name": "data-only-envelope-quota",
+        "decision": "quota",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: quota exceeded",
+        "retryable": false,
+        "overflow": false,
+        "quota": true,
+        "sends": 1
+      },
+      {
+        "name": "named-leading-413",
+        "decision": "overflow",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: context window exceeded",
+        "retryable": false,
+        "overflow": true,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "flat-leading-413",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      },
+      {
+        "name": "data-only-nested-code",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 2
+      },
+      {
+        "name": "data-only-nested-type",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 2
+      },
+      {
+        "name": "named-error-with-lifecycle-type",
+        "decision": "transient",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error: upstream request failed",
+        "retryable": true,
+        "overflow": false,
+        "quota": false,
+        "sends": 2
+      },
+      {
+        "name": "data-only-metadata",
+        "decision": "terminal",
+        "failed": true,
+        "diagnostic": "stream error: openai responses stream error",
+        "retryable": false,
+        "overflow": false,
+        "quota": false,
+        "sends": 1
+      }
+    ],
+    "controls": [
+      "test azure_responses_sse_error_uses_the_sdk_field_selection ... ok",
+      "test ws_branches::repeated_connection_limit_reports_the_selected_safe_diagnostic ... ok",
+      "test ws_protocol_regressions::missing_previous_after_a_public_delta_does_not_replay ... ok",
+      "test ws_branches::connection_limit_before_start_allows_one_reconnect ... ok",
+      "test ws_branches::missing_previous_response_allows_one_full_input_retry ... ok"
+    ],
+    "azureCasesAsserted": [
+      "named-nested-message",
+      "data-only-nested-type"
+    ],
+    "additionalTestResults": [
+      "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 369 filtered out; finished in 0.00s",
+      "test result: ok. 45 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.62s",
+      "test result: ok. 79 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.57s",
+      "test result: ok. 84 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s"
+    ]
+  },
+  "restored": {
+    "terminal": [
+      "data-only-envelope-quota",
+      "named-error-with-lifecycle-type",
+      "data-only-metadata"
+    ],
+    "transient": [
+      "flat-data-only-code",
+      "named-nested-message",
+      "data-only-nested-code",
+      "data-only-nested-type",
+      "named-error-with-lifecycle-type",
+      "codex-code-only",
+      "codex-nonstring-flat-fields"
+    ],
+    "quota": [
+      "data-only-envelope-quota",
+      "codex-empty-flat-message"
+    ],
+    "overflow": [
+      "named-leading-413"
+    ]
+  },
+  "intentionalRetryDifferences": [
+    {
+      "name": "data-only-metadata",
+      "pi": "transient",
+      "opi": "terminal"
+    },
+    {
+      "name": "codex-empty-flat-code",
+      "pi": "transient",
+      "opi": "terminal"
+    }
+  ],
+  "priorMaterialReplay": {
+    "exitCode": 2,
+    "verdict": "STALE_MATERIALS",
+    "drift": [
+      "tree drift: crates/opi-ai/src"
+    ],
+    "cases": 0
+  }
+}

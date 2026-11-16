@@ -1,0 +1,10 @@
+[
+  {"id":"zero","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"expected":[0,0,0,0]},
+  {"id":"absent","usage":{},"expected":[11,7,5,3]},
+  {"id":"null","usage":{"input_tokens":null,"output_tokens":null,"cache_read_input_tokens":null,"cache_creation_input_tokens":null},"expected":[11,7,5,3]},
+  {"id":"mixed","usage":{"input_tokens":0,"output_tokens":2,"cache_read_input_tokens":null},"expected":[0,2,5,3]},
+  {"id":"usage-omitted","expected":[11,7,5,3]},
+  {"id":"usage-null","usage":null,"expected":[11,7,5,3]},
+  {"id":"usage-only-after-stop","usage":{"output_tokens":0},"after_stop":true,"expected":[11,0,5,3]},
+  {"id":"observer-fault-zero","usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":0},"observer_fault":true,"expected":[0,0,0,0]}
+]

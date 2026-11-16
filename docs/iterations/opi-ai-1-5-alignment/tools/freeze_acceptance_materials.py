@@ -16,6 +16,7 @@ from typing import Any
 
 ITERATION = Path("docs/iterations/opi-ai-1-5-alignment")
 SNAPSHOT = Path(".pi/pi-1.5.0")
+MATERIAL_SCHEMA_VERSION = 3
 INPUT_PATHS = (
     SNAPSHOT / "package.json", SNAPSHOT / "package-lock.json",
     SNAPSHOT / "node_modules/.package-lock.json", SNAPSHOT / "nix/model-catalog.json",
@@ -141,15 +142,27 @@ def inspection_blockers(inspection: dict) -> list[str]:
     return blocked
 
 
-def collect_evidence(root: Path, catalog_input: Path, baseline_path: Path) -> tuple[dict, int]:
+def material_paths(root: Path, snapshot: Path, paths: tuple[Path, ...]) -> dict[str, Path]:
+    inventory = {}
+    for path in paths:
+        actual = snapshot / path.relative_to(SNAPSHOT) if path.is_relative_to(SNAPSHOT) else root / path
+        key = actual.relative_to(root) if actual.is_relative_to(root) else actual
+        inventory[key.as_posix()] = actual
+    return inventory
+
+
+def collect_evidence(
+    root: Path, catalog_input: Path, baseline_path: Path, *, snapshot: Path | None = None,
+) -> tuple[dict, int]:
     root = root.resolve()
-    inputs = {path.as_posix(): file_record(root / path) for path in INPUT_PATHS}
-    trees = {path.as_posix(): tree_record(root / path) for path in TREE_PATHS}
+    snapshot = (snapshot if snapshot is not None else root / SNAPSHOT).resolve()
+    inputs = {key: file_record(path) for key, path in material_paths(root, snapshot, INPUT_PATHS).items()}
+    trees = {key: tree_record(path) for key, path in material_paths(root, snapshot, TREE_PATHS).items()}
     blocked = [f"input: {path}" for path, record in inputs.items() if record["status"] != "present"]
     blocked += [f"tree: {path}" for path, record in trees.items() if record["status"] != "present"]
     code = 0
     try:
-        revision = read_revision(root / SNAPSHOT / "nix/model-catalog.json")
+        revision = read_revision(snapshot / "nix/model-catalog.json")
         catalog = verify_catalog(catalog_input, revision)
     except (OSError, ValueError, KeyError, TypeError) as error:
         catalog = {"status": "invalid-pin", "error": str(error)}
@@ -159,7 +172,7 @@ def collect_evidence(root: Path, catalog_input: Path, baseline_path: Path) -> tu
     baseline_record = file_record(baseline_path)
     try:
         baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
-        source = source_comparison(root / SNAPSHOT, baseline)
+        source = source_comparison(snapshot, baseline)
         if source["changes"]:
             blocked.append("frozen upstream source/lock provenance drift")
     except (OSError, ValueError, KeyError, TypeError) as error:
@@ -170,7 +183,7 @@ def collect_evidence(root: Path, catalog_input: Path, baseline_path: Path) -> tu
     if catalog["status"] == "verified" and "error" not in source:
         probe = command_result([
             "node", "--experimental-import-meta-resolve", str(root / ITERATION / "tools/inspect_acceptance_materials.mjs"),
-            str(root / SNAPSHOT), str(baseline_path.resolve()), str(catalog_input.resolve()),
+            str(snapshot), str(baseline_path.resolve()), str(catalog_input.resolve()),
         ], root, isolated=True)
         try:
             if probe["status"] != "ok":
@@ -187,8 +200,9 @@ def collect_evidence(root: Path, catalog_input: Path, baseline_path: Path) -> tu
     if any(row["status"] != "ok" for row in commands.values()):
         blocked.append("runtime/toolchain identity")
     evidence = {
-        "schemaVersion": 2, "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
-        "repository": str(root), "scope": "Read-only current-material inventory; not reproducible-build or package-consumer acceptance.",
+        "schemaVersion": MATERIAL_SCHEMA_VERSION, "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
+        "repository": str(root), "snapshot": str(snapshot),
+        "scope": "Read-only current-material inventory; not reproducible-build or package-consumer acceptance.",
         "runtime": {"platform": platform.platform(), "system": platform.system(), "machine": platform.machine(), "python": platform.python_version()},
         "baseline": {"path": str(baseline_path.resolve()), **baseline_record},
         "inputs": inputs, "trees": trees, "catalog": catalog, "source_comparison": source,
@@ -201,19 +215,30 @@ def collect_evidence(root: Path, catalog_input: Path, baseline_path: Path) -> tu
 
 def verify_evidence(root: Path, evidence: dict) -> list[str]:
     """Reject drift before replay; original blocked gates remain blocked."""
-    if evidence.get("schemaVersion") != 2:
+    if evidence.get("schemaVersion") != MATERIAL_SCHEMA_VERSION:
         return ["unsupported material evidence schema"]
-    if set(evidence.get("inputs", {})) != {path.as_posix() for path in INPUT_PATHS}:
+    root = root.resolve()
+    if evidence.get("repository") != str(root):
+        return ["repository path differs from material evidence"]
+    snapshot_path = evidence.get("snapshot")
+    if not isinstance(snapshot_path, str) or not Path(snapshot_path).is_absolute():
+        return ["material evidence requires an absolute upstream snapshot path"]
+    snapshot = Path(snapshot_path)
+    if snapshot != snapshot.resolve():
+        return ["upstream snapshot path changed after freezing"]
+    inputs = material_paths(root, snapshot, INPUT_PATHS)
+    trees = material_paths(root, snapshot, TREE_PATHS)
+    if set(evidence.get("inputs", {})) != inputs.keys():
         return ["material input inventory is incomplete"]
-    if set(evidence.get("trees", {})) != {path.as_posix() for path in TREE_PATHS}:
+    if set(evidence.get("trees", {})) != trees.keys():
         return ["material tree inventory is incomplete"]
     errors = []
-    for path, record in evidence["inputs"].items():
-        if file_record(root / path) != record:
-            errors.append(f"input drift: {path}")
-    for path, record in evidence["trees"].items():
-        if tree_record(root / path) != record:
-            errors.append(f"tree drift: {path}")
+    for key, path in inputs.items():
+        if file_record(path) != evidence["inputs"][key]:
+            errors.append(f"input drift: {key}")
+    for key, path in trees.items():
+        if tree_record(path) != evidence["trees"][key]:
+            errors.append(f"tree drift: {key}")
     catalog = evidence["catalog"]
     if catalog.get("status") != "verified" or verify_catalog(Path(catalog["path"]), catalog["revision"]) != catalog:
         errors.append("catalog evidence drift")
@@ -223,14 +248,14 @@ def verify_evidence(root: Path, evidence: dict) -> list[str]:
     if errors:
         return errors
     frozen = json.loads(Path(baseline["path"]).read_text(encoding="utf-8"))
-    if source_comparison(root / SNAPSHOT, frozen) != evidence["source_comparison"]:
+    if source_comparison(snapshot, frozen) != evidence["source_comparison"]:
         errors.append("upstream source comparison drift")
     if evidence.get("inspection_command") is not None:
         # Re-resolve from the AI importer so a newly shadowing/nested dependency
         # cannot pass merely because previously recorded files still exist.
         probe = command_result([
             "node", "--experimental-import-meta-resolve", str(root / ITERATION / "tools/inspect_acceptance_materials.mjs"),
-            str(root / SNAPSHOT), baseline["path"], catalog["path"],
+            str(snapshot), baseline["path"], catalog["path"],
         ], root, isolated=True)
         try:
             if probe["status"] != "ok" or json.loads(probe["stdout"]) != evidence["inspection"]:
@@ -250,6 +275,7 @@ def write_new_json(path: Path, value: dict) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, required=True)
+    parser.add_argument("--snapshot", type=Path, help="upstream tree to bind (default: .pi/pi-1.5.0 under --repo)")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--catalog-input", type=Path)
     parser.add_argument("--baseline", type=Path)
@@ -258,7 +284,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"refusing to overwrite evidence: {args.output}")
     catalog = args.catalog_input or args.repo / ITERATION / "evidence/phase5-model-catalog.json"
     baseline = args.baseline or args.repo / ITERATION / "evidence/phase1-baseline.json"
-    evidence, code = collect_evidence(args.repo, catalog, baseline)
+    evidence, code = collect_evidence(args.repo, catalog, baseline, snapshot=args.snapshot)
     write_new_json(args.output, evidence)
     print(json.dumps({"status": "recorded", "output": str(args.output), "blocked_gates": evidence["blocked_gates"], "exit_code": code}))
     return code

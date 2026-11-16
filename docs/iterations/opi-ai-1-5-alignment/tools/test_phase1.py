@@ -85,6 +85,25 @@ class InventoryTests(unittest.TestCase):
 
 
 class VerificationTests(unittest.TestCase):
+    def test_current_inventory_content_drift_is_rejected(self):
+        inventory_path = REPO / "docs/iterations/opi-ai-1-5-alignment/evidence/phase1-current-source-inventory-20261115.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        inventory["files"][0]["sha256"] = "0" * 64
+        errors = []
+        verify_phase1.check_current_inventory(REPO, inventory, errors)
+        self.assertTrue(any("current inventory content drift" in e for e in errors))
+
+    def test_cli_current_snapshot(self):
+        baseline = REPO / "docs/iterations/opi-ai-1-5-alignment/evidence/phase1-current-baseline-20261115.json"
+        inventory = REPO / "docs/iterations/opi-ai-1-5-alignment/evidence/phase1-current-source-inventory-20261115.json"
+        result = subprocess.run([
+            sys.executable, str(Path(__file__).with_name("verify_phase1.py")),
+            "--repo", str(REPO), "--mode", "current",
+            "--baseline", str(baseline), "--inventory", str(inventory),
+        ], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("PASS: current source identities", result.stdout)
+
     def test_source_drift(self):
         with tempfile.TemporaryDirectory(dir=SCRATCH) as folder:
             root = Path(folder)

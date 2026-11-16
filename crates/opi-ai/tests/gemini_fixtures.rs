@@ -597,13 +597,14 @@ async fn gemini_malformed_sse_data_surfaces_error() {
         "malformed upstream frame content must be neutralized"
     );
 
-    // Should still have a valid Done from the good chunks
+    // A malformed frame is a terminal adapter fault; it must not be followed
+    // by a stale Done synthesized from a later valid finish marker.
     let oks: Vec<_> = events.into_iter().filter_map(|r| r.ok()).collect();
     let dones = oks
         .iter()
         .filter(|e| matches!(e, AssistantStreamEvent::Done { .. }))
         .count();
-    assert_eq!(dones, 1, "should still produce a Done from valid chunks");
+    assert_eq!(dones, 0, "malformed data must suppress a deferred Done");
 }
 
 // ---------------------------------------------------------------------------
@@ -2538,6 +2539,7 @@ mod google_40 {
         assert_eq!(message.response_id.as_deref(), Some("resp-1"));
     }
 
+    #[cfg(feature = "telemetry-tracing")]
     #[tokio::test]
     async fn google_telemetry_carrier_instruments_the_producer() {
         use std::collections::HashMap;

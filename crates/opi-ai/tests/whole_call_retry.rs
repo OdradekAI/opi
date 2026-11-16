@@ -98,6 +98,8 @@ fn classification_vetoes_context_overflow_before_transient_patterns() {
         "input token count 504000 exceeds the maximum 500000",
         "input (503000 tokens) is longer than the model's context length (500000 tokens)",
         "too large for model with 429000 maximum context length",
+        "503 litellm.ContextWindowExceededError: Context Window exceeded for given call.",
+        "custom-provider API error (413): upstream returned 503",
     ] {
         let failed = message(StopReason::Error, Some(text));
         assert!(
@@ -119,6 +121,7 @@ fn classification_keeps_context_overflow_utility_exclusions() {
         "Throttling error: prompt is too long (HTTP 503)",
         "Service unavailable: input token count 504000 exceeds the maximum 500000",
         "too many requests; maximum context length is 500000 tokens",
+        "413: rate limit reached",
     ] {
         let failed = message(StopReason::Error, Some(text));
         assert!(
@@ -147,6 +150,7 @@ fn classification_flags_source_transient_families() {
         "HTTP 500",
         "502 Bad Gateway",
         "503 Service Unavailable",
+        "503 Service Unavailable: request body mentioned 413",
         "504 Gateway Timeout",
         "520",
         "524",
@@ -221,6 +225,69 @@ fn classification_marks_valid_stops_aborted_and_bare_errors() {
             Some("no such model: unknown-model-id")
         )),
         WholeCallRetryClassification::Terminal
+    );
+}
+
+#[test]
+fn classification_matches_frozen_retry_rule_changes() {
+    let mut mismatches = Vec::new();
+    for (diagnostic, expected) in [
+        ("upstream_error: Upstream request failed", true),
+        ("upstream_stream_read_error", true),
+        ("Stream was interrupted", true),
+        ("Upstream HTTP/2 stream failed", true),
+        ("Upstream HTTP2 stream failed", true),
+        ("upstream\rrequest failed", false),
+        (
+            "request to https://oauth2.googleapis.com/token failed, reason:",
+            true,
+        ),
+        (
+            "request to https://example.invalid/\u{FEFF}token failed, reason:",
+            false,
+        ),
+        (
+            "stream disconnected before completion: stream closed before response.completed",
+            true,
+        ),
+        ("HTTP 429", true),
+        ("_503_", true),
+        ("Å503Å", true),
+        ("Status 503XYZ", false),
+        ("Status ABC503", false),
+        (r#"401 {"request_id":"req_011CU503xyz"}"#, false),
+        (
+            "400 image exceeds 5 MB maximum: 5316784 bytes > 5242880 bytes",
+            false,
+        ),
+        (
+            r#"OpenAI API error (429): {"code":"subscription_sharing_workplace_individual_usage_limit_exceeded"}"#,
+            false,
+        ),
+        (r#"429 {"code":"1308"}"#, false),
+        ("429 {\"code\"\u{FEFF}:\t1308}", false),
+        ("429 {\"code\"\u{0085}:1308}", true),
+        (r#"429 {"code":13080}"#, true),
+        ("429 request reference 1308", true),
+        (
+            "503 litellm.ContextWindowExceededError: Context Window exceeded for given call.",
+            false,
+        ),
+    ] {
+        let actual =
+            opi_ai::retry::classify_whole_call_retry(&message(StopReason::Error, Some(diagnostic)))
+                == WholeCallRetryClassification::Transient;
+        println!(
+            "retry classification observation {}",
+            serde_json::json!({"diagnostic": diagnostic, "retryable": actual, "expected": expected})
+        );
+        if actual != expected {
+            mismatches.push(diagnostic);
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "retry classification differs for {mismatches:?}"
     );
 }
 
@@ -398,7 +465,7 @@ async fn context_overflow_stops_enabled_helper_without_retry_callbacks() {
     let policy = transient_policy(2, 1);
     let mut expected = message(
         StopReason::Error,
-        Some("maximum context length is 500000 tokens"),
+        Some("custom-provider API error (413): upstream returned 503"),
     );
     expected.usage.reported = true;
     assert!(opi_ai::message::is_context_overflow(&expected, None));
@@ -950,12 +1017,15 @@ mod quota_transport {
     async fn quota_429_veto_reaches_whole_call_retry_through_real_adapters() {
         for responses in [false, true] {
             for via_models in [false, true] {
-                for error in [
-                    serde_json::json!({"code":"insufficient_quota", "message":"PRIVATE_CANARY"}),
-                    serde_json::json!({"type":"FreeUsageLimitError", "message":"PRIVATE_CANARY"}),
-                    serde_json::json!({"message":"billing limit reached PRIVATE_CANARY"}),
+                for body in [
+                    serde_json::json!({"error":{"code":"insufficient_quota", "message":"PRIVATE_CANARY"}}),
+                    serde_json::json!({"error":{"type":"FreeUsageLimitError", "message":"PRIVATE_CANARY"}}),
+                    serde_json::json!({"error":{"message":"billing limit reached PRIVATE_CANARY"}}),
+                    serde_json::json!({"code":"subscription_sharing_workplace_individual_usage_limit_exceeded", "message":"PRIVATE_CANARY"}),
+                    serde_json::json!({"code":"1308", "message":"PRIVATE_CANARY"}),
+                    serde_json::json!({"error":{"code":1308, "message":"PRIVATE_CANARY"}}),
                 ] {
-                    exercise(responses, via_models, serde_json::json!({"error":error}), 1).await;
+                    exercise(responses, via_models, body, 1).await;
                 }
             }
         }
@@ -974,6 +1044,14 @@ mod quota_transport {
     async fn unrelated_quota_text_does_not_override_status_classification() {
         for responses in [false, true] {
             exercise(responses, true, serde_json::json!({"metadata":{"message":"billing PRIVATE_CANARY"},"error":{"code":429}}), 2).await;
+            exercise(responses, true, serde_json::json!({"metadata":{"code":"1308"},"error":{"message":"request reference 1308 PRIVATE_CANARY"}}), 2).await;
+            exercise(
+                responses,
+                true,
+                serde_json::json!({"code":"13080", "message":"PRIVATE_CANARY"}),
+                2,
+            )
+            .await;
             exercise(responses, true, serde_json::Value::Null, 2).await;
         }
     }
@@ -987,9 +1065,7 @@ mod quota_transport {
                     .respond_with(
                         ResponseTemplate::new(429)
                             .insert_header("retry-after", "0")
-                            .set_body_json(
-                                serde_json::json!({"error":{"code":"insufficient_quota"}}),
-                            ),
+                            .set_body_json(serde_json::json!({"code":"1308"})),
                     )
                     .mount(&server)
                     .await;
@@ -1129,4 +1205,205 @@ mod quota_transport {
                 .unwrap();
         }
     }
+}
+
+#[tokio::test]
+async fn responses_failed_sse_reaches_the_explicit_whole_call_policy() {
+    use futures_util::StreamExt;
+    use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
+    use opi_ai::openai_responses::OpenAiResponsesProvider;
+    use opi_ai::provider::{Provider, ProviderError};
+    use opi_ai::retry::{AcquisitionPolicy, AcquisitionSeal, classify_whole_call_retry};
+    use opi_ai::stream::AssistantStreamEvent;
+    use opi_telemetry::{AttributeValue, SpanStatus, memory::Recorder};
+    use serde_json::{Value, json};
+    use std::sync::Arc;
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers};
+
+    let fixture: Value = serde_json::from_str(include_str!("data/responses-failed.json")).unwrap();
+    let mut mismatches = Vec::new();
+    for case in fixture["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let decision = case["decision"].as_str().unwrap();
+        let failed = json!({
+            "type": "response.failed",
+            "response": {"status":"failed","error":case["error"],"usage":{"input_tokens":21,"output_tokens":9}}
+        });
+        let body: String = fixture["prefix"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .chain([&failed, &fixture["afterFailure"]])
+            .map(|event| {
+                format!(
+                    "event: {}\ndata: {event}\n\n",
+                    event["type"].as_str().unwrap()
+                )
+            })
+            .collect();
+        let server = MockServer::start().await;
+        Mock::given(matchers::method("POST"))
+            .and(matchers::path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+        let model = provider.models()[0].id.clone();
+        let model_ref = format!("openai-responses:{model}");
+        let mut models = opi_ai::Models::new();
+        models
+            .register_route(
+                Box::new(provider),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::Bearer,
+                    secrecy::SecretString::from("fixture-key"),
+                )),
+                AuthProvenanceSource::Static,
+                Default::default(),
+            )
+            .unwrap();
+        let recorder = Recorder::default();
+        let mut request = frozen_target_wire::logical_request();
+        request.model = model_ref.clone();
+        request.telemetry_context = Some(recorder.context());
+        let cancel = request.cancel.clone();
+        let models = &models;
+        let mut calls = 0;
+        let message = retry_assistant_call(
+            || {
+                calls += 1;
+                let request = request.clone();
+                let model_ref = &model_ref;
+                async move {
+                    let call = models
+                        .prepare_call_with_policy(
+                            model_ref,
+                            request,
+                            AcquisitionPolicy::with_max_retries(1),
+                        )
+                        .await
+                        .unwrap();
+                    let mut stream = call.start_attempt_with_telemetry().unwrap();
+                    let mut deltas = String::new();
+                    let failure = loop {
+                        match stream.next().await.expect("the attempt emits a terminal") {
+                            Ok(AssistantStreamEvent::TextDelta { delta, .. }) => {
+                                deltas.push_str(&delta)
+                            }
+                            Ok(
+                                AssistantStreamEvent::Done { .. }
+                                | AssistantStreamEvent::Error { .. },
+                            ) => {
+                                panic!("expected the typed terminal for {name}")
+                            }
+                            Ok(_) => {}
+                            Err(failure) => break failure,
+                        }
+                    };
+                    assert_eq!(deltas, "partial", "{name}");
+                    assert!(stream.next().await.is_none(), "{name}");
+                    assert_eq!(stream.result().await, Err(failure.clone()), "{name}");
+                    assert!(
+                        matches!(failure.cause(), ProviderError::StreamError(_)),
+                        "{name}"
+                    );
+                    assert!(!failure.cause().is_retryable(), "{name}");
+                    assert!(call.retry_admission().is_none(), "{name}");
+                    assert_eq!(
+                        call.acquisition_seal(),
+                        Some(AcquisitionSeal::PostHandoff),
+                        "{name}"
+                    );
+                    assert!(call.start_attempt().is_err(), "{name}");
+                    assert!(!format!("{failure:?}").contains("PRIVATE_CANARY"), "{name}");
+                    failure.into_parts().0
+                }
+            },
+            Some(&transient_policy(1, 0)),
+            cancel.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), calls, "{name}: one send per logical call");
+        assert!(
+            sent.iter().all(|request| request.body == sent[0].body),
+            "{name}"
+        );
+        assert_eq!(message.stop_reason, StopReason::Error, "{name}");
+        assert_eq!(message.raw_stop_reason.as_deref(), Some("failed"), "{name}");
+        assert!(
+            matches!(message.content.as_slice(), [AssistantContent::Text { text, signature: None }] if text == "partial"),
+            "{name}: the terminal retains the streamed prefix"
+        );
+        assert_eq!(message.provider, "openai-responses", "{name}");
+        assert_eq!(message.model, model, "{name}");
+        assert_eq!(
+            message.response_id.as_deref(),
+            Some("resp_partial"),
+            "{name}"
+        );
+        assert_eq!(
+            message.response_model.as_deref(),
+            Some("wire-model"),
+            "{name}"
+        );
+        assert!(!message.usage.reported, "{name}");
+        assert!(message.projection.is_some(), "{name}");
+        assert!(!cancel.is_cancelled(), "{name}");
+        let diagnostic = message.error_message.as_deref().unwrap();
+        let serialized = serde_json::to_string(&message).unwrap();
+        assert!(!serialized.contains("PRIVATE_CANARY"), "{name}");
+        assert_eq!(
+            serde_json::from_str::<AssistantMessage>(&serialized).unwrap(),
+            message,
+            "{name}"
+        );
+        let spans = recorder.spans();
+        assert_eq!(spans.len(), calls, "{name}");
+        for span in &spans {
+            assert_eq!(span.name, "pi.ai.request", "{name}");
+            assert!(span.end_sequence.is_some(), "{name}");
+            assert_eq!(
+                span.attributes.get("stop"),
+                Some(&AttributeValue::String("error".into())),
+                "{name}"
+            );
+            let SpanStatus::Error { error: Some(error) } = &span.status else {
+                panic!("expected an error span for {name}");
+            };
+            assert_eq!(error.name, "provider_error", "{name}");
+            assert_eq!(error.message, diagnostic, "{name}");
+        }
+        let retryable =
+            classify_whole_call_retry(&message) == WholeCallRetryClassification::Transient;
+        let overflow = opi_ai::message::is_context_overflow(&message, None);
+        let quota = diagnostic.contains("quota exceeded");
+        println!(
+            "responses failed observation {}",
+            json!({
+                "name":name,"decision":decision,"retryable":retryable,"overflow":overflow,
+                "quota":quota,"diagnostic":diagnostic,"sends":sent.len(),"spans":spans.len()
+            })
+        );
+        if (retryable, overflow, quota, calls)
+            != (
+                decision == "transient",
+                decision == "overflow",
+                decision == "quota",
+                if decision == "transient" { 2 } else { 1 },
+            )
+        {
+            mismatches.push(name);
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "failure decision mismatches: {mismatches:?}"
+    );
 }

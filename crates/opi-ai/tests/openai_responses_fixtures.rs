@@ -687,6 +687,167 @@ async fn responses_error_event_routing() {
     );
 }
 
+#[tokio::test]
+async fn responses_sse_error_preserves_the_callers_recovery_decision() {
+    use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
+    use opi_ai::retry::{
+        WholeCallRetryClassification, WholeCallRetryPolicy, classify_whole_call_retry,
+    };
+    use opi_ai::stream::StopReason;
+    use serde_json::{Value, json};
+    use std::sync::Arc;
+
+    let cases: Vec<Value> =
+        serde_json::from_str(include_str!("data/responses-error.json")).unwrap();
+    let frames: Value = serde_json::from_str(include_str!("data/responses-failed.json")).unwrap();
+    let mut mismatches = Vec::new();
+    for case in cases.iter().filter(|case| case["route"] == "responses") {
+        let name = case["name"].as_str().unwrap();
+        let decision = case["decision"].as_str().unwrap();
+        let mut body: String = frames["prefix"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| format!("data: {event}\n\n"))
+            .collect();
+        if let Some(event) = case["event"].as_str() {
+            body.push_str(&format!("event: {event}\n"));
+        }
+        body.push_str(&format!(
+            "data: {}\n\ndata: {}\n\n",
+            case["data"], frames["afterFailure"]
+        ));
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(body),
+            )
+            .mount(&server)
+            .await;
+        let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+        let record = opi_ai::ChatModelRecord::new(provider.id(), provider.models()[0].clone());
+        let mut models = opi_ai::Models::new();
+        models
+            .register_route(
+                Box::new(provider),
+                Arc::new(StaticAuthResolver::new(
+                    AuthScheme::Bearer,
+                    secrecy::SecretString::from("fixture-key"),
+                )),
+                AuthProvenanceSource::Static,
+                Default::default(),
+            )
+            .unwrap();
+        let mut request = responses_text_request();
+        let recorder = opi_telemetry::memory::Recorder::default();
+        request.telemetry_context = Some(recorder.context());
+        let mut calls = 0;
+        let message = opi_ai::retry_assistant_call(
+            || {
+                calls += 1;
+                let result =
+                    models.complete_simple(record.clone(), request.clone(), Default::default());
+                async {
+                    match result.await {
+                        Ok(message) => message,
+                        Err(failure) => {
+                            assert!(
+                                matches!(failure.cause(), ProviderError::StreamError(_)),
+                                "{name}"
+                            );
+                            assert!(!failure.cause().is_retryable(), "{name}");
+                            assert!(!format!("{failure:?}").contains("PRIVATE_CANARY"), "{name}");
+                            failure.into_parts().0
+                        }
+                    }
+                }
+            },
+            Some(&WholeCallRetryPolicy {
+                enabled: true,
+                max_retries: 1,
+                base_delay_ms: 0,
+                ..Default::default()
+            }),
+            request.cancel.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), calls, "{name}: one request per logical call");
+        assert!(
+            sent.iter().all(|request| request.body == sent[0].body),
+            "{name}"
+        );
+        let spans = recorder.spans();
+        assert_eq!(spans.len(), calls, "{name}");
+        let retryable =
+            classify_whole_call_retry(&message) == WholeCallRetryClassification::Transient;
+        let overflow = opi_ai::message::is_context_overflow(&message, None);
+        let diagnostic = message.error_message.as_deref().unwrap_or_default();
+        let quota = diagnostic.contains("quota exceeded");
+        let failed = message.stop_reason == StopReason::Error;
+        println!(
+            "responses error observation {}",
+            json!({
+                "name":name, "decision":decision, "failed":failed, "diagnostic":diagnostic,
+                "retryable":retryable, "overflow":overflow, "quota":quota, "sends":sent.len(),
+            })
+        );
+        if failed {
+            assert_eq!(message.raw_stop_reason, None, "{name}");
+            assert_eq!(
+                message.response_id.as_deref(),
+                Some("resp_partial"),
+                "{name}"
+            );
+            assert_eq!(
+                message.response_model.as_deref(),
+                Some("wire-model"),
+                "{name}"
+            );
+            assert!(message.projection.is_some(), "{name}");
+            assert!(!message.usage.reported, "{name}");
+            assert!(
+                matches!(message.content.as_slice(),
+                [opi_ai::message::AssistantContent::Text { text, signature: None }] if text == "partial"),
+                "{name}"
+            );
+            assert!(
+                !serde_json::to_string(&message)
+                    .unwrap()
+                    .contains("PRIVATE_CANARY"),
+                "{name}"
+            );
+            for span in &spans {
+                assert!(span.end_sequence.is_some(), "{name}");
+                let opi_telemetry::SpanStatus::Error { error: Some(error) } = &span.status else {
+                    panic!("expected a settled error span for {name}");
+                };
+                assert_eq!(error.message, diagnostic, "{name}");
+            }
+        }
+        if (failed, retryable, overflow, quota, calls)
+            != (
+                true,
+                decision == "transient",
+                decision == "overflow",
+                decision == "quota",
+                if decision == "transient" { 2 } else { 1 },
+            )
+        {
+            mismatches.push(name);
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "SSE error decision mismatches: {mismatches:?}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Usage tracking
 // ---------------------------------------------------------------------------

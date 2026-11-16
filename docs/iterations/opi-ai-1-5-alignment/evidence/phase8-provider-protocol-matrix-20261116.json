@@ -1,0 +1,189 @@
+{
+  "schemaVersion": "phase8-provider-protocol-matrix-v1",
+  "issue": "#136",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": {
+    "provider_owner_count": 11,
+    "provider_pair_count": 55,
+    "high_order_count": 2,
+    "high_order_profiles": [
+      "all-provider-owners",
+      "all-provider-owners-plus-support"
+    ],
+    "macos": "BLOCKED_PENDING_ENVIRONMENT"
+  },
+  "native": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-native-20261116-v3.json",
+    "sha256": "69f1e70a682044256dce543c4054fd66626f37ff45bda94b3e76a0187c6e5d7d",
+    "verdict": "PASS",
+    "profiles": 57,
+    "passed": 57
+  },
+  "package": {
+    "pair_matrix": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-package-20261116-v2.json",
+      "sha256": "258f9e7d13b6eac176dba8962234cb66a0077ef126056648b7344a5a5554ed5a",
+      "verdict": "PASS_REGRADED",
+      "profiles": 55,
+      "passed": 55,
+      "note": "v2 pair rows and first high-order row passed; support-row graph closure validator failure retained"
+    },
+    "high_order_support": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-package-20261116-v3.json",
+      "sha256": "cd21477c35ead6c5c879e4f1f4ccf75e4679501bee251335f92e362b6b646983",
+      "verdict": "PASS",
+      "profiles": 1,
+      "passed": 1,
+      "native_companion": {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-native-20261116-v4.json",
+        "sha256": "b83d634c14e223e3c838171ad5330f29badabd599e685c1b5791afba7be3b07e"
+      }
+    },
+    "aggregate": {
+      "pair_profiles": 55,
+      "pair_passed": 55,
+      "high_order_profiles": 2,
+      "high_order_passed": 2,
+      "verdict": "PASS"
+    },
+    "historical_partial": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-package-20261116-v1.json",
+      "sha256": "19b4b5e90ac3a597b4aacf807c6d121aa90ceefb7f148d02d95c5f5f257cd286",
+      "verdict": "INTERRUPTED",
+      "profiles": 2
+    }
+  },
+  "feature_closure": {
+    "rule": "resolve explicit feature edges; ignore dep:* and namespaced dependency features containing /",
+    "pair_rows": "all unordered provider-owner pairs",
+    "high_order_rows": [
+      "all provider owners",
+      "all provider owners plus catalog-bundled/oauth-store/telemetry-tracing"
+    ]
+  },
+  "frozen_pi": {
+    "status": "RETAINED_UNCHANGED",
+    "interpretation": "feature-union verification only; no protocol source behavior changed",
+    "paired_receipts": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired-verified.json",
+        "sha256": "8c6849653f1726f3df91990333887299ea1bf4b91502eb19a1c46fa75ce415c9"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-differential.json",
+        "sha256": "b374e49cad162a26482a3fbcfbe2fcc9db7dd5a770e5a48912e58e0ddc491b2d"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-choice-differential.json",
+        "sha256": "494a65d334919276a8b6c79b49c0f6210eacf203fba0fac56b598caf19c82d89"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-responses-repeated-terminal-differential.json",
+        "sha256": "109e9f317f588924e60f600b1926ae7169768119f1d6a1f544e5bbe955016f62"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-terminal-differential.json",
+        "sha256": "5e8e0fcedf279776d5413131ca5c91851f8dc231628d0f5fbd074f35417465bb"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-anthropic-repeated-message-stop-differential.json",
+        "sha256": "9da83317076ba395d8a5fb1d3df01bc7d8e98753945b1c6f7e3e33091ac91a17"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-bedrock-pending-differential-v3.json",
+        "sha256": "3401b44c2af5f7d81a863fac2a9897b616a95c0ecd37add25f5b9382e75844aa"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-gemini-repeated-finish-differential.json",
+        "sha256": "92030341e64e2512fbb8cb820336d2dde95eac749df76d7fd74b079669ca16ec"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-mistral-repeated-finish-differential.json",
+        "sha256": "e98bb04f21e162e38f14fd1c125c552ddfbd936da1e1a69c42d9bede92f229b8"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-pi-messages-terminal-differential-v2.json",
+        "sha256": "c13b199e4cc062a8aab8815404b828f8a2a4f926e3d092079b163bc6f867b2c7"
+      }
+    ]
+  },
+  "macos": {
+    "status": "BLOCKED",
+    "reason": "user confirmed no macOS environment; wait for runner/SSH host"
+  },
+  "caller_impact": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-callers-20261116-v4.json",
+    "sha256": "53c197c8f84da2adadb5e0a8a93f8bad31c30d042244bb6f13c54d3bd333c37b",
+    "files": 1238
+  },
+  "implementation_sources": [
+    {
+      "path": "crates/opi-ai/Cargo.toml",
+      "sha256": "0be4deaa903b17682bea19b5d5968f1fd9f1c2b50921d3fc289ffef2e0489095"
+    },
+    {
+      "path": "crates/opi-ai/tests/provider_protocol_profile.rs",
+      "sha256": "500d009f9ac498c814d44b29dd34de5df7c725921c972230ecfec67dc844d530"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/run_provider_protocol_matrix.py",
+      "sha256": "f4ed3ea91a118391f6c5d5f5269e315455fd91cbcc94cb387db66d37b959b2ac"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/test_provider_protocol_matrix.py",
+      "sha256": "32806ea828be6a42cc2e7a436a94b34a3beb4efb4eace821a63c0f3fc7021840"
+    },
+    {
+      "path": "crates/opi-ai/docs/testing.md",
+      "sha256": "c35132929bace6ff050d0fa2d57bed01e60654cbbffdb3c8e19145c844664156"
+    },
+    {
+      "path": "crates/opi-ai/docs/testing.zh.md",
+      "sha256": "c0faaf647d998563084513375084952d50cacca63fcad1955bd926624b8248bb"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/136-verify-provider-owner-pairs.md",
+      "sha256": "3f21b055a8e61b11fdba14fdadeae2322cb3061b71d49bc7df04c317dabc9896"
+    }
+  ],
+  "historical": {
+    "provider_protocol_single_owner": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-20261116.json",
+      "sha256": "6b6f7dd4956314e90be0fe73357548238d2054d79d9f31acc7619073b43ba71a"
+    },
+    "package_matrix_interrupted": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-package-20261116-v1.json",
+      "sha256": "19b4b5e90ac3a597b4aacf807c6d121aa90ceefb7f148d02d95c5f5f257cd286"
+    },
+    "package_matrix_validator_failure": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-package-20261116-v2.json",
+      "sha256": "258f9e7d13b6eac176dba8962234cb66a0077ef126056648b7344a5a5554ed5a"
+    }
+  },
+  "test_impact": {
+    "add": [
+      "55 provider-owner native/package pair rows",
+      "2 high-order native/package rows",
+      "matrix runner and unit tests"
+    ],
+    "update": [
+      "capability V matrix",
+      "testing docs",
+      "spec history",
+      "#136 issue"
+    ],
+    "delete": [],
+    "retain": [
+      "frozen Pi 1.5.0 paired differential receipts",
+      "all prior adapter/observer/provider/cache receipts"
+    ]
+  },
+  "runner_sha256": "f4ed3ea91a118391f6c5d5f5269e315455fd91cbcc94cb387db66d37b959b2ac",
+  "native_high_order_support": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-provider-protocol-matrix-native-20261116-v4.json",
+    "sha256": "b83d634c14e223e3c838171ad5330f29badabd599e685c1b5791afba7be3b07e",
+    "verdict": "PASS",
+    "profiles": 1,
+    "passed": 1
+  }
+}

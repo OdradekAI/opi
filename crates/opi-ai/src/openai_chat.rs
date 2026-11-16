@@ -40,8 +40,13 @@ struct SseFrame {
 /// Parsed result for a single SSE frame.
 pub enum ParsedEvent {
     Valid(Vec<OpenAiChatEvent>),
+    /// The protocol sentinel; no raw JSON callback is associated with it.
+    Done,
     UsageError(ProviderError),
-    Malformed { data: String, error: String },
+    Malformed {
+        data: String,
+        error: String,
+    },
 }
 
 /// Parse SSE text into frames, then deserialize each frame as an OpenAI chunk.
@@ -72,26 +77,26 @@ pub fn parse_sse_events_with_raw_for_model(
     input: &str,
     is_openrouter: bool,
 ) -> impl Iterator<Item = (ParsedEvent, Option<serde_json::Value>)> + '_ {
-    parse_frames(input).filter_map(move |frame| {
+    parse_frames(input).map(move |frame| {
         if frame.data == "[DONE]" {
-            return None;
+            return (ParsedEvent::Done, None);
         }
         let raw = serde_json::from_str::<serde_json::Value>(&frame.data).ok();
         match serde_json::from_str::<OpenAiRawChunk>(&frame.data) {
-            Ok(raw_chunk) => Some(match validate_usage_subset(&raw_chunk) {
+            Ok(raw_chunk) => match validate_usage_subset(&raw_chunk) {
                 Ok(()) => (
                     ParsedEvent::Valid(OpenAiChatEvent::from_raw_vec(raw_chunk, is_openrouter)),
                     raw,
                 ),
                 Err(error) => (ParsedEvent::UsageError(error), raw),
-            }),
-            Err(e) => Some((
+            },
+            Err(e) => (
                 ParsedEvent::Malformed {
                     data: frame.data.clone(),
                     error: e.to_string(),
                 },
                 raw,
-            )),
+            ),
         }
     })
 }
@@ -164,6 +169,10 @@ struct RawChoice {
     index: Option<usize>,
     delta: Option<RawDelta>,
     finish_reason: Option<String>,
+    /// A few OpenAI-compatible endpoints (for example Moonshot) attach
+    /// usage to the choice instead of the standard chunk-level member.
+    #[serde(default)]
+    usage: Option<RawUsage>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -199,7 +208,7 @@ struct RawFunction {
     arguments: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct RawUsage {
     prompt_tokens: Option<u32>,
     completion_tokens: Option<u32>,
@@ -215,17 +224,17 @@ struct RawUsage {
     #[serde(default)]
     is_byok: Option<bool>,
     #[serde(default)]
-    cost_details: Option<crate::openrouter::OpenRouterCostDetails>,
+    cost_details: Option<crate::openrouter_usage::OpenRouterCostDetails>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct RawPromptTokenDetails {
     cached_tokens: Option<u32>,
     #[serde(default)]
     cache_write_tokens: Option<u32>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct RawCompletionTokenDetails {
     #[serde(default)]
     reasoning_tokens: Option<u64>,
@@ -239,7 +248,12 @@ struct RawError {
 }
 
 fn validate_usage_subset(raw: &OpenAiRawChunk) -> Result<(), ProviderError> {
-    let Some(usage) = raw.usage.as_ref() else {
+    let Some(usage) = raw.usage.as_ref().or_else(|| {
+        raw.choices
+            .as_ref()
+            .and_then(|choices| choices.first())
+            .and_then(|choice| choice.usage.as_ref())
+    }) else {
         return Ok(());
     };
     let output = u64::from(usage.completion_tokens.unwrap_or(0));
@@ -323,46 +337,55 @@ impl OpenAiChatEvent {
             }];
         }
 
-        let usage = raw.usage.map(|u| {
-            let cached = u
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|d| d.cached_tokens)
-                .unwrap_or(0);
-            let cache_write = u
-                .prompt_tokens_details
-                .as_ref()
-                .and_then(|d| d.cache_write_tokens)
-                .unwrap_or(0);
-            let output = u.completion_tokens.unwrap_or(0);
-            let reasoning = u
-                .completion_tokens_details
-                .as_ref()
-                .and_then(|d| d.reasoning_tokens);
-            let mut usage = Usage::reported(
-                u.prompt_tokens
-                    .unwrap_or(0)
-                    .saturating_sub(cached)
-                    .saturating_sub(cache_write),
-                output,
-                cached,
-                cache_write,
-                None, // cache_write_1h_tokens — Chat doesn't write cache
-                reasoning,
-            )
-            .with_total_tokens(u.total_tokens.map(u64::from));
-            if is_openrouter {
-                crate::openrouter::apply_openrouter_reported_cost(
-                    &mut usage,
-                    &crate::openrouter::OpenRouterUsageAccounting {
-                        cost: u.cost,
-                        is_byok: u.is_byok,
-                        cost_details: u.cost_details,
-                    },
-                );
-            }
-            usage
-        });
+        let usage = raw
+            .usage
+            .as_ref()
+            .or_else(|| {
+                raw.choices
+                    .as_ref()
+                    .and_then(|choices| choices.first())
+                    .and_then(|choice| choice.usage.as_ref())
+            })
+            .map(|u| {
+                let cached = u
+                    .prompt_tokens_details
+                    .as_ref()
+                    .and_then(|d| d.cached_tokens)
+                    .unwrap_or(0);
+                let cache_write = u
+                    .prompt_tokens_details
+                    .as_ref()
+                    .and_then(|d| d.cache_write_tokens)
+                    .unwrap_or(0);
+                let output = u.completion_tokens.unwrap_or(0);
+                let reasoning = u
+                    .completion_tokens_details
+                    .as_ref()
+                    .and_then(|d| d.reasoning_tokens);
+                let mut usage = Usage::reported(
+                    u.prompt_tokens
+                        .unwrap_or(0)
+                        .saturating_sub(cached)
+                        .saturating_sub(cache_write),
+                    output,
+                    cached,
+                    cache_write,
+                    None, // cache_write_1h_tokens — Chat doesn't write cache
+                    reasoning,
+                )
+                .with_total_tokens(u.total_tokens.map(u64::from));
+                if is_openrouter {
+                    crate::openrouter_usage::apply_openrouter_reported_cost(
+                        &mut usage,
+                        &crate::openrouter_usage::OpenRouterUsageAccounting {
+                            cost: u.cost,
+                            is_byok: u.is_byok,
+                            cost_details: u.cost_details.clone(),
+                        },
+                    );
+                }
+                usage
+            });
 
         let response_id = raw.id.clone();
         let model = raw.model.clone();
@@ -571,10 +594,8 @@ pub struct OpenAiChatMapper {
     text_started: bool,
     text_content_index: Option<usize>,
     thinking_content_index: Option<usize>,
-    thinking_ended: bool,
     reasoning_details: Vec<serde_json::Value>,
     pending_stop_reason: Option<StopReason>,
-    inferred_finish: bool,
     grammar_input_properties: HashMap<String, String>,
     strict_tools: HashMap<String, crate::message::ToolDef>,
     model_info: Option<crate::model_info::ModelInfo>,
@@ -622,10 +643,8 @@ impl OpenAiChatMapper {
             text_started: false,
             text_content_index: None,
             thinking_content_index: None,
-            thinking_ended: false,
             reasoning_details: Vec::new(),
             pending_stop_reason: None,
-            inferred_finish: false,
             grammar_input_properties: HashMap::new(),
             strict_tools: HashMap::new(),
             model_info: None,
@@ -651,33 +670,143 @@ impl OpenAiChatMapper {
         }
     }
 
-    fn finish_eof(
+    /// Complete a Chat response at `[DONE]` or natural HTTP EOF.
+    /// Finish reasons and usage only accumulate metadata. This method closes
+    /// blocks in content order, finalizes tool arguments, and emits one Done.
+    /// Missing finish reasons fail unless the route explicitly disables them.
+    /// Callers must stop consuming the response after any terminal or failure.
+    pub fn finish(
         &mut self,
         supports_finish_reason: bool,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
-        if let Some(done) = self.flush_pending_done() {
-            return vec![Ok(done)];
-        }
-        if self.saw_done || supports_finish_reason {
+        if self.saw_done {
             return Vec::new();
         }
-        self.inferred_finish = true;
-        let reason = if self.tool_calls.iter().any(|tool| !tool.id.is_empty()) {
-            "tool_calls"
-        } else {
-            "stop"
+        let reason = match self.pending_stop_reason.take() {
+            Some(reason) => reason,
+            None if !supports_finish_reason => {
+                if self.tool_calls.iter().any(|tool| !tool.id.is_empty()) {
+                    StopReason::ToolUse
+                } else {
+                    StopReason::Stop
+                }
+            }
+            None => {
+                self.saw_done = true;
+                return vec![Err(self.failure(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static("stream ended without a terminal event"),
+                )))];
+            }
         };
-        let mut events = self.process(OpenAiChatEvent::Finish {
-            finish_reason: reason.into(),
-            id: None,
-            model: None,
-            usage: None,
-        });
-        if let Some(done) = self.flush_pending_done() {
-            events.push(Ok(done));
+        let mut events = Vec::new();
+        self.ensure_start(&mut events);
+        for content_index in 0..self.partial.content.len() {
+            match &self.partial.content[content_index] {
+                AssistantContent::Text { text, .. } => {
+                    events.push(Ok(AssistantStreamEvent::TextEnd {
+                        content_index,
+                        content: text.clone(),
+                        partial: self.partial.clone(),
+                    }));
+                }
+                AssistantContent::Thinking { thinking, .. } => {
+                    events.push(Ok(AssistantStreamEvent::ThinkingEnd {
+                        content_index,
+                        content: thinking.clone(),
+                        partial: self.partial.clone(),
+                    }));
+                }
+                AssistantContent::ToolCall { tool_call } => {
+                    let Some(state) = self
+                        .tool_calls
+                        .iter_mut()
+                        .find(|state| state.id == tool_call.id)
+                    else {
+                        continue;
+                    };
+                    // Grammar completion and strict normalization happen only
+                    // at a successful protocol end, never on a failed partial.
+                    if let Some(buffer) = &mut state.custom_input {
+                        let input = buffer.input().to_owned();
+                        if let Ok(Some(delta)) =
+                            crate::constrained_sampling::append_grammar_tool_input_delta(
+                                buffer, &input, true,
+                            )
+                        {
+                            state.arguments.push_str(&delta);
+                            if let AssistantContent::ToolCall { tool_call } =
+                                &mut self.partial.content[content_index]
+                            {
+                                tool_call.arguments.push_str(&delta);
+                            }
+                            events.push(Ok(AssistantStreamEvent::ToolCallDelta {
+                                content_index,
+                                delta,
+                                partial: self.partial.clone(),
+                            }));
+                        }
+                    }
+                    let (mut arguments, arguments_error) = if state.custom_input.is_some() {
+                        (state.arguments.clone(), None)
+                    } else {
+                        ToolCall::finalize_text_arguments(state.arguments.clone())
+                    };
+                    if arguments_error.is_none()
+                        && let Some(tool) = self.strict_tools.get(&state.name)
+                        && let Ok(mut parsed) =
+                            serde_json::from_str::<serde_json::Value>(&arguments)
+                    {
+                        crate::constrained_sampling::normalize_wire_arguments_nulls(
+                            &tool.input_schema,
+                            &mut parsed,
+                        );
+                        arguments = parsed.to_string();
+                    }
+                    if let AssistantContent::ToolCall { tool_call } =
+                        &mut self.partial.content[content_index]
+                    {
+                        tool_call.arguments = arguments;
+                        tool_call.arguments_error = arguments_error;
+                        events.push(Ok(AssistantStreamEvent::ToolCallEnd {
+                            content_index,
+                            tool_call: tool_call.clone(),
+                            partial: self.partial.clone(),
+                        }));
+                    }
+                }
+                _ => {}
+            }
         }
+        events.push(Ok(self.emit_done(reason)));
         self.snapshot.record(&self.partial);
         events
+    }
+
+    pub(crate) fn process_frame(
+        &mut self,
+        frame: ParsedEvent,
+        supports_finish_reason: bool,
+    ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
+        if self.saw_done {
+            return Vec::new();
+        }
+        match frame {
+            ParsedEvent::Done => self.finish(supports_finish_reason),
+            ParsedEvent::Valid(events) => events
+                .into_iter()
+                .flat_map(|event| self.process(event))
+                .collect(),
+            ParsedEvent::UsageError(error) => {
+                self.saw_done = true;
+                vec![Err(self.failure(error))]
+            }
+            ParsedEvent::Malformed { .. } => {
+                self.saw_done = true;
+                vec![Err(self.failure(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static("malformed OpenAI Chat SSE frame"),
+                )))]
+            }
+        }
     }
 
     fn update_metadata(&mut self, id: Option<String>, model: Option<String>, usage: Option<Usage>) {
@@ -715,15 +844,6 @@ impl OpenAiChatMapper {
                 partial: self.partial.clone(),
             }));
         }
-    }
-
-    pub fn flush_pending_done(&mut self) -> Option<AssistantStreamEvent> {
-        if self.saw_done {
-            return None;
-        }
-        self.pending_stop_reason
-            .take()
-            .map(|reason| self.emit_done(reason))
     }
 
     /// Process one OpenAI event, returning zero or more stream events.
@@ -809,6 +929,7 @@ impl OpenAiChatMapper {
                 }
                 let mut events = Vec::new();
                 self.ensure_start(&mut events);
+                // Chat content deltas describe one text block across interleaved tool deltas.
                 if !self.text_started {
                     self.text_started = true;
                     self.text_content_index = Some(self.partial.content.len());
@@ -843,23 +964,8 @@ impl OpenAiChatMapper {
                 usage,
             } => {
                 self.update_metadata(response_id, model, usage);
-                // End any open text block before starting tool calls
                 let mut events = Vec::new();
                 self.ensure_start(&mut events);
-                if self.text_started {
-                    self.text_started = false;
-                    if let Some(index) = self.text_content_index
-                        && let Some(AssistantContent::Text { text, .. }) =
-                            self.partial.content.get(index)
-                    {
-                        let content = text.clone();
-                        events.push(Ok(AssistantStreamEvent::TextEnd {
-                            content_index: index,
-                            content,
-                            partial: self.partial.clone(),
-                        }));
-                    }
-                }
 
                 // Ensure we have room for this tool call
                 while self.tool_calls.len() <= index {
@@ -960,141 +1066,12 @@ impl OpenAiChatMapper {
                 model,
                 usage,
             } => {
-                let has_usage = usage.is_some();
-                let is_metadata_only = finish_reason.is_empty();
-                if !is_metadata_only && !self.inferred_finish {
-                    self.partial.raw_stop_reason = Some(finish_reason.clone());
-                }
                 self.update_metadata(id, model, usage);
                 let mut events = Vec::new();
-                if !is_metadata_only {
+                if !finish_reason.is_empty() {
+                    self.partial.raw_stop_reason = Some(finish_reason.clone());
+                    self.pending_stop_reason = Some(map_stop_reason(&finish_reason));
                     self.ensure_start(&mut events);
-                }
-
-                if !is_metadata_only
-                    && !self.thinking_ended
-                    && let Some(index) = self.thinking_content_index
-                    && let Some(AssistantContent::Thinking { thinking, .. }) =
-                        self.partial.content.get(index)
-                {
-                    self.thinking_ended = true;
-                    events.push(Ok(AssistantStreamEvent::ThinkingEnd {
-                        content_index: index,
-                        content: thinking.clone(),
-                        partial: self.partial.clone(),
-                    }));
-                }
-                // Close any open text block
-                if !is_metadata_only && self.pending_stop_reason.is_none() && self.text_started {
-                    self.text_started = false;
-                    if let Some(index) = self.text_content_index
-                        && let Some(AssistantContent::Text { text, .. }) =
-                            self.partial.content.get(index)
-                    {
-                        let content = text.clone();
-                        events.push(Ok(AssistantStreamEvent::TextEnd {
-                            content_index: index,
-                            content,
-                            partial: self.partial.clone(),
-                        }));
-                    }
-                }
-
-                // Close any open tool calls
-                if !is_metadata_only && self.pending_stop_reason.is_none() {
-                    for (tc_idx, tc_state) in self.tool_calls.iter_mut().enumerate() {
-                        // Skip placeholder entries from reserved indices
-                        if tc_state.id.is_empty() {
-                            continue;
-                        }
-                        // Map tool index to content index
-                        let mut tool_count = 0;
-                        let tool_content_index = self
-                            .partial
-                            .content
-                            .iter()
-                            .position(|c| {
-                                if matches!(c, AssistantContent::ToolCall { .. }) {
-                                    if tool_count == tc_idx {
-                                        return true;
-                                    }
-                                    tool_count += 1;
-                                }
-                                false
-                            })
-                            .unwrap_or(0);
-                        // Final textual arguments are parsed once at finish
-                        // (AIR-048); Mistral/Azure/OpenRouter inherit this
-                        // site through the shared Chat mapper.
-                        if let Some(buffer) = &mut tc_state.custom_input {
-                            let input = buffer.input().to_owned();
-                            if let Ok(Some(delta)) =
-                                crate::constrained_sampling::append_grammar_tool_input_delta(
-                                    buffer, &input, true,
-                                )
-                            {
-                                tc_state.arguments.push_str(&delta);
-                                if let Some(AssistantContent::ToolCall { tool_call }) =
-                                    self.partial.content.get_mut(tool_content_index)
-                                {
-                                    tool_call.arguments.push_str(&delta);
-                                }
-                                events.push(Ok(AssistantStreamEvent::ToolCallDelta {
-                                    content_index: tool_content_index,
-                                    delta,
-                                    partial: self.partial.clone(),
-                                }));
-                            }
-                        }
-                        let (mut arguments, arguments_error) = if tc_state.custom_input.is_some() {
-                            (tc_state.arguments.clone(), None)
-                        } else {
-                            ToolCall::finalize_text_arguments(tc_state.arguments.clone())
-                        };
-                        if arguments_error.is_none()
-                            && let Some(tool) = self.strict_tools.get(&tc_state.name)
-                            && let Ok(mut parsed) =
-                                serde_json::from_str::<serde_json::Value>(&arguments)
-                        {
-                            crate::constrained_sampling::normalize_wire_arguments_nulls(
-                                &tool.input_schema,
-                                &mut parsed,
-                            );
-                            arguments = parsed.to_string();
-                        }
-                        if let Some(AssistantContent::ToolCall { tool_call }) =
-                            self.partial.content.get_mut(tool_content_index)
-                        {
-                            tool_call.arguments = arguments.clone();
-                            tool_call.arguments_error = arguments_error.clone();
-                        }
-                        let tool_call = ToolCall {
-                            id: tc_state.id.clone(),
-                            name: tc_state.name.clone(),
-                            arguments,
-                            arguments_error,
-                            signature: None,
-                        };
-                        events.push(Ok(AssistantStreamEvent::ToolCallEnd {
-                            content_index: tool_content_index,
-                            tool_call,
-                            partial: self.partial.clone(),
-                        }));
-                    }
-                }
-
-                if is_metadata_only {
-                    if let Some(done) = self.flush_pending_done() {
-                        events.push(Ok(done));
-                    }
-                    return events;
-                }
-
-                let stop_reason = map_stop_reason(&finish_reason);
-                if has_usage {
-                    events.push(Ok(self.emit_done(stop_reason)));
-                } else {
-                    self.pending_stop_reason = Some(stop_reason);
                 }
                 events
             }
@@ -1521,6 +1498,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 }
 
 impl OpenAiChatProvider {
+    #[cfg(feature = "builtins")]
     pub(crate) fn with_wire_model(mut self, deployment: String) -> Self {
         self.wire_model_override = Some(deployment);
         self
@@ -1706,7 +1684,7 @@ impl OpenAiChatProvider {
         self.resolve_compat_for(model_id, model)
     }
 
-    fn resolve_compat_for(
+    pub(crate) fn resolve_compat_for(
         &self,
         model_id: &str,
         model: Option<&crate::provider::ModelInfo>,
@@ -1983,27 +1961,14 @@ impl OpenAiChatProvider {
         let is_openrouter =
             self.provider_id == "openrouter" || self.base_url.contains("openrouter.ai");
         for (parsed, _raw) in parse_sse_events_with_raw_for_model(sse_body, is_openrouter) {
-            match parsed {
-                ParsedEvent::Valid(events) => {
-                    for event in events {
-                        stream_events.extend(mapper.process(event));
-                    }
-                }
-                ParsedEvent::UsageError(error) => {
-                    stream_events.push(Err(mapper.failure(error)));
-                    break;
-                }
-                ParsedEvent::Malformed { .. } => {
-                    stream_events.push(Err(mapper.failure(ProviderError::StreamError(
-                        ProviderErrorSummary::attested_static("malformed OpenAI Chat SSE frame"),
-                    ))));
-                    break;
-                }
+            stream_events.extend(
+                mapper.process_frame(parsed, self.compat.supports_finish_reason.unwrap_or(true)),
+            );
+            if mapper.saw_done {
+                break;
             }
         }
-        if let Some(done) = mapper.flush_pending_done() {
-            stream_events.push(Ok(done));
-        }
+        stream_events.extend(mapper.finish(self.compat.supports_finish_reason.unwrap_or(true)));
 
         let _cancel = cancel;
         Box::pin(stream::iter(stream_events))
@@ -2194,25 +2159,13 @@ impl OpenAiChatProvider {
                     {
                         return Err(mapper.failure(error));
                     }
-                    match parsed {
-                        ParsedEvent::Valid(events) => {
-                            for event in events {
-                                for item in mapper.process(event) {
-                                    let item =
-                                        Self::stamp_chat_done_duration(item, response_activated_at);
-                                    if !send_or_cancel(&cancel, tx, item).await? {
-                                        return Ok(());
-                                    }
-                                }
-                            }
-                        }
-                        ParsedEvent::UsageError(error) => return Err(mapper.failure(error)),
-                        ParsedEvent::Malformed { .. } => {
-                            return Err(mapper.failure(ProviderError::StreamError(
-                                ProviderErrorSummary::attested_static(
-                                    "malformed OpenAI Chat SSE frame",
-                                ),
-                            )));
+                    for item in
+                        mapper.process_frame(parsed, compat.supports_finish_reason.unwrap_or(true))
+                    {
+                        let item = Self::stamp_chat_done_duration(item, response_activated_at);
+                        let terminal = item.as_ref().map_or(true, |event| event.is_terminal());
+                        if !send_or_cancel(&cancel, tx, item).await? || terminal {
+                            return Ok(());
                         }
                     }
                 }
@@ -2220,17 +2173,11 @@ impl OpenAiChatProvider {
 
             let eof_tail = decoder.finish();
             buffer.push_str(&eof_tail);
-            for item in mapper.finish_eof(compat.supports_finish_reason.unwrap_or(true)) {
+            for item in mapper.finish(compat.supports_finish_reason.unwrap_or(true)) {
                 let item = Self::stamp_chat_done_duration(item, response_activated_at);
                 if !send_or_cancel(&cancel, tx, item).await? {
                     return Ok(());
                 }
-            }
-            if !mapper.saw_done {
-                let err = ProviderError::StreamError(ProviderErrorSummary::attested_static(
-                    "stream ended without a terminal event",
-                ));
-                let _ = send_or_cancel(&cancel, tx, Err(mapper.failure(err))).await;
             }
 
             Ok(())
@@ -2244,7 +2191,7 @@ impl OpenAiChatProvider {
 // Streaming helpers
 // ---------------------------------------------------------------------------
 
-fn drain_sse_events(
+pub(crate) fn drain_sse_events(
     buffer: &mut String,
     is_openrouter: bool,
 ) -> Vec<(ParsedEvent, Option<serde_json::Value>)> {

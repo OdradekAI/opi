@@ -3,7 +3,7 @@
 //!
 //! Resolution is lazy and side-effect free: no environment is read at
 //! construction time and nothing is cached or mutated globally. Proxy and
-//! header-identity policy stay with their owning modules ([`crate::http`]
+//! header-identity policy stay with their owning modules (`crate::http` (with `builtins`)
 //! proxy resolution, [`crate::auth`] identities) — this helper only answers
 //! "which value does this name resolve to right now". The pinned Bun
 //! `/proc/self/environ` fallback has no Rust counterpart and is not

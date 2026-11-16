@@ -288,6 +288,7 @@ pub struct ClassifierModelRecord {
     pub cost: Option<ModelPricing>,
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub(crate) fn cost_for_usage(
     record: &ClassifierModelRecord,
     usage: &Usage,

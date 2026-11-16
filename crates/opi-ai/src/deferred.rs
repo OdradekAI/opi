@@ -22,12 +22,17 @@ use crate::telemetry::TelemetryContext;
 pub use crate::types::deferred::{DeferredError, DeferredHandle, RouteMismatchDetail};
 
 impl DeferredError {
-    /// Map this typed pre-dispatch failure onto the provider error cause
-    /// classification used by the stream/fetch/cancel surfaces.
-    pub(crate) fn into_provider_error(self) -> ProviderError {
-        ProviderError::Config(crate::provider::ProviderErrorSummary::sanitized(
-            self.to_string(),
-        ))
+    /// Map a local handle validation failure to the fetch/cancel cause.
+    pub(crate) fn into_provider_error(self, api: &str) -> ProviderError {
+        let diagnostic = match self {
+            Self::Unsupported { provider } => {
+                format!(
+                    "no deferred backend is registered for provider '{provider}' and API '{api}'"
+                )
+            }
+            error => error.to_string(),
+        };
+        ProviderError::Config(crate::provider::ProviderErrorSummary::sanitized(diagnostic))
     }
 }
 
@@ -40,9 +45,9 @@ impl DeferredError {
 pub struct DeferredFetchCall {
     /// Maximum provider long-poll budget in milliseconds; `0` checks once.
     pub wait_ms: u64,
-    /// Caller-owned monotonic clock reading used for SDK expiry
-    /// validation; `None` skips the SDK check and leaves expiry to the
-    /// backend.
+    /// Caller-supplied time in milliseconds since the Unix epoch, on the
+    /// same time base as [`DeferredHandle::expires_at_ms`]. `None` leaves
+    /// expiry enforcement to the backend.
     pub now_ms: Option<u64>,
     /// Per-attempt body-inclusive timeout. `None` applies no timeout.
     pub timeout: Option<Duration>,

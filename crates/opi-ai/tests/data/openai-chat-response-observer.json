@@ -1,0 +1,12 @@
+{
+  "id": "openai-chat-response-observer-failure",
+  "sse": "data: {\"id\":\"observer-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"observer-1\",\"object\":\"chat.completion.chunk\",\"model\":\"gpt-4o\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":1,\"total_tokens\":3}}\n\ndata: [DONE]\n\n",
+  "expected": {
+    "observer_statuses": [200, 200],
+    "first_stop": "error",
+    "first_event_types": ["error"],
+    "second_stop": "stop",
+    "second_usage": {"input": 2, "output": 1, "total": 3},
+    "requests": 2
+  }
+}

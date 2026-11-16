@@ -136,8 +136,13 @@ pub trait ClassifierApi<O: Send + 'static>: Send + Sync {
     ) -> ClassifierFuture<'a>;
 }
 
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod cloudflare;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod decisions;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod llama;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod openrouter_images;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod system_one;

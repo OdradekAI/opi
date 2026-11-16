@@ -1296,6 +1296,25 @@ async fn vertex_malformed_frame_does_not_expose_upstream_content() {
 }
 
 #[tokio::test]
+async fn vertex_malformed_tail_after_finish_suppresses_deferred_done() {
+    let sse = concat!(
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"hello\"}]}}]}\n\n",
+        "data: {\"candidates\":[{\"finishReason\":\"STOP\"}],\"usageMetadata\":{\"promptTokenCount\":10,\"candidatesTokenCount\":7}}\n\n",
+        "data: {not-json}\n\n",
+    );
+    let events: Vec<_> = vertex_provider()
+        .stream_from_sse(sse, CancellationToken::new())
+        .collect()
+        .await;
+    assert!(events.iter().any(Result::is_err));
+    assert!(
+        !events
+            .iter()
+            .any(|item| matches!(item, Ok(AssistantStreamEvent::Done { .. })))
+    );
+}
+
+#[tokio::test]
 async fn vertex_done_event_has_vertex_provider() {
     let provider = vertex_provider();
     let sse = text_sse_fixture();
@@ -4273,6 +4292,7 @@ mod google_41 {
         assert_eq!(message.provider, "vertex");
     }
 
+    #[cfg(feature = "telemetry-tracing")]
     #[tokio::test]
     async fn vertex_telemetry_carrier_instruments_the_producer() {
         use std::sync::atomic::{AtomicUsize, Ordering};

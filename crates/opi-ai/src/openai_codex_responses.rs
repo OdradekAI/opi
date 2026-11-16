@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::{AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::openai_responses_shared::{
-    ParsedEvent, ResponsesEvent, ResponsesMapper, convert_projected_messages, drain_sse_frames,
+    ParsedEvent, ResponsesMapper, convert_projected_messages, drain_sse_frames,
 };
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
@@ -47,7 +47,6 @@ fn validate_simple_model(model: &ModelInfo) -> Result<(), ProviderError> {
     }
     Ok(())
 }
-const UPSTREAM_STREAM_ERROR: &str = "OpenAI Codex returned a streaming error";
 const MANAGED_HEADERS: &[&str] = &[
     "authorization",
     "chatgpt-account-id",
@@ -356,21 +355,15 @@ impl OpenAiCodexResponsesProvider {
                     {
                         return Err(mapper.failure(error));
                     }
-                    match ResponsesEvent::try_from_frame(&frame) {
+                    match mapper.decode_frame(&frame) {
                         ParsedEvent::Valid(event) => {
-                            let event = match event {
-                                ResponsesEvent::Error {
-                                    raw_stop_reason, ..
-                                } => ResponsesEvent::Error {
-                                    message: UPSTREAM_STREAM_ERROR.to_owned(),
-                                    raw_stop_reason,
-                                },
-                                event => event,
-                            };
                             for item in mapper.process(event) {
                                 if !send_or_cancel(&cancel, &tx, item).await? {
                                     return Ok(());
                                 }
+                            }
+                            if mapper.saw_done {
+                                return Ok(());
                             }
                         }
                         ParsedEvent::UsageError(error) => {
@@ -388,18 +381,14 @@ impl OpenAiCodexResponsesProvider {
             }
             let eof_tail = decoder.finish();
             buffer.push_str(&eof_tail);
-            if !mapper.saw_done {
-                let _ = send_or_cancel(
-                    &cancel,
-                    &tx,
-                    Err(mapper.failure(ProviderError::StreamError(
-                        ProviderErrorSummary::attested_static(
-                            "stream ended without a terminal event",
-                        ),
-                    ))),
-                )
-                .await;
-            }
+            let _ = send_or_cancel(
+                &cancel,
+                &tx,
+                Err(mapper.failure(ProviderError::StreamError(
+                    ProviderErrorSummary::attested_static("stream ended without a terminal event"),
+                ))),
+            )
+            .await;
             Ok(())
         }
         .await;

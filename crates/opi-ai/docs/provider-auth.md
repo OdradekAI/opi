@@ -12,6 +12,30 @@ presentation and exporter/runtime policy. The sections below describe the
 current Rust-native behavior and do not imply an automatic login or startup
 network policy.
 
+Feature ownership: `oauth-store` independently enables the concrete SDK OAuth
+flows and their store-backed login/refresh bridge, while the neutral
+`OAuthProvider`, `OAuthCredential`, `CredentialStore`, mutation and
+`auth::store_oauth` contracts remain in the core profile. The provider
+collection and AWS/ADC/Vertex credential-source factories remain behind
+`builtins`.
+
+The independent `cloud-auth` feature owns protocol-independent AWS source
+chains/STS exchanges, GCP ADC families, shared SigV4 signing and the pinned
+query/XML/DPoP codec closure. It transitively selects shared HTTP/TLS and does
+not select provider wire adapters, the bundled catalog or WebSocket compression;
+`protocol-adapters` selects it transitively for Bedrock and Vertex callers.
+
+
+Protocol ownership: `protocol-adapters` remains the compatibility group, while
+these concrete owners can be selected independently: `provider-anthropic`,
+`provider-azure-openai`, `provider-bedrock`, `provider-gemini`,
+`provider-mistral`, `provider-openai-chat`, `provider-openai-codex-responses`,
+`provider-openai-responses`, `provider-openrouter`, `provider-pi-messages` and
+`provider-vertex`. `provider-protocol-common` and `provider-openrouter-usage`
+are internal shared owners. Bedrock and Vertex transitively retain `cloud-auth`;
+Codex Responses transitively retains `websocket-compression`; `builtins` keeps
+the historical provider collection and credential factories.
+
 
 ## Factories, Catalog, and Auth
 
@@ -210,22 +234,27 @@ neutral simple calls resolve an omitted
 catalogs. An explicit request limit remains a ceiling.
 If enabled thinking has a budget at or above that default output limit,
 preparation fails with a typed capability error before auth or dispatch. Both
-implicit and explicit ceilings are then reduced to fit estimated remaining
-context with 4096 safety tokens and a minimum output of one token. Thinking that
-no longer fits is reduced to leave 1024 answer tokens where possible. The
-non-adaptive Anthropic wire resolves an omitted thinking budget from its level
-before wire projection; a zero native budget uses the source default of 1024,
-while nonzero native budgets pass through. Adaptive effort does not use a numeric minimum. The
+implicit and explicit ceilings are then reduced to fit the estimated remaining
+context after a 4096-token reserve. The estimate of available space has a
+one-token floor. An explicit zero survives that clamp for the adapter to
+interpret. Thinking that no longer fits is reduced to leave 1024 answer tokens
+where possible. The non-adaptive Anthropic wire resolves an omitted thinking
+budget from its level before wire projection. A zero native budget uses the
+source default of 1024. Nonzero native budgets pass through. Adaptive effort
+does not use a numeric minimum. The
 `context` module estimates the original canonical message chronology, including
 later System changes and tool declarations; the last
 applicable positive successful usage (non-error, non-aborted, timestamp not
 older than its prefix, any model identity) anchors the estimate and only
 messages after the anchor are estimated, with no same-model or full-text
-lower bound. Every attempt reuses the resolved limit. Typed native `ChatApi`
-calls still validate route and capabilities, but preserve native omission and
-explicit limits instead of applying the simple budget default or clamp. Direct
-provider adapter calls retain their wire defaults. These are per-request output
-limits, independent of any product turn-count budget.
+lower bound. Every attempt reuses the resolved limit. `Models::stream` and
+`Models::stream_direct` validate the route and typed options, then pass the
+caller's output limit to the adapter for wire projection. OpenAI Chat omits
+the field for an unset native or direct limit. An explicit zero also omits
+the field, including through `Models::stream_simple`. A positive limit uses
+the field selected by Chat compatibility. Direct provider adapter calls
+apply their wire defaults. These limits apply per request, independently of
+any product turn-count budget.
 
 `ProviderError::AccountIdMissing { provider_id }` is the separate,
 non-retryable case where a credential exists but the selected wire requires

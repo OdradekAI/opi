@@ -1,7 +1,7 @@
 //! Distribution-schema-v1 codec for dynamic model catalogs.
 //!
 //! The persisted [`crate::catalog::ModelsStore`] snapshot and documents served
-//! by [`crate::catalog::HttpCatalogSource`] speak the Pi *distribution* schema
+//! by `crate::catalog::HttpCatalogSource` (with `builtins`) speak the Pi *distribution* schema
 //! (`https://pi.dev/schemas/models.schema.json`, schema 1): a `providers` map
 //! whose entries carry a `models` array of `{ id, name, api, contextWindow,
 //! maxTokens, input, reasoning, cost, ... }` records. This is deliberately a
@@ -2066,6 +2066,7 @@ mod projection_compat_tests {
             }
             assert_absent(&decode_model_entry(&old_snapshot).unwrap());
         }
+        #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
         assert_eq!(
             crate::openai_responses::ResponsesConfig::default().source,
             crate::types::model::OpenAiResponsesSourceCompat::default()

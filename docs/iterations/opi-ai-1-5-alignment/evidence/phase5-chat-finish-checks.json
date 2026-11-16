@@ -1,0 +1,143 @@
+{
+  "schemaVersion": 1,
+  "scope": "#107 diagnosis/decision, no production repair",
+  "head": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "production_changed": false,
+  "decision": "repair-required",
+  "strict_alignment": false,
+  "inputs": {
+    "C:\\Temp\\opi-chat-finish-20261114\\red.log": "cd2bf2c1f1f749ce6a0b61112819a2d704ea185ea3ccddbcd399a52e8c48f538",
+    "C:\\Temp\\opi-chat-finish-20261114\\regression.red.rs": "bbe07f730f4a8e1732a8c1c1395170532d3107a3114c6ca366c25c32a52e879d",
+    "C:\\Temp\\opi-chat-finish-20261114\\before.log": "1a383b816043eadf48cf3ce8d356b1fa463e6c666dff722040502bc83e75c26e",
+    "C:\\Temp\\opi-chat-finish-20261114\\before-build.json": "edcf1bbd80b2ad51586187575c3e56925308f171b4718c0fcc70f8d62d3f7eeb",
+    "C:\\Temp\\opi-chat-finish-20261114\\openai_chat.rs.before": "3f45cdabb2f0eca26f6f5e4c5af5474e7e144f537cc5ff67f07ce1411d38d431",
+    "C:\\Temp\\opi-chat-finish-20261114\\openai_chat_finish_timing.rs.before": "91d688d56245459af59b5f9b024ad69ba6fe9816613842b3d5ab3b260b7c6073",
+    "C:\\Temp\\opi-chat-finish-20261114\\probe.log": "92897a26ccaac5f280eba6b64cfe564b470db25d6cf7f73284727b66aaa5560d",
+    "C:\\Temp\\opi-chat-finish-20261114\\candidate-build.json": "adac9b4f6eb520dfaa285da0e2f174bbfd2e3577ce82b811b661d1a01221e52b",
+    "C:\\Temp\\opi-chat-finish-20261114\\agent-final.log": "40ced89ba622268cbd3c17c046da5c560deb8b4bb555ad8caffff97f5db617b5",
+    "C:\\Temp\\opi-chat-finish-20261114\\agent-build.json": "cbbb82850e7adb6a570b97d5539ff54bd69c50d593e443e6448431ce8f1b17b2",
+    "C:\\Temp\\opi-chat-finish-20261114\\clippy.log": "c68baca062d3598a2fd63fa066ea3c0aea032acc50cc7f2c3b37d10ac25984a4",
+    "C:\\Temp\\opi-chat-finish-20261114\\python-tests-verified.log": "6a6caa25888be72960b3f183d29f6fa00ed8636c6dd34b17fb73521de6ef38a7",
+    "C:\\Temp\\opi-chat-finish-20261114\\replay_chat_finish_consumers.initial.py": "efd72817ea19451026e36b9becf1eb2ded0e3de111433fc06f848a1b7b9d5c5f",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\openai_chat_finish_timing.rs": "c84b19e5b6c51eb69eec740767ca6e515ee2b7f3f038dbfd2b41e89e053e1a8b",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-agent\\tests\\agent_chat_finish_timing.rs": "52e5d98f904981aa84feaa6aaf4a540f1460287940db3530ae79ed3fecfa52f4",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-chat-finish-timing.json": "1ef98741ae2d9dec0e8bda0290da28a1039bf43757ada76245d1691c1ac3ebff",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\test_chat_finish_timing.py": "72fc1c7df88e1c9d3321f230f1860f0dbc5949f44bedbdbb22e625f78e14982c",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\replay_chat_finish_timing.py": "bf880dba6f20ce567683c7c5b15a39d988723d90f40e538a8bd882cbadecb054",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\replay_chat_finish_consumers.py": "dfc8963c1f5d13d76a1d628ff355d901dae49f013cdb41302aeaf3acf053758c",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_chat_finish_timing.mjs": "f072f84d682e1f937a388066203cf424e26011569a41637ac0605db46e529c69",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_chat_finish_consumers.mjs": "34d515ff3eebe35b99a2a06a35270bc63da4975e1e526ee9cda7d1c1eb104daf",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-chat-finish-before-materials.json": "997576320d6e50acd2e837cac025a989d014db9c4c73c38259e1dbab3751c692",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-chat-finish-timing.json": "ecd8280149f346a1f1006dba7d3bc5010faf433eaefa7ca79b4368b19e3b6799",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-chat-finish-consumers.json": "1de258636f4b1a999b91127e7650deb87a9b8268575ec11503e0dbe24f2a7e12",
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-chat-finish-consumers-verified.json": "30447083be130f480df2953bdb1703ecde67cf14c98d983f2689d2a2c47e508a"
+  },
+  "red": {
+    "command": [
+      "python",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "-p",
+      "opi-ai",
+      "--test",
+      "openai_chat_finish_timing",
+      "chat_waits_for_the_protocol_terminal",
+      "--",
+      "--exact"
+    ],
+    "exit_code": 101,
+    "log": "C:\\Temp\\opi-chat-finish-20261114\\red.log",
+    "source": "C:\\Temp\\opi-chat-finish-20261114\\regression.red.rs",
+    "note": "The proposed equal-boundary assertion fails on early block ends. Not retained as an always-failing worktree test."
+  },
+  "observations": {
+    "sdk_cases": 8,
+    "per_side_runs": 3,
+    "agent_cases": 3,
+    "agent_runs": 3,
+    "durable_projection_pairs": 3,
+    "durable_runs": 3,
+    "python_tests": 11
+  },
+  "checks": [
+    {
+      "command": [
+        "cargo",
+        "fmt",
+        "--check",
+        "--all"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_chat_finish_timing.mjs"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_chat_finish_consumers.mjs"
+      ],
+      "exit_code": 0
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-ai",
+        "--test",
+        "openai_chat_finish_timing",
+        "-p",
+        "opi-agent",
+        "--test",
+        "agent_chat_finish_timing",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-chat-finish-20261114\\clippy.log"
+    },
+    {
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance/differential",
+        "-p",
+        "test_chat_finish_timing.py"
+      ],
+      "exit_code": 0,
+      "log": "C:\\Temp\\opi-chat-finish-20261114\\python-tests-verified.log"
+    }
+  ],
+  "initial_consumer_receipt": "phase5-chat-finish-consumers.json remains historical; its exact script is archived externally. The verified receipt adds strict build-source freshness and full materials revalidation.",
+  "git": {
+    "committed": "none-for-this-task",
+    "staged": "none"
+  },
+  "test_impact": {
+    "add": "observation probes/comparator controls",
+    "update": "none",
+    "delete": "none",
+    "retain": "historical evidence"
+  }
+}

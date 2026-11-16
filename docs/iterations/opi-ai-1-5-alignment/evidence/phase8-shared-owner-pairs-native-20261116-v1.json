@@ -1,0 +1,261 @@
+{
+  "family": "shared-owner-pair-capability-v",
+  "scope": "cloud-auth+catalog-bundled and websocket-compression+oauth-store shared-owner pairs",
+  "runner_sha256": "d84a2dd2e0c4e0132c43a691eb8ed70ae51f39526f8a4ca5a24961a66481f754",
+  "pair_count": 2,
+  "profiles_expected": 2,
+  "selected_pairs": [
+    "cloud-auth+catalog-bundled",
+    "websocket-compression+oauth-store"
+  ],
+  "native": {
+    "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+    "profiles": [
+      {
+        "id": "cloud-auth+catalog-bundled",
+        "features": [
+          "cloud-auth",
+          "catalog-bundled"
+        ],
+        "expected_feature_closure": [
+          "catalog-bundled",
+          "cloud-auth",
+          "http-transport",
+          "tls-backend"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "cloud_auth_profile",
+          "catalog_artifact"
+        ],
+        "verdict": "PASS"
+      },
+      {
+        "id": "websocket-compression+oauth-store",
+        "features": [
+          "websocket-compression",
+          "oauth-store"
+        ],
+        "expected_feature_closure": [
+          "http-transport",
+          "oauth-store",
+          "tls-backend",
+          "websocket-compression"
+        ],
+        "check_exit": 0,
+        "profile_exit": 0,
+        "profile_targets": [
+          "websocket_compression_profile",
+          "oauth_store_profile"
+        ],
+        "verdict": "PASS"
+      }
+    ],
+    "steps": [
+      {
+        "name": "native-01-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "cloud-auth,catalog-bundled"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 11.45,
+        "stdout": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-01-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-01-check.stderr",
+          "sha256": "206ef25022304c31167d24cb36e6eaee473bd04f40992cd97795343cb86cfdee"
+        }
+      },
+      {
+        "name": "native-01-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "cloud-auth,catalog-bundled",
+          "--test",
+          "cloud_auth_profile",
+          "--test",
+          "catalog_artifact",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 19.27,
+        "stdout": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-01-profile.stdout",
+          "sha256": "830815ea34366d5be93afd7b4b31924535a764ace23b9866e7b802b5b246144e"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-01-profile.stderr",
+          "sha256": "536d72cf3add7480d8280ed39a134907ff827cc50605a1df4aa699eb001e37a1"
+        }
+      },
+      {
+        "name": "native-02-check",
+        "command": [
+          "cargo",
+          "check",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "websocket-compression,oauth-store"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.34,
+        "stdout": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-02-check.stdout",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-02-check.stderr",
+          "sha256": "d1bba7bee00c2a01d78c5a08d4bced935070bb462bb8ae799e2b87555f47c576"
+        }
+      },
+      {
+        "name": "native-02-profile",
+        "command": [
+          "cargo",
+          "test",
+          "-p",
+          "opi-ai",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "websocket-compression,oauth-store",
+          "--test",
+          "websocket_compression_profile",
+          "--test",
+          "oauth_store_profile",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 18.31,
+        "stdout": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-02-profile.stdout",
+          "sha256": "e89aa35b84f181f8e34051530fd449c2ddc0e4f8aead1dd9ed9934b136e6d6d9"
+        },
+        "stderr": {
+          "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\native-02-profile.stderr",
+          "sha256": "f95047f682bb56a48abe79009c7d92efd2413d212e374870a0006b2b88c8a8be"
+        }
+      }
+    ],
+    "verdict": "PASS",
+    "scratch": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1"
+  },
+  "package": null,
+  "verdict": "PASS",
+  "frozen_pi": {
+    "status": "retained",
+    "reference": "frozen Pi 1.5.0 paired differential receipts retained unchanged"
+  },
+  "macos": {
+    "status": "BLOCKED",
+    "reason": "no user-provided macOS runner or SSH host"
+  },
+  "scratch": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1",
+  "steps": [
+    {
+      "name": "rustc-version",
+      "command": [
+        "rustc",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.06,
+      "stdout": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\rustc-version.stdout",
+        "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\rustc-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cargo-version",
+      "command": [
+        "cargo",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.03,
+      "stdout": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\cargo-version.stdout",
+        "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\cargo-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "36604"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.2,
+      "stdout": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\lease-start.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\lease-start.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "36604"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.19,
+      "stdout": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\lease-end.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-shared-owner-pairs-20261116-v1\\lease-end.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ]
+}

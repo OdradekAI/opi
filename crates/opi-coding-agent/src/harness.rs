@@ -3231,10 +3231,7 @@ impl CodingHarness {
                 cache_write_tokens,
                 cache_write_1h_tokens,
                 reasoning_tokens,
-                total_tokens: None,
-                service_tier: None,
-                effective_service_tier: None,
-                reported: false,
+                ..opi_ai::stream::Usage::unknown()
             }
         }
     }

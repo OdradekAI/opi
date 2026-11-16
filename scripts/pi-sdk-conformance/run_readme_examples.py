@@ -82,7 +82,7 @@ def check_opi_feature_profile(metadata: dict[str, Any], package: Path,
     nodes = metadata.get("resolve", {}).get("nodes", [])
     features = {node["id"]: node.get("features", []) for node in nodes}
     sdk_features = sorted(features.get(sdk[0]["id"], []))
-    if ("telemetry-tracing" in sdk_features) != caller_defaults:
+    if "builtins" not in sdk_features or ("telemetry-tracing" in sdk_features) != caller_defaults:
         raise ValueError("consumer opi-ai default-feature profile was not exercised")
     return {"version": sdk[0]["version"], "features": sdk_features}
 
@@ -718,7 +718,7 @@ def main() -> int:
         evidence["consumer_dependencies"] = sorted(root_names)
         evidence["profiles"] = []
         for profile_name, caller_defaults, profile_text in (
-            ("defaults-off", False, profile_manifest),
+            ("builtins-no-tracing", False, profile_manifest),
             ("defaults-on", True, profile_manifest.replace(
                 ', default-features = false', '', 1)),
         ):

@@ -1,6 +1,6 @@
 use crate::ws::{
     frame::Message,
-    io::{Core, Driver, Fault},
+    io::{AvailableRead, Core, Driver, Fault},
     pmd,
 };
 use std::{
@@ -8,6 +8,48 @@ use std::{
     task::Poll,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+#[tokio::test]
+async fn available_read_distinguishes_idle_from_partial_frame_and_fragment() {
+    let (client, mut peer) = tokio::io::duplex(64);
+    let mut driver = Driver::new(client, None).unwrap();
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Idle
+    ));
+
+    peer.write_all(&[0x81]).await.unwrap();
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Incomplete
+    ));
+    peer.write_all(&[1, b'a']).await.unwrap();
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Message(message) if message.opcode == 1 && message.payload == b"a"
+    ));
+
+    peer.write_all(&[0x01, 1, b'b', 0x89, 1, b'p'])
+        .await
+        .unwrap();
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Message(message) if message.opcode == 9 && message.payload == b"p"
+    ));
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Incomplete
+    ));
+    peer.write_all(&[0x80, 1, b'c']).await.unwrap();
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Message(message) if message.opcode == 1 && message.payload == b"bc"
+    ));
+    assert!(matches!(
+        driver.read_available().await.unwrap(),
+        AvailableRead::Idle
+    ));
+}
 
 #[tokio::test]
 async fn driver_outbound_respects_negotiated_window() {

@@ -1,0 +1,618 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "scope": "Mistral repeated finish, usage-only tail and final terminal usage on simple and direct routes",
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_mistral_repeated_finish.mjs": "f3065ca9fc7042466f31d9f63221ec2c6b23cf52c2d0fce75bb6cfde38217e0d",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\mistral-repeated-finish.json": "402770abb7cb519579d26896fce553112feea8e824f166b0356d9fb93213adb6",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\compare_mistral_repeated_finish.py": "ce3ed7fb33d522a4d0d77875d836e29c6eb23f75616f9635216d318fdffcdf90",
+    "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\mistral_repeated_finish-061ce3812ad7a876.exe": "c9166e7d59e41afae0e910aecb05ed3d4b8d9405a6eb7d8ed9e89d6391f023e8",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\mistral-conversations.ts": "0910d2cef973a35802c3ad48ae7ad172753b8a9e65d32ad6b7e8628a51011777"
+  },
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "stop",
+    "input": 10,
+    "output": 9,
+    "total": 19
+  },
+  "pi_runs": [
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_mistral_repeated_finish.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\mistral-repeated-finish.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"mistral-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"error\":\"Provider stopped with: error (server error)\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"error\":\"Provider stopped with: error (server error)\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "mistral-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "error": "Provider stopped with: error (server error)",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "error": "Provider stopped with: error (server error)",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_mistral_repeated_finish.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\mistral-repeated-finish.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"mistral-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"error\":\"Provider stopped with: error (server error)\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"error\":\"Provider stopped with: error (server error)\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "mistral-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "error": "Provider stopped with: error (server error)",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "error": "Provider stopped with: error (server error)",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "node",
+        "--conditions=source",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_mistral_repeated_finish.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\mistral-repeated-finish.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"mistral-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"error\":\"Provider stopped with: error (server error)\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"error\":\"Provider stopped with: error (server error)\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"start\",\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1}]}\n",
+      "stderr": "",
+      "trace": {
+        "case": "mistral-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "error": "Provider stopped with: error (server error)",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "error": "Provider stopped with: error (server error)",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "start",
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    }
+  ],
+  "rust_runs": [
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\mistral_repeated_finish-061ce3812ad7a876.exe",
+        "--exact",
+        "repeated_finish_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"mistral-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1}]}\ntest repeated_finish_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "mistral-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\mistral_repeated_finish-061ce3812ad7a876.exe",
+        "--exact",
+        "repeated_finish_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"mistral-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1}]}\ntest repeated_finish_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.02s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "mistral-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\windows-direct\\debug\\deps\\mistral_repeated_finish-061ce3812ad7a876.exe",
+        "--exact",
+        "repeated_finish_usage_is_deferred_until_eof",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"mistral-repeated-finish\",\"cases\":[{\"route\":\"simple\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1},{\"route\":\"direct\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":10,\"output\":9,\"total\":19},\"done_count\":1,\"event_types\":[\"text_start\",\"text_delta\",\"text_end\",\"done\"],\"provider_events\":[{\"finish\":null,\"output\":null},{\"finish\":null,\"output\":null},{\"finish\":\"error\",\"output\":5},{\"finish\":null,\"output\":7},{\"finish\":\"stop\",\"output\":9}],\"requests\":1}]}\ntest repeated_finish_usage_is_deferred_until_eof ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.01s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "mistral-repeated-finish",
+        "cases": [
+          {
+            "route": "simple",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          },
+          {
+            "route": "direct",
+            "stop": "stop",
+            "raw_stop": "stop",
+            "usage": {
+              "input": 10,
+              "output": 9,
+              "total": 19
+            },
+            "done_count": 1,
+            "event_types": [
+              "text_start",
+              "text_delta",
+              "text_end",
+              "done"
+            ],
+            "provider_events": [
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": null,
+                "output": null
+              },
+              {
+                "finish": "error",
+                "output": 5
+              },
+              {
+                "finish": null,
+                "output": 7
+              },
+              {
+                "finish": "stop",
+                "output": 9
+              }
+            ],
+            "requests": 1
+          }
+        ]
+      }
+    }
+  ],
+  "differences": [
+    "Pi emits a start event for the native API; Rust's provider stream preserves the existing projection seam and exposes normalized block/terminal events without a synthetic start."
+  ]
+}

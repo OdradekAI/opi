@@ -1,0 +1,58 @@
+{
+  "status": "PASS_WITH_LOW_LEVEL_COST_SCOPE",
+  "pi_cases": 4,
+  "rust_cases": 2,
+  "expected_nested_usage": [
+    100,
+    20,
+    0,
+    200,
+    75,
+    6
+  ],
+  "pi_cost_total": 0.00079,
+  "rust_low_level_cost_total": 0.0,
+  "differences": [
+    {
+      "field": "stop",
+      "ending": "wire-error",
+      "rust": "stop",
+      "pi": "error",
+      "scope": "raw AnthropicMapper retains accepted stop on a later wire Error; canonical ChatStream/Agent failure remains error"
+    },
+    {
+      "field": "cost",
+      "scope": "AnthropicMapper test has no ModelInfo/catalog; actual Agent route/session regression verifies catalog cost separately",
+      "rust": 0.0,
+      "pi": 0.00079
+    }
+  ],
+  "inputs": {
+    "C:/Temp/opi-anthropic-nested-20261114/pi.stdout": "bb0bc3f28ea1fd4a6b9607b670ff8d4ff8cc61dce57ac2174ed9f4a354d4094a",
+    "C:/Temp/opi-anthropic-nested-20261114/rust.stdout": "1f95856824cf0bbf376d484ac1bd5f64ea8d4d40114b52b99f3aa5d93603faef",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_anthropic_nested_usage.mjs": "8535c3b50395136d8c8a6910b2a1e3d989d950de7cef05d9d6794c45e2350283",
+    "crates/opi-ai/tests/anthropic_nested_usage.rs": "d8dbef321654228d736fee6d329f48ff5342f806e8bbfe5cb027acf910e15afa",
+    "crates/opi-ai/src/anthropic.rs": "55b3da8a543752e2fec36e2cceb19eec303e498009e46bf3b3530f58f33cb2a1"
+  },
+  "schemaVersion": 1,
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "materials": "evidence/phase6-anthropic-nested-materials.json",
+  "pi_sources": {
+    "packages/ai/src/api/anthropic-messages.ts": "f1348f1919aa9c4d2ed69767e4f64727e29df0455e8998a7da55773197fce48b",
+    "packages/ai/src/models.ts": "de226bcd332fc660129f87b8c02a12c4862b620201a407998c2cdeacc4f2044a"
+  },
+  "rust_sources": {
+    "crates/opi-ai/src/anthropic.rs": "55b3da8a543752e2fec36e2cceb19eec303e498009e46bf3b3530f58f33cb2a1",
+    "crates/opi-ai/tests/anthropic_nested_usage.rs": "d8dbef321654228d736fee6d329f48ff5342f806e8bbfe5cb027acf910e15afa",
+    "crates/opi-coding-agent/tests/anthropic_usage_recovery.rs": "49e6294a8b631021cb81b71fca3a00f7576d4479d1ac724df715a497735a4a8c"
+  },
+  "tool_sources": {
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_anthropic_nested_usage.mjs": "8535c3b50395136d8c8a6910b2a1e3d989d950de7cef05d9d6794c45e2350283",
+    "scripts/pi-sdk-conformance/differential/compare_anthropic_nested_usage.py": "530d80e1bcfa8f4729f9941bf8beedec8f0fb3dd2badbfea98f1790c00ded9fe",
+    "scripts/pi-sdk-conformance/run_anthropic_nested_package.py": "0c9b9a19b9b271460b39ba2177be411c9111c7c87598466ec1c2d82288416e0a"
+  },
+  "raw_inputs": {
+    "pi_trace": "C:\\Temp\\opi-anthropic-nested-20261114\\pi.stdout",
+    "rust_trace": "C:\\Temp\\opi-anthropic-nested-20261114\\rust.stdout"
+  }
+}

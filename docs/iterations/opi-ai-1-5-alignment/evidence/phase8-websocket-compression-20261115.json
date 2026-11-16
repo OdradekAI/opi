@@ -1,0 +1,312 @@
+{
+  "schemaVersion": 1,
+  "issue": "#133",
+  "generatedAt": "2026-11-15",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "host": {
+    "os": "Windows",
+    "target": "x86_64-pc-windows-msvc",
+    "cargo_target": "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+  },
+  "feature_contract": {
+    "websocket-compression": [
+      "http-transport",
+      "dep:libz-rs-sys",
+      "dep:flate2"
+    ],
+    "protocol-adapters": [
+      "http-transport",
+      "websocket-compression",
+      "dep:hmac",
+      "dep:aws-smithy-query",
+      "dep:aws-smithy-xml",
+      "dep:xmlparser",
+      "dep:p256",
+      "dep:sha1"
+    ],
+    "websocket_compression_does_not_select": [
+      "protocol-adapters",
+      "catalog-bundled",
+      "oauth-store",
+      "provider collection",
+      "cloud-auth codecs"
+    ],
+    "default_compatibility": "builtins and default transitively retain protocol-adapters and websocket-compression; no public wire behavior change"
+  },
+  "native": {
+    "check": {
+      "command": "... --no-default-features --features websocket-compression",
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-websocket-compression-native-20261115-v2/check-ws-compression.log",
+        "sha256": "78c166246c52243d9ff1616fceaaf2d503e66dd50046bfd037ef6f77b88b8a91"
+      }
+    },
+    "profile": {
+      "tests": "2 passed",
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-websocket-compression-native-20261115-v2/test-ws-profile.log",
+        "sha256": "42eb598dfc70bdfb6488999cd9817f6ce90d8c893cf58a46230e1491b12a025f"
+      }
+    },
+    "upgrade": {
+      "tests": "16 passed",
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-websocket-compression-native-20261115-v2/test-ws-upgrade.log",
+        "sha256": "a5b89c66a8fe0899ecc67443aa73fc01320c68d7f6f60788e8054aaaa0bfc774"
+      }
+    },
+    "private_codec": {
+      "tests": "96 passed",
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-websocket-compression-native-20261115-v2/test-ws-private.log",
+        "sha256": "f554e89a38263ea9ebb10107fb2804ee0db076436201790004c14f33181b93f2"
+      }
+    },
+    "clippy": {
+      "exit": 0,
+      "log": {
+        "path": "C:/Temp/opi-websocket-compression-native-20261115-v2/clippy-ws-compression.log",
+        "sha256": "361609517d2bab6397d288c6e468200ae8921b844c33c6d60e09df2314a02b93"
+      }
+    },
+    "historical_failures": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-websocket-compression-package-20261115-v1.json",
+        "sha256": "18af81f6c942d95631710b2bcf4b82c8c14a5378a5aa57e7ae7c3e7dbcf1ced9",
+        "verdict": "FAIL",
+        "cause": "external consumer tokio::spawn error type was not Send"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-websocket-compression-package-20261115-v2.json",
+        "sha256": "74c1fd319e19545b26ccb15336e355217dcb88e8c26f19bba2a73b31fb6716df",
+        "verdict": "FAIL",
+        "cause": "outer consumer error conversion failed"
+      }
+    ]
+  },
+  "package": {
+    "receipt": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-websocket-compression-package-20261115-v4.json",
+      "sha256": "a45c0bfddfdd661b6012194c8a4d04ec55e35abe48d2e1f32fa5097bdd1c8d66",
+      "verdict": "PASS"
+    },
+    "feature_graph": [
+      "http-transport",
+      "tls-backend",
+      "websocket-compression"
+    ],
+    "present": [
+      "aws-lc-rs",
+      "flate2",
+      "libz-rs-sys",
+      "reqwest",
+      "rustls",
+      "rustls-native-certs"
+    ],
+    "forbidden_absent": [
+      "aws-smithy-query",
+      "aws-smithy-xml",
+      "hmac",
+      "opi-catalog",
+      "p256",
+      "sha1",
+      "xmlparser"
+    ],
+    "consumer": "external local TCP peer negotiates PMD, asserts no-context-takeover and window bits, then executes the public Upgrade bridge",
+    "runner_sha256": "ed8f4072d818d15773c26e0555af425e6fedd3181ff272448f2899098aa5dbbb"
+  },
+  "caller_audit": {
+    "receipt": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-websocket-compression-callers-20261115-v1.json",
+      "sha256": "e59554dd0645991d6ea15bbd2211ec5e3fea19b096eb0f3f35b4f80fc5229de0"
+    },
+    "files": 665,
+    "matches": {
+      "ws_surface": 184,
+      "provider_ws": 189,
+      "compression_direct": 43
+    },
+    "interpretation": "public WS/PMD callers select websocket-compression; Codex provider transport inherits it through protocol-adapters; direct compression references remain private codec implementation/tests"
+  },
+  "paired_compatibility": {
+    "native": [
+      {
+        "id": "http-transport-profile",
+        "tests": "3 passed",
+        "log": {
+          "path": "C:/Temp/opi-websocket-compression-paired-20261115-v1/http-transport-profile.log",
+          "sha256": "3cb585fd9c2c4f4a0b93e59e22b5de32c3e29f639c468eb4c1ca24cb5f555ae4"
+        }
+      },
+      {
+        "id": "protocol-adapter-profile",
+        "tests": "2 passed",
+        "log": {
+          "path": "C:/Temp/opi-websocket-compression-paired-20261115-v1/protocol-adapter-profile.log",
+          "sha256": "a1cd3b0d0a17489aaa6933a04eb47c4dddf58668fe982cc56ff1842f914b11fd"
+        }
+      },
+      {
+        "id": "protocol-adapter-clippy",
+        "exit": 0,
+        "log": {
+          "path": "C:/Temp/opi-websocket-compression-paired-20261115-v1/protocol-adapter-clippy.log",
+          "sha256": "f4791dd37bd2204419de5ebdad1f73bd7861bd884dc2d55875c85c09b4a18f30"
+        }
+      },
+      {
+        "id": "builtins-http-acceptance",
+        "tests": "21 passed",
+        "log": {
+          "path": "C:/Temp/opi-websocket-compression-paired-20261115-v1/builtins-http-acceptance.log",
+          "sha256": "418d100474ec0aefc013abbe081ebf44bbb3e7f631a005307bcb8cfcc44629dd"
+        }
+      }
+    ],
+    "package": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261116-v6.json",
+        "sha256": "7cb5a7e46e9ef1d32d5658fd78be571e6270d64ca2374b29ce2433d3f1f4768d",
+        "verdict": "PASS",
+        "features": [
+          "http-transport",
+          "tls-backend"
+        ]
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261116-v9.json",
+        "sha256": "d82474c5f54fc1594901e7080d16839b21eb9727c0f29e60ef0739b052efa4ff",
+        "verdict": "PASS",
+        "features": [
+          "http-transport",
+          "protocol-adapters",
+          "tls-backend",
+          "websocket-compression"
+        ]
+      }
+    ],
+    "result": "shared HTTP and provider protocol callers remain green; protocol archive now records websocket-compression as a transitive feature"
+  },
+  "pi_runtime_control": {
+    "frozen_version": "Pi 1.5.0",
+    "historical_receipts": [
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-differential.json",
+        "sha256": "1c6352e17ea715cd7c4402615519b34561ad5302c03d8f6a97ac7d0038db642d",
+        "role": "frozen runtime differential"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-identity-materials.json",
+        "sha256": "f4c9f9ab9d214fd0f2ec7d2e18fd69f23c85b695aa50e6f377d5b2ec491c8b1d",
+        "role": "frozen runtime materials"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-differential.json",
+        "sha256": "aa1f645c165c22b790cbf944aa80a95f78fa9b6ca1d905ef5f6401023e3f07f8",
+        "role": "frozen runtime differential"
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-differential.json",
+        "sha256": "cbcd05e1a9fe5431d75af8db0c18b8d22a990ab9a4383de93f18b0cc1725dcaf",
+        "role": "frozen runtime differential"
+      }
+    ],
+    "disposition": "retained immutable; this change only moves feature ownership and adds no WebSocket wire/state behavior"
+  },
+  "historical_inputs": [
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v6.json",
+      "sha256": "f9886771a395a14a46eebbb14d2cfc0dbf201d58617e33098a06787c92d842d7",
+      "role": "pre-split capability matrix"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-20261115.json",
+      "sha256": "893d515e0fc2c4409629cb0241fe9b26059f6e8f46acddfe4578b6725edd7235",
+      "role": "previous owner receipt"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-websocket-compression-package-20261115-v3.json",
+      "sha256": "38a5b988e9b81504046b76e9600459784140f50a6f3af5171049cc8a91341876",
+      "role": "superseded package receipt"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261115-v8.json",
+      "sha256": "794066966f41e63980490c29b198feace7b3edba3e856f010a3010583f40f161",
+      "role": "failed current-source rerun; no space on device"
+    }
+  ],
+  "capability_matrix": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v7.json",
+    "sha256": "26dbba1fb362ecc8c7b486e2f3a29257077f666460f30ee747eb470f8d4b678e"
+  },
+  "test_impact": {
+    "add": "standalone websocket-compression tests, package runner/unit tests, caller inventory and capability row",
+    "update": "protocol transitive feature union, bilingual docs, changelog and spec",
+    "delete": "none",
+    "retain": "all prior Pi and adapter/observer/runtime/package receipts"
+  },
+  "repository_checks": {
+    "status": "PASS_WITH_LINE_ENDING_NOTE",
+    "cargo_fmt_check_all": {
+      "exit": 0,
+      "result": "PASS"
+    },
+    "package_runner_unit_tests": {
+      "exit": 0,
+      "websocket_compression": "3 passed",
+      "protocol_adapters": "3 passed",
+      "py_compile": "PASS"
+    },
+    "doc_check": {
+      "command": "python scripts/opi-doc-check.py",
+      "exit": 0,
+      "result": "PASS"
+    },
+    "diff_check_scoped_cr_at_eol": {
+      "command": "git -c core.whitespace=cr-at-eol diff --check -- affected paths",
+      "exit": 0,
+      "result": "PASS"
+    },
+    "diff_check_full_cr_at_eol": {
+      "command": "git -c core.whitespace=cr-at-eol diff --check",
+      "exit": 0,
+      "result": "PASS"
+    },
+    "diff_check_strict": {
+      "command": "git diff --check",
+      "exit": 2,
+      "result": "FAIL due existing CRLF lines reported in tracked opi-ai sources; preserved without rewriting",
+      "log": "C:/Temp/opi-websocket-compression-diff-check-strict-20261115.log",
+      "log_sha256": "a12d3086b3cf372333bea6c8d6bed05372c431d1bc43350e001130076cae70c2"
+    },
+    "hash_validation": {
+      "exit": 0,
+      "references_checked": 105,
+      "result": "PASS"
+    },
+    "cache_plan_apply": {
+      "exit": 0,
+      "removed_files": 17710,
+      "reclaimed_bytes": 23218838448,
+      "plan_sha256": "b184159b698f421a454b22cb3205f62747a9ec32a50cd71b85e3526063fd8031"
+    }
+  },
+  "verdict": "PASS_WITH_OPEN_SCOPE",
+  "remaining": "cloud-auth families, per-provider protocol/source owners, complete capability V, native macOS and #94",
+  "cache_maintenance": {
+    "plan": {
+      "path": "C:/Temp/opi-cache-maintenance-20261116/plan-eviction-current.json",
+      "sha256": "b184159b698f421a454b22cb3205f62747a9ec32a50cd71b85e3526063fd8031"
+    },
+    "applied": true,
+    "files_removed": 17710,
+    "reclaimable_bytes": 23218838448,
+    "disk_free_after_bytes": 23219662848,
+    "protection": "C:/Temp/mistral-cache-protection.json",
+    "disk_free_after_validation_bytes": 21686910976
+  }
+}

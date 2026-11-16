@@ -1,0 +1,815 @@
+{
+  "schemaVersion": 1,
+  "issue": "#132",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": "Capability-granular V now closes the fixed TLS backend as an independent owner with native/package/caller evidence; WebSocket/compression, cloud-auth families, per-provider protocol splits, macOS and #94 remain open.",
+  "sources": {
+    "current_baseline": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase1-current-baseline-20261115.json",
+      "sha256": "7beb5a037eaf4bbcc6c0441b6b7da292e2befbb928f11ece9edd1be8c35a31fd"
+    },
+    "current_inventory": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase1-current-source-inventory-20261115.json",
+      "sha256": "6395d91f695816cfbb20151960fd738cafa24f3e3a03d45c6a18de6f5decdc25"
+    },
+    "manifest_hashes": {
+      "workspace_manifest": "9332f1cbabb1a2adb0d333ff616c3e1c4e6ab9a99f2ad4e6c5282fa97fa7bf72",
+      "opi_ai_manifest": "27ef45265a60550756214641df5edc19e4107a30b9a6e754e7fb7135e6079a40",
+      "telemetry_manifest": "2bce94982f0a30767e4141538026ed9c06272318785784f0c7a40b58b41f8018",
+      "cargo_lock": "78499c6681d06e72fc05659bc4cd18d72aae687a174c750435285838cde6dbe5",
+      "lib": "8701b688105e5168218e18879392a8d207338659d60e1813962d946608e95e76",
+      "core_profile": "890cb51aa183a7eee186e4acab196c6da77cbe0e3e36941f2665101d2abb17d7",
+      "platform_delivery": "b38ada5c9b5e662c8215e410dd58c9fc99172cde3860ad6468d6f5e64d66e18a"
+    },
+    "inventory_counts": {
+      "files": 671,
+      "entrypoints": 172,
+      "upstream_symbols": 1188,
+      "rust_declarations": 3620,
+      "test_declarations": 5038
+    },
+    "crates/opi-ai/Cargo.toml": {
+      "path": "crates/opi-ai/Cargo.toml",
+      "sha256": "e408f3e864744da71f7dcc4742fcaa7993763245785eeaa1ee9e1ec6e9751488"
+    },
+    "crates/opi-ai/src/auth.rs": {
+      "path": "crates/opi-ai/src/auth.rs",
+      "sha256": "50d75356057eb214470e3bcec43d9aeba63023e79e80665b6d41405b3beb8540"
+    },
+    "crates/opi-ai/tests/oauth_store_profile.rs": {
+      "path": "crates/opi-ai/tests/oauth_store_profile.rs",
+      "sha256": "ce0bff9d7e1210d3c2d4a5ec6fe924ad484f9b5ec8c8c31937ac78aafb82f943"
+    },
+    "scripts/pi-sdk-conformance/run_oauth_store_package.py": {
+      "path": "scripts/pi-sdk-conformance/run_oauth_store_package.py",
+      "sha256": "9bb581e7a89ee3ac86df4645bc093b55c941afdf5cb2d4295d49c866b2ffffa0"
+    },
+    "scripts/pi-sdk-conformance/test_oauth_store_package.py": {
+      "path": "scripts/pi-sdk-conformance/test_oauth_store_package.py",
+      "sha256": "d0266323564f3057fbd6e878e5aa487e4d68c9fa5a6822c742033d04f6178ebf"
+    },
+    "crates/opi-ai/README.md": {
+      "path": "crates/opi-ai/README.md",
+      "sha256": "c88ab64bc807118bd927ac10d030a19facad1b695718d6767bea8d3d6321581c"
+    },
+    "crates/opi-ai/README.zh.md": {
+      "path": "crates/opi-ai/README.zh.md",
+      "sha256": "e00ce97ec1c7b5dad1651d32e831527ec01f701cad8fbba8f9676e4de3e0a95c"
+    },
+    "crates/opi-ai/docs/testing.md": {
+      "path": "crates/opi-ai/docs/testing.md",
+      "sha256": "9607749141c30fe01b352d524be24f6cab92ca90e4f83b0755982306185f9c9d"
+    },
+    "crates/opi-ai/docs/testing.zh.md": {
+      "path": "crates/opi-ai/docs/testing.zh.md",
+      "sha256": "c602a07cf1b9e403fa32a223aa4fbb954dd0e526bc60283145f31129e3e25239"
+    },
+    "crates/opi-ai/docs/provider-auth.md": {
+      "path": "crates/opi-ai/docs/provider-auth.md",
+      "sha256": "6b2c4b236001ecd2ea46c3aa650ca3341375de3844d72be27634f8dd33090aee"
+    },
+    "crates/opi-ai/docs/provider-auth.zh.md": {
+      "path": "crates/opi-ai/docs/provider-auth.zh.md",
+      "sha256": "190d03108c1fbc076e2644707bfe3cbb100c4becd91a3e4d030992e21ff2b758"
+    },
+    "docs/iterations/opi-ai-1-5-alignment/issues/131-split-provider-oauth-store.md": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/131-split-provider-oauth-store.md",
+      "sha256": "59873f3df1dc630ff5e20528f4fbf2494959b0d06e9b1c6dfcbe2e777ddb0073"
+    },
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "sha256": "d14c786fd42b41f2c6082334dfed7c787993652c662a059fc1aae6d81e59f1c9"
+    },
+    "CHANGELOG.md": {
+      "path": "CHANGELOG.md",
+      "sha256": "3807dd781efcb4bd4f307f1dec4a65e9d2a2399233301a22d4a89022a5ebeaba"
+    },
+    "oauth_store_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-oauth-store-package-20261115-v2.json",
+      "sha256": "a0b8aaca64083ed02d31724a55202204833198cbb482ce46a792f1ee30e87c75"
+    },
+    "oauth_store_callers": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-oauth-store-callers-20261115-v1.json",
+      "sha256": "827e88e386c64276dd520f7e0f0f9adcd1a2744b3518fe57f2c8d13a15f2dd31"
+    },
+    "crates/opi-ai/src/lib.rs": {
+      "path": "crates/opi-ai/src/lib.rs",
+      "sha256": "963fd800b2f6b0f48099f20a72bd6996fbb26d15b8594a2e414cd3a4875fb7d6"
+    },
+    "crates/opi-ai/src/tls/mod.rs": {
+      "path": "crates/opi-ai/src/tls/mod.rs",
+      "sha256": "0310f1ff17e9e3cd458ac9f9efafff79e97bd50df0c2aaef1cd2611266f16fdb"
+    },
+    "crates/opi-ai/src/tls/node_trust.rs": {
+      "path": "crates/opi-ai/src/tls/node_trust.rs",
+      "sha256": "175b846b46ba593d003e88b7afb41881683324763ede687b80e8e73331409720"
+    },
+    "crates/opi-ai/src/crypto/mod.rs": {
+      "path": "crates/opi-ai/src/crypto/mod.rs",
+      "sha256": "59c3f45c154e484e4dc20c9ccd0b8453d4cfde375657d1bf3dbc0b93da8ba39c"
+    },
+    "crates/opi-ai/src/http.rs": {
+      "path": "crates/opi-ai/src/http.rs",
+      "sha256": "43018bb9201b0354fe1b0d745d143f0eac269b71a02fd9c46463a11dd625393a"
+    },
+    "crates/opi-ai/tests/tls_backend_profile.rs": {
+      "path": "crates/opi-ai/tests/tls_backend_profile.rs",
+      "sha256": "23315a52a1755dc17f7df64b0f5edfc000988cacdd5ba0dea6c7bf4f3635a297"
+    },
+    "scripts/pi-sdk-conformance/run_tls_backend_package.py": {
+      "path": "scripts/pi-sdk-conformance/run_tls_backend_package.py",
+      "sha256": "3eca5c19641d70e70c267a21a298efc8e25995a64872dad4151e6a97778e2011"
+    },
+    "scripts/pi-sdk-conformance/test_tls_backend_package.py": {
+      "path": "scripts/pi-sdk-conformance/test_tls_backend_package.py",
+      "sha256": "eb48ecf10f5277dda9c4b4f054c82f367d0a0fbca1a04c49637a78a82286df29"
+    },
+    "scripts/pi-sdk-conformance/run_http_transport_package.py": {
+      "path": "scripts/pi-sdk-conformance/run_http_transport_package.py",
+      "sha256": "016cab354de12b6be6d58e56c00f05b98b272a91525717c730c5d4da48b3dc82"
+    },
+    "scripts/pi-sdk-conformance/test_http_transport_package.py": {
+      "path": "scripts/pi-sdk-conformance/test_http_transport_package.py",
+      "sha256": "ee7082428d92b94ae59b8ec46c6d055f95dd6d42ba1793d2c379bcafea2f765d"
+    },
+    "scripts/pi-sdk-conformance/run_protocol_adapters_package.py": {
+      "path": "scripts/pi-sdk-conformance/run_protocol_adapters_package.py",
+      "sha256": "a21ac5d2143fbeb335ae4aff5e6225b128aa86eeda25b718a37568f8dc1dfd70"
+    },
+    "scripts/pi-sdk-conformance/test_protocol_adapters_package.py": {
+      "path": "scripts/pi-sdk-conformance/test_protocol_adapters_package.py",
+      "sha256": "7d46f911c4f7856daecef6a57f37aafa6e35f200d6666648033b9f5740468d10"
+    },
+    "crates/opi-ai/docs/transport.md": {
+      "path": "crates/opi-ai/docs/transport.md",
+      "sha256": "0b8ae8408349ad0b778921fea9443aed887b6cdeb31fea888ba9347b2737a8a5"
+    },
+    "crates/opi-ai/docs/transport.zh.md": {
+      "path": "crates/opi-ai/docs/transport.zh.md",
+      "sha256": "4c2d6aff6e352df1c3ee925123333e3f22f904cf47671b4285f25dd078480281"
+    },
+    "docs/iterations/opi-ai-1-5-alignment/issues/132-split-tls-backend.md": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/132-split-tls-backend.md",
+      "sha256": "d8f3c6e60208917383956042cfdff59731c98cfe3fda2de3fac535ac98e141c7"
+    },
+    "tls_backend_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v2.json",
+      "sha256": "976bd2605c541f0a71d3afe3cdeee0dcff6cb05a15080723ef402cd376af9678"
+    },
+    "tls_backend_callers": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-callers-20261115-v1.json",
+      "sha256": "f716466868cd6abe13bf0a23e5c98738160d3fe46584cd4b6e03fa8f5ef56c94"
+    },
+    "http_transport_package_current": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v4.json",
+      "sha256": "79a35b7aebefa88efb00a85fb42cf3f373c544a2b70906b26e5a5747771223aa"
+    },
+    "protocol_adapters_package_current": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261115-v5.json",
+      "sha256": "0cd0f8d0bbbafc1ab2d6c6a7ff619752388149b92e1e780c3137cb83b7e593ca"
+    }
+  },
+  "feature_declarations": {
+    "default": [
+      "builtins",
+      "telemetry-tracing"
+    ],
+    "builtins": [
+      "catalog-bundled",
+      "oauth-store",
+      "protocol-adapters"
+    ],
+    "protocol-adapters": [
+      "http-transport",
+      "dep:hmac",
+      "dep:aws-smithy-query",
+      "dep:aws-smithy-xml",
+      "dep:xmlparser",
+      "dep:p256",
+      "dep:sha1",
+      "dep:libz-rs-sys",
+      "dep:flate2"
+    ],
+    "telemetry-tracing": [
+      "opi-telemetry/tracing"
+    ],
+    "catalog-bundled": [],
+    "http-transport": [
+      "tls-backend",
+      "dep:reqwest",
+      "dep:windows-sys"
+    ],
+    "oauth-store": [
+      "http-transport"
+    ],
+    "tls-backend": [
+      "dep:rustls",
+      "dep:aws-lc-rs",
+      "dep:rustls-native-certs"
+    ]
+  },
+  "receipts": {
+    "phase8_native_v": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-native-v.json",
+      "sha256": "e616c2748b94132c8287dffb921363c782ce01a3018d7df3b4c5777ef6d9c516"
+    },
+    "phase8_msrv_platform": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-msrv-platform.json",
+      "sha256": "9d51f517f03e6806c4d0bf4e861a3ca4f47b5e242537cd5fb8d70b8b32bd0055"
+    },
+    "phase8_feature_inventory": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-feature-matrix-inventory.json",
+      "sha256": "cbf15e981c93d913a2a5691f2fd30094a18072ef1b7c317369e6e48426984d82"
+    },
+    "core_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-package-verified.json",
+      "sha256": "a7059df8d3564eaf032f8e250e55eeac7a3f4748e849cf0f8a130fe4fcddd0eb"
+    },
+    "builtins_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-readme-package.json",
+      "sha256": "cd1503d5cd90696b9b99ff34555dbfccdd170e117ed1529f0f86abf8e7cef99e"
+    },
+    "catalog_bundled_native_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-catalog-bundled-20261115.json",
+      "sha256": "db85a75f1ebb00c962f2cff1a2adb0647d373175f32b1eec8ef3263048536db6"
+    },
+    "catalog_bundled_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-catalog-bundled-package-20261115.json",
+      "sha256": "49954ccc1a30c4a7a69f31a6a0e6ab0fff6c04485c3516b886244b36f0b5b6c0"
+    },
+    "http_transport_native_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-20261115.json",
+      "sha256": "0d5375a5cda0bc69405a24f8d3dd50bdd8351b6116001cd164e006bb67f3665e"
+    },
+    "http_transport_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v3.json",
+      "sha256": "fe6740ac46b00dbc192a8444dd7501b3ea925006cb72d9d35eb5ad1ed6a125f6"
+    },
+    "protocol_adapters_native_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-20261115.json",
+      "sha256": "38865521dc9f2f48df8f2b5ac14aaedc48fdd15df9b2c334fa1d70e36696a89c"
+    },
+    "protocol_adapters_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261115-v4.json",
+      "sha256": "00fbe813cf75195d271331078dcde393f7e06a7b617db28369f133980d3fd51f"
+    },
+    "oauth_store_native_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-oauth-store-20261115.json",
+      "sha256": "f4210a34d2bd3a1463f9e77b3cd7c03907a96b11a6e369ca8085c32885d9353d"
+    },
+    "oauth_store_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-oauth-store-package-20261115-v2.json",
+      "sha256": "a0b8aaca64083ed02d31724a55202204833198cbb482ce46a792f1ee30e87c75"
+    },
+    "oauth_store_callers": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-oauth-store-callers-20261115-v1.json",
+      "sha256": "827e88e386c64276dd520f7e0f0f9adcd1a2744b3518fe57f2c8d13a15f2dd31"
+    },
+    "tls_backend_native_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-20261115.json",
+      "sha256": "893d515e0fc2c4409629cb0241fe9b26059f6e8f46acddfe4578b6725edd7235"
+    },
+    "tls_backend_package": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v2.json",
+      "sha256": "976bd2605c541f0a71d3afe3cdeee0dcff6cb05a15080723ef402cd376af9678"
+    },
+    "tls_backend_callers": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-callers-20261115-v1.json",
+      "sha256": "f716466868cd6abe13bf0a23e5c98738160d3fe46584cd4b6e03fa8f5ef56c94"
+    },
+    "http_transport_package_current": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v4.json",
+      "sha256": "79a35b7aebefa88efb00a85fb42cf3f373c544a2b70906b26e5a5747771223aa"
+    },
+    "protocol_adapters_package_current": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261115-v5.json",
+      "sha256": "0cd0f8d0bbbafc1ab2d6c6a7ff619752388149b92e1e780c3137cb83b7e593ca"
+    }
+  },
+  "single_capabilities": [
+    {
+      "id": "core",
+      "kind": "single-capability",
+      "cargo": "--no-default-features",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "core values/models/stream/retry/schema/scripted Faux/custom auth and Store seams",
+      "verification": [
+        "native Linux/Windows core profile contract tests",
+        "actual archive consumer core profile"
+      ],
+      "evidence": [
+        "phase8_native_v",
+        "phase8_msrv_platform",
+        "core_package"
+      ],
+      "next": "retain as the minimum independent row"
+    },
+    {
+      "id": "telemetry-tracing",
+      "kind": "single-capability",
+      "cargo": "--no-default-features --features telemetry-tracing",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "optional opi-telemetry tracing carrier over core",
+      "verification": [
+        "native Linux/Windows core-tracing profile contract tests",
+        "actual archive consumer core-tracing profile"
+      ],
+      "evidence": [
+        "phase8_native_v",
+        "core_package"
+      ],
+      "next": "retain as the independent optional adapter row"
+    },
+    {
+      "id": "catalog-bundled",
+      "kind": "single-capability",
+      "cargo": "--no-default-features --features catalog-bundled",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "validated embedded Pi catalog artifact and builtin loader; Catalog::from_bytes remains core",
+      "verification": [
+        "native catalog artifact tests and warnings-denied catalog-only Clippy",
+        "actual archive consumer with catalog-bundled only"
+      ],
+      "evidence": [
+        "catalog_bundled_native_package",
+        "catalog_bundled_package"
+      ],
+      "next": "retain as an independent data capability; do not fold provider transports into this owner"
+    },
+    {
+      "id": "builtins",
+      "kind": "single-capability-group",
+      "cargo": "--no-default-features --features builtins",
+      "independently_selectable": true,
+      "status": "PASS_COARSE",
+      "scope": "current built-in provider protocol, provider auth factories, WebSocket/compression and catalog group; provider OAuth/store flows transitively include oauth-store; catalog-bundled, http-transport and protocol-adapters are transitive independent owners",
+      "verification": [
+        "native Linux/Windows builtins-no-tracing profile contract tests",
+        "actual archive consumer builtins/no-tracing profile"
+      ],
+      "evidence": [
+        "phase8_native_v",
+        "phase8_feature_inventory",
+        "builtins_package"
+      ],
+      "next": "split WebSocket/compression, cloud auth families and per-provider protocol/source owners"
+    },
+    {
+      "id": "protocol-adapters",
+      "kind": "single-capability",
+      "cargo": "--no-default-features --features protocol-adapters",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "provider wire adapters plus protocol-only dependency closure over shared HTTP/TLS owners, AWS signing/XML/query, P-256/SHA-1 and WebSocket/compression dependency closure; excludes catalog-bundled and builtin provider collection/auth factories",
+      "verification": [
+        "native protocol adapter contract tests and warnings-denied Clippy",
+        "default and explicit-builtins HTTP compatibility plus builtins HTTP acceptance",
+        "actual archive external consumer with protocol-adapters only",
+        "repository caller inventory for adapter/auth/OAuth-store/WS surfaces"
+      ],
+      "evidence": [
+        "protocol_adapters_native_package",
+        "protocol_adapters_package_current"
+      ],
+      "next": "retain this protocol boundary; split per-provider, TLS backend, WS/compression and provider OAuth/store owners when evidence requires it"
+    },
+    {
+      "id": "cloud-auth-codecs",
+      "kind": "capability",
+      "cargo": "builtins (coarse owner)",
+      "independently_selectable": false,
+      "status": "COARSE_ONLY",
+      "scope": "AWS/GCP/Cloudflare and provider auth codecs using HMAC, Smithy, XML, P-256, SHA-1 and platform process helpers",
+      "verification": [
+        "native auth-process and existing provider/auth contract receipts"
+      ],
+      "evidence": [
+        "phase8_native_v",
+        "phase8_msrv_platform"
+      ],
+      "next": "separate protocol-independent auth feature closure and rerun package consumers"
+    },
+    {
+      "id": "catalog",
+      "kind": "capability",
+      "cargo": "--no-default-features --features catalog-bundled",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "bundled catalog generation/data and builtin loader; runtime catalog values and custom sources remain core",
+      "verification": [
+        "catalog artifact tests under catalog-bundled",
+        "external archive consumer with catalog-bundled only"
+      ],
+      "evidence": [
+        "catalog_bundled_native_package",
+        "catalog_bundled_package"
+      ],
+      "next": "retain this boundary while splitting the remaining builtins capabilities"
+    },
+    {
+      "id": "tls-backend",
+      "kind": "single-capability",
+      "cargo": "--no-default-features --features tls-backend",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "fixed rustls/AWS-LC/native-certs source-scoped TLS backend and public opi_ai::tls configuration; excludes reqwest, provider protocols, catalog, cloud auth and WebSocket/compression",
+      "verification": [
+        "native TLS-only profile and warnings-denied Clippy",
+        "actual archive consumer with tls-backend only and reqwest absent",
+        "HTTP transport profile confirms transitive backend selection",
+        "repository caller inventory separates TLS API, HTTP bridge and direct backend fixtures"
+      ],
+      "evidence": [
+        "tls_backend_native_package",
+        "tls_backend_package",
+        "tls_backend_callers"
+      ],
+      "next": "retain fixed backend owner; add an alternative implementation only with a separate supported compatibility contract"
+    },
+    {
+      "id": "websocket-compression",
+      "kind": "capability",
+      "cargo": "builtins (coarse owner)",
+      "independently_selectable": false,
+      "status": "COARSE_ONLY",
+      "scope": "Codex WebSocket transport, frame IO and PMD compression",
+      "verification": [
+        "Codex WebSocket differential and builtins profile receipts"
+      ],
+      "evidence": [
+        "phase8_native_v",
+        "phase8_feature_inventory"
+      ],
+      "next": "separate WS/compression ownership before pair or high-order V claims"
+    },
+    {
+      "id": "oauth-store",
+      "kind": "single-capability",
+      "cargo": "--no-default-features --features oauth-store",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "concrete SDK provider OAuth flows under auth::oauth plus store-backed login/refresh integration; neutral OAuthProvider, OAuthCredential, LoginPresenter, CredentialStore, mutation and auth::store_oauth contracts remain core",
+      "verification": [
+        "native oauth-store profile and warnings-denied Clippy",
+        "core profile without oauth-store preserves custom OAuth/store seams",
+        "actual archive consumer with oauth-store only and exact http-transport union",
+        "repository caller inventory separates provider flow/store bridge/core contracts/builtin factories"
+      ],
+      "evidence": [
+        "oauth_store_native_package",
+        "oauth_store_package",
+        "oauth_store_callers"
+      ],
+      "next": "retain owner; split individual provider flow/source families only when a supported consumer contract requires it"
+    },
+    {
+      "id": "http-transport",
+      "kind": "capability",
+      "cargo": "--no-default-features --features http-transport",
+      "independently_selectable": true,
+      "status": "PASS",
+      "scope": "public HttpClient/builder, proxy and redirect policy, bounded HTTP error classification; transitively selects the fixed tls-backend owner",
+      "verification": [
+        "native HTTP-only contract tests and warnings-denied Clippy",
+        "default and explicit builtins compatibility contract tests",
+        "actual archive consumer with http-transport only"
+      ],
+      "evidence": [
+        "http_transport_native_package",
+        "http_transport_package_current"
+      ],
+      "next": "retain as the shared transport owner; provider protocol and WebSocket/compression remain separate"
+    }
+  ],
+  "pair_combinations": [
+    {
+      "id": "core+telemetry-tracing",
+      "features": [
+        "core",
+        "telemetry-tracing"
+      ],
+      "status": "PASS",
+      "basis": "independent feature union",
+      "evidence": [
+        "phase8_native_v",
+        "core_package"
+      ]
+    },
+    {
+      "id": "builtins+telemetry-tracing",
+      "features": [
+        "builtins",
+        "telemetry-tracing"
+      ],
+      "status": "PASS_COARSE",
+      "basis": "current defaults/all-features union; builtins remains coarse",
+      "evidence": [
+        "phase8_native_v",
+        "phase8_feature_inventory",
+        "builtins_package"
+      ]
+    },
+    {
+      "id": "protocol+http-transport",
+      "features": [
+        "protocol-adapters",
+        "http-transport"
+      ],
+      "status": "PASS",
+      "basis": "protocol-adapters transitively selects the shared HTTP and TLS backend owners and the current external archive graph reports the exact union",
+      "evidence": [
+        "protocol_adapters_package_current",
+        "protocol_adapters_native_package"
+      ]
+    },
+    {
+      "id": "oauth-store+http-transport",
+      "features": [
+        "oauth-store",
+        "http-transport"
+      ],
+      "status": "PASS",
+      "basis": "oauth-store transitively selects the shared HTTP owner and the external archive graph reports the exact union",
+      "evidence": [
+        "oauth_store_package",
+        "oauth_store_native_package"
+      ]
+    },
+    {
+      "id": "protocol+tls-backend",
+      "features": [
+        "protocol-adapters",
+        "tls-backend"
+      ],
+      "status": "PASS",
+      "basis": "protocol-adapters transitively selects http-transport and tls-backend; the current external archive graph reports the exact union",
+      "evidence": [
+        "protocol_adapters_package_current",
+        "tls_backend_package"
+      ]
+    },
+    {
+      "id": "auth+catalog",
+      "features": [
+        "cloud-auth-codecs",
+        "catalog"
+      ],
+      "status": "OPEN",
+      "basis": "catalog-bundled is now independent, but cloud-auth-codecs has no independent Cargo owner",
+      "evidence": [
+        "catalog_bundled_package"
+      ]
+    },
+    {
+      "id": "ws+oauth-store",
+      "features": [
+        "websocket-compression",
+        "oauth-store"
+      ],
+      "status": "OPEN",
+      "basis": "oauth-store is now independent, but WebSocket/compression remains nested in builtins; no independent WS owner exists",
+      "evidence": [
+        "oauth_store_native_package",
+        "oauth_store_package"
+      ]
+    }
+  ],
+  "higher_order": [
+    {
+      "id": "declared-all-features",
+      "status": "PASS_DECLARED",
+      "basis": "native Linux/Windows all-features library/all-target checks pass; this is manifest V only",
+      "evidence": [
+        "phase8_native_v",
+        "phase8_msrv_platform"
+      ]
+    },
+    {
+      "id": "complete-capability-v",
+      "status": "OPEN",
+      "basis": "requires WebSocket/compression, cloud auth families, per-provider protocol/source owners, valid pair/high-order coverage and macOS; catalog-bundled, http-transport, tls-backend, protocol-adapters and oauth-store are now closed individually",
+      "evidence": []
+    },
+    {
+      "id": "native-macos-capability-v",
+      "status": "BLOCKED",
+      "basis": "user deferred native macOS environment; no runner/SSH host",
+      "evidence": [
+        "phase8_native_v"
+      ]
+    }
+  ],
+  "disposition": "Catalog-bundled, http-transport, tls-backend, protocol-adapters and oauth-store are independently selectable and package-consumable, and default/builtins profiles retain the previous catalog, transport, provider, OAuth and TLS surface. Neutral OAuth/store callers remain core-compatible. The matrix still does not claim complete capability V: per-provider protocol/source, cloud auth, WebSocket/compression, macOS and #94 remain open.",
+  "test_impact": {
+    "add": "tls-backend capability row, public tls module gate, native/package receipts, external consumer runner/unit tests and caller inventory",
+    "update": "http-transport transitive dependency, protocol package runner feature union, bilingual README/transport/testing docs, capability mapping, issue/spec/changelog",
+    "delete": "none",
+    "retain": "all historical phase-one, Pi pairing, adapter/observer, catalog, HTTP, protocol and OAuth/store receipts"
+  },
+  "current_validation": {
+    "host": "Windows x86_64-pc-windows-msvc",
+    "target_dir": "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+    "checks": [
+      {
+        "id": "windows-protocol-adapters",
+        "capability": "protocol-adapters",
+        "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features protocol-adapters --test protocol_adapter_profile -- --nocapture",
+        "exit": 0,
+        "tests": "2 passed",
+        "log": "C:/Temp/opi-protocol-adapters-native-20261115-v2/native-protocol-adapters.log",
+        "log_sha256": "0a0f453ecd02f4e6221dc5064029ff32b19f05815855014dbea02816e3e4a610"
+      },
+      {
+        "id": "windows-protocol-adapters-clippy",
+        "capability": "protocol-adapters",
+        "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- clippy -p opi-ai --locked --offline --no-default-features --features protocol-adapters --tests -- -D warnings",
+        "exit": 0,
+        "log": "C:/Temp/opi-protocol-adapters-native-20261115-v2/clippy-protocol-adapters.log",
+        "log_sha256": "d434e4e07f88ebbb79d962efdebabfd9b150afad67f752609bed1d7b29958577"
+      },
+      {
+        "id": "windows-default-http-compatibility-after-protocol-split",
+        "capability": "builtins",
+        "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --test http_transport_profile -- --nocapture",
+        "exit": 0,
+        "tests": "3 passed",
+        "log": "C:/Temp/opi-protocol-adapters-native-20261115-v2/native-default-http-transport.log",
+        "log_sha256": "406107c305de72ffb7f30770dc217faba05d2a3d6523f65bdc2f0b8cf4049964"
+      },
+      {
+        "id": "windows-builtins-http-compatibility-after-protocol-split",
+        "capability": "builtins",
+        "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features builtins --test http_transport_profile -- --nocapture",
+        "exit": 0,
+        "tests": "3 passed",
+        "log": "C:/Temp/opi-protocol-adapters-native-20261115-v2/native-builtins-http-transport.log",
+        "log_sha256": "9bebb5034973a329a2b374ff7d57e7b8af3aff3feba03f8dff6a02ea371b0d23"
+      },
+      {
+        "id": "windows-builtins-http-acceptance-after-protocol-split",
+        "capability": "builtins",
+        "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features builtins --test http_acceptance -- --nocapture",
+        "exit": 0,
+        "tests": "21 passed",
+        "log": "C:/Temp/opi-protocol-adapters-native-20261115-v2/native-builtins-http-acceptance.log",
+        "log_sha256": "6823378f78d9bcd0b1be2158713073e79ae6dc065083c8fb89d2a51747b32a05",
+        "interpretation": "shared HTTP acceptance callers remain green under explicit builtins after protocol split"
+      }
+    ],
+    "interpretation": "All declared feature expressions, including independent catalog-bundled, tls-backend, http-transport, protocol-adapters and oauth-store owners, remain metadata-valid; native/package receipts establish the fixed TLS backend boundary while cloud auth and WS/compression remain open.",
+    "profiles": [
+      {
+        "id": "oauth-store",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "oauth-store"
+        ],
+        "exit": 0,
+        "evidence": "oauth_store_native_package",
+        "interpretation": "external archive graph exact oauth-store/http-transport union"
+      },
+      {
+        "id": "tls-backend",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "tls-backend"
+        ],
+        "exit": 0,
+        "evidence": "tls_backend_native_package",
+        "interpretation": "native TLS-only profile and actual archive graph"
+      }
+    ]
+  },
+  "metadata_validation": {
+    "command_family": "cargo metadata --manifest-path crates/opi-ai/Cargo.toml --format-version 1 --no-deps --offline",
+    "profiles": [
+      {
+        "id": "core",
+        "args": [
+          "--no-default-features"
+        ],
+        "exit": 0,
+        "stdout_log": "C:/Temp/opi-phase1-current-20261115/metadata-core.log",
+        "stdout_sha256": "09c421df0409cc82a27007b117675304f93b9b76162192aac6ed8581c52c59af"
+      },
+      {
+        "id": "core-tracing",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "telemetry-tracing"
+        ],
+        "exit": 0,
+        "stdout_log": "C:/Temp/opi-phase1-current-20261115/metadata-core-tracing.log",
+        "stdout_sha256": "09c421df0409cc82a27007b117675304f93b9b76162192aac6ed8581c52c59af"
+      },
+      {
+        "id": "builtins-no-tracing",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "builtins"
+        ],
+        "exit": 0,
+        "stdout_log": "C:/Temp/opi-phase1-current-20261115/metadata-builtins.log",
+        "stdout_sha256": "09c421df0409cc82a27007b117675304f93b9b76162192aac6ed8581c52c59af"
+      },
+      {
+        "id": "defaults",
+        "args": [],
+        "exit": 0,
+        "stdout_log": "C:/Temp/opi-phase1-current-20261115/metadata-defaults.log",
+        "stdout_sha256": "09c421df0409cc82a27007b117675304f93b9b76162192aac6ed8581c52c59af"
+      },
+      {
+        "id": "catalog-bundled-package",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "catalog-bundled"
+        ],
+        "exit": 0,
+        "stdout_log": "C:/Temp/opi-catalog-bundled-package-20261115-v1/catalog-bundled-metadata.stdout",
+        "stdout_sha256": "9bb162a632c97c9f209f75e923f3c19373cc19e80d8c3fd1c9f298f1d4c450ef",
+        "interpretation": "external archive consumer metadata; exact catalog-bundled feature and no backend dependencies"
+      },
+      {
+        "id": "http-transport",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "http-transport"
+        ],
+        "exit": 0,
+        "stdout_log": "C:/Temp/opi-http-transport-package-20261115-v2/metadata-http.json",
+        "stdout_sha256": "14ff63eb3117639e4858f9a886dda9ebe7ecde2d9371410763fd75e4e1a5f12"
+      },
+      {
+        "id": "protocol-adapters",
+        "args": [
+          "--no-default-features",
+          "--features",
+          "protocol-adapters"
+        ],
+        "exit": 0,
+        "stdout_log": "C:\\Temp\\opi-protocol-adapters-package-20261115-v3\\protocol-adapters-metadata.stdout",
+        "stdout_sha256": "c6db64775606540adb3f6f05be958641171a3b5829d29f67c1ace0f04c4fce71",
+        "interpretation": "external archive consumer metadata; exact protocol-adapters/http-transport feature union and catalog absence"
+      }
+    ],
+    "interpretation": "All declared feature expressions, including independent catalog-bundled, http-transport and protocol-adapters owners, remain metadata-valid; the native/package receipts establish the protocol boundary while provider OAuth/store, TLS backend and WS/compression remain open.",
+    "oauth-store": {
+      "args": [
+        "--no-default-features",
+        "--features",
+        "oauth-store"
+      ],
+      "exit": 0,
+      "evidence": "oauth_store_package",
+      "interpretation": "external archive consumer metadata; exact oauth-store/http-transport union and catalog/protocol owner absence"
+    },
+    "tls-backend": {
+      "args": [
+        "--no-default-features",
+        "--features",
+        "tls-backend"
+      ],
+      "exit": 0,
+      "evidence": "tls_backend_package",
+      "interpretation": "external archive consumer metadata; exact TLS backend closure and reqwest absence"
+    }
+  },
+  "historical_receipts": {
+    "capability_v_v5": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v5.json",
+      "sha256": "7e19c88dbcfa7b8317583e245c08da5d22c2746d0fdaec7e30cbc23f9e7dbea2",
+      "status": "historical matrix before TLS backend split"
+    },
+    "capability_v_v4": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v4.json",
+      "sha256": "58b863640b1abff985b48b27aec43bc7211ea60bec95998892e3e946ec159d23",
+      "status": "historical matrix before oauth-store split"
+    },
+    "http_transport_package_v2": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v2.json",
+      "sha256": "671d44f2c6c5f6a77beecb33ee9959f9a38af929b64cbae4773c2cb4ade4cafd",
+      "status": "superseded by v3 after documentation/changelog updates"
+    }
+  },
+  "caller_audit": {
+    "inventory": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-callers-20261115-v1.json",
+    "inventory_sha256": "f716466868cd6abe13bf0a23e5c98738160d3fe46584cd4b6e03fa8f5ef56c94",
+    "files": 664,
+    "matches": {
+      "tls_api": 128,
+      "http_bridge": 815,
+      "backend_direct": 131
+    },
+    "interpretation": "public TLS API callers can select tls-backend; HttpClient callers inherit it through http-transport; provider/auth/WS callers remain on existing builtins/protocol owners; direct backend references are mostly fixtures/private tests"
+  }
+}

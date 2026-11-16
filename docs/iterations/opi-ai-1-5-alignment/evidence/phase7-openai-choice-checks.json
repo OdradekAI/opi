@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "scope": "#117 OpenAI-compatible choice-level usage fallback, adapter/helper caller mapping, frozen Pi pairing and actual package consumption",
+  "base_commit": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "checks": [
+    {
+      "name": "targeted-clippy",
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "-p",
+        "opi-ai",
+        "--test",
+        "openai_choice_usage",
+        "--offline",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\clippy.log",
+        "sha256": "39c21ffeaee5c10052cae7a85dc60c1e757da4e67c3b3db19d2797950c6bfa79"
+      }
+    },
+    {
+      "name": "targeted-tests",
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--test",
+        "openai_choice_usage",
+        "--test",
+        "openai_chat_fixtures",
+        "--offline",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\tests.log",
+        "sha256": "d2e72eca508d83dd62d28f16336aa1beae8d4ec72f58e055f9c4967f4ba75d88"
+      }
+    },
+    {
+      "name": "python-conformance-tests",
+      "command": [
+        "python",
+        "-m",
+        "unittest",
+        "scripts.pi-sdk-conformance.differential.test_openai_choice_usage",
+        "scripts.pi-sdk-conformance.test_openai_choice_usage_package",
+        "-v"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\python-tests.log",
+        "sha256": "73346f176868356632ece7d343f546f8c954666995d4556ca25e8afdef9fbca8"
+      }
+    },
+    {
+      "name": "node-check",
+      "command": [
+        "node",
+        "--check",
+        "docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_choice_usage.mjs"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\node-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "python-compile",
+      "command": [
+        "python",
+        "-m",
+        "py_compile",
+        "scripts/pi-sdk-conformance/differential/compare_openai_choice_usage.py",
+        "scripts/pi-sdk-conformance/differential/test_openai_choice_usage.py",
+        "scripts/pi-sdk-conformance/run_openai_choice_usage_package.py",
+        "scripts/pi-sdk-conformance/test_openai_choice_usage_package.py"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\py-compile.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "doc-check",
+      "command": [
+        "python",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\doc-check.log",
+        "sha256": "058e14f4a41df91dec666fc9b4c8ab4df93998813c6c00245f71e34b50f92d32"
+      }
+    },
+    {
+      "name": "diff-check",
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\diff-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "fmt-check",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--",
+        "--check"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\fmt-check.log",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cache-status",
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "status",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--quick",
+        "--json"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\cache-status.log",
+        "sha256": "85f96aab9874a47d11e80b3778f34089107a5543fdf2496ec4b55d02329ef8b7",
+        "active": [],
+        "candidate_files": 0,
+        "incremental_retained": true
+      }
+    },
+    {
+      "name": "helper-observer-tests",
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--test",
+        "classifier_contract",
+        "--test",
+        "image_provider_serialization",
+        "--test",
+        "deferred_contract",
+        "--test",
+        "telemetry_carrier",
+        "--test",
+        "public_utilities",
+        "--offline",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "exit": 0,
+      "log": {
+        "path": "C:\\Temp\\opi-openai-choice-checks-20261115\\helper-observer-tests.log",
+        "sha256": "7e59ebf04fc17b1431c23aa4de5778e76db908566cd0c1dc3b53a7c175ee41d0",
+        "observed": "classifier 84, image 15, deferred 19, telemetry carrier 11, public utilities 54 passed"
+      }
+    }
+  ],
+  "targeted_results": {
+    "openai_choice_usage": {
+      "passed": 3,
+      "failed": 0
+    },
+    "openai_chat_fixtures": {
+      "passed": 116,
+      "failed": 0
+    },
+    "python_conformance_tests": {
+      "passed": 3,
+      "failed": 0
+    },
+    "helper_observer_contracts": {
+      "classifier_contract": {
+        "passed": 84,
+        "failed": 0
+      },
+      "deferred_contract": {
+        "passed": 19,
+        "failed": 0
+      },
+      "image_provider_serialization": {
+        "passed": 15,
+        "failed": 0
+      },
+      "public_utilities": {
+        "passed": 54,
+        "failed": 0
+      },
+      "telemetry_carrier": {
+        "passed": 11,
+        "failed": 0
+      }
+    }
+  },
+  "paired_and_package": {
+    "differential": "evidence/phase7-openai-choice-differential.json",
+    "differential_sha256": "494a65d334919276a8b6c79b49c0f6210eacf203fba0fac56b598caf19c82d89",
+    "package": "evidence/phase7-openai-choice-package.json",
+    "package_sha256": "1a5e1d82e30f487654f253b7b057b509567a354e76e3bdfd13089f6d582db341",
+    "materials": "evidence/phase7-openai-choice-materials.json",
+    "materials_sha256": "75825acbdc6087a6e885f1d7c463889ffbbd60899618fb9a5eb7260ef81fdee7",
+    "pi_revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "pi_runs": 3,
+    "rust_runs": 3,
+    "package_profiles": 2
+  },
+  "history": {
+    "initial_json_receipts": 244,
+    "initial_json_receipts_byte_identical": true,
+    "same": 244,
+    "missing": 0,
+    "changed": [],
+    "historical_artifacts_verified_from": "evidence/phase6-anthropic-nested-checks.json",
+    "earlier_failures_retained": true,
+    "cache_deletion": false,
+    "self_hash": "omitted to avoid self-reference"
+  },
+  "baseline": {
+    "reference": "evidence/phase6-anthropic-nested-checks.json",
+    "workspace_tests_passed": 6521,
+    "workspace_tests_failed": 0,
+    "workspace_tests_ignored": 5,
+    "doctests_passed": 12,
+    "note": "full workspace baseline predates this narrow adapter change; targeted OpenAI Chat plus clippy rerun here"
+  },
+  "source_sha256": {
+    "crates/opi-ai/src/openai_chat.rs": "fba64e5c0ec13a5f29a8e008c58193f720e7f31e4065ab0b3f45aec4646d571f",
+    "crates/opi-ai/Cargo.toml": "39540e74a726835fb4b8c04cfe06b7a66352246724de744c8d38fc6e32b123f0",
+    "crates/opi-ai/tests/openai_choice_usage.rs": "f065c19878dbc232c19a736d3cd3f4c3ff93e810cebd677bfd6d08b1a557cf5a",
+    "crates/opi-ai/tests/data/openai-choice-usage.json": "21ca316d4ef40478198b4c50a301c5ab00c2ed09ce736a25e43a1854f6b0edcd",
+    "docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_choice_usage.mjs": "4cfc7dd4c9d4d4f6c26acbe27c68be5ef28a62cc1ce6a84f10fec907e5760ab0",
+    "scripts/pi-sdk-conformance/differential/compare_openai_choice_usage.py": "fc5354e81f8a40689f0b29c034fce26dedbdf84eeea5baf18367853945987249",
+    "scripts/pi-sdk-conformance/run_openai_choice_usage_package.py": "e89bc1da948d3f2c8ea98e937448ef620b0abf8d6234a4ca7fe0d287a4abdf07",
+    "scripts/pi-sdk-conformance/differential/test_openai_choice_usage.py": "1a8caf1ffda4af042991cfa6b70e68d54054a7c4cd0ee282fe485844d9186bf8",
+    "scripts/pi-sdk-conformance/test_openai_choice_usage_package.py": "d7abc70a86391c2efd08ddb8537ccab56149249a727d7394ab67cdc7b9b91c95"
+  },
+  "worktree": {
+    "head": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+    "committed": "none-for-this-task",
+    "status_count": 475,
+    "status_sample": [
+      " M .agents/skills/opi-implement/references/ledger-schema.md",
+      " M .gitignore",
+      " M CHANGELOG.md",
+      " M crates/opi-ai/Cargo.toml",
+      " M crates/opi-ai/README.md",
+      " M crates/opi-ai/README.zh.md",
+      " M crates/opi-ai/docs/cost-pricing.md",
+      " M crates/opi-ai/docs/cost-pricing.zh.md",
+      " M crates/opi-ai/docs/provider-auth.md",
+      " M crates/opi-ai/docs/provider-auth.zh.md",
+      " M crates/opi-ai/docs/testing.md",
+      " M crates/opi-ai/docs/testing.zh.md",
+      " M crates/opi-ai/docs/transport.md",
+      " M crates/opi-ai/docs/transport.zh.md",
+      " M crates/opi-ai/docs/utilities.md",
+      " M crates/opi-ai/docs/utilities.zh.md",
+      " M crates/opi-ai/examples/lifecycle_differential.rs",
+      " M crates/opi-ai/src/anthropic.rs",
+      " M crates/opi-ai/src/api.rs",
+      " M crates/opi-ai/src/auth.rs",
+      " M crates/opi-ai/src/auth/oauth/mod.rs",
+      " M crates/opi-ai/src/auth/store_oauth.rs",
+      " M crates/opi-ai/src/auth/values.rs",
+      " M crates/opi-ai/src/azure_openai.rs",
+      " M crates/opi-ai/src/bedrock/mod.rs",
+      " D crates/opi-ai/src/bedrock/retry.rs",
+      " M crates/opi-ai/src/callbacks.rs",
+      " M crates/opi-ai/src/catalog/mod.rs",
+      " M crates/opi-ai/src/catalog/wire.rs",
+      " M crates/opi-ai/src/classifier.rs",
+      " M crates/opi-ai/src/codex_resources.rs",
+      " M crates/opi-ai/src/deferred.rs",
+      " M crates/opi-ai/src/errors.rs",
+      " M crates/opi-ai/src/execution.rs",
+      " M crates/opi-ai/src/http.rs",
+      " M crates/opi-ai/src/lib.rs",
+      " M crates/opi-ai/src/models.rs",
+      " M crates/opi-ai/src/openai_chat.rs",
+      " M crates/opi-ai/src/openai_codex_responses.rs",
+      " M crates/opi-ai/src/openai_codex_responses/ws_transport.rs",
+      " M crates/opi-ai/src/openai_responses.rs",
+      " M crates/opi-ai/src/openai_responses_shared.rs",
+      " M crates/opi-ai/src/provider.rs",
+      " M crates/opi-ai/src/provider_env.rs",
+      " M crates/opi-ai/src/retry.rs",
+      " M crates/opi-ai/src/stream.rs",
+      " M crates/opi-ai/src/telemetry.rs",
+      " M crates/opi-ai/src/test_support.rs",
+      " M crates/opi-ai/src/transcript.rs",
+      " M crates/opi-ai/src/types/classifier.rs",
+      " M crates/opi-ai/src/types/deferred.rs",
+      " M crates/opi-ai/src/types/message.rs",
+      " M crates/opi-ai/src/types/model.rs",
+      " M crates/opi-ai/src/types/usage.rs",
+      " M crates/opi-ai/src/ws/frame.rs",
+      " M crates/opi-ai/src/ws/io.rs",
+      " M crates/opi-ai/src/ws/tests/io.rs",
+      " M crates/opi-ai/tests/ai_telemetry.rs",
+      " M crates/opi-ai/tests/anthropic_fixtures.rs",
+      " M crates/opi-ai/tests/azure_openai_fixtures.rs",
+      " M crates/opi-ai/tests/bedrock_fixtures.rs",
+      " M crates/opi-ai/tests/chat_pi_messages.rs",
+      " M crates/opi-ai/tests/custom_provider_registration.rs",
+      " M crates/opi-ai/tests/deferred_contract.rs",
+      " M crates/opi-ai/tests/execution_lifecycle.rs",
+      " M crates/opi-ai/tests/gemini_fixtures.rs",
+      " M crates/opi-ai/tests/http_acceptance.rs",
+      " M crates/opi-ai/tests/mistral_fixtures.rs",
+      " M crates/opi-ai/tests/openai_chat_fixtures.rs",
+      " M crates/opi-ai/tests/openai_codex_responses.rs",
+      " M crates/opi-ai/tests/openai_responses_fixtures.rs",
+      " M crates/opi-ai/tests/platform_delivery.rs",
+      " M crates/opi-ai/tests/public_utilities.rs",
+      " M crates/opi-ai/tests/stream_events.rs",
+      " M crates/opi-ai/tests/tool_result_wire.rs",
+      " M crates/opi-ai/tests/vertex_fixtures.rs",
+      " M crates/opi-ai/tests/whole_call_retry.rs",
+      " M crates/opi-coding-agent/README.md",
+      " M crates/opi-coding-agent/README.zh.md",
+      " M crates/opi-coding-agent/src/harness.rs"
+    ]
+  },
+  "test_impact": {
+    "add": [
+      "Choice-level usage fallback, precedence and subset validation regression",
+      "Frozen Pi probe/comparator and actual archive consumer"
+    ],
+    "update": [
+      "OpenAI Chat raw choice usage mapping"
+    ],
+    "delete": [],
+    "retain": "Prior Chat terminal/preview, Anthropic usage, observer, numeric, cancellation, EOF and package evidence"
+  },
+  "limitations": [
+    "Other adapter/observer fault stages and repeated/pending paths remain open.",
+    "No full workspace rerun after this narrow change; prior phase6 full baseline is retained.",
+    "No full Pi strict-equivalence, configuration V, MSRV/native-platform, quantitative budget or real Deferred integration (#94) claim."
+  ]
+}

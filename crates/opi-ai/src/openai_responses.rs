@@ -13,7 +13,7 @@ use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::openai_responses_shared::{
-    ParsedEvent, ResponsesEvent, ResponsesMapper, drain_sse_frames, parse_sse_frames,
+    ParsedEvent, ResponsesMapper, drain_sse_frames, parse_sse_frames,
 };
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
@@ -595,10 +595,11 @@ impl OpenAiResponsesProvider {
             &self.provider_id,
             crate::model_info::WireApi::OpenAiResponses,
             "",
-        );
+        )
+        .with_deferred_terminal();
         let mut events = Vec::new();
         for frame in parse_sse_frames(sse_body) {
-            match ResponsesEvent::try_from_frame(&frame) {
+            match mapper.decode_frame(&frame) {
                 ParsedEvent::Valid(event) => {
                     events.extend(mapper.process(event));
                 }
@@ -617,6 +618,9 @@ impl OpenAiResponsesProvider {
                     break;
                 }
             }
+        }
+        if !events.iter().any(Result::is_err) {
+            events.extend(mapper.flush_pending_terminal());
         }
         let _cancel = cancel;
         Box::pin(stream::iter(events))
@@ -743,6 +747,7 @@ impl OpenAiResponsesProvider {
             crate::model_info::WireApi::OpenAiResponses,
             &requested_model,
         )
+        .with_deferred_terminal()
         .with_requested_service_tier(requested_service_tier);
         // Task 20.11: the call's constrained-sampling facts ride the mapper.
         if let Some(wire) = wire_facts {
@@ -785,13 +790,12 @@ impl OpenAiResponsesProvider {
                 for frame in drain_sse_frames(&mut buffer) {
                     // Raw observer (task 20.51): the frame's parsed wire JSON,
                     // strictly before normalization; failure preserves partial.
-                    if !mapper.saw_done
-                        && let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
+                    if let Ok(raw) = serde_json::from_str::<serde_json::Value>(&frame.data)
                         && let Err(error) = callbacks.notify_raw_async(&raw).await
                     {
                         return Err(mapper.failure(error));
                     }
-                    match ResponsesEvent::try_from_frame(&frame) {
+                    match mapper.decode_frame(&frame) {
                         ParsedEvent::Valid(event) => {
                             for item in mapper.process(event) {
                                 let item = Self::stamp_done_duration(item, response_activated_at);
@@ -817,7 +821,14 @@ impl OpenAiResponsesProvider {
             }
             let eof_tail = decoder.finish();
             buffer.push_str(&eof_tail);
-            if !mapper.saw_done {
+            if mapper.has_pending_terminal() {
+                for item in mapper.flush_pending_terminal() {
+                    let item = Self::stamp_done_duration(item, response_activated_at);
+                    if !send_or_cancel(&cancel, &tx, item).await? {
+                        return Ok(());
+                    }
+                }
+            } else if !mapper.saw_done {
                 let _ = send_or_cancel(
                     &cancel,
                     &tx,

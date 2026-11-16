@@ -1,0 +1,3509 @@
+{
+  "schemaVersion": "phase8-contract-bindings-v1",
+  "issue": "#140",
+  "capturedAtUtc": "2026-11-16T04:35:24Z",
+  "scope": "Bind the milestone-relevant static contract rows to existing dynamic evidence without rewriting the historical contract index",
+  "method": {
+    "source_of_rows": "docs/iterations/opi-ai-1-5-alignment/contract-index.json",
+    "historical_freeze": "phase8-worktree-freeze-20261116-v1.json",
+    "hash_rule": "current SHA-256 is compared to the contract-index recorded SHA-256; historical hashes are retained verbatim",
+    "dynamic_rule": "only receipts with an explicit command/run/check/package/differential record are used; inventory/mention-only files are excluded",
+    "limitations": "aggregate workspace source binding is not caller-specific behavior proof; generated package consumers do not bind the repository template source hash; related reviewed-case evidence is not exact upstream test equivalence"
+  },
+  "historical": {
+    "freeze_receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-worktree-freeze-20261116-v1.json",
+    "freeze_receipt_sha256": "dba9424192863d362b8ebf1447b77e0fc3148eab4d4f6d714ca758df27413eac",
+    "freeze_manifest_sha256": "9f773dc1268633ab7c225507ff052672feadaae7bb274fe4cd993aafcffff9c7",
+    "contract_index_sha256_at_freeze": "c863b3632c2286c9f3bb423c5cb4e906dcc9329ddb58d8cb3df98631546a3aa6",
+    "contract_index_sha256_current": "c863b3632c2286c9f3bb423c5cb4e906dcc9329ddb58d8cb3df98631546a3aa6",
+    "historical_contract_index_rewritten": false,
+    "historical_hashes_retained": true,
+    "prior_receipts_retained": true
+  },
+  "summary": {
+    "consumer_rows": 59,
+    "production_callers": 52,
+    "package_consumers": 4,
+    "examples": 3,
+    "rust_target_helper_rows": 83,
+    "consumer_status_counts": {
+      "workspace-dynamic-source-bound": 52,
+      "direct-package-executed": 3,
+      "direct-package-source-bound": 1,
+      "capability-family-package-bound": 3
+    },
+    "rust_status_counts": {
+      "workspace-dynamic-source-bound": 73,
+      "contract-dynamic-related": 10
+    },
+    "reviewed_case_rows": 12,
+    "reviewed_case_status_counts": {
+      "related-dynamic": 10,
+      "related-only": 2
+    }
+  },
+  "bindings": [
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/agent.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-MODELS-DISPATCH",
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-REGISTER",
+        "CAP-CONTROL"
+      ],
+      "recorded_sha256": "5700c45cc581a9f8785ccf07caf7afcb753bacae01dd32ba0559657793e5aa5a",
+      "current_sha256": "5700c45cc581a9f8785ccf07caf7afcb753bacae01dd32ba0559657793e5aa5a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/agent_loop.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-DISPATCH",
+        "CAP-TRANSCRIPT",
+        "CAP-RETRY",
+        "CAP-STREAM",
+        "CAP-CONTROL",
+        "CAP-EXECUTION",
+        "CAP-TELEMETRY-CORE"
+      ],
+      "recorded_sha256": "b9a53f552bd905f1bf4d4b6d6e77c83c94496e1ee20dd083bcf0a99e70db7f3b",
+      "current_sha256": "0064e7952a49ac1bb8c367c00a122a2ba564b6f52ad2283d2f12eebda09e1080",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/authority.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "16cc8abcc20765f4a11e8af49a031743d121e8f7266f305cd2138b8c088b3693",
+      "current_sha256": "16cc8abcc20765f4a11e8af49a031743d121e8f7266f305cd2138b8c088b3693",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/compaction.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "1d9693fa941a69feb41a33ca9dbe37b4d9ba52dc436de3abcbf0e335e444f2ae",
+      "current_sha256": "1d9693fa941a69feb41a33ca9dbe37b4d9ba52dc436de3abcbf0e335e444f2ae",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/diagnostic.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-PROVIDERS"
+      ],
+      "recorded_sha256": "07fd6ea5a26d8338c078ed33206803ef80738f23047c9b1e4109d21075633caa",
+      "current_sha256": "07fd6ea5a26d8338c078ed33206803ef80738f23047c9b1e4109d21075633caa",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/event.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-STREAM"
+      ],
+      "recorded_sha256": "9691490aa2624b032adee62691c16a706b47e0ccbe218b2b65169cfba90b3ad1",
+      "current_sha256": "9691490aa2624b032adee62691c16a706b47e0ccbe218b2b65169cfba90b3ad1",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/evidence.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-API",
+        "CAP-AUTH",
+        "CAP-EXECUTION",
+        "CAP-MODELS-REGISTER"
+      ],
+      "recorded_sha256": "8f35fd7ca98a24a0bf093d36b4bf6f602a791d4d7b9f19e14cb5838c25d8ff0b",
+      "current_sha256": "8f35fd7ca98a24a0bf093d36b4bf6f602a791d4d7b9f19e14cb5838c25d8ff0b",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/extension.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-PROVIDERS",
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "4dae44920daf464bf8a1e98f61638c65e15ea13351e4c1d3d1f8e22cb48d18c2",
+      "current_sha256": "4dae44920daf464bf8a1e98f61638c65e15ea13351e4c1d3d1f8e22cb48d18c2",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/harness.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "ba295c6e9266a70f531db03f359c2ec358a64beceb0fc3e86cca0492e930d63a",
+      "current_sha256": "ba295c6e9266a70f531db03f359c2ec358a64beceb0fc3e86cca0492e930d63a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/hooks.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "425479e6f1f7e241542fe51a76d3b3fb9fcc9df0a7ccd6b1ad1d00a38dc13765",
+      "current_sha256": "f3c907e84f7b2ca43715696abcd7d76299a31f206835014a48ff51af8aa0f0a5",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/lib.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "6245c6c941ee4b0bec459dd4040018e2308f0af89f082714a4c970a6a0e030ad",
+      "current_sha256": "6245c6c941ee4b0bec459dd4040018e2308f0af89f082714a4c970a6a0e030ad",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/loop_types.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-PROVIDERS",
+        "CAP-VALUES",
+        "CAP-OPTIONS",
+        "CAP-RETRY",
+        "CAP-MODELS-REGISTER",
+        "CAP-MODELS-DISPATCH"
+      ],
+      "recorded_sha256": "ad785e827980ebfd3413eca14e3385c628612f32aab071e5e2e8923a586e910a",
+      "current_sha256": "ad785e827980ebfd3413eca14e3385c628612f32aab071e5e2e8923a586e910a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/message.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "fd7305f82ffcdcbf2b9f33ac245b76f6644d8793e84d22ca5306e1ac2118f7a8",
+      "current_sha256": "fd7305f82ffcdcbf2b9f33ac245b76f6644d8793e84d22ca5306e1ac2118f7a8",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/session.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-STREAM"
+      ],
+      "recorded_sha256": "e05c4a7d97998de97a937a5db3301082b8a5c0ee440bf528756d843b5872b881",
+      "current_sha256": "e05c4a7d97998de97a937a5db3301082b8a5c0ee440bf528756d843b5872b881",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/session_branch.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "5ce857d80f249d24191f77aa6341ef7abc945671936c9cd4057492ad087ae4ff",
+      "current_sha256": "5ce857d80f249d24191f77aa6341ef7abc945671936c9cd4057492ad087ae4ff",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/session_context.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-STREAM"
+      ],
+      "recorded_sha256": "fe540566b9ad598048e1b1f1692cb0003690af7e21a81ef28deadad35e4352cd",
+      "current_sha256": "fe540566b9ad598048e1b1f1692cb0003690af7e21a81ef28deadad35e4352cd",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/session_event.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-OPTIONS"
+      ],
+      "recorded_sha256": "24f454d51aec5d567bddb8f95ee1c564b2268060d59a14921c0c3559078f815f",
+      "current_sha256": "24f454d51aec5d567bddb8f95ee1c564b2268060d59a14921c0c3559078f815f",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/tool/result.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "616667c1487c8dc5740059433016bcdebfa0cefb357f1c060b184aa574bfa681",
+      "current_sha256": "616667c1487c8dc5740059433016bcdebfa0cefb357f1c060b184aa574bfa681",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/tool.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "804dfa6c3d8a2a28997e2b20469437084ebfeb1f2f58b03464f37dc84210c242",
+      "current_sha256": "804dfa6c3d8a2a28997e2b20469437084ebfeb1f2f58b03464f37dc84210c242",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-agent/src/validation.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-TOOL-VALIDATION"
+      ],
+      "recorded_sha256": "9b204f0f1fecc60f189dd25c663dcae686267cc728db7780c7991a3493fa1cee",
+      "current_sha256": "9b204f0f1fecc60f189dd25c663dcae686267cc728db7780c7991a3493fa1cee",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-consumers-repaired.json",
+          "sha256": "49a794c99ccb9c9deb2cadbedbaf447dd3c9c19c5bf773add7459c46cd8b1fc3",
+          "role": "Chat consumer dynamic build/input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion. The shared Chat consumer receipt also records the current opi-agent source hash."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-ai/examples/quick_start.rs",
+      "kind": "example",
+      "contract_ids": [
+        "CAP-STREAM",
+        "CAP-HTTP",
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-REGISTER",
+        "CAP-TRANSCRIPT",
+        "CAP-AUTH",
+        "CAP-MODELS-DISPATCH",
+        "CAP-OPTIONS"
+      ],
+      "recorded_sha256": "f7e013a1c567543cf377d79d14db2cc9bcc25af06990c31aca13345f9368e539",
+      "current_sha256": "0fcf6143fdafd66d9934e53645d3150fcc470470753d5a3d7ed128d93d1fd481",
+      "hash_state": "drifted",
+      "binding_status": "direct-package-executed",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-readme-package.json",
+          "sha256": "cd1503d5cd90696b9b99ff34555dbfccdd170e117ed1529f0f86abf8e7cef99e",
+          "role": "actual packaged README example execution"
+        }
+      ],
+      "notes": "The exact packaged example hash is recorded in the passing external README consumer receipt."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-ai/examples/quick_start_stream.rs",
+      "kind": "example",
+      "contract_ids": [
+        "CAP-HTTP",
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-REGISTER",
+        "CAP-STREAM",
+        "CAP-TRANSCRIPT",
+        "CAP-AUTH",
+        "CAP-EXECUTION",
+        "CAP-MODELS-DISPATCH",
+        "CAP-OPTIONS"
+      ],
+      "recorded_sha256": "82aeff7b87d32b84b55f379b1a147b244e9d4d6fa6294953de29f34a0cac26b3",
+      "current_sha256": "83e464c8bca4e30bfcc5e43697620bb3823a99bc8035a301a1c69b62f7aa356d",
+      "hash_state": "drifted",
+      "binding_status": "direct-package-executed",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-readme-package.json",
+          "sha256": "cd1503d5cd90696b9b99ff34555dbfccdd170e117ed1529f0f86abf8e7cef99e",
+          "role": "actual packaged README example execution"
+        }
+      ],
+      "notes": "The exact packaged example hash is recorded in the passing external README consumer receipt."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-ai/examples/tool_loop.rs",
+      "kind": "example",
+      "contract_ids": [
+        "CAP-HTTP",
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-REGISTER",
+        "CAP-TRANSCRIPT",
+        "CAP-AUTH",
+        "CAP-EXECUTION",
+        "CAP-MODELS-DISPATCH",
+        "CAP-OPTIONS"
+      ],
+      "recorded_sha256": "2d043857f08f25993edab5f3b821582de19469ddc74b4a65a217ecf23489e9da",
+      "current_sha256": "494575a7272e91d953e5c3a63b817d556c1e39be46487f4d1224d99e41d47e2a",
+      "hash_state": "drifted",
+      "binding_status": "direct-package-executed",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-readme-package.json",
+          "sha256": "cd1503d5cd90696b9b99ff34555dbfccdd170e117ed1529f0f86abf8e7cef99e",
+          "role": "actual packaged README example execution"
+        }
+      ],
+      "notes": "The exact packaged example hash is recorded in the passing external README consumer receipt."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/adapter_extension.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-API",
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-REGISTER"
+      ],
+      "recorded_sha256": "f4aa360b82b2ebbb9979770a1d69e97b4150c2b7ea7075954adcf5567a7ca654",
+      "current_sha256": "f4aa360b82b2ebbb9979770a1d69e97b4150c2b7ea7075954adcf5567a7ca654",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/compaction.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-CONTROL",
+        "CAP-STREAM",
+        "CAP-MODELS-DISPATCH",
+        "CAP-RETRY",
+        "CAP-TRANSCRIPT",
+        "CAP-FAUX"
+      ],
+      "recorded_sha256": "1bb8193d715d219aeb78cc5e20e387966c84b83b9a5a58d6d39316c3baab8ac0",
+      "current_sha256": "1bb8193d715d219aeb78cc5e20e387966c84b83b9a5a58d6d39316c3baab8ac0",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/config.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-RETRY",
+        "CAP-AUTH",
+        "CAP-VALUES",
+        "CAP-API",
+        "CAP-OPTIONS",
+        "CAP-USAGE",
+        "CAP-STREAM",
+        "CAP-HTTP"
+      ],
+      "recorded_sha256": "7362afe7527d4e65419ea611c21f0db07cab27c55836dce3f71befe3955f9fa9",
+      "current_sha256": "7362afe7527d4e65419ea611c21f0db07cab27c55836dce3f71befe3955f9fa9",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/credential_store.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-CREDENTIALS",
+        "CAP-AUTH",
+        "CAP-PROVIDERS"
+      ],
+      "recorded_sha256": "ed77e7f6611074aed603952803222e1c296ef2f1536ee6e709cefe867999e65a",
+      "current_sha256": "ed77e7f6611074aed603952803222e1c296ef2f1536ee6e709cefe867999e65a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/doctor.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-CREDENTIALS"
+      ],
+      "recorded_sha256": "7e7aae110fe6c46fc612a6124610a6f4d178d7684a990b107a4c6453b8321946",
+      "current_sha256": "7e7aae110fe6c46fc612a6124610a6f4d178d7684a990b107a4c6453b8321946",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/github_copilot.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-USAGE",
+        "CAP-OPTIONS",
+        "CAP-API"
+      ],
+      "recorded_sha256": "7740ae6ce908cadc152eecabef09f3efa59e044b410a7d0a7ff47901962f717d",
+      "current_sha256": "7740ae6ce908cadc152eecabef09f3efa59e044b410a7d0a7ff47901962f717d",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/harness.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-MODELS-DISPATCH",
+        "CAP-AUTH",
+        "CAP-CREDENTIALS",
+        "CAP-STREAM",
+        "CAP-SESSION",
+        "CAP-RETRY",
+        "CAP-CATALOG",
+        "CAP-TRANSCRIPT",
+        "CAP-FAUX",
+        "CAP-API",
+        "CAP-CODEX",
+        "CAP-HTTP",
+        "CAP-EXECUTION",
+        "CAP-BEDROCK",
+        "CAP-ANTHROPIC",
+        "CAP-OPTIONS"
+      ],
+      "recorded_sha256": "9570c767dcd64081d12209c838ba5fd21e3df8013377ab37c6f7e305d4ba61fa",
+      "current_sha256": "52f9cba627ce454fe2f07f36befb6142b77932dedd29865b2bb8e87d65b948e4",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/image.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "45ef95761706bf9131175b5a5963d5b547b9fc64b484741f03968a1f437e4087",
+      "current_sha256": "45ef95761706bf9131175b5a5963d5b547b9fc64b484741f03968a1f437e4087",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/interactive.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-STREAM",
+        "CAP-AUTH",
+        "CAP-FAUX"
+      ],
+      "recorded_sha256": "b4c71923d00dd45efb72ef63379b737b3528d4c50e8abcb0b186cb4a87feac25",
+      "current_sha256": "b4c71923d00dd45efb72ef63379b737b3528d4c50e8abcb0b186cb4a87feac25",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/interactive_auth.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-AUTH",
+        "CAP-PROVIDERS"
+      ],
+      "recorded_sha256": "b39626f7591b03c6e287393270236d6d387966dcdd34af027a8336c9d22d3cd8",
+      "current_sha256": "b39626f7591b03c6e287393270236d6d387966dcdd34af027a8336c9d22d3cd8",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/main.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-PROVIDERS",
+        "CAP-AUTH",
+        "CAP-VALUES",
+        "CAP-FAUX"
+      ],
+      "recorded_sha256": "cb7f3658e9814a5dc8b7faf5b2c7ee7224164d38ac1156bc393fceebb92ac5d6",
+      "current_sha256": "cb7f3658e9814a5dc8b7faf5b2c7ee7224164d38ac1156bc393fceebb92ac5d6",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/model_listing.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-MODELS-REGISTER"
+      ],
+      "recorded_sha256": "d907cbd055c12cb74f903b5510b72ffd11e937bc1439d7885624dda8ac90a112",
+      "current_sha256": "d907cbd055c12cb74f903b5510b72ffd11e937bc1439d7885624dda8ac90a112",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/oauth.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-AUTH",
+        "CAP-CREDENTIALS",
+        "CAP-PROVIDERS"
+      ],
+      "recorded_sha256": "d8bff023343e09e4b271a04769e4b7d8988ac8321a9e417408d9e3a5c8b9189a",
+      "current_sha256": "d8bff023343e09e4b271a04769e4b7d8988ac8321a9e417408d9e3a5c8b9189a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/openai_codex.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-USAGE",
+        "CAP-OPTIONS",
+        "CAP-API"
+      ],
+      "recorded_sha256": "da7fac413024a462f6e882bd3d7b595bedd0249a5c6d469edb33fb89dfe42f88",
+      "current_sha256": "da7fac413024a462f6e882bd3d7b595bedd0249a5c6d469edb33fb89dfe42f88",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/picker.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-MODELS-REGISTER"
+      ],
+      "recorded_sha256": "0769addd1387a5ed89921f0ffa26507ac7be66aed01e20637767af46a53bdef6",
+      "current_sha256": "0769addd1387a5ed89921f0ffa26507ac7be66aed01e20637767af46a53bdef6",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/pricing.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-STREAM"
+      ],
+      "recorded_sha256": "809b570a222ae90de46c2464ae56681db4102d6fc39a27c8252e707406c8a6c3",
+      "current_sha256": "809b570a222ae90de46c2464ae56681db4102d6fc39a27c8252e707406c8a6c3",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/prompt.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "36cf29cdcc17f78fb90cb67b0d82e57bf3c5bfd8a51803981fb2349dbafebe79",
+      "current_sha256": "36cf29cdcc17f78fb90cb67b0d82e57bf3c5bfd8a51803981fb2349dbafebe79",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/provider_factory.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-PROVIDERS",
+        "CAP-MODELS-REGISTER",
+        "CAP-MODELS-DISPATCH",
+        "CAP-AUTH",
+        "CAP-CREDENTIALS",
+        "CAP-HTTP",
+        "CAP-ANTHROPIC",
+        "CAP-OPENAI-CHAT",
+        "CAP-MISTRAL",
+        "CAP-OPENAI-RESPONSES",
+        "CAP-GOOGLE",
+        "CAP-BEDROCK",
+        "CAP-VERTEX",
+        "CAP-API",
+        "CAP-VALUES",
+        "CAP-CODEX"
+      ],
+      "recorded_sha256": "e26b5c8a24336f8534433bdae9b83cfdd12861b91b32d0b0bf53daa08e919d4b",
+      "current_sha256": "e26b5c8a24336f8534433bdae9b83cfdd12861b91b32d0b0bf53daa08e919d4b",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/rpc.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-PROVIDERS",
+        "CAP-AUTH",
+        "CAP-FAUX",
+        "CAP-TRANSCRIPT",
+        "CAP-API",
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "f7940205da67b526bb5a33cd1bbc8c80ff5cea08a08a70fc0023f3e7bae56245",
+      "current_sha256": "f7940205da67b526bb5a33cd1bbc8c80ff5cea08a08a70fc0023f3e7bae56245",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/runner.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES",
+        "CAP-PROVIDERS",
+        "CAP-STREAM",
+        "CAP-AUTH",
+        "CAP-FAUX"
+      ],
+      "recorded_sha256": "78f87d337c66178d116e277141579cdf9b23262449c706c99b4cbd4e2e903ee9",
+      "current_sha256": "78f87d337c66178d116e277141579cdf9b23262449c706c99b4cbd4e2e903ee9",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/session_cli.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "3464a38fc30c5394c0d65eba3309b63d575e2cdcdd0df5506b4825e81b0f49c0",
+      "current_sha256": "3464a38fc30c5394c0d65eba3309b63d575e2cdcdd0df5506b4825e81b0f49c0",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/session_coordinator.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-USAGE",
+        "CAP-VALUES",
+        "CAP-STREAM",
+        "CAP-CONTROL",
+        "CAP-FAUX"
+      ],
+      "recorded_sha256": "cc77a0cf522d50d1fcb197bb05930358ea13d9f77504fb5e70a678f81c02663f",
+      "current_sha256": "a7296e52adbdef4eae2f4ef4e28d8c822be22e1f0b2594bf4877f4a6e3e9f467",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/bash.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "4dc3133fcb7e3189c95e7ad3d37dccb92c3976202bc4365feca8d687befb032a",
+      "current_sha256": "4dc3133fcb7e3189c95e7ad3d37dccb92c3976202bc4365feca8d687befb032a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/edit.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "6c9780b2331519133297c869239699abbcb532465f59b432aa9f108a78bd3e35",
+      "current_sha256": "6c9780b2331519133297c869239699abbcb532465f59b432aa9f108a78bd3e35",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/find.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "d96df1701fc67835f2e279b5541d7e22e04a6fd700ddb629ee43726459b36505",
+      "current_sha256": "d96df1701fc67835f2e279b5541d7e22e04a6fd700ddb629ee43726459b36505",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/glob.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "cfc2ceac8defa4dc561547d9a3910051e78c66eb12036e1a5ff6cd7af23515c5",
+      "current_sha256": "cfc2ceac8defa4dc561547d9a3910051e78c66eb12036e1a5ff6cd7af23515c5",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/grep.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "d042ab5a21eaecaa9fb910bfa37effb6eb5c730f8092e7349f45541aad3f662f",
+      "current_sha256": "d042ab5a21eaecaa9fb910bfa37effb6eb5c730f8092e7349f45541aad3f662f",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/ls.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "6d1776b09a85803c26d0eb4fc22b0efacb35b5af395bbb81c62bf1b9f22767b5",
+      "current_sha256": "6d1776b09a85803c26d0eb4fc22b0efacb35b5af395bbb81c62bf1b9f22767b5",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/mod.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "c234d7c6ea04402f857be0f4c60d04f9cac503ee01e312893f23d9486a6612b5",
+      "current_sha256": "c234d7c6ea04402f857be0f4c60d04f9cac503ee01e312893f23d9486a6612b5",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/operations.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-AUTH"
+      ],
+      "recorded_sha256": "56ddb18acb369d8f0a2e68a97372aafdc0c9b4082f6d3dcdeffe0586f4d78ba5",
+      "current_sha256": "56ddb18acb369d8f0a2e68a97372aafdc0c9b4082f6d3dcdeffe0586f4d78ba5",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/read.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "d239944958242a64339f63c901fb11189d0b042e7869ad1ff076c503c85a48b3",
+      "current_sha256": "d239944958242a64339f63c901fb11189d0b042e7869ad1ff076c503c85a48b3",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "crates/opi-coding-agent/src/tool/write.rs",
+      "kind": "production",
+      "contract_ids": [
+        "CAP-VALUES"
+      ],
+      "recorded_sha256": "1ce28609be939ee2ea26c6f8ecea8ffe2c8262ec38fb2e5053b68bcb1cc2fc08",
+      "current_sha256": "1ce28609be939ee2ea26c6f8ecea8ffe2c8262ec38fb2e5053b68bcb1cc2fc08",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current source hash is present in the final-numbers workspace dynamic receipt; this proves candidate input binding and aggregate execution scope, not a caller-specific assertion."
+    },
+    {
+      "section": "consumers",
+      "path": "scripts/pi-sdk-conformance/consumer/src/main.rs",
+      "kind": "package-consumer",
+      "contract_ids": [
+        "CAP-TOOL-VALIDATION"
+      ],
+      "recorded_sha256": "51d6228dc3b69df2a24adab8d32e9fed7283f15a03cf24fa64a9e1f735a76a3f",
+      "current_sha256": "51d6228dc3b69df2a24adab8d32e9fed7283f15a03cf24fa64a9e1f735a76a3f",
+      "hash_state": "unchanged",
+      "binding_status": "direct-package-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-current-candidate-schema-package.json",
+          "sha256": "4cf461ffb798e36350500ad9f3e9fc3247cce182bfc2e627a1fa168cb1fddb88",
+          "role": "actual schema package consumer; exact source hash"
+        }
+      ],
+      "notes": "Current consumer template hash is recorded in the passing packaged schema run."
+    },
+    {
+      "section": "consumers",
+      "path": "scripts/pi-sdk-conformance/consumer-crypto/src/main.rs",
+      "kind": "package-consumer",
+      "contract_ids": [
+        "CAP-AUTH",
+        "CAP-HTTP",
+        "CAP-MODELS-DISPATCH",
+        "CAP-OPENAI-CHAT",
+        "CAP-PROVIDERS",
+        "CAP-STREAM",
+        "CAP-TRANSCRIPT"
+      ],
+      "recorded_sha256": "de905d1114e3f989aecc618ba877be3e93eb3b24b1864adfc3ff16b4f87c2aca",
+      "current_sha256": "de905d1114e3f989aecc618ba877be3e93eb3b24b1864adfc3ff16b4f87c2aca",
+      "hash_state": "unchanged",
+      "binding_status": "capability-family-package-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v1.json",
+          "sha256": "6222ea5e59d620f5f0db16b2fe2a05f8f6cdaffaf165b1e0a4783e00cb0c0e3f",
+          "role": "TLS/crypto capability-family package consumer; generated source, template not directly executed"
+        }
+      ],
+      "notes": "A passing actual-archive package receipt covers the same owner family, but its runner generated a temporary consumer source; this repository template has no direct package-run hash binding."
+    },
+    {
+      "section": "consumers",
+      "path": "scripts/pi-sdk-conformance/consumer-http/src/main.rs",
+      "kind": "package-consumer",
+      "contract_ids": [
+        "CAP-AUTH",
+        "CAP-HTTP",
+        "CAP-VALUES",
+        "CAP-MODELS-DISPATCH",
+        "CAP-OPENAI-CHAT",
+        "CAP-PROVIDERS",
+        "CAP-STREAM",
+        "CAP-TRANSCRIPT"
+      ],
+      "recorded_sha256": "e8d1a9b64aa46c277d321785c03cbe10f6bcbe65f2afc4917525adf683019e8f",
+      "current_sha256": "e8d1a9b64aa46c277d321785c03cbe10f6bcbe65f2afc4917525adf683019e8f",
+      "hash_state": "unchanged",
+      "binding_status": "capability-family-package-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261116-v6.json",
+          "sha256": "7cb5a7e46e9ef1d32d5658fd78be571e6270d64ca2374b29ce2433d3f1f4768d",
+          "role": "HTTP capability-family package consumer; generated source, template not directly executed"
+        }
+      ],
+      "notes": "A passing actual-archive package receipt covers the same owner family, but its runner generated a temporary consumer source; this repository template has no direct package-run hash binding."
+    },
+    {
+      "section": "consumers",
+      "path": "scripts/pi-sdk-conformance/consumer-ws/src/main.rs",
+      "kind": "package-consumer",
+      "contract_ids": [
+        "CAP-AUTH",
+        "CAP-CREDENTIALS",
+        "CAP-HTTP",
+        "CAP-CODEX",
+        "CAP-PROVIDERS",
+        "CAP-STREAM",
+        "CAP-WS",
+        "CAP-TRANSCRIPT",
+        "CAP-VALUES",
+        "CAP-OPTIONS",
+        "CAP-MODELS-DISPATCH",
+        "CAP-API"
+      ],
+      "recorded_sha256": "b618730ffadf5afe69b5193582a8c868ced35f828defde3e44b3bfbba1247282",
+      "current_sha256": "b618730ffadf5afe69b5193582a8c868ced35f828defde3e44b3bfbba1247282",
+      "hash_state": "unchanged",
+      "binding_status": "capability-family-package-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-websocket-compression-package-20261115-v4.json",
+          "sha256": "a45c0bfddfdd661b6012194c8a4d04ec55e35abe48d2e1f32fa5097bdd1c8d66",
+          "role": "WebSocket/compression capability-family package consumer; generated source, template not directly executed"
+        }
+      ],
+      "notes": "A passing actual-archive package receipt covers the same owner family, but its runner generated a temporary consumer source; this repository template has no direct package-run hash binding."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/adc_owner_regressions.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "6d2366e71653ff38180456618d61d31009b93e844140ddb749b5554b06b4c8c1",
+      "current_sha256": "6d2366e71653ff38180456618d61d31009b93e844140ddb749b5554b06b4c8c1",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/anthropic_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "6042e52955fc22368d41413c857a0f74f072ea879da5d7a7ae26b7062c9c17ea",
+      "current_sha256": "3235ddadbf60fd07629baa15fa7ea4c85e2b8102b6facb27edc31d55fd80d630",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-anthropic-repeated-message-stop-materials.json",
+          "sha256": "c4774a9ce8a3460b2a148ebc7e50167edff3d8329937b31ad54af24d5042cde4",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-anthropic-repeated-message-stop-differential.json",
+          "sha256": "9da83317076ba395d8a5fb1d3df01bc7d8e98753945b1c6f7e3e33091ac91a17",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/anthropic_thinking_roundtrip.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "10cedf35d01f265041e9873bb2b3467635379b31961ae70c90573ead91ccebc3",
+      "current_sha256": "10cedf35d01f265041e9873bb2b3467635379b31961ae70c90573ead91ccebc3",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/api_mapped_provider.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "0e7815045d2b720e9fd2d37da61e52bc92a721c00df383cdea50897c44440de6",
+      "current_sha256": "0e7815045d2b720e9fd2d37da61e52bc92a721c00df383cdea50897c44440de6",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/auth_contracts.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f2192f80324401f0a8c6b03be23db11f7364bf263f18a4214c30b854d6a18fd1",
+      "current_sha256": "9f4fd99d188a22a6dc7f3e1810f2e919e2506c377be2e85175466cad98b53c5d",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/auth_process_lifecycle.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "9288070bfe8de2062a35c236a2ce20bdd577f7296605f4a5f37bacbd14781215",
+      "current_sha256": "9288070bfe8de2062a35c236a2ce20bdd577f7296605f4a5f37bacbd14781215",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/azure_openai_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "c6336276c08419512a4942d27c5156e8d572828311537c29b7d41053ea00cc5f",
+      "current_sha256": "a543ec77708a6c489b5cfa4d4044ccf792d2b5d5abdfdbf0fb72db209fae110a",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-responses-repeated-terminal-materials.json",
+          "sha256": "9083def97f84b4c716232711e236d4f438951e3cc39fb4bc3f0e5a246db0e8a3",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-responses-repeated-terminal-differential.json",
+          "sha256": "109e9f317f588924e60f600b1926ae7169768119f1d6a1f544e5bbe955016f62",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/bedrock_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "d43850690f6779b6f2aa0cf37878a51e31e762c9c97ced79d6d2c354bf1e8ab8",
+      "current_sha256": "59268d3163326cec0b8740bb4df1f5f26c01d0e39f0f8ed972900a2f329e021d",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-bedrock-pending-materials-v3.json",
+          "sha256": "17f9133e4fc674e1413fedb548c31784bb934a3a6ee63cb3ce502767182bb833",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-bedrock-pending-differential-v3.json",
+          "sha256": "3401b44c2af5f7d81a863fac2a9897b616a95c0ecd37add25f5b9382e75844aa",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/builtin_auth_ownership.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f7046ba30e53d14b69381481dfbdc0a4e06a84d007452f5e7c1415bf5d1752fa",
+      "current_sha256": "ced383571beb4b03341bf99000d286fc86871f043368e88c5cf76d05935c4527",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/builtin_native_scoped.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "6c470fc5cb97c8a0a1878949065f036dbd1c3d351028fcaece183dd3090f5034",
+      "current_sha256": "6c470fc5cb97c8a0a1878949065f036dbd1c3d351028fcaece183dd3090f5034",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/builtin_scoped_env.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "3f402a1198adbcde23bb9e6e740b498fd78775e3ebc9c5329e4878fa80697066",
+      "current_sha256": "3f402a1198adbcde23bb9e6e740b498fd78775e3ebc9c5329e4878fa80697066",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/catalog_artifact.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "cb7fcaebbffb082b01531fa73e7820de3ad553da2242a8e7d7a993576b00ed1c",
+      "current_sha256": "cb7fcaebbffb082b01531fa73e7820de3ad553da2242a8e7d7a993576b00ed1c",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/catalog_lifecycle.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "3e3d20a56683f592a1f961cf0da6527b95f8fbee505b6888fe5742ff61ce980a",
+      "current_sha256": "3e3d20a56683f592a1f961cf0da6527b95f8fbee505b6888fe5742ff61ce980a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/catalog_operations.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f8094586010a2d119dd78336105a6d069f14673c76c2a24c84bdea99fd74d9dd",
+      "current_sha256": "c77543c4510e77b1351f51037aaf3fa5ce7352bf1b4427b0003e64c92c1f4101",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/catalog_personalization.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "3e1280f7c20eba96dbd16fe66b1767208e293dcb2fb7b8258a11a4433b3a13b2",
+      "current_sha256": "3e1280f7c20eba96dbd16fe66b1767208e293dcb2fb7b8258a11a4433b3a13b2",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/chat_capture_replay.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "045a0b58b6ad52053a742533c8f252066fb252439b6c75c5f8eecf210923ac27",
+      "current_sha256": "045a0b58b6ad52053a742533c8f252066fb252439b6c75c5f8eecf210923ac27",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/chat_pi_messages.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "c8aa90608b4fb6d2ed5d258d2cf184018b4d07f392b159302f227446dd2fdc51",
+      "current_sha256": "b71d1c69ddb892c57b42e74d304bb496a620ad2a1ac62192bab452abf9e12f93",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-pi-messages-terminal-materials.json",
+          "sha256": "57c9dee6f4ff00ae7f02b8355448e931c41a9c6b28171721ceedddd4db59eb9b",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-pi-messages-terminal-differential-v2.json",
+          "sha256": "c13b199e4cc062a8aab8815404b828f8a2a4f926e3d092079b163bc6f867b2c7",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/classifier_contract.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "31867d15947d2f76861e67ce12edeeb9eef1f77174354a9d458a55de2507657f",
+      "current_sha256": "120d4cbe6cc9bc20cee97caf13882162cc39b346006cb6e81ca577db7d74c01b",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/codex_native_options/deadlines.rs",
+      "kind": "integration-submodule",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f9951738a5a55bcfd1bf8a3baeb185a9de28ef8668a71d04ca9ec1d732a4ee5d",
+      "current_sha256": "f9951738a5a55bcfd1bf8a3baeb185a9de28ef8668a71d04ca9ec1d732a4ee5d",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/codex_native_options/lifetimes.rs",
+      "kind": "integration-submodule",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "6fc2aff5f726d9e4f422d4923424d6ec464217473716817ff418755db38aa7a2",
+      "current_sha256": "6fc2aff5f726d9e4f422d4923424d6ec464217473716817ff418755db38aa7a2",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/codex_native_options.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "8b664346ce448063db3e4121675cbbd76b7e93445d1e543eb7bd7ceccd9c8194",
+      "current_sha256": "8b664346ce448063db3e4121675cbbd76b7e93445d1e543eb7bd7ceccd9c8194",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/codex_telemetry.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "147130bbf0acbfdfcfb935ec37fb1700ccf7eeb460b8fde6c88475cf6d4990e4",
+      "current_sha256": "147130bbf0acbfdfcfb935ec37fb1700ccf7eeb460b8fde6c88475cf6d4990e4",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/connection_pooling.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "eca11b16b2806c82338511e4a9b18a085c2cb40c6cc7aedbd6f7433c51828736",
+      "current_sha256": "eca11b16b2806c82338511e4a9b18a085c2cb40c6cc7aedbd6f7433c51828736",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/context_budget.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "925f23a4551bf0bb504b1b76f3f77cec191daeb49d1226993e02c89481631622",
+      "current_sha256": "925f23a4551bf0bb504b1b76f3f77cec191daeb49d1226993e02c89481631622",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/custom_provider_registration.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "82bc7dfa0743ff836e45f9c9c9bad5a2538a7e93fb6202e5568b706af1ed6c93",
+      "current_sha256": "e4b8a8192a7fe7a82b2f5b57ad9e69f277651acd469f2b96f6a8ce32797425f3",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/deferred_contract.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "c38f2f15a62f4a07637640cdbf12353414462caa6c031c4d0025456953642954",
+      "current_sha256": "402acc886c56ae3e9c9539cac4a7f032fc59328d9182de3bcde9266b84feb452",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/external_sdk.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "83a59976cede8cb2b1b98987e88f7468bfb5e0e686290c5f46daed0fc6cce4a8",
+      "current_sha256": "83a59976cede8cb2b1b98987e88f7468bfb5e0e686290c5f46daed0fc6cce4a8",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/gemini_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "7237b7028a070dc86c6b5490c3d49e309fb6bff142d006b0c531dcbe5f7f602c",
+      "current_sha256": "d0378e7f02ae69f78d300e32b012082cd2a50ba7a20b081048c5e32799138d1a",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-gemini-repeated-finish-materials.json",
+          "sha256": "695307ed631e239ab364fd93dbe8405aa45a5a7aaaff65d1f273e9822cbb618c",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-gemini-repeated-finish-differential-v2.json",
+          "sha256": "6f89819db2b23acc0acadbd9d7374e543498012f2dea3ac3258d38f7bdd49ff4",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/gemini_lifecycle.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "ab0fa5995197671959c9f9ee0452a10ca5cc6ff7a046855189f4d673de23773c",
+      "current_sha256": "ab0fa5995197671959c9f9ee0452a10ca5cc6ff7a046855189f4d673de23773c",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/http_acceptance.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "07927041db446df96751241ebad060c07289c9de4e4693f2f21239f42059c05a",
+      "current_sha256": "77c560c82fb59705a5ee8d95517c483561435294c9ecbd01f1e0dc5ee0a3bf60",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/image_input.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "889696798fd6c56fcae0429b0c9da30b7fc4f13cdaaa3a1024e50c7ce6333f2d",
+      "current_sha256": "889696798fd6c56fcae0429b0c9da30b7fc4f13cdaaa3a1024e50c7ce6333f2d",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/image_provider_serialization.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "0ef141e4f7388948c9a119af2425005b683aaf8692ac810cf09972bcb0130729",
+      "current_sha256": "0ef141e4f7388948c9a119af2425005b683aaf8692ac810cf09972bcb0130729",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/mistral_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "663ff89b13de70e51bd5ad2589a568e27985c0db4106b2cec260eda9a612a7a6",
+      "current_sha256": "40c2b1e9e4fa9d78fc0a6d477855870bbf1de926baa825821097a307a99117f7",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-mistral-repeated-finish-materials.json",
+          "sha256": "32f46b51f168e48914dfcc43add23fc63e427fd1e818a6eeb0022c3e38277571",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-mistral-repeated-finish-differential.json",
+          "sha256": "e98bb04f21e162e38f14fd1c125c552ddfbd936da1e1a69c42d9bede92f229b8",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/model_capabilities_migration.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "1bf339cd49338348f49637342851f062961357e36cd84bf83454f595fd8ba7f0",
+      "current_sha256": "1bf339cd49338348f49637342851f062961357e36cd84bf83454f595fd8ba7f0",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/model_wire_metadata.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "0642d5e09208cab71389afcf9f8771e4baacaf1cf18e2fc18685dc833d0c56b1",
+      "current_sha256": "4ae1d67a5261bf9d46d5feceb2fce86f55f3bf3a4adc0d9a7627b11bf3e858ac",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/node4_preparation.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "d73034b18ed960ec88217aa242d22ee3478e0b68f282c065d6236ffed6c80f10",
+      "current_sha256": "d73034b18ed960ec88217aa242d22ee3478e0b68f282c065d6236ffed6c80f10",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/oauth_flows.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "19f239cebc570e99f99bcd9c236d55545282b3fdedf69c813acf4abf102908a5",
+      "current_sha256": "7da4e83bff17b827747e62dc66ad56891c7e86b64763f3abcd2015ccb09ce7db",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/oauth_store_integration.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "28433030baeda41688f7eaf970047c8a52e08e786e5eba96a5cfc20fbf0ba307",
+      "current_sha256": "28433030baeda41688f7eaf970047c8a52e08e786e5eba96a5cfc20fbf0ba307",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/oauth_wire_shape.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "df8936bf09dc46c1ba27f5595d167e111a72f8df33e50effcafdf90dfae6423f",
+      "current_sha256": "df8936bf09dc46c1ba27f5595d167e111a72f8df33e50effcafdf90dfae6423f",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_chat_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "cd597ae9a054b72b42c43cb4b9780572ad166398307bdba81c1c0ee765b259a0",
+      "current_sha256": "cf03844f704ac7c77bc4a3311a9d053a97ae1aa6e7c0620fa511d2d0b879b6fe",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_codex_responses/deflate_audit.rs",
+      "kind": "integration-submodule",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "9abe47caeebca1013d138f0c78fb0f69611e089bb2014f5a076ce6b3307cf798",
+      "current_sha256": "9abe47caeebca1013d138f0c78fb0f69611e089bb2014f5a076ce6b3307cf798",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_codex_responses/replay.rs",
+      "kind": "integration-submodule",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "fbef1b7aee28a65e5a1ba6df4f1bc9a856e9e3141d740b38c9f25965bf74d513",
+      "current_sha256": "fbef1b7aee28a65e5a1ba6df4f1bc9a856e9e3141d740b38c9f25965bf74d513",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_codex_responses.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "30087ff978ca3548ac459540a58921971cf0aeb03983a2953ccb0af8497e8b47",
+      "current_sha256": "455cca540e3030f1f7fa2f697cfeaf7c25c56fd1f9968a4106ccd48a5b729702",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_compat_lifecycle.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "4fd20030ae643d7c762bb55d537026d7b88a2fa2369c96ccb832e43a3afd75c2",
+      "current_sha256": "4fd20030ae643d7c762bb55d537026d7b88a2fa2369c96ccb832e43a3afd75c2",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "eb6bcc9461656747c1ad1c5f29eb5e0896b336e492fa6c3d7dbe8c93f32fe3b1",
+      "current_sha256": "757797306dd9f61cbeac4518bc5e42f46d81f31cace99e5532cef248dcd61261",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "8776c8d539ed4232a21afadcccd2c94517c0ba505d5596ebab345ed2edced6f9",
+      "current_sha256": "7d16621614e67b057752f149d6e924663a710f832f306a5143f3c69524780e5c",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-responses-repeated-terminal-materials.json",
+          "sha256": "9083def97f84b4c716232711e236d4f438951e3cc39fb4bc3f0e5a246db0e8a3",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-responses-repeated-terminal-differential.json",
+          "sha256": "109e9f317f588924e60f600b1926ae7169768119f1d6a1f544e5bbe955016f62",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/openrouter_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "c4bb154eeb8eae8634675af7775a03d1b5dcd9b03a9399ecf15b9fcf65c8c25d",
+      "current_sha256": "8a206468786615d87de1ac36649957df502f5329c8650abd2148df45d5e43056",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/output_content_image.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "18ec32aea1e444fb8f4d68df3b2c46f15d618690750da45426dc26f9b81cffb4",
+      "current_sha256": "18ec32aea1e444fb8f4d68df3b2c46f15d618690750da45426dc26f9b81cffb4",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/per_request_auth.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "843abc6fea970d7d74afa3852e124beb9c6204054bdb3d7ce5afcaecb01c8b10",
+      "current_sha256": "843abc6fea970d7d74afa3852e124beb9c6204054bdb3d7ce5afcaecb01c8b10",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/platform_delivery.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f312698f2c89c963fb9e3ec668a8a3e144747bb3dba6723db416208895940156",
+      "current_sha256": "b38ada5c9b5e662c8215e410dd58c9fc99172cde3860ad6468d6f5e64d66e18a",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-native-v.json",
+          "sha256": "e616c2748b94132c8287dffb921363c782ce01a3018d7df3b4c5777ef6d9c516",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/provider_collection.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f12d7f49f2fa7a2833743d1f22bc5fd01eff05854ab351b90756831d895a141f",
+      "current_sha256": "8cb9e540f54250d789a81b2901ab9a5380a080961274d1047665d5fece8e872b",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/provider_diagnostics.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "fa4a6afce4d981119f3cedf0d434e158cf001db39b0b077a2035fb4edef8a919",
+      "current_sha256": "b1da86b857e36f8579d6e95c8980f3298eedc659ddb7e3a05b17601dc7f3bf28",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/provider_error_classes.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "80d14bebc794c935d04c98c4b089f08055bb1cd77b7e7322d76ab8e5b49f2198",
+      "current_sha256": "80d14bebc794c935d04c98c4b089f08055bb1cd77b7e7322d76ab8e5b49f2198",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/provider_lifecycle.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "a8d310a125259b91354881657a12aba0f6adca673b76ebe88b616a55278a63dd",
+      "current_sha256": "fb56a02864322ea36b7a1bf92d146e7729166ad9ddfaa53cb9a61954d917f2be",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/provider_trait.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "4d1e3a8a687485b8698fa61bd171314ee4480a401bf68bff3853aae1a22daa87",
+      "current_sha256": "4d1e3a8a687485b8698fa61bd171314ee4480a401bf68bff3853aae1a22daa87",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/proxy_support.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "31ceed3919c436d99ec47b9d8f5916383b63a53cbe2ca907f3ac11b7bbe41b6d",
+      "current_sha256": "31ceed3919c436d99ec47b9d8f5916383b63a53cbe2ca907f3ac11b7bbe41b6d",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/public_utilities.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "db4fbb15807756082770265c116e36e8663f0e6d857ae91e9306b636ec19bc3e",
+      "current_sha256": "f0f91aa4b6e0bc21b0d48108e754812df940640a28d55bdac7fb4534bbc5eff5",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/registry.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "620e57ee744c82e832f9a46d9a6c2e1d3284b20f7fd13f0f49963c3e43709b09",
+      "current_sha256": "620e57ee744c82e832f9a46d9a6c2e1d3284b20f7fd13f0f49963c3e43709b09",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/replay_contract/object_wire.rs",
+      "kind": "integration-submodule",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "821811d68453f4ab93b141bca94553e00ab07367f38936a5f1d026098054c360",
+      "current_sha256": "821811d68453f4ab93b141bca94553e00ab07367f38936a5f1d026098054c360",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/replay_contract.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "1fe960ece25282857450f7b24bf299cf3d5eb21a0194cee05958c8d10bd3ea4d",
+      "current_sha256": "1fe960ece25282857450f7b24bf299cf3d5eb21a0194cee05958c8d10bd3ea4d",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/request_enrichment.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "9ea3cd9d8826ab8ec5eeb2827885f61cd9072d36d2021a7335d72eb90fc7fa29",
+      "current_sha256": "9ea3cd9d8826ab8ec5eeb2827885f61cd9072d36d2021a7335d72eb90fc7fa29",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/resource_cleanup.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "84c42c449e978c7c4075f95f243238b518b59d31089a3e5e78b3695f8843bb04",
+      "current_sha256": "b28046fcf05726d7ae0b871ce70f3d8890e14f216a0c75580fe36f5456e5c4a7",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/retry_backoff.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "7f5fd6c7e7065c00fab511145c4a41e4d56b4380c4e4b30171439bdc900ddc5d",
+      "current_sha256": "7f5fd6c7e7065c00fab511145c4a41e4d56b4380c4e4b30171439bdc900ddc5d",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/schema_engine.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "03c44f1d11da122d1566b37a74dbc44cab18f84ac51292646e02c6983873bb87",
+      "current_sha256": "03c44f1d11da122d1566b37a74dbc44cab18f84ac51292646e02c6983873bb87",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/schema_public.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "ec659724ee84e1643fe166f2c578ff509a9475f93d3a0248ab2c8780a1cf29ac",
+      "current_sha256": "ec659724ee84e1643fe166f2c578ff509a9475f93d3a0248ab2c8780a1cf29ac",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/service_tier_cost.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "67ca0000ad56dd59e61dea36e7152dfe24d52c3885713782063080b89a60c96f",
+      "current_sha256": "45c818e4ea4b43515e19c737b1a81de83b540bef9f3900b9330457a870899c20",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/stream_events.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "60f97ff607100076a426d94f4c30e56981cdff3f1a75ce86db4de06f8442e19c",
+      "current_sha256": "e324445470f698827c4172b670a7407ce202776fd40b3852184f33f95f9c0fbb",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/support/catalog_store.rs",
+      "kind": "shared-helper",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59",
+      "current_sha256": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/support/pending_auth.rs",
+      "kind": "shared-helper",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "3e213329091e66a5a79f8691744de66bde68ba8326d48b8cdc01e289f81a101e",
+      "current_sha256": "3e213329091e66a5a79f8691744de66bde68ba8326d48b8cdc01e289f81a101e",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/support/tls_fixtures.rs",
+      "kind": "shared-helper",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1",
+      "current_sha256": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/support/ws_peer.rs",
+      "kind": "shared-helper",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "a4efab5bb1b8b388683240ee2d74a14120fa92c8f080742ce2e61f2955456329",
+      "current_sha256": "a4efab5bb1b8b388683240ee2d74a14120fa92c8f080742ce2e61f2955456329",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/telemetry_carrier.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "9b9b8a4c885c25d19a5a00c392b4c2f079df37e2ad8c150025cee47560be0599",
+      "current_sha256": "b46f4f85f3b7ae8b862c652862ca6cfbd16094248878edbc184110ce8d1723a3",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/telemetry_operations.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "933b4f7b8659cda11c513fd8e7244f94651763b299e1a702dd767a66e4485510",
+      "current_sha256": "31851d9f1d695818451094f596c68f378388047dfd7ed45d50fa92cc3b631c1e",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/test_support_tests.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "c51ce53fd82954d6dac35fa9affe2b3f1d8f86644446b4fcb76d489c63fe7a2e",
+      "current_sha256": "c51ce53fd82954d6dac35fa9affe2b3f1d8f86644446b4fcb76d489c63fe7a2e",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/tls_contract.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "eac6a06be00fe7d06c44b8d93fc7cb976e91f16af3fe19ed3502257eb110b04a",
+      "current_sha256": "eac6a06be00fe7d06c44b8d93fc7cb976e91f16af3fe19ed3502257eb110b04a",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/tool_result_no_leak.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "a583d47b6d961b82cb51103796c0c619e0f59ae6638ee83b22488a872e70acf1",
+      "current_sha256": "a583d47b6d961b82cb51103796c0c619e0f59ae6638ee83b22488a872e70acf1",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/tool_result_wire.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "a36e44a9c718c76eba7be08cd242742cd8aedda842bd179fd639f7a1c4a3f756",
+      "current_sha256": "3f16ef91817d2b116cd9c08bcc9028b9dae53fdd0886e53886fac0ae2127aa5a",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-source-applicability-v2.json",
+          "sha256": "05cc14a99f469d4c22a492ce5a4bcd89a661e266bba16f80c220290570a3c1d7",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-checks.json",
+          "sha256": "c3fdf7b20113f2aa85d5c8d2e32279eaf2ec44a9360408a682a49cd6470ca27a",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/transcript_contract/provider_projection.rs",
+      "kind": "integration-submodule",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "8e193591ed4a953a5d1e01f8d75e855028922496d2d12bbacdeb53f7dc6ea341",
+      "current_sha256": "8e193591ed4a953a5d1e01f8d75e855028922496d2d12bbacdeb53f7dc6ea341",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/transcript_contract.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "ddcd4810b374ff294971fef3a39f18639bc8893b676b07482577e2c2a39d1cb6",
+      "current_sha256": "ddcd4810b374ff294971fef3a39f18639bc8893b676b07482577e2c2a39d1cb6",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/usage_cost.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "11fb81a67e49ed843505b7a41838aa67a4e7e3401c2328f8f71dabd543272411",
+      "current_sha256": "90bcb760d5ad442795956c75e0a2b7299bf75479b1a4cdfe87542cb54e1455da",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/vertex_fixtures.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "def51b4a5f1c896ac05733c41b931e3904c0d3d1a3ca3788daa10ea853558a0c",
+      "current_sha256": "42b83b9aed54c7475ed23a66388054fbdba946627cd017426aa61c9cc550793b",
+      "hash_state": "drifted",
+      "binding_status": "contract-dynamic-related",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-gemini-repeated-finish-materials.json",
+          "sha256": "695307ed631e239ab364fd93dbe8405aa45a5a7aaaff65d1f273e9822cbb618c",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-gemini-repeated-finish-differential-v2.json",
+          "sha256": "6f89819db2b23acc0acadbd9d7374e543498012f2dea3ac3258d38f7bdd49ff4",
+          "role": "provider/lifecycle dynamic contract receipt source binding"
+        }
+      ],
+      "notes": "The current hash is bound by a contract-specific paired/material receipt, while the historical aggregate workspace receipt carried an older hash; preserve both and do not promote this row to exact target-run equivalence."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/whole_call_retry.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "cbb0c5aa1d024211817abc195df85c12d453b1cd9486dc54d7f632e194219599",
+      "current_sha256": "6bf156727912fb3ac050b3cecb50556dca1f0d32a606accf67c169729b22aabe",
+      "hash_state": "drifted",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    },
+    {
+      "section": "test_files",
+      "path": "crates/opi-ai/tests/ws_upgrade.rs",
+      "kind": "integration-target",
+      "role": "rust-test",
+      "contract_ids": [],
+      "recorded_sha256": "37e1370b02ad0776f70e29080ff6ac5661459e18182eebfc3174b19735cf7625",
+      "current_sha256": "37e1370b02ad0776f70e29080ff6ac5661459e18182eebfc3174b19735cf7625",
+      "hash_state": "unchanged",
+      "binding_status": "workspace-dynamic-source-bound",
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json",
+          "sha256": "7fd89ff43821de9ac268097e28daae39655bf809ca509e11945350d50af67c5a",
+          "role": "workspace all-targets dynamic source-input binding"
+        }
+      ],
+      "notes": "Current target/helper hash is present in the final-numbers workspace dynamic receipt; target-specific assertion coverage is not inferred from the aggregate run."
+    }
+  ],
+  "reviewed_cases": [
+    {
+      "id": "CASE-REVIEW-01",
+      "path": ".pi/pi-1.5.0/packages/ai/test/event-stream.test.ts",
+      "line": 7,
+      "assertion_lines": [
+        17,
+        23
+      ],
+      "contract_ids": [
+        "CAP-STREAM"
+      ],
+      "name": "drains buffered events in order and ignores events pushed after completion",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired-verified.json",
+          "sha256": "8c6849653f1726f3df91990333887299ea1bf4b91502eb19a1c46fa75ce415c9",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-checks.json",
+          "sha256": "e353420e5d1d24ea5b3997eb551d47bd06c292cd8fb1709faa890f891f31a338",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Chat terminal/stream differential and Rust stream analogue; exact upstream event-stream test not executed."
+    },
+    {
+      "id": "CASE-REVIEW-02",
+      "path": ".pi/pi-1.5.0/packages/ai/test/event-stream.test.ts",
+      "line": 45,
+      "assertion_lines": [
+        58,
+        59
+      ],
+      "contract_ids": [
+        "CAP-STREAM"
+      ],
+      "name": "delivers events to waiting consumers in registration order",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired-verified.json",
+          "sha256": "8c6849653f1726f3df91990333887299ea1bf4b91502eb19a1c46fa75ce415c9",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-checks.json",
+          "sha256": "e353420e5d1d24ea5b3997eb551d47bd06c292cd8fb1709faa890f891f31a338",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Chat terminal/stream differential and Rust stream analogue; exact upstream event-stream test not executed."
+    },
+    {
+      "id": "CASE-REVIEW-03",
+      "path": ".pi/pi-1.5.0/packages/ai/test/event-stream.test.ts",
+      "line": 62,
+      "assertion_lines": [
+        71,
+        77
+      ],
+      "contract_ids": [
+        "CAP-STREAM"
+      ],
+      "name": "drains buffered events after end and resolves the explicit result",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired-verified.json",
+          "sha256": "8c6849653f1726f3df91990333887299ea1bf4b91502eb19a1c46fa75ce415c9",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-checks.json",
+          "sha256": "e353420e5d1d24ea5b3997eb551d47bd06c292cd8fb1709faa890f891f31a338",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Chat terminal/stream differential and Rust stream analogue; exact upstream event-stream test not executed."
+    },
+    {
+      "id": "CASE-REVIEW-04",
+      "path": ".pi/pi-1.5.0/packages/ai/test/event-stream.test.ts",
+      "line": 80,
+      "assertion_lines": [
+        92,
+        93
+      ],
+      "contract_ids": [
+        "CAP-STREAM"
+      ],
+      "name": "wakes all waiting consumers when ended without a result",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repaired-verified.json",
+          "sha256": "8c6849653f1726f3df91990333887299ea1bf4b91502eb19a1c46fa75ce415c9",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-terminal-repair-checks.json",
+          "sha256": "e353420e5d1d24ea5b3997eb551d47bd06c292cd8fb1709faa890f891f31a338",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Chat terminal/stream differential and Rust stream analogue; exact upstream event-stream test not executed."
+    },
+    {
+      "id": "CASE-REVIEW-05",
+      "path": ".pi/pi-1.5.0/packages/ai/test/telemetry.test.ts",
+      "line": 298,
+      "assertion_lines": [
+        316,
+        342
+      ],
+      "contract_ids": [
+        "CAP-TELEMETRY-AI",
+        "CAP-USAGE"
+      ],
+      "name": "records low-cardinality metrics with monotonic durations",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase4-request-duration-metric-attributes-checks.json",
+          "sha256": "b252ff3bee24c3501ac0c3cfe29bb9f865806db30507e6c4eb7a1e41ddc68503",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase4-ordinary-ai-telemetry-checks.json",
+          "sha256": "7e6e7371ae31a4489713f035e55efd542ee3fe2f43803955db239680bd255f85",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Rust telemetry checks cover duration/attribute semantics; exact upstream telemetry assertion not executed."
+    },
+    {
+      "id": "CASE-REVIEW-06",
+      "path": ".pi/pi-1.5.0/packages/ai/test/telemetry.test.ts",
+      "line": 345,
+      "assertion_lines": [
+        355
+      ],
+      "contract_ids": [
+        "CAP-TELEMETRY-AI",
+        "CAP-DEFERRED"
+      ],
+      "name": "records usage for a %s poll only when final",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase4-deferred-ai-telemetry-checks.json",
+          "sha256": "ccdac7c29639e91a36961ed75a8bf5b548120bafe0c316cba829c45da90ec92d",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-stream-source-cleanup-replay.json",
+          "sha256": "d1ba8398507b8364366f76bbbd27a683e3dd359180f909e059b987366e029321",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Deferred telemetry and source-cleanup receipts cover final-only poll settlement; exact upstream telemetry assertion not executed."
+    },
+    {
+      "id": "CASE-REVIEW-07",
+      "path": ".pi/pi-1.5.0/packages/ai/test/telemetry.test.ts",
+      "line": 382,
+      "assertion_lines": [
+        403,
+        404,
+        405
+      ],
+      "contract_ids": [
+        "CAP-LAZY",
+        "CAP-TELEMETRY-AI",
+        "CAP-STREAM"
+      ],
+      "name": "uses one source iterator and observes after push, once per terminal result",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase4-started-chatstream-telemetry-checks.json",
+          "sha256": "8020c6740a9992bbd1e201889a3552fa6b70e1a076e2937e4381957fe1d9506d",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-stream-source-cleanup-replay.json",
+          "sha256": "d1ba8398507b8364366f76bbbd27a683e3dd359180f909e059b987366e029321",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Started ChatStream and cleanup receipts cover iterator/terminal observation shape; exact upstream telemetry assertion not executed."
+    },
+    {
+      "id": "CASE-REVIEW-08",
+      "path": ".pi/pi-1.5.0/packages/ai/test/telemetry.test.ts",
+      "line": 430,
+      "assertion_lines": [
+        442,
+        443
+      ],
+      "contract_ids": [
+        "CAP-LAZY",
+        "CAP-TELEMETRY-AI",
+        "CAP-EXECUTION"
+      ],
+      "name": "reports setup failure events and the result once",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase4-prepared-ai-telemetry-checks.json",
+          "sha256": "e6ad3c9665ca4e877533731efb93ca24c2ca57e3a3a534bba5e200371ae09216",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-setup-failure-identity-differential.json",
+          "sha256": "1ed994a7fdc068db18891534e844c0c0d8d4e545286c6248cb0fd9e4fe340d06",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Prepared telemetry and setup-failure differential receipts cover typed setup failure; exact upstream telemetry assertion not executed."
+    },
+    {
+      "id": "CASE-REVIEW-09",
+      "path": ".pi/pi-1.5.0/packages/ai/test/models-runtime.test.ts",
+      "line": 509,
+      "assertion_lines": [
+        534,
+        536
+      ],
+      "contract_ids": [
+        "CAP-CREDENTIALS",
+        "CAP-MODELS-REFRESH"
+      ],
+      "name": "persists an OAuth refresh that started before the model refresh was cancelled",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-only",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-public-models-lifecycle-differential.json",
+          "sha256": "a93cfa234a338a06f1b9c43a59e510f3b1d02bdad74e2757edf20eddebcf46fe",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-matched-models-setup-differential.json",
+          "sha256": "57a3e5f30c706261ca60f9cf068fb901b097a58ad23ad85f6c74c16858b1143c",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Models lifecycle/setup differentials are adjacent but do not exercise OAuth refresh persistence across cancellation; remain static-not-run."
+    },
+    {
+      "id": "CASE-REVIEW-10",
+      "path": ".pi/pi-1.5.0/packages/ai/test/models-runtime.test.ts",
+      "line": 648,
+      "assertion_lines": [
+        691,
+        692
+      ],
+      "contract_ids": [
+        "CAP-MODELS-REFRESH",
+        "CAP-CATALOG"
+      ],
+      "name": "rejects late publication from a superseded non-cooperative provider",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-only",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-public-models-lifecycle-differential.json",
+          "sha256": "a93cfa234a338a06f1b9c43a59e510f3b1d02bdad74e2757edf20eddebcf46fe",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-catalog-restoration-checks.json",
+          "sha256": "632a9e994b7fb27e9db80cf6c6d829c37a13e23d99081ba17da564c17e9443ea",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Models lifecycle and catalog restoration receipts are adjacent but do not exercise late non-cooperative publication; remain static-not-run."
+    },
+    {
+      "id": "CASE-REVIEW-11",
+      "path": ".pi/pi-1.5.0/packages/ai/test/faux-provider.test.ts",
+      "line": 117,
+      "assertion_lines": [
+        130,
+        131,
+        132,
+        133,
+        134,
+        135
+      ],
+      "contract_ids": [
+        "CAP-FAUX",
+        "CAP-COMPAT"
+      ],
+      "name": "consumes queued responses in order and errors when exhausted",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-checks.json",
+          "sha256": "c3fdf7b20113f2aa85d5c8d2e32279eaf2ec44a9360408a682a49cd6470ca27a",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-checks.json",
+          "sha256": "4287057b6b48632ec402196a0d4e3609e53ac6feea498c0fe15bdb4c257e57f5",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Scripted Faux/workspace package checks exercise the Rust capability family; exact upstream queue-exhaustion assertion not executed."
+    },
+    {
+      "id": "CASE-REVIEW-12",
+      "path": ".pi/pi-1.5.0/packages/ai/test/faux-provider.test.ts",
+      "line": 404,
+      "assertion_lines": [
+        417,
+        418
+      ],
+      "contract_ids": [
+        "CAP-FAUX",
+        "CAP-STREAM"
+      ],
+      "name": "streams an exact event order for fixed-size chunks",
+      "recorded_status": "static-reviewed-not-run",
+      "binding_status": "related-dynamic",
+      "exact_upstream_dynamic": false,
+      "evidence": [
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-minimal-checks.json",
+          "sha256": "c3fdf7b20113f2aa85d5c8d2e32279eaf2ec44a9360408a682a49cd6470ca27a",
+          "role": "related dynamic evidence"
+        },
+        {
+          "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-checks.json",
+          "sha256": "4287057b6b48632ec402196a0d4e3609e53ac6feea498c0fe15bdb4c257e57f5",
+          "role": "related dynamic evidence"
+        }
+      ],
+      "notes": "Scripted Faux/workspace package checks exercise Rust stream output; exact upstream fixed-chunk Faux assertion not executed."
+    }
+  ],
+  "test_impact": {
+    "add": [
+      "contract binding receipt and issue #140"
+    ],
+    "update": [
+      "spec history only"
+    ],
+    "delete": [],
+    "retain": [
+      "#139 freeze receipt",
+      "contract-index recorded hashes",
+      "all prior Pi/package/differential receipts"
+    ]
+  },
+  "verification": {
+    "docs_check": {
+      "command": "python scripts/opi-doc-check.py",
+      "exit": 0,
+      "result": "opi documentation contracts: PASS"
+    },
+    "cargo_fmt": {
+      "command": "cargo fmt --all -- --check",
+      "exit": 0
+    },
+    "crlf_tolerant_diff_check": {
+      "command": "git -c core.whitespace=cr-at-eol diff --check",
+      "exit": 0
+    },
+    "binding_self_check": {
+      "manifest_recomputed": true,
+      "binding_rows": 142,
+      "reviewed_case_rows": 12,
+      "errors": 0,
+      "evidence_refs": 195
+    },
+    "strict_diff_check": {
+      "command": "git diff --check",
+      "exit": 2,
+      "reported_lines": 70828,
+      "log": "C:/Temp/opi-contract-bindings-strict-diff-check-20261116-v1.log",
+      "interpretation": "carried CRLF noise; tolerant check passes"
+    }
+  },
+  "manifestSha256": "ec6d47f0393cd8d251dae630c804504612add72f285db6e715aa350abde3dd6f"
+}

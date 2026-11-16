@@ -428,6 +428,45 @@ fn cache_1h_absent_zero_and_equality_are_preserved() {
     }
 }
 
+fn nested_usage_details_fixture() -> &'static str {
+    r#"event: message_start
+data: {"type":"message_start","message":{"id":"msg_nested_usage","type":"message","role":"assistant","content":[],"model":"claude-sonnet-4-5-20250514","stop_reason":null,"usage":{"input_tokens":100,"output_tokens":0,"cache_read_input_tokens":0,"cache_creation_input_tokens":200,"cache_creation":{"ephemeral_1h_input_tokens":150},"output_tokens_details":{"thinking_tokens":0}}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"nested"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":20,"cache_creation":{"ephemeral_1h_input_tokens":75},"output_tokens_details":{"thinking_tokens":6}}}
+
+event: message_stop
+data: {"type":"message_stop"}
+
+"#
+}
+
+#[test]
+fn nested_cache_and_reasoning_usage_is_preserved_across_start_and_delta() {
+    let stream_events = map_fixture(nested_usage_details_fixture());
+    let done = stream_events
+        .iter()
+        .find_map(|event| match event {
+            AssistantStreamEvent::Done { message, .. } => Some(message),
+            _ => None,
+        })
+        .expect("expected Done event");
+    assert_eq!(done.usage.cache_write_tokens, 200);
+    assert_eq!(done.usage.cache_write_1h_tokens, Some(75));
+    assert_eq!(done.usage.output_tokens, 20);
+    assert_eq!(done.usage.reasoning_tokens, Some(6));
+    assert!(done.usage.reasoning_tokens.unwrap() <= u64::from(done.usage.output_tokens));
+}
+
 fn cache_1h_malformed_fixture() -> &'static str {
     // cache_creation_input_tokens_1h (500) > cache_creation_input_tokens (200) is malformed.
     r#"event: message_start
@@ -2055,6 +2094,67 @@ async fn raw_callback_failure_preserves_partial_and_ends_typed() {
     );
 }
 
+#[tokio::test]
+async fn tail_raw_callback_failure_precedes_deferred_done() {
+    let sse = concat!(
+        "event: message_start\n",
+        "data: {\"type\":\"message_start\",\"message\":{\"model\":\"claude\",\"usage\":{\"input_tokens\":3,\"output_tokens\":0}}}\n\n",
+        "event: message_delta\n",
+        "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":5}}\n\n",
+        "event: message_stop\n",
+        "data: {\"type\":\"message_stop\"}\n\n",
+        "event: message_delta\n",
+        "data: {\"type\":\"message_delta\",\"delta\":{},\"usage\":{\"output_tokens\":7}}\n\n",
+    );
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(ResponseTemplate::new(200).set_body_string(sse))
+        .mount(&server)
+        .await;
+
+    let raw_types = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let seen = raw_types.clone();
+    let provider = AnthropicProvider::new(Some(server.uri()));
+    let mut request = callbacks_request();
+    request.callbacks = RequestCallbacks::new().with_on_raw(std::sync::Arc::new(move |event| {
+        seen.lock()
+            .unwrap()
+            .push(event["type"].as_str().unwrap_or("<unknown>").to_owned());
+        if event["type"] == "message_delta" && event["usage"]["output_tokens"] == 7 {
+            return Err(opi_ai::callbacks::CallbackError::new(
+                "tail observer failed",
+            ));
+        }
+        Ok(())
+    }));
+
+    let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
+    let mut done = false;
+    let mut typed_failure = false;
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(AssistantStreamEvent::Done { .. }) => done = true,
+            Err(ProviderError::StreamFailure(failure))
+                if matches!(failure.cause(), ProviderError::CallbackPhase(_)) =>
+            {
+                typed_failure = true;
+            }
+            _ => {}
+        }
+    }
+    assert!(typed_failure, "tail observer failure remains typed");
+    assert!(!done, "tail observer failure precedes deferred Done");
+    assert_eq!(
+        *raw_types.lock().unwrap(),
+        vec![
+            "message_start".to_owned(),
+            "message_delta".to_owned(),
+            "message_stop".to_owned(),
+            "message_delta".to_owned(),
+        ]
+    );
+}
+
 async fn stream_prepared_and_drain(provider: &AnthropicProvider, request: Request) {
     use opi_ai::provider::Provider;
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -3499,6 +3599,7 @@ use opi_ai::model_info::{
     AnthropicMessagesCompat, ModelCapabilities, ModelInfo, WireApi, WireCompat,
 };
 use opi_ai::models::{Models, SimpleOptions};
+#[cfg(feature = "telemetry-tracing")]
 use opi_ai::telemetry::TelemetryContext;
 
 fn caps_39() -> ModelCapabilities {
@@ -4618,6 +4719,7 @@ async fn anthropic_direct_adapter_replays_same_identity_signed_thinking() {
     assert_eq!(message.stop_reason, StopReason::Stop);
 }
 
+#[cfg(feature = "telemetry-tracing")]
 #[tokio::test]
 async fn anthropic_telemetry_carrier_instruments_the_producer() {
     use std::collections::HashMap;

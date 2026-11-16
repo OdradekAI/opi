@@ -333,12 +333,11 @@ fn sse_response_with_head_pad(pad: &[String]) -> Vec<u8> {
 /// Chunked SSE response carrying `trailer_lines` after the final chunk.
 fn sse_response_with_trailers(trailer_lines: &[String]) -> Vec<u8> {
     let mut out = sse_head(&[]);
-    // Without terminal usage the mapper retains its finish reason until
-    // transport EOF, so the public result necessarily observes the trailers.
-    let body = SSE_BODY.replace(
-        ",\"usage\":{\"prompt_tokens\":1,\"completion_tokens\":1}",
-        "",
-    );
+    // Without a protocol sentinel, success requires a valid HTTP EOF, so
+    // this fixture exercises trailer validation even after finish and usage.
+    let body = SSE_BODY
+        .strip_suffix("data: [DONE]\n\n")
+        .expect("fixture ends with the protocol sentinel");
     out.extend_from_slice(format!("{}{}\r\n0\r\n", chunk(body.as_bytes()), body).as_bytes());
     for line in trailer_lines {
         out.extend_from_slice(line.as_bytes());

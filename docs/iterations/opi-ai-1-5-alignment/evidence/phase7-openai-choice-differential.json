@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "status": "PASS",
+  "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "scope": "OpenAI-compatible Chat choice-level usage fallback; top-level usage precedence is covered by the Rust adapter test.",
+  "inputs": {
+    "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_openai_choice_usage.mjs": "4cfc7dd4c9d4d4f6c26acbe27c68be5ef28a62cc1ce6a84f10fec907e5760ab0",
+    "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-choice-usage.json": "21ca316d4ef40478198b4c50a301c5ab00c2ed09ce736a25e43a1854f6b0edcd",
+    "D:\\Luiz\\Odradek\\opi\\scripts\\pi-sdk-conformance\\differential\\compare_openai_choice_usage.py": "fc5354e81f8a40689f0b29c034fce26dedbdf84eeea5baf18367853945987249",
+    "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_choice_usage-92b11f657d7e75a7.exe": "e84b2f2b99f03bcc3433d6f458434572494dfd31fa6124fdbf6665871b10e048",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\api\\openai-completions.ts": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a",
+    "C:\\Temp\\opi-ai-frozen-lock-20261111\\packages\\ai\\src\\models.ts": "de226bcd332fc660129f87b8c02a12c4862b620201a407998c2cdeacc4f2044a"
+  },
+  "expected": {
+    "input_tokens": 25,
+    "cache_read_tokens": 75,
+    "output_tokens": 20,
+    "total_tokens": 120
+  },
+  "pi_runs": [
+    {
+      "command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_openai_choice_usage.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-choice-usage.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"choice-usage\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":25,\"output\":20,\"cache_read\":75,\"cache_write\":0,\"total\":120},\"cost\":0,\"requests\":1}\n",
+      "stderr": "",
+      "trace": {
+        "case": "choice-usage",
+        "stop": "stop",
+        "raw_stop": "stop",
+        "usage": {
+          "input": 25,
+          "output": 20,
+          "cache_read": 75,
+          "cache_write": 0,
+          "total": 120
+        },
+        "cost": 0,
+        "requests": 1
+      }
+    },
+    {
+      "command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_openai_choice_usage.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-choice-usage.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"choice-usage\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":25,\"output\":20,\"cache_read\":75,\"cache_write\":0,\"total\":120},\"cost\":0,\"requests\":1}\n",
+      "stderr": "",
+      "trace": {
+        "case": "choice-usage",
+        "stop": "stop",
+        "raw_stop": "stop",
+        "usage": {
+          "input": 25,
+          "output": 20,
+          "cache_read": 75,
+          "cache_write": 0,
+          "total": 120
+        },
+        "cost": 0,
+        "requests": 1
+      }
+    },
+    {
+      "command": [
+        "node",
+        "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_openai_choice_usage.mjs",
+        "C:\\Temp\\opi-ai-frozen-lock-20261111",
+        "D:\\Luiz\\Odradek\\opi\\crates\\opi-ai\\tests\\data\\openai-choice-usage.json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"case\":\"choice-usage\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":25,\"output\":20,\"cache_read\":75,\"cache_write\":0,\"total\":120},\"cost\":0,\"requests\":1}\n",
+      "stderr": "",
+      "trace": {
+        "case": "choice-usage",
+        "stop": "stop",
+        "raw_stop": "stop",
+        "usage": {
+          "input": 25,
+          "output": 20,
+          "cache_read": 75,
+          "cache_write": 0,
+          "total": 120
+        },
+        "cost": 0,
+        "requests": 1
+      }
+    }
+  ],
+  "rust_runs": [
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_choice_usage-92b11f657d7e75a7.exe",
+        "--exact",
+        "choice_level_usage_is_used_when_chunk_usage_is_absent",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"choice-usage\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":25,\"output\":20,\"cache_read\":75,\"cache_write\":0,\"total\":120},\"cost\":0.0,\"requests\":1}\ntest choice_level_usage_is_used_when_chunk_usage_is_absent ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "choice-usage",
+        "stop": "stop",
+        "raw_stop": "stop",
+        "usage": {
+          "input": 25,
+          "output": 20,
+          "cache_read": 75,
+          "cache_write": 0,
+          "total": 120
+        },
+        "cost": 0.0,
+        "requests": 1
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_choice_usage-92b11f657d7e75a7.exe",
+        "--exact",
+        "choice_level_usage_is_used_when_chunk_usage_is_absent",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"choice-usage\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":25,\"output\":20,\"cache_read\":75,\"cache_write\":0,\"total\":120},\"cost\":0.0,\"requests\":1}\ntest choice_level_usage_is_used_when_chunk_usage_is_absent ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "choice-usage",
+        "stop": "stop",
+        "raw_stop": "stop",
+        "usage": {
+          "input": 25,
+          "output": 20,
+          "cache_read": 75,
+          "cache_write": 0,
+          "total": 120
+        },
+        "cost": 0.0,
+        "requests": 1
+      }
+    },
+    {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\openai_choice_usage-92b11f657d7e75a7.exe",
+        "--exact",
+        "choice_level_usage_is_used_when_chunk_usage_is_absent",
+        "--nocapture"
+      ],
+      "exit_code": 0,
+      "stdout": "\nrunning 1 test\n{\"case\":\"choice-usage\",\"stop\":\"stop\",\"raw_stop\":\"stop\",\"usage\":{\"input\":25,\"output\":20,\"cache_read\":75,\"cache_write\":0,\"total\":120},\"cost\":0.0,\"requests\":1}\ntest choice_level_usage_is_used_when_chunk_usage_is_absent ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s\n\n",
+      "stderr": "",
+      "trace": {
+        "case": "choice-usage",
+        "stop": "stop",
+        "raw_stop": "stop",
+        "usage": {
+          "input": 25,
+          "output": 20,
+          "cache_read": 75,
+          "cache_write": 0,
+          "total": 120
+        },
+        "cost": 0.0,
+        "requests": 1
+      }
+    }
+  ],
+  "differences": []
+}

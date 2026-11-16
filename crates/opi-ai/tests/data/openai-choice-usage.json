@@ -1,0 +1,10 @@
+{
+  "id": "choice-usage",
+  "sse": "data: {\"id\":\"choice-usage\",\"model\":\"moonshot\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"choice-usage\",\"model\":\"moonshot\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\",\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":20,\"total_tokens\":120,\"prompt_tokens_details\":{\"cached_tokens\":75}}}]}\n\ndata: [DONE]\n\n",
+  "expected": {
+    "input_tokens": 25,
+    "cache_read_tokens": 75,
+    "output_tokens": 20,
+    "total_tokens": 120
+  }
+}

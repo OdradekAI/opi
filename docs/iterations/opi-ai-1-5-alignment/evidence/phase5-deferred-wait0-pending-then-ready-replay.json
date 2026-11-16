@@ -1,0 +1,1137 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-11-13T02:55:59.222542+00:00",
+  "scope": "Targeted replay of two zero-wait public deferred fetches of one handle, comparing result-time and settled poll telemetry.",
+  "baseCommit": "ee18dd1323a089d536bdc7e293d0b4869777c344",
+  "piRevision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+  "materialsEvidence": {
+    "path": "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-codex-websocket-idle-timeout-materials.json",
+    "sha256": "028c440eb5b3364a900bafec8803f9580d6970327b3004d90740f2f6a93d3c40",
+    "snapshot": "C:\\Temp\\opi-ai-frozen-lock-20261111"
+  },
+  "baselineEvidence": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-codex-websocket-idle-timeout-differential.json",
+    "sha256": "cbcd05e1a9fe5431d75af8db0c18b8d22a990ab9a4383de93f18b0cc1725dcaf"
+  },
+  "originalCaseEvidence": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-wait0-differential.json",
+    "sha256": "70328ca7e956501ad525e3cd661a8353104730bd5410e6ffcb065eb498a2b2f0"
+  },
+  "originalLock": {
+    "status": "present",
+    "bytes": 185524,
+    "sha256": "802adbf0a5e093830226723f37b8971ce42eee442181a1471e0b70b1396b244a"
+  },
+  "drivers": {
+    "docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs": "52a76c00fd0af9ed59b7b0370953e5cd875c40e09d2564b57d46ca87a0f7f44b",
+    "crates\\opi-ai\\examples\\lifecycle_differential.rs": "86fa377fd4e1b963580540475072b6643ae4888a473f67f1b07c64119ccf073e",
+    "scripts\\pi-sdk-conformance\\differential\\compare_lifecycle.py": "dc25aa650057da6c4fe845c5c0565698ea032e8cafe082c6388dde0dd51be303",
+    "scripts\\pi-sdk-conformance\\differential\\common.py": "8e54c2a4a68ce9c557df47c2f235320992662071bd02cb66c12e7257d8bef319",
+    "scripts\\pi-sdk-conformance\\differential\\run_lifecycle_differential.py": "66692dbf35298af7379954476ad3409b8ad1868d85d59b361e269039660e0016"
+  },
+  "rustExecutable": {
+    "path": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\examples\\lifecycle_differential.exe",
+    "sha256": "57942290ff1037fbfde5bcc41098801293d25d5b1d85627dd519962bd101b3cd"
+  },
+  "materialDriftBeforeAndAfter": [],
+  "blocked_gates": [],
+  "matchesBaselineCaseExactly": true,
+  "matchesOriginalTracesAndComparison": true,
+  "strict_alignment": false,
+  "case": {
+    "scenario": "models-deferred-wait0-pending-then-ready",
+    "upstream_runs": [
+      {
+        "command": [
+          "node",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+          "--snapshot",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111",
+          "--case",
+          "models-deferred-wait0-pending-then-ready"
+        ],
+        "exit_code": 0,
+        "stdout": "{\"id\":\"models-deferred-wait0-pending-then-ready\",\"status\":\"observed\",\"sourceAssertions\":\"passed\",\"trace\":[{\"step\":\"pending\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"deferred\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[],\"deferred\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"usage\":{\"input\":0,\"output\":0,\"cache_read\":0,\"cache_write\":0,\"cost\":0}},\"settled_at_result\":[false],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"api\":\"scripted-deferred\",\"stop\":\"deferred\",\"usage.input\":0,\"usage.output\":0,\"usage.cache_read\":0,\"usage.cache_write\":0,\"cost.total\":0},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"stop\":\"deferred\"},\"value\":null,\"context\":\"poll\"}]},{\"step\":\"ready\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"stop\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[{\"type\":\"text\",\"text\":\"ready\"}],\"deferred\":null,\"usage\":{\"input\":2,\"output\":3,\"cache_read\":4,\"cache_write\":5,\"cost\":0.25}},\"settled_at_result\":[false],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"api\":\"scripted-deferred\",\"stop\":\"stop\",\"usage.input\":2,\"usage.output\":3,\"usage.cache_read\":4,\"usage.cache_write\":5,\"cost.total\":0.25},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"stop\":\"stop\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"input\"},\"value\":2,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"output\"},\"value\":3,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"cache_read\"},\"value\":4,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"cache_write\"},\"value\":5,\"context\":\"none\"},{\"name\":\"pi.ai.cost\",\"kind\":\"counter\",\"unit\":\"USD\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":0.25,\"context\":\"none\"}]}]}",
+        "stderr": "",
+        "stdout_sha256": "d7ea82215bb32cbf76a9605645c5968e14f93ff82f1534f9de1c9b735c14b7c5",
+        "trace": {
+          "id": "models-deferred-wait0-pending-then-ready",
+          "status": "observed",
+          "sourceAssertions": "passed",
+          "trace": [
+            {
+              "step": "pending",
+              "dispatches": [
+                {
+                  "handle": {
+                    "provider": "lifecycle-differential",
+                    "modelId": "mock-model",
+                    "api": "scripted-deferred",
+                    "id": "deferred-1",
+                    "pollAfterMs": 25
+                  },
+                  "wait_ms": 0
+                }
+              ],
+              "result": {
+                "stop": "deferred",
+                "provider": "lifecycle-differential",
+                "model": "mock-model",
+                "content": [],
+                "deferred": {
+                  "provider": "lifecycle-differential",
+                  "modelId": "mock-model",
+                  "api": "scripted-deferred",
+                  "id": "deferred-1",
+                  "pollAfterMs": 25
+                },
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cache_read": 0,
+                  "cache_write": 0,
+                  "cost": 0
+                }
+              },
+              "settled_at_result": [
+                false
+              ],
+              "metric_names_at_result": [
+                "pi.ai.first_chunk.duration"
+              ],
+              "spans": [
+                {
+                  "name": "pi.ai.poll",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "api": "scripted-deferred",
+                    "stop": "deferred",
+                    "usage.input": 0,
+                    "usage.output": 0,
+                    "usage.cache_read": 0,
+                    "usage.cache_write": 0,
+                    "cost.total": 0
+                  },
+                  "status": {
+                    "status": "ok"
+                  },
+                  "parent_is_caller": true,
+                  "settled": true,
+                  "events": [
+                    "pi.ai.first_chunk"
+                  ]
+                }
+              ],
+              "measurements": [
+                {
+                  "name": "pi.ai.first_chunk.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.request.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "stop": "deferred"
+                  },
+                  "value": null,
+                  "context": "poll"
+                }
+              ]
+            },
+            {
+              "step": "ready",
+              "dispatches": [
+                {
+                  "handle": {
+                    "provider": "lifecycle-differential",
+                    "modelId": "mock-model",
+                    "api": "scripted-deferred",
+                    "id": "deferred-1",
+                    "pollAfterMs": 25
+                  },
+                  "wait_ms": 0
+                }
+              ],
+              "result": {
+                "stop": "stop",
+                "provider": "lifecycle-differential",
+                "model": "mock-model",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "ready"
+                  }
+                ],
+                "deferred": null,
+                "usage": {
+                  "input": 2,
+                  "output": 3,
+                  "cache_read": 4,
+                  "cache_write": 5,
+                  "cost": 0.25
+                }
+              },
+              "settled_at_result": [
+                false
+              ],
+              "metric_names_at_result": [
+                "pi.ai.first_chunk.duration"
+              ],
+              "spans": [
+                {
+                  "name": "pi.ai.poll",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "api": "scripted-deferred",
+                    "stop": "stop",
+                    "usage.input": 2,
+                    "usage.output": 3,
+                    "usage.cache_read": 4,
+                    "usage.cache_write": 5,
+                    "cost.total": 0.25
+                  },
+                  "status": {
+                    "status": "ok"
+                  },
+                  "parent_is_caller": true,
+                  "settled": true,
+                  "events": [
+                    "pi.ai.first_chunk"
+                  ]
+                }
+              ],
+              "measurements": [
+                {
+                  "name": "pi.ai.first_chunk.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.request.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "stop": "stop"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "input"
+                  },
+                  "value": 2,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "output"
+                  },
+                  "value": 3,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "cache_read"
+                  },
+                  "value": 4,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "cache_write"
+                  },
+                  "value": 5,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.cost",
+                  "kind": "counter",
+                  "unit": "USD",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": 0.25,
+                  "context": "none"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "command": [
+          "node",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+          "--snapshot",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111",
+          "--case",
+          "models-deferred-wait0-pending-then-ready"
+        ],
+        "exit_code": 0,
+        "stdout": "{\"id\":\"models-deferred-wait0-pending-then-ready\",\"status\":\"observed\",\"sourceAssertions\":\"passed\",\"trace\":[{\"step\":\"pending\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"deferred\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[],\"deferred\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"usage\":{\"input\":0,\"output\":0,\"cache_read\":0,\"cache_write\":0,\"cost\":0}},\"settled_at_result\":[false],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"api\":\"scripted-deferred\",\"stop\":\"deferred\",\"usage.input\":0,\"usage.output\":0,\"usage.cache_read\":0,\"usage.cache_write\":0,\"cost.total\":0},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"stop\":\"deferred\"},\"value\":null,\"context\":\"poll\"}]},{\"step\":\"ready\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"stop\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[{\"type\":\"text\",\"text\":\"ready\"}],\"deferred\":null,\"usage\":{\"input\":2,\"output\":3,\"cache_read\":4,\"cache_write\":5,\"cost\":0.25}},\"settled_at_result\":[false],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"api\":\"scripted-deferred\",\"stop\":\"stop\",\"usage.input\":2,\"usage.output\":3,\"usage.cache_read\":4,\"usage.cache_write\":5,\"cost.total\":0.25},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"stop\":\"stop\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"input\"},\"value\":2,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"output\"},\"value\":3,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"cache_read\"},\"value\":4,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"cache_write\"},\"value\":5,\"context\":\"none\"},{\"name\":\"pi.ai.cost\",\"kind\":\"counter\",\"unit\":\"USD\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":0.25,\"context\":\"none\"}]}]}",
+        "stderr": "",
+        "stdout_sha256": "d7ea82215bb32cbf76a9605645c5968e14f93ff82f1534f9de1c9b735c14b7c5",
+        "trace": {
+          "id": "models-deferred-wait0-pending-then-ready",
+          "status": "observed",
+          "sourceAssertions": "passed",
+          "trace": [
+            {
+              "step": "pending",
+              "dispatches": [
+                {
+                  "handle": {
+                    "provider": "lifecycle-differential",
+                    "modelId": "mock-model",
+                    "api": "scripted-deferred",
+                    "id": "deferred-1",
+                    "pollAfterMs": 25
+                  },
+                  "wait_ms": 0
+                }
+              ],
+              "result": {
+                "stop": "deferred",
+                "provider": "lifecycle-differential",
+                "model": "mock-model",
+                "content": [],
+                "deferred": {
+                  "provider": "lifecycle-differential",
+                  "modelId": "mock-model",
+                  "api": "scripted-deferred",
+                  "id": "deferred-1",
+                  "pollAfterMs": 25
+                },
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cache_read": 0,
+                  "cache_write": 0,
+                  "cost": 0
+                }
+              },
+              "settled_at_result": [
+                false
+              ],
+              "metric_names_at_result": [
+                "pi.ai.first_chunk.duration"
+              ],
+              "spans": [
+                {
+                  "name": "pi.ai.poll",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "api": "scripted-deferred",
+                    "stop": "deferred",
+                    "usage.input": 0,
+                    "usage.output": 0,
+                    "usage.cache_read": 0,
+                    "usage.cache_write": 0,
+                    "cost.total": 0
+                  },
+                  "status": {
+                    "status": "ok"
+                  },
+                  "parent_is_caller": true,
+                  "settled": true,
+                  "events": [
+                    "pi.ai.first_chunk"
+                  ]
+                }
+              ],
+              "measurements": [
+                {
+                  "name": "pi.ai.first_chunk.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.request.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "stop": "deferred"
+                  },
+                  "value": null,
+                  "context": "poll"
+                }
+              ]
+            },
+            {
+              "step": "ready",
+              "dispatches": [
+                {
+                  "handle": {
+                    "provider": "lifecycle-differential",
+                    "modelId": "mock-model",
+                    "api": "scripted-deferred",
+                    "id": "deferred-1",
+                    "pollAfterMs": 25
+                  },
+                  "wait_ms": 0
+                }
+              ],
+              "result": {
+                "stop": "stop",
+                "provider": "lifecycle-differential",
+                "model": "mock-model",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "ready"
+                  }
+                ],
+                "deferred": null,
+                "usage": {
+                  "input": 2,
+                  "output": 3,
+                  "cache_read": 4,
+                  "cache_write": 5,
+                  "cost": 0.25
+                }
+              },
+              "settled_at_result": [
+                false
+              ],
+              "metric_names_at_result": [
+                "pi.ai.first_chunk.duration"
+              ],
+              "spans": [
+                {
+                  "name": "pi.ai.poll",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "api": "scripted-deferred",
+                    "stop": "stop",
+                    "usage.input": 2,
+                    "usage.output": 3,
+                    "usage.cache_read": 4,
+                    "usage.cache_write": 5,
+                    "cost.total": 0.25
+                  },
+                  "status": {
+                    "status": "ok"
+                  },
+                  "parent_is_caller": true,
+                  "settled": true,
+                  "events": [
+                    "pi.ai.first_chunk"
+                  ]
+                }
+              ],
+              "measurements": [
+                {
+                  "name": "pi.ai.first_chunk.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.request.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "stop": "stop"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "input"
+                  },
+                  "value": 2,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "output"
+                  },
+                  "value": 3,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "cache_read"
+                  },
+                  "value": 4,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "cache_write"
+                  },
+                  "value": 5,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.cost",
+                  "kind": "counter",
+                  "unit": "USD",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": 0.25,
+                  "context": "none"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "command": [
+          "node",
+          "D:\\Luiz\\Odradek\\opi\\docs\\iterations\\opi-ai-1-5-alignment\\tools\\observe_upstream.mjs",
+          "--snapshot",
+          "C:\\Temp\\opi-ai-frozen-lock-20261111",
+          "--case",
+          "models-deferred-wait0-pending-then-ready"
+        ],
+        "exit_code": 0,
+        "stdout": "{\"id\":\"models-deferred-wait0-pending-then-ready\",\"status\":\"observed\",\"sourceAssertions\":\"passed\",\"trace\":[{\"step\":\"pending\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"deferred\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[],\"deferred\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"usage\":{\"input\":0,\"output\":0,\"cache_read\":0,\"cache_write\":0,\"cost\":0}},\"settled_at_result\":[false],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"api\":\"scripted-deferred\",\"stop\":\"deferred\",\"usage.input\":0,\"usage.output\":0,\"usage.cache_read\":0,\"usage.cache_write\":0,\"cost.total\":0},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"stop\":\"deferred\"},\"value\":null,\"context\":\"poll\"}]},{\"step\":\"ready\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"stop\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[{\"type\":\"text\",\"text\":\"ready\"}],\"deferred\":null,\"usage\":{\"input\":2,\"output\":3,\"cache_read\":4,\"cache_write\":5,\"cost\":0.25}},\"settled_at_result\":[false],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"api\":\"scripted-deferred\",\"stop\":\"stop\",\"usage.input\":2,\"usage.output\":3,\"usage.cache_read\":4,\"usage.cache_write\":5,\"cost.total\":0.25},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"stop\":\"stop\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"input\"},\"value\":2,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"output\"},\"value\":3,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"cache_read\"},\"value\":4,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"kind\":\"cache_write\"},\"value\":5,\"context\":\"none\"},{\"name\":\"pi.ai.cost\",\"kind\":\"counter\",\"unit\":\"USD\",\"attributes\":{\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\"},\"value\":0.25,\"context\":\"none\"}]}]}",
+        "stderr": "",
+        "stdout_sha256": "d7ea82215bb32cbf76a9605645c5968e14f93ff82f1534f9de1c9b735c14b7c5",
+        "trace": {
+          "id": "models-deferred-wait0-pending-then-ready",
+          "status": "observed",
+          "sourceAssertions": "passed",
+          "trace": [
+            {
+              "step": "pending",
+              "dispatches": [
+                {
+                  "handle": {
+                    "provider": "lifecycle-differential",
+                    "modelId": "mock-model",
+                    "api": "scripted-deferred",
+                    "id": "deferred-1",
+                    "pollAfterMs": 25
+                  },
+                  "wait_ms": 0
+                }
+              ],
+              "result": {
+                "stop": "deferred",
+                "provider": "lifecycle-differential",
+                "model": "mock-model",
+                "content": [],
+                "deferred": {
+                  "provider": "lifecycle-differential",
+                  "modelId": "mock-model",
+                  "api": "scripted-deferred",
+                  "id": "deferred-1",
+                  "pollAfterMs": 25
+                },
+                "usage": {
+                  "input": 0,
+                  "output": 0,
+                  "cache_read": 0,
+                  "cache_write": 0,
+                  "cost": 0
+                }
+              },
+              "settled_at_result": [
+                false
+              ],
+              "metric_names_at_result": [
+                "pi.ai.first_chunk.duration"
+              ],
+              "spans": [
+                {
+                  "name": "pi.ai.poll",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "api": "scripted-deferred",
+                    "stop": "deferred",
+                    "usage.input": 0,
+                    "usage.output": 0,
+                    "usage.cache_read": 0,
+                    "usage.cache_write": 0,
+                    "cost.total": 0
+                  },
+                  "status": {
+                    "status": "ok"
+                  },
+                  "parent_is_caller": true,
+                  "settled": true,
+                  "events": [
+                    "pi.ai.first_chunk"
+                  ]
+                }
+              ],
+              "measurements": [
+                {
+                  "name": "pi.ai.first_chunk.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.request.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "stop": "deferred"
+                  },
+                  "value": null,
+                  "context": "poll"
+                }
+              ]
+            },
+            {
+              "step": "ready",
+              "dispatches": [
+                {
+                  "handle": {
+                    "provider": "lifecycle-differential",
+                    "modelId": "mock-model",
+                    "api": "scripted-deferred",
+                    "id": "deferred-1",
+                    "pollAfterMs": 25
+                  },
+                  "wait_ms": 0
+                }
+              ],
+              "result": {
+                "stop": "stop",
+                "provider": "lifecycle-differential",
+                "model": "mock-model",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "ready"
+                  }
+                ],
+                "deferred": null,
+                "usage": {
+                  "input": 2,
+                  "output": 3,
+                  "cache_read": 4,
+                  "cache_write": 5,
+                  "cost": 0.25
+                }
+              },
+              "settled_at_result": [
+                false
+              ],
+              "metric_names_at_result": [
+                "pi.ai.first_chunk.duration"
+              ],
+              "spans": [
+                {
+                  "name": "pi.ai.poll",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "api": "scripted-deferred",
+                    "stop": "stop",
+                    "usage.input": 2,
+                    "usage.output": 3,
+                    "usage.cache_read": 4,
+                    "usage.cache_write": 5,
+                    "cost.total": 0.25
+                  },
+                  "status": {
+                    "status": "ok"
+                  },
+                  "parent_is_caller": true,
+                  "settled": true,
+                  "events": [
+                    "pi.ai.first_chunk"
+                  ]
+                }
+              ],
+              "measurements": [
+                {
+                  "name": "pi.ai.first_chunk.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.request.duration",
+                  "kind": "histogram",
+                  "unit": "ms",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "stop": "stop"
+                  },
+                  "value": null,
+                  "context": "poll"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "input"
+                  },
+                  "value": 2,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "output"
+                  },
+                  "value": 3,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "cache_read"
+                  },
+                  "value": 4,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.tokens",
+                  "kind": "counter",
+                  "unit": "token",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model",
+                    "kind": "cache_write"
+                  },
+                  "value": 5,
+                  "context": "none"
+                },
+                {
+                  "name": "pi.ai.cost",
+                  "kind": "counter",
+                  "unit": "USD",
+                  "attributes": {
+                    "provider": "lifecycle-differential",
+                    "model": "mock-model"
+                  },
+                  "value": 0.25,
+                  "context": "none"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ],
+    "rust_run": {
+      "command": [
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\examples\\lifecycle_differential.exe",
+        "models-deferred-wait0-pending-then-ready"
+      ],
+      "exit_code": 0,
+      "stdout": "{\"schemaVersion\":2,\"runtime\":\"rust\",\"scenario\":\"models-deferred-wait0-pending-then-ready\",\"steps\":[{\"name\":\"pending\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"deferred\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[],\"deferred\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"usage\":{\"input\":0,\"output\":0,\"cache_read\":0,\"cache_write\":0,\"cost\":0.0}},\"settled_at_result\":[true],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\",\"pi.ai.request.duration\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"api\":\"scripted-deferred\",\"cost.total\":0.0,\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\",\"stop\":\"deferred\",\"usage.cache_read\":0.0,\"usage.cache_write\":0.0,\"usage.input\":0.0,\"usage.output\":0.0},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\",\"stop\":\"deferred\"},\"value\":null,\"context\":\"poll\"}]},{\"name\":\"ready\",\"dispatches\":[{\"handle\":{\"provider\":\"lifecycle-differential\",\"modelId\":\"mock-model\",\"api\":\"scripted-deferred\",\"id\":\"deferred-1\",\"pollAfterMs\":25},\"wait_ms\":0}],\"result\":{\"stop\":\"stop\",\"provider\":\"lifecycle-differential\",\"model\":\"mock-model\",\"content\":[{\"type\":\"text\",\"text\":\"ready\"}],\"deferred\":null,\"usage\":{\"input\":2,\"output\":3,\"cache_read\":4,\"cache_write\":5,\"cost\":0.25}},\"settled_at_result\":[true],\"metric_names_at_result\":[\"pi.ai.first_chunk.duration\",\"pi.ai.request.duration\",\"pi.ai.tokens\",\"pi.ai.tokens\",\"pi.ai.tokens\",\"pi.ai.tokens\",\"pi.ai.cost\"],\"spans\":[{\"name\":\"pi.ai.poll\",\"attributes\":{\"api\":\"scripted-deferred\",\"cost.total\":0.25,\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\",\"stop\":\"stop\",\"usage.cache_read\":4.0,\"usage.cache_write\":5.0,\"usage.input\":2.0,\"usage.output\":3.0},\"status\":{\"status\":\"ok\"},\"parent_is_caller\":true,\"settled\":true,\"events\":[\"pi.ai.first_chunk\"]}],\"measurements\":[{\"name\":\"pi.ai.first_chunk.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.request.duration\",\"kind\":\"histogram\",\"unit\":\"ms\",\"attributes\":{\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\",\"stop\":\"stop\"},\"value\":null,\"context\":\"poll\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"kind\":\"input\",\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":2.0,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"kind\":\"output\",\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":3.0,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"kind\":\"cache_read\",\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":4.0,\"context\":\"none\"},{\"name\":\"pi.ai.tokens\",\"kind\":\"counter\",\"unit\":\"token\",\"attributes\":{\"kind\":\"cache_write\",\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":5.0,\"context\":\"none\"},{\"name\":\"pi.ai.cost\",\"kind\":\"counter\",\"unit\":\"USD\",\"attributes\":{\"model\":\"mock-model\",\"provider\":\"lifecycle-differential\"},\"value\":0.25,\"context\":\"none\"}]}]}\n",
+      "stderr": "",
+      "stdout_sha256": "aac08d0e5bfca5af9cb3cbdbd65080242a33edd82e5196f536f2eb13e29d3ec5",
+      "trace": {
+        "schemaVersion": 2,
+        "runtime": "rust",
+        "scenario": "models-deferred-wait0-pending-then-ready",
+        "steps": [
+          {
+            "name": "pending",
+            "dispatches": [
+              {
+                "handle": {
+                  "provider": "lifecycle-differential",
+                  "modelId": "mock-model",
+                  "api": "scripted-deferred",
+                  "id": "deferred-1",
+                  "pollAfterMs": 25
+                },
+                "wait_ms": 0
+              }
+            ],
+            "result": {
+              "stop": "deferred",
+              "provider": "lifecycle-differential",
+              "model": "mock-model",
+              "content": [],
+              "deferred": {
+                "provider": "lifecycle-differential",
+                "modelId": "mock-model",
+                "api": "scripted-deferred",
+                "id": "deferred-1",
+                "pollAfterMs": 25
+              },
+              "usage": {
+                "input": 0,
+                "output": 0,
+                "cache_read": 0,
+                "cache_write": 0,
+                "cost": 0.0
+              }
+            },
+            "settled_at_result": [
+              true
+            ],
+            "metric_names_at_result": [
+              "pi.ai.first_chunk.duration",
+              "pi.ai.request.duration"
+            ],
+            "spans": [
+              {
+                "name": "pi.ai.poll",
+                "attributes": {
+                  "api": "scripted-deferred",
+                  "cost.total": 0.0,
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential",
+                  "stop": "deferred",
+                  "usage.cache_read": 0.0,
+                  "usage.cache_write": 0.0,
+                  "usage.input": 0.0,
+                  "usage.output": 0.0
+                },
+                "status": {
+                  "status": "ok"
+                },
+                "parent_is_caller": true,
+                "settled": true,
+                "events": [
+                  "pi.ai.first_chunk"
+                ]
+              }
+            ],
+            "measurements": [
+              {
+                "name": "pi.ai.first_chunk.duration",
+                "kind": "histogram",
+                "unit": "ms",
+                "attributes": {
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": null,
+                "context": "poll"
+              },
+              {
+                "name": "pi.ai.request.duration",
+                "kind": "histogram",
+                "unit": "ms",
+                "attributes": {
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential",
+                  "stop": "deferred"
+                },
+                "value": null,
+                "context": "poll"
+              }
+            ]
+          },
+          {
+            "name": "ready",
+            "dispatches": [
+              {
+                "handle": {
+                  "provider": "lifecycle-differential",
+                  "modelId": "mock-model",
+                  "api": "scripted-deferred",
+                  "id": "deferred-1",
+                  "pollAfterMs": 25
+                },
+                "wait_ms": 0
+              }
+            ],
+            "result": {
+              "stop": "stop",
+              "provider": "lifecycle-differential",
+              "model": "mock-model",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "ready"
+                }
+              ],
+              "deferred": null,
+              "usage": {
+                "input": 2,
+                "output": 3,
+                "cache_read": 4,
+                "cache_write": 5,
+                "cost": 0.25
+              }
+            },
+            "settled_at_result": [
+              true
+            ],
+            "metric_names_at_result": [
+              "pi.ai.first_chunk.duration",
+              "pi.ai.request.duration",
+              "pi.ai.tokens",
+              "pi.ai.tokens",
+              "pi.ai.tokens",
+              "pi.ai.tokens",
+              "pi.ai.cost"
+            ],
+            "spans": [
+              {
+                "name": "pi.ai.poll",
+                "attributes": {
+                  "api": "scripted-deferred",
+                  "cost.total": 0.25,
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential",
+                  "stop": "stop",
+                  "usage.cache_read": 4.0,
+                  "usage.cache_write": 5.0,
+                  "usage.input": 2.0,
+                  "usage.output": 3.0
+                },
+                "status": {
+                  "status": "ok"
+                },
+                "parent_is_caller": true,
+                "settled": true,
+                "events": [
+                  "pi.ai.first_chunk"
+                ]
+              }
+            ],
+            "measurements": [
+              {
+                "name": "pi.ai.first_chunk.duration",
+                "kind": "histogram",
+                "unit": "ms",
+                "attributes": {
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": null,
+                "context": "poll"
+              },
+              {
+                "name": "pi.ai.request.duration",
+                "kind": "histogram",
+                "unit": "ms",
+                "attributes": {
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential",
+                  "stop": "stop"
+                },
+                "value": null,
+                "context": "poll"
+              },
+              {
+                "name": "pi.ai.tokens",
+                "kind": "counter",
+                "unit": "token",
+                "attributes": {
+                  "kind": "input",
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": 2.0,
+                "context": "none"
+              },
+              {
+                "name": "pi.ai.tokens",
+                "kind": "counter",
+                "unit": "token",
+                "attributes": {
+                  "kind": "output",
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": 3.0,
+                "context": "none"
+              },
+              {
+                "name": "pi.ai.tokens",
+                "kind": "counter",
+                "unit": "token",
+                "attributes": {
+                  "kind": "cache_read",
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": 4.0,
+                "context": "none"
+              },
+              {
+                "name": "pi.ai.tokens",
+                "kind": "counter",
+                "unit": "token",
+                "attributes": {
+                  "kind": "cache_write",
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": 5.0,
+                "context": "none"
+              },
+              {
+                "name": "pi.ai.cost",
+                "kind": "counter",
+                "unit": "USD",
+                "attributes": {
+                  "model": "mock-model",
+                  "provider": "lifecycle-differential"
+                },
+                "value": 0.25,
+                "context": "none"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "comparison": {
+      "status": "difference",
+      "shared_observations": "pass",
+      "compared_fields": [
+        "dispatches",
+        "result",
+        "spans",
+        "measurements"
+      ],
+      "mismatches": [],
+      "strict_alignment": false,
+      "difference": {
+        "id": "deferred-poll-telemetry-at-result",
+        "upstream": {
+          "pending": {
+            "span_settled": false,
+            "metric_names": [
+              "pi.ai.first_chunk.duration"
+            ]
+          },
+          "ready": {
+            "span_settled": false,
+            "metric_names": [
+              "pi.ai.first_chunk.duration"
+            ]
+          }
+        },
+        "rust": {
+          "pending": {
+            "span_settled": true,
+            "metric_names": [
+              "pi.ai.first_chunk.duration",
+              "pi.ai.request.duration"
+            ]
+          },
+          "ready": {
+            "span_settled": true,
+            "metric_names": [
+              "pi.ai.first_chunk.duration",
+              "pi.ai.request.duration",
+              "pi.ai.tokens",
+              "pi.ai.tokens",
+              "pi.ai.tokens",
+              "pi.ai.tokens",
+              "pi.ai.cost"
+            ]
+          }
+        }
+      },
+      "decision_status": "not-approved-by-this-probe"
+    }
+  },
+  "real_provider_calls": false
+}

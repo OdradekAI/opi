@@ -1,4 +1,5 @@
 //! Owned permessage-deflate state using the pinned upstream compression backend.
+#![cfg_attr(not(feature = "provider-protocol-common"), allow(dead_code))]
 use libz_rs_sys as z;
 use std::{
     collections::TryReserveError,
@@ -207,7 +208,7 @@ impl Decoder {
         // SAFETY: input and nonempty output are live, disjoint slices for exactly avail lengths;
         // the unique initialized stream cannot escape. The synchronous call ends before slices expire.
         let code = unsafe { z::inflate(&mut *self.stream, flush) };
-        #[cfg(test)]
+        #[cfg(all(test, feature = "provider-protocol-common"))]
         crate::ws::tests::logical_cancel_probe::after_inflate();
         let result = (
             code,

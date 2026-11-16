@@ -1,0 +1,25 @@
+{
+  "first": {
+    "type":"response.done",
+    "response":{"id":"resp_first","status":"completed","end_turn":false,"output":[],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}
+  },
+  "second": [
+    {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_second","role":"assistant","status":"in_progress","content":[]}},
+    {"type":"response.content_part.added","output_index":0,"content_index":0,"part":{"type":"output_text","text":""}},
+    {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"second answer"},
+    {"type":"response.output_item.done","output_index":0,"item":{"type":"message","id":"msg_second","role":"assistant","status":"completed","content":[{"type":"output_text","text":"second answer"}]}},
+    {"type":"response.done","response":{"id":"resp_second","status":"completed","end_turn":true,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}
+  ],
+  "late": {
+    "duplicate": {"type":"response.completed","response":{"id":"resp_first","status":"completed","end_turn":false,"output":[],"usage":{"input_tokens":70,"output_tokens":9,"total_tokens":79}}},
+    "idless": {"type":"response.done","response":{"status":"completed","output":[],"usage":{"input_tokens":70,"output_tokens":9,"total_tokens":79}}},
+    "failure": {"type":"response.failed","response":{"id":"resp_first","status":"failed","error":{"code":"server_error","message":"late failure"}}}
+  },
+  "cases": [
+    {"name":"clean","tail":[]},
+    {"name":"duplicate_terminal","tail":["duplicate"]},
+    {"name":"terminal_without_id","tail":["idless"]},
+    {"name":"ping_before_duplicate","tail":["ping","duplicate"]},
+    {"name":"late_failure","tail":["failure"]}
+  ]
+}

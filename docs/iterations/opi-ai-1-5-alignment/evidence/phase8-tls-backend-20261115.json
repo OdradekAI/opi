@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "issue": "#132",
+  "status": "PASS_WITH_OPEN_SCOPE",
+  "scope": "The fixed rustls/AWS-LC/native-certs source-scoped TLS backend is independently selectable, package-consumable and caller-mapped; HTTP compatibility remains intact.",
+  "host": {
+    "os": "Windows",
+    "target": "x86_64-pc-windows-msvc",
+    "target_dir": "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+  },
+  "sources": {
+    "crates/opi-ai/Cargo.toml": "e408f3e864744da71f7dcc4742fcaa7993763245785eeaa1ee9e1ec6e9751488",
+    "crates/opi-ai/src/lib.rs": "963fd800b2f6b0f48099f20a72bd6996fbb26d15b8594a2e414cd3a4875fb7d6",
+    "crates/opi-ai/src/tls/mod.rs": "0310f1ff17e9e3cd458ac9f9efafff79e97bd50df0c2aaef1cd2611266f16fdb",
+    "crates/opi-ai/src/tls/node_trust.rs": "175b846b46ba593d003e88b7afb41881683324763ede687b80e8e73331409720",
+    "crates/opi-ai/src/crypto/mod.rs": "59c3f45c154e484e4dc20c9ccd0b8453d4cfde375657d1bf3dbc0b93da8ba39c",
+    "crates/opi-ai/src/http.rs": "43018bb9201b0354fe1b0d745d143f0eac269b71a02fd9c46463a11dd625393a",
+    "crates/opi-ai/tests/tls_backend_profile.rs": "23315a52a1755dc17f7df64b0f5edfc000988cacdd5ba0dea6c7bf4f3635a297",
+    "scripts/pi-sdk-conformance/run_tls_backend_package.py": "3eca5c19641d70e70c267a21a298efc8e25995a64872dad4151e6a97778e2011",
+    "scripts/pi-sdk-conformance/test_tls_backend_package.py": "eb48ecf10f5277dda9c4b4f054c82f367d0a0fbca1a04c49637a78a82286df29",
+    "scripts/pi-sdk-conformance/run_http_transport_package.py": "016cab354de12b6be6d58e56c00f05b98b272a91525717c730c5d4da48b3dc82",
+    "crates/opi-ai/README.md": "c88ab64bc807118bd927ac10d030a19facad1b695718d6767bea8d3d6321581c",
+    "crates/opi-ai/README.zh.md": "e00ce97ec1c7b5dad1651d32e831527ec01f701cad8fbba8f9676e4de3e0a95c",
+    "crates/opi-ai/docs/testing.md": "9607749141c30fe01b352d524be24f6cab92ca90e4f83b0755982306185f9c9d",
+    "crates/opi-ai/docs/testing.zh.md": "c602a07cf1b9e403fa32a223aa4fbb954dd0e526bc60283145f31129e3e25239",
+    "crates/opi-ai/docs/transport.md": "0b8ae8408349ad0b778921fea9443aed887b6cdeb31fea888ba9347b2737a8a5",
+    "crates/opi-ai/docs/transport.zh.md": "4c2d6aff6e352df1c3ee925123333e3f22f904cf47671b4285f25dd078480281",
+    "docs/iterations/opi-ai-1-5-alignment/issues/132-split-tls-backend.md": "d8f3c6e60208917383956042cfdff59731c98cfe3fda2de3fac535ac98e141c7",
+    "docs/iterations/opi-ai-1-5-alignment/spec.md": "d14c786fd42b41f2c6082334dfed7c787993652c662a059fc1aae6d81e59f1c9",
+    "CHANGELOG.md": "3807dd781efcb4bd4f307f1dec4a65e9d2a2399233301a22d4a89022a5ebeaba",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v2.json": "976bd2605c541f0a71d3afe3cdeee0dcff6cb05a15080723ef402cd376af9678",
+    "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-callers-20261115-v1.json": "f716466868cd6abe13bf0a23e5c98738160d3fe46584cd4b6e03fa8f5ef56c94",
+    "scripts/pi-sdk-conformance/test_http_transport_package.py": "ee7082428d92b94ae59b8ec46c6d055f95dd6d42ba1793d2c379bcafea2f765d",
+    "scripts/pi-sdk-conformance/run_protocol_adapters_package.py": "a21ac5d2143fbeb335ae4aff5e6225b128aa86eeda25b718a37568f8dc1dfd70",
+    "scripts/pi-sdk-conformance/test_protocol_adapters_package.py": "7d46f911c4f7856daecef6a57f37aafa6e35f200d6666648033b9f5740468d10"
+  },
+  "historical_inputs": {
+    "capability_v_v5": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-capability-v-20261115-v5.json",
+      "sha256": "7e19c88dbcfa7b8317583e245c08da5d22c2746d0fdaec7e30cbc23f9e7dbea2"
+    },
+    "http_transport_receipt": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-20261115.json",
+      "sha256": "0d5375a5cda0bc69405a24f8d3dd50bdd8351b6116001cd164e006bb67f3665e"
+    },
+    "tls_package_v1": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v1.json",
+      "sha256": "6222ea5e59d620f5f0db16b2fe2a05f8f6cdaffaf165b1e0a4783e00cb0c0e3f"
+    },
+    "http_transport_package_v4": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v4.json",
+      "sha256": "79a35b7aebefa88efb00a85fb42cf3f373c544a2b70906b26e5a5747771223aa"
+    },
+    "protocol_adapters_package_v5": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261115-v5.json",
+      "sha256": "0cd0f8d0bbbafc1ab2d6c6a7ff619752388149b92e1e780c3137cb83b7e593ca"
+    }
+  },
+  "feature_contract": {
+    "tls-backend": {
+      "selects": [
+        "dep:rustls",
+        "dep:aws-lc-rs",
+        "dep:rustls-native-certs"
+      ],
+      "owns": [
+        "public opi_ai::tls configuration",
+        "fixed AWS-LC rustls provider instance",
+        "pinned/explicit/host trust loading and mTLS identity admission"
+      ],
+      "does_not_select": [
+        "dep:reqwest",
+        "catalog-bundled",
+        "protocol-adapters",
+        "oauth-store",
+        "provider collection",
+        "cloud-auth codecs",
+        "WebSocket/compression"
+      ]
+    },
+    "http-transport": {
+      "selects_transitively": [
+        "tls-backend"
+      ],
+      "owns": [
+        "HttpClient/HttpClientBuilder and HTTP proxy/redirect policy"
+      ],
+      "compatibility": "http callers retain the historical opi_ai::http TLS re-exports"
+    },
+    "builtins": {
+      "selects_transitively": [
+        "catalog-bundled",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters"
+      ],
+      "compatibility": "default and explicit builtins callers retain the previous provider/catalog/auth/HTTP/TLS surface"
+    }
+  },
+  "checks": {
+    "windows-tls-backend-check": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- check -p opi-ai --locked --offline --no-default-features --features tls-backend",
+      "exit": 0,
+      "log": "C:/Temp/opi-tls-backend-native-20261115-v2/check-tls-backend.log",
+      "log_sha256": "7b867e16fc3f617b050b4dbbc0cdfb9b0b1fae2aa6912c9301cca7fe4db4be1c"
+    },
+    "windows-tls-backend": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features tls-backend --test tls_backend_profile -- --nocapture",
+      "exit": 0,
+      "tests": "2 passed",
+      "log": "C:/Temp/opi-tls-backend-native-20261115-v2/test-tls-backend.log",
+      "log_sha256": "947f725bf0da71dae6cd514760259f165d8b33a0da10d994bfa47e50e3562183"
+    },
+    "windows-tls-backend-clippy": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- clippy -p opi-ai --locked --offline --no-default-features --features tls-backend --tests -- -D warnings",
+      "exit": 0,
+      "log": "C:/Temp/opi-tls-backend-native-20261115-v2/clippy-tls-backend.log",
+      "log_sha256": "1d28ade783d5d5df05559ec33fd02d145d7f0035d1145fa024bd88521e6f4efa"
+    },
+    "windows-http-transport-compatibility": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features http-transport --test http_transport_profile -- --nocapture",
+      "exit": 0,
+      "tests": "3 passed",
+      "log": "C:/Temp/opi-tls-backend-native-20261115-v2/http-transport-compat.log",
+      "log_sha256": "f322518d7a65e5e553f45a0cc32c87b42a7d7534d23fce315a99b992329a6596"
+    },
+    "windows-builtins-http-compatibility": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:/opi/cargo-targets/opi-72fa37a0fa044958 -- test -p opi-ai --locked --offline --no-default-features --features builtins --test http_transport_profile -- --nocapture",
+      "exit": 0,
+      "tests": "3 passed",
+      "log": "C:/Temp/opi-tls-backend-native-20261115-v1/builtins-compat.log",
+      "log_sha256": "de3441fd6a43f6ad4cec3a641a36fbc154173e2fcd6acf87b447410a292d2117"
+    }
+  },
+  "package": {
+    "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v2.json",
+    "sha256": "976bd2605c541f0a71d3afe3cdeee0dcff6cb05a15080723ef402cd376af9678",
+    "verdict": "PASS",
+    "feature_union": [
+      "tls-backend"
+    ],
+    "backend_present": [
+      "aws-lc-rs",
+      "rustls",
+      "rustls-native-certs"
+    ],
+    "http_absent": true,
+    "forbidden_absent": [
+      "reqwest",
+      "hyper-rustls",
+      "tokio-rustls",
+      "catalog",
+      "aws-smithy-query",
+      "aws-smithy-xml",
+      "p256",
+      "hmac",
+      "sha1",
+      "xmlparser",
+      "libz-rs-sys",
+      "flate2"
+    ],
+    "actual_consumer": "constructs opi_ai::tls::TlsOptions with pinned roots and HTTP/1.1 ALPN outside the workspace; no live network call"
+  },
+  "caller_audit": {
+    "inventory": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-callers-20261115-v1.json",
+    "inventory_sha256": "f716466868cd6abe13bf0a23e5c98738160d3fe46584cd4b6e03fa8f5ef56c94",
+    "files": 664,
+    "files_by_category": {
+      "tls_api": 12,
+      "http_bridge": 93,
+      "backend_direct": 16
+    },
+    "matches": {
+      "tls_api": 128,
+      "http_bridge": 815,
+      "backend_direct": 131
+    },
+    "interpretation": "public TLS API callers can select tls-backend; HttpClient callers inherit it through http-transport; provider/auth/WS callers remain on existing builtins/protocol owners; direct backend references are mostly fixtures/private tests"
+  },
+  "test_impact": {
+    "add": "tls-backend feature, public tls module gate, native contract test, package runner/unit tests and caller inventory",
+    "update": "http-transport dependency ownership, bilingual README/transport/testing docs, capability mapping, issue/spec/changelog",
+    "delete": "none",
+    "retain": "all historical HTTP, protocol, OAuth/store, Pi and platform receipts"
+  },
+  "verdict": "PASS",
+  "historical_package_receipts": [
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-tls-backend-package-20261115-v1.json",
+      "sha256": "6222ea5e59d620f5f0db16b2fe2a05f8f6cdaffaf165b1e0a4783e00cb0c0e3f",
+      "status": "historical initial package receipt"
+    }
+  ],
+  "repository_checks": {
+    "opi_doc_check": "PASS",
+    "cargo_fmt_check_all": "PASS",
+    "scoped_git_diff_check": "PASS",
+    "package_runner_py_compile": "PASS",
+    "package_runner_unit_tests": "3 passed",
+    "full_git_diff_check_default": "FAIL_PREEXISTING_CRLF_IN_BROADER_DIRTY_WORKTREE",
+    "full_git_diff_check_with_core_whitespace_cr_at_eol": "PASS"
+  },
+  "related_current_packages": {
+    "http_transport": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-http-transport-package-20261115-v4.json",
+      "sha256": "79a35b7aebefa88efb00a85fb42cf3f373c544a2b70906b26e5a5747771223aa",
+      "feature_union": [
+        "http-transport",
+        "tls-backend"
+      ]
+    },
+    "protocol_adapters": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/phase8-protocol-adapters-package-20261115-v5.json",
+      "sha256": "0cd0f8d0bbbafc1ab2d6c6a7ff619752388149b92e1e780c3137cb83b7e593ca",
+      "feature_union": [
+        "http-transport",
+        "protocol-adapters",
+        "tls-backend"
+      ]
+    }
+  }
+}

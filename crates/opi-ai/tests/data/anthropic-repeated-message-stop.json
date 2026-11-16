@@ -1,0 +1,46 @@
+{
+  "id": "anthropic-repeated-message-stop",
+  "events": [
+    {
+      "type": "message_start",
+      "message": {
+        "id": "msg_repeat",
+        "model": "claude-sonnet-4-5-20250514",
+        "usage": {
+          "input_tokens": 10,
+          "output_tokens": 0
+        }
+      }
+    },
+    {
+      "type": "message_delta",
+      "delta": {
+        "stop_reason": "end_turn"
+      },
+      "usage": {
+        "output_tokens": 5
+      }
+    },
+    {
+      "type": "message_stop"
+    },
+    {
+      "type": "message_delta",
+      "delta": {},
+      "usage": {
+        "output_tokens": 7
+      }
+    },
+    {
+      "type": "message_stop"
+    }
+  ],
+  "expected": {
+    "stop": "stop",
+    "raw_stop": "end_turn",
+    "input": 10,
+    "output": 7,
+    "done_count": 1,
+    "provider_events": 5
+  }
+}

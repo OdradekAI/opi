@@ -131,6 +131,111 @@ def check_index(repo, index, errors):
             errors.append(f"invalid evidence: {path}:{line}")
 
 
+def _inventory_file(repo, row):
+    """Resolve one raw source-inventory row without changing its recorded path."""
+    path = Path(row["path"])
+    if row["role"] in ("ts-source", "ts-test"):
+        return repo / ".pi/pi-1.5.0" / path
+    if row["role"] in ("rust-source", "rust-test"):
+        return repo / path
+    return None
+
+
+def check_current_inventory(repo, inventory, errors):
+    """Validate a fresh source inventory against the current filesystem.
+
+    The phase-one contract index is intentionally historical: it contains
+    ownership and line evidence for the original mapping. Later refactors can
+    split Rust modules and add tests without making that historical mapping a
+    valid current source manifest. This check therefore validates only the
+    self-contained facts emitted by ``source_inventory.py``: parser identity,
+    exact file set/content hashes, and declaration/entrypoint uniqueness.
+    """
+    expected_parser_versions = {
+        "tree-sitter": "0.25.2",
+        "tree-sitter-typescript": "0.23.2",
+        "tree-sitter-rust": "0.24.0",
+    }
+    if inventory.get("schema_version") != 1:
+        errors.append("current inventory schema mismatch")
+    if inventory.get("parser_versions") != expected_parser_versions:
+        errors.append("current parser identity differs")
+    if inventory.get("syntax_errors") or inventory.get("unresolved_reexports"):
+        errors.append("current extraction has unresolved errors")
+
+    rows = inventory.get("files", [])
+    keys = [(row.get("role"), row.get("path")) for row in rows]
+    if len(keys) != len(set(keys)):
+        errors.append("current inventory file rows are not unique")
+    for row in rows:
+        path = _inventory_file(repo, row)
+        if path is None:
+            errors.append(f"unknown current inventory role: {row.get('role')}")
+            continue
+        if not path.is_file():
+            errors.append(f"current inventory missing file: {row['path']}")
+            continue
+        raw = path.read_bytes()
+        if len(raw) != row.get("bytes") or digest(raw) != row.get("sha256"):
+            errors.append(f"current inventory content drift: {row['path']}")
+
+    expected = {
+        "ts-source": {
+            p.relative_to(repo / ".pi/pi-1.5.0").as_posix()
+            for p in (repo / ".pi/pi-1.5.0/packages/ai/src").rglob("*.ts")
+        },
+        "ts-test": {
+            p.relative_to(repo / ".pi/pi-1.5.0").as_posix()
+            for p in (repo / ".pi/pi-1.5.0/packages/ai/test").rglob("*.ts")
+        },
+        "rust-source": {
+            p.relative_to(repo).as_posix()
+            for p in (repo / "crates/opi-ai/src").rglob("*.rs")
+        },
+        "rust-test": {
+            p.relative_to(repo).as_posix()
+            for p in (repo / "crates/opi-ai/tests").rglob("*.rs")
+        },
+    }
+    for role, paths in expected.items():
+        actual = {row["path"] for row in rows if row.get("role") == role}
+        if actual != paths:
+            errors.append(f"current {role} file-set drift")
+
+    for collection in ("entrypoints", "upstream_symbols", "rust_declarations", "test_declarations"):
+        values = [row.get("id") if collection != "entrypoints" else row.get("entrypoint")
+                  for row in inventory.get(collection, [])]
+        if len(values) != len(set(values)):
+            errors.append(f"duplicate current {collection}")
+
+
+def verify_current(repo, baseline, inventory):
+    """Verify a separately captured current baseline and raw inventory.
+
+    This deliberately does not call ``check_index`` or the historical Pi
+    observation checks. Those checks remain available through the default
+    historical mode and retain the original phase-one contract boundary.
+    """
+    errors = []
+    upstream = repo / baseline["upstream"]["root"]
+    actual_upstream = [p.relative_to(upstream).as_posix() for p in upstream.rglob("*")
+                       if p.is_file() and not {".git", "node_modules"}.intersection(p.relative_to(upstream).parts)]
+    check_manifest(upstream, baseline["upstream"]["manifest"], errors, actual_upstream)
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z",
+         "crates", "scripts", ".github", ".cargo", "Cargo.toml", "Cargo.lock"],
+        cwd=repo,
+    )
+    actual_rust = [p.decode("utf-8") for p in tracked.split(b"\0")
+                   if p and (repo / p.decode("utf-8")).is_file()]
+    check_manifest(repo, baseline["rust"]["source_manifest"], errors, actual_rust)
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    if head != baseline["rust"]["head"]["stdout"]:
+        errors.append("current Rust HEAD drift")
+    check_current_inventory(repo, inventory, errors)
+    return errors
+
+
 def verify(repo, baseline, index):
     errors = []
     upstream = repo / baseline["upstream"]["root"]
@@ -167,11 +272,20 @@ def main():
     p.add_argument("--baseline", type=Path, default=Path(__file__).resolve().parent.parent / "evidence/phase1-baseline.json")
     p.add_argument("--index", type=Path, default=Path(__file__).resolve().parent.parent / "contract-index.json")
     p.add_argument("--inventory", type=Path, help="Optional fresh raw extraction from source_inventory.py")
+    p.add_argument("--mode", choices=("historical", "current"), default="historical",
+                    help="Use the frozen phase-one contract (historical) or a separately captured current snapshot")
     args = p.parse_args()
     baseline = json.loads(args.baseline.read_text(encoding="utf-8"))
-    index = json.loads(args.index.read_text(encoding="utf-8"))
-    errors = verify(args.repo.resolve(), baseline, index)
-    if args.inventory:
+    if args.mode == "current":
+        if not args.inventory:
+            p.error("--inventory is required with --mode current")
+        inventory = json.loads(args.inventory.read_text(encoding="utf-8"))
+        errors = verify_current(args.repo.resolve(), baseline, inventory)
+    else:
+        index = json.loads(args.index.read_text(encoding="utf-8"))
+        errors = verify(args.repo.resolve(), baseline, index)
+    if args.inventory and args.mode == "historical":
+        index = json.loads(args.index.read_text(encoding="utf-8"))
         raw = json.loads(args.inventory.read_text(encoding="utf-8"))
         if raw["syntax_errors"] or raw["unresolved_reexports"]:
             errors.append("fresh extraction has unresolved errors")
@@ -186,8 +300,13 @@ def main():
     if errors:
         print("FAIL\n" + "\n".join(errors))
         raise SystemExit(1)
-    print(f"PASS: source identities; {len(index['contracts'])} families; {len(index['upstream_symbols'])} source-projected exports; "
-          f"{len(index['test_declarations'])} test declarations; ownership/links/uniqueness. No product equivalence claim.")
+    if args.mode == "current":
+        print(f"PASS: current source identities; {len(inventory['upstream_symbols'])} source-projected exports; "
+              f"{len(inventory['rust_declarations'])} Rust declarations; {len(inventory['test_declarations'])} test declarations; "
+              "current file/content hashes and parser identity.")
+    else:
+        print(f"PASS: source identities; {len(index['contracts'])} families; {len(index['upstream_symbols'])} source-projected exports; "
+              f"{len(index['test_declarations'])} test declarations; ownership/links/uniqueness. No product equivalence claim.")
 
 
 if __name__ == "__main__":

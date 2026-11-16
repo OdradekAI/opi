@@ -104,11 +104,20 @@ class FreezeAcceptanceMaterialsTests(unittest.TestCase):
             self.assertIsNone(evidence["inspection_command"])
             self.assertEqual(commands.call_count, 5)
             MODULE.write_new_json(output, evidence)
-            self.assertEqual(json.loads(output.read_text())["schemaVersion"], 2)
+            recorded = json.loads(output.read_text())
+            self.assertEqual(recorded["schemaVersion"], MODULE.MATERIAL_SCHEMA_VERSION)
+            self.assertEqual(recorded["snapshot"], str((root / MODULE.SNAPSHOT).resolve()))
 
     def test_legacy_or_incomplete_evidence_is_rejected_before_replay(self):
-        self.assertEqual(MODULE.verify_evidence(Path.cwd(), {"schemaVersion": 1}), ["unsupported material evidence schema"])
-        self.assertEqual(MODULE.verify_evidence(Path.cwd(), {"schemaVersion": 2}), ["material input inventory is incomplete"])
+        root = Path.cwd().resolve()
+        for version in (1, 2):
+            with self.subTest(version=version):
+                self.assertEqual(MODULE.verify_evidence(root, {"schemaVersion": version}), ["unsupported material evidence schema"])
+        evidence = {
+            "schemaVersion": MODULE.MATERIAL_SCHEMA_VERSION, "repository": str(root),
+            "snapshot": str((root / MODULE.SNAPSHOT).resolve()),
+        }
+        self.assertEqual(MODULE.verify_evidence(root, evidence), ["material input inventory is incomplete"])
 
     def test_replay_detects_file_tree_and_catalog_drift(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -130,7 +139,9 @@ class FreezeAcceptanceMaterialsTests(unittest.TestCase):
             catalog_path.write_bytes(b'{"probe":[]}')
             revision = "sha256-" + hashlib.sha256(catalog_path.read_bytes()).hexdigest()
             evidence = {
-                "schemaVersion": 2, "inputs": {str(input_path): MODULE.file_record(root / input_path)},
+                "schemaVersion": MODULE.MATERIAL_SCHEMA_VERSION, "repository": str(root.resolve()),
+                "snapshot": str((root / MODULE.SNAPSHOT).resolve()),
+                "inputs": {str(input_path): MODULE.file_record(root / input_path)},
                 "trees": {str(tree_path): MODULE.tree_record(root / tree_path)},
                 "catalog": MODULE.verify_catalog(catalog_path, revision),
                 "baseline": {"path": str(baseline_path), **MODULE.file_record(baseline_path)},
@@ -147,6 +158,61 @@ class FreezeAcceptanceMaterialsTests(unittest.TestCase):
                 (root / tree_path / "extra.js").unlink()
                 catalog_path.write_bytes(b'{"different":[]}')
                 self.assertIn("catalog evidence drift", MODULE.verify_evidence(root, evidence))
+
+    def test_explicit_snapshot_owns_inventory_and_inspection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = (Path(directory) / "repo").resolve()
+            snapshot = root.with_name("isolated snapshot")
+            original = root / MODULE.SNAPSHOT
+            original.mkdir(parents=True)
+            lock = Path("package-lock.json")
+            installed_lock = Path("node_modules/.package-lock.json")
+            pin = Path("nix/model-catalog.json")
+            dist = Path("packages/ai/dist")
+            frozen_lock = b'{"frozen":true}'
+            (original / lock).write_bytes(frozen_lock)
+            catalog_path = root / "catalog.json"
+            catalog_path.write_bytes(b'{"probe":[]}')
+            revision = "sha256-" + hashlib.sha256(catalog_path.read_bytes()).hexdigest()
+            (snapshot / pin).parent.mkdir(parents=True)
+            (snapshot / pin).write_text(json.dumps({"revision": revision}), encoding="utf-8")
+            (snapshot / lock).write_bytes(b'{"frozen":false}')
+            (snapshot / dist).mkdir(parents=True)
+            (snapshot / dist / "index.js").write_bytes(b"restored dist")
+            baseline_path = root / "baseline.json"
+            baseline = {"upstream": {"manifest": {"sha256": "frozen", "files": [
+                {"path": lock.as_posix(), "sha256": hashlib.sha256(frozen_lock).hexdigest()}
+            ]}}}
+            baseline_path.write_text(json.dumps(baseline), encoding="utf-8")
+            inspection = {
+                "dependencies": [{"status": "matched-frozen-direct-record"}],
+                "dist": [{"package": name, "status": "complete-source-maps-match"} for name in ("ai", "schema", "telemetry")],
+                "catalog": {"status": "pinned-model-values-match", "internal_validation": {"source": "pass", "dist": "pass"}},
+            }
+            with (
+                patch.object(MODULE, "INPUT_PATHS", tuple(MODULE.SNAPSHOT / path for path in (lock, installed_lock, pin))),
+                patch.object(MODULE, "TREE_PATHS", (MODULE.SNAPSHOT / dist,)),
+                patch.object(MODULE, "command_result", return_value={"status": "ok", "stdout": json.dumps(inspection)}) as commands,
+            ):
+                evidence, code = MODULE.collect_evidence(root, catalog_path, baseline_path, snapshot=snapshot)
+                self.assertEqual(code, 0)
+                self.assertEqual(evidence["snapshot"], str(snapshot))
+                self.assertEqual(evidence["blocked_gates"], [
+                    "frozen upstream source/lock provenance drift", f"input: {(snapshot / installed_lock).as_posix()}",
+                ])
+                self.assertEqual(evidence["inputs"][(snapshot / lock).as_posix()], MODULE.file_record(snapshot / lock))
+                self.assertEqual(evidence["source_comparison"]["changes"][0]["path"], lock.as_posix())
+                self.assertEqual(evidence["trees"][(snapshot / dist).as_posix()], MODULE.tree_record(snapshot / dist))
+                self.assertEqual(commands.call_args_list[0].args[0][-3], str(snapshot))
+                (original / lock).write_bytes(b"original tree changed after freeze")
+                self.assertEqual(MODULE.verify_evidence(root, evidence), [])
+                self.assertEqual(commands.call_args.args[0][-3], str(snapshot))
+                self.assertEqual(
+                    MODULE.verify_evidence(root, {**evidence, "snapshot": str(original)}),
+                    ["material input inventory is incomplete"],
+                )
+                (snapshot / dist / "index.js").write_bytes(b"candidate changed after freeze")
+                self.assertIn(f"tree drift: {(snapshot / dist).as_posix()}", MODULE.verify_evidence(root, evidence))
 
 
 if __name__ == "__main__":

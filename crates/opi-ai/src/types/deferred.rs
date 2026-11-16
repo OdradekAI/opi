@@ -54,11 +54,10 @@ impl DeferredHandle {
         Ok(())
     }
 
-    /// Validate expiry against a caller-injected monotonic reading.
+    /// Validate expiry against a caller-supplied time in Unix epoch milliseconds.
     ///
-    /// The SDK never reads a clock itself: the caller (agent loop, consumer
-    /// fixture) owns time so tests stay deterministic and the SDK gains no
-    /// hidden polling or timing behavior.
+    /// A time at or after `expires_at_ms` returns [`DeferredError::Expired`].
+    /// The caller owns the clock reading.
     pub fn validate_expiry(&self, now_ms: u64) -> Result<(), DeferredError> {
         if let Some(expires_at_ms) = self.expires_at_ms
             && now_ms >= expires_at_ms
@@ -108,9 +107,9 @@ pub enum DeferredError {
         expires_at_ms: u64,
         now_ms: u64,
     },
-    /// No deferred backend serves the handle's provider (pi: "does not
-    /// support deferred responses").
-    #[error("provider '{provider}' does not support deferred responses")]
+    /// No deferred backend is registered for the handle's provider and
+    /// exact API.
+    #[error("no deferred backend is registered for the requested API of provider '{provider}'")]
     Unsupported {
         /// Provider id the fetch/cancel targeted.
         provider: String,

@@ -58,6 +58,8 @@ class PackageProofTests(unittest.TestCase):
         self.assertEqual(candidate.verify_graph(metadata), "candidate")
         self.assertEqual(candidate.command(["cargo", "test", "--", "--nocapture"]),
                          ["cargo", "--config", str(candidate.config), "test", "--", "--nocapture"])
+        self.assertEqual(candidate.command(["cargo", "clippy", "--tests", "--", "-D", "warnings"]),
+                         ["cargo", "clippy", "--config", str(candidate.config), "--tests", "--", "-D", "warnings"])
         self.assertEqual(candidate.command(["consumer.exe"]), ["consumer.exe"])
         for replacement in [[], [dict(metadata["packages"][0], source="registry+unexpected")],
                             [dict(metadata["packages"][0], manifest_path=str(self.repo / "Cargo.toml"))],
@@ -161,7 +163,7 @@ class PackageProofTests(unittest.TestCase):
         features = ["std", "utf16", "prohibit-unsafe"]
         if default:
             features += ["default", "backend-pikevm"]
-        opi_features = ["telemetry-tracing"] if default else []
+        opi_features = ["default", "builtins", "telemetry-tracing"] if default else []
         return {"packages": packages, "resolve": {"nodes": [
             {"id": "opi", "features": opi_features},
             {"id": "regress", "features": features}, {"id": "url", "features": ["std"]}

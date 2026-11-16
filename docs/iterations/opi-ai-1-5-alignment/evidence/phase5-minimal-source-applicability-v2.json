@@ -1,0 +1,25 @@
+{
+  "status": "PASS",
+  "scope": "Source applicability only; execution outcomes are in the final checks receipt.",
+  "package_sha256": "fbc8771b874ca608a7e0700eacbf83f472200d2a83c60260151f388517d98d2c",
+  "checked_files": 336,
+  "byte_identical_files": 334,
+  "changed_files": [
+    {
+      "crate": "opi-ai",
+      "path": "src/auth/oauth/mod.rs",
+      "before": "83f6f544dce598e906d4a0b11466f4d0687b7707c502997924872a0c6291526f",
+      "after": "f732de0cef7efdb623210f43cccc8a161b369d16eb0892e4f5e95f1a94f1c327",
+      "change": "rustdoc-only link"
+    },
+    {
+      "crate": "opi-ai",
+      "path": "tests/tool_result_wire.rs",
+      "before": "0ddacce9d6aac195d4230be5ed244161fd6198a647ffcb37fdf75102c5e8820c",
+      "after": "3f16ef91817d2b116cd9c08bcc9028b9dae53fdd0886e53886fac0ae2127aa5a",
+      "change": "metadata-only test guard"
+    }
+  ],
+  "production_code_excluding_rustdoc_unchanged": true,
+  "consumer_inputs_and_manifests_unchanged": true
+}

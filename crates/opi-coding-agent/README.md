@@ -626,6 +626,15 @@ Sessions are append-only JSONL files under `%LOCALAPPDATA%\opi\sessions\` on
 Windows and `~/.local/share/opi/sessions/` on Unix, unless `OPI_SESSIONS_DIR`
 is set.
 
+Assistant messages retain their response-time `usage.cost` snapshot in JSONL:
+catalog components, the total, and `total_from_provider`, including a reported
+zero total. Resume preserves those fields. Older messages without `cost` remain
+readable with a default breakdown and no provider-total claim. The session cost
+summary is a separate estimate recomputed from cumulative token usage and the
+session's current model pricing. It is not persisted or calculated by summing
+message costs, so a price change can change the summary without rewriting past
+messages. Unknown usage or pricing still makes the summary unavailable.
+
 Legacy sessions recorded a bare model name without a provider prefix. On
 resume, fork, or branch, a bare model normalizes only when exactly one
 dispatchable route serves it; an ambiguous or missing route keeps the

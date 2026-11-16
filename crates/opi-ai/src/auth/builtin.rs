@@ -1,4 +1,10 @@
 //! Lazy source selection for builtin profiles. Construction never reads sources.
+//!
+//! The resolver/factory half is consumed by the bundled provider collection;
+//! protocol-only callers still use the source-owned URL helper below. Keep
+//! the unused collection half lint-clean when that collection is omitted.
+
+#![cfg_attr(feature = "provider-protocol-common", allow(dead_code))]
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -357,6 +363,7 @@ pub(crate) fn factory(
     })
 }
 
+#[cfg(feature = "builtins")]
 pub(crate) fn default_oauth_flow(id: &str) -> Option<Arc<dyn OAuthProvider>> {
     use super::oauth;
     Some(match id {

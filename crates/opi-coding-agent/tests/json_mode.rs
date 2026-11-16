@@ -1658,6 +1658,13 @@ fn thinking_tool_text_stream(
     use opi_ai::stream::{AssistantStreamEvent, StopReason};
 
     let mut partial = test_support::base_assistant();
+    partial.usage.cost = opi_ai::CostBreakdown {
+        input_cost: 0.125,
+        output_cost: 0.25,
+        total: 0.5,
+        total_from_provider: true,
+        ..Default::default()
+    };
     let mut events = vec![AssistantStreamEvent::Start {
         partial: partial.clone(),
     }];
@@ -1771,8 +1778,10 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
     let _env_guard = common::empty_user_config_dir();
     for with_content in [false, true] {
         let mut sizes = Vec::new();
+        let mut event_sizes = std::collections::BTreeMap::new();
         for count in [128, 256] {
             let (events, complete) = thinking_tool_text_stream(count);
+            let expected_usage = serde_json::to_value(&complete.usage).unwrap();
             let provider =
                 MockProvider::new("mock", vec![events, test_support::text_response("done")]);
             let calls = provider.call_log_handle();
@@ -1810,12 +1819,30 @@ async fn json_mode_compact_text_deltas_are_constant_size() {
                 assert_eq!(updates.len(), count);
                 for update in updates {
                     assert_eq!(update["event"]["assistant_event"]["delta"], delta);
-                    let bytes = serde_json::to_vec(update).unwrap().len();
-                    assert!(
-                        bytes < 1000,
-                        "compact {kind} repeated a cumulative payload: {bytes} bytes"
+                    // Exclude the envelope's changing sequence/timing fields.
+                    // Fixed message metadata, including cost, may grow with
+                    // the schema; cumulative stream content must not grow here.
+                    let event = &update["event"];
+                    let bytes = serde_json::to_vec(event).unwrap().len();
+                    let expected_bytes = *event_sizes.entry(kind).or_insert(bytes);
+                    assert_eq!(
+                        bytes, expected_bytes,
+                        "compact {kind} size grew with cumulative content"
                     );
-                    assert!(update["event"]["assistant_event"].get("partial").is_none());
+                    assert!(event["assistant_event"].get("partial").is_none());
+                    assert_eq!(event["message"]["usage"], expected_usage);
+                    for block in event["message"]["content"].as_array().unwrap() {
+                        match block["type"].as_str().unwrap() {
+                            "text" => assert_eq!(block["text"], ""),
+                            "thinking" => {
+                                assert_eq!(block["thinking"], "");
+                                assert!(block.get("signature").is_none());
+                            }
+                            "redacted_thinking" => assert_eq!(block["data"], ""),
+                            "tool_call" => assert_eq!(block["tool_call"]["arguments"], ""),
+                            other => panic!("unexpected fixture block: {other}"),
+                        }
+                    }
                     if kind == "text_delta" {
                         assert_eq!(
                             update["event"]["message"]["content"][3]["tool_call"]["id"],
