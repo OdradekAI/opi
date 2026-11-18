@@ -1,6 +1,6 @@
 # #172 Freeze the layer graph and extract the lower provider contract
 
-Status: open
+Status: complete
 Owner: current implementation slice
 Parent: [#164 unresolved ownership audit](164-audit-unresolved-ownership-boundaries.md)
 Related: [module structure decision](../decisions/06-module-structure.md)
@@ -233,6 +233,10 @@ stream 迁移到 `models/chat_call.rs`。当前结构指标为
 随后 [#207 G3 API contract seam](207-close-g3-api-contract-seam.md) 将 API
 contract 对 request、stream、error 和 validation 的直接 provider 依赖收拢到
 `provider::operation`。当前 `api_contract_provider_edges=0`，G3 收口。
+
+随后 [#208 G0–G6 closure audit](208-audit-g0-g6-closure.md) 重新核对所有门槛。
+G0 旧根路径扫描、G1 profile native-state 扫描、G2–G5 architecture enforce 与
+当前 G6 `.crate` 外部 consumer 全部通过，G0–G6 完成收口。
 
 ## Acceptance
 

@@ -1329,6 +1329,12 @@ orchestration 的 8 个定义全部离开 facade，Models facade 降至 3897 行
 收拢到 `provider::operation`。`api_contract_provider_edges=0`，G3 收口，剩余
 `types/errors` bundle coupling 继续按 #172 的显式记录处理。
 
+随后 [#208 G0–G6 closure audit](issues/208-audit-g0-g6-closure.md) 重新验证旧根
+路径、profile native-state、API/profile inversion、lower contract、
+stream/execution、Models ownership 和当前 `.crate` 外部 consumer。G0–G6 全部
+完成，后续转入 Deferred 生产接入、平台能力、性能、fuzz 和独立的
+`types/errors` purity 工作。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。
