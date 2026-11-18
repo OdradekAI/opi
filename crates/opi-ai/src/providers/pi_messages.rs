@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use crate::api::pi_messages::PiMessagesOptions;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
@@ -21,8 +20,6 @@ pub struct PiMessagesProvider {
     pub(crate) base_url: String,
     pub(crate) client: Arc<HttpClient>,
     pub(crate) models: Vec<ModelInfo>,
-    /// Typed native options for one direct/native dispatch.
-    pub(crate) native_options: Option<PiMessagesOptions>,
 }
 
 impl std::fmt::Debug for PiMessagesProvider {
@@ -46,19 +43,12 @@ impl PiMessagesProvider {
             base_url: base_url.unwrap_or_else(|| BASE_URL.into()),
             client: Arc::new(HttpClient::new()),
             models,
-            native_options: None,
         }
     }
 
     /// Replace the profile's advertised model records.
     pub fn with_models(mut self, models: Vec<ModelInfo>) -> Self {
         self.models = models;
-        self
-    }
-
-    /// Bind typed native options for one dispatch.
-    pub fn with_native_options(mut self, options: PiMessagesOptions) -> Self {
-        self.native_options = Some(options);
         self
     }
 

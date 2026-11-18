@@ -122,6 +122,43 @@ impl PiMessagesOptions {
     }
 }
 
+/// pi-messages wire state for one dispatch. The registered provider profile
+/// keeps only route, catalog and client state.
+#[derive(Clone)]
+pub struct PiMessagesWireAdapter {
+    provider: PiMessagesProvider,
+    native_options: Option<PiMessagesOptions>,
+}
+
+impl PiMessagesWireAdapter {
+    pub fn new(provider: PiMessagesProvider) -> Self {
+        Self {
+            provider,
+            native_options: None,
+        }
+    }
+
+    pub fn with_options(provider: PiMessagesProvider, options: PiMessagesOptions) -> Self {
+        Self {
+            provider,
+            native_options: Some(options),
+        }
+    }
+
+    pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+}
+
+impl PiMessagesProvider {
+    /// Build a per-call wire adapter without storing native options on the
+    /// registered provider profile.
+    pub fn with_native_options(self, options: PiMessagesOptions) -> PiMessagesWireAdapter {
+        PiMessagesWireAdapter::with_options(self, options)
+    }
+}
+
 impl PiMessagesProvider {
     fn resolve_model(&self, requested: &str) -> Option<&crate::provider::ModelInfo> {
         let id = requested.strip_prefix("radius:").unwrap_or(requested);
@@ -137,8 +174,7 @@ impl PiMessagesProvider {
     pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
         let options =
             PiMessagesOptions::from_simple(&crate::api::contract::SimpleOptions::default());
-        let provider = self.clone().with_native_options(options);
-        provider.stream_prepared(request, auth)
+        self.stream_prepared_with_options(request, auth, Some(options))
     }
 
     fn unknown_model_error(&self, requested: &str) -> ProviderError {
@@ -147,11 +183,15 @@ impl PiMessagesProvider {
         )))
     }
 
-    fn build_request_body(&self, request: &Request) -> Result<serde_json::Value, ProviderError> {
+    fn build_request_body_with_options(
+        &self,
+        request: &Request,
+        native_options: Option<&PiMessagesOptions>,
+    ) -> Result<serde_json::Value, ProviderError> {
         let model = self
             .resolve_model(&request.model)
             .ok_or_else(|| self.unknown_model_error(&request.model))?;
-        let options = self.native_options.as_ref();
+        let options = native_options;
 
         let projection = crate::transcript::compile_request_projection(
             request,
@@ -203,10 +243,8 @@ impl PiMessagesProvider {
         }))
     }
 
-    fn uses_debug(&self) -> bool {
-        self.native_options
-            .as_ref()
-            .is_some_and(|options| options.debug)
+    fn uses_debug(&self, native_options: Option<&PiMessagesOptions>) -> bool {
+        native_options.is_some_and(|options| options.debug)
     }
 }
 
@@ -487,46 +525,12 @@ fn to_pi_wire_message(message: &Message) -> serde_json::Value {
     }
 }
 
-impl Provider for PiMessagesProvider {
-    fn validate_simple_options(
-        &self,
-        model: &crate::provider::ModelInfo,
-        _options: &crate::api::contract::SimpleOptions,
-    ) -> Result<(), ProviderError> {
-        PiMessagesChatApi::new(self.clone(), model.clone()).map(|_| ())
-    }
-
-    fn stream_model_resource_attempt(
-        &self,
-        model: crate::provider::ModelInfo,
-        options: crate::api::contract::SimpleOptions,
-        request: Request,
-        auth: crate::auth::ResolvedAuth,
-        attempt: crate::provider::AttemptContext,
-        resources: Option<crate::codex_resources::CallResourceLease>,
-    ) -> EventStream {
-        let mut provider = self.clone();
-        if let Some(base_url) = model.base_url.clone() {
-            provider.base_url = base_url;
-        }
-        provider
-            .with_models(vec![model])
-            .with_native_options(PiMessagesOptions::from_simple(&options))
-            .stream_resource_attempt(request, auth, attempt, resources)
-    }
-
-    fn id(&self) -> &str {
-        "radius"
-    }
-
-    fn models(&self) -> &[crate::provider::ModelInfo] {
-        &self.models
-    }
-
-    fn stream_prepared(
+impl PiMessagesProvider {
+    fn stream_prepared_with_options(
         &self,
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
+        native_options: Option<PiMessagesOptions>,
     ) -> EventStream {
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::PiMessages) {
             Ok(facts) => facts,
@@ -556,7 +560,8 @@ impl Provider for PiMessagesProvider {
                     return Box::pin(futures_util::stream::iter(vec![Err(error)]));
                 }
             };
-            let body = match self.build_request_body(&request) {
+            let body = match self.build_request_body_with_options(&request, native_options.as_ref())
+            {
                 Ok(body) => body,
                 Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
             };
@@ -566,7 +571,7 @@ impl Provider for PiMessagesProvider {
                 .as_deref()
                 .unwrap_or(&self.base_url)
                 .trim_end_matches('/');
-            let path = if self.uses_debug() {
+            let path = if self.uses_debug(native_options.as_ref()) {
                 format!("{base}/messages?debug=1")
             } else {
                 format!("{base}/messages")
@@ -856,6 +861,70 @@ struct PiMessagesSseMapper {
     /// converted events so the stream's last item is the typed error.
     terminal_error: Option<ProviderError>,
     received_bytes: bool,
+}
+
+impl Provider for PiMessagesProvider {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        _options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        PiMessagesChatApi::new(self.clone(), model.clone()).map(|_| ())
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: crate::provider::ModelInfo,
+        options: crate::api::contract::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut provider = self.clone();
+        if let Some(base_url) = model.base_url.clone() {
+            provider.base_url = base_url;
+        }
+        provider
+            .with_models(vec![model])
+            .with_native_options(PiMessagesOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
+    fn id(&self) -> &str {
+        "radius"
+    }
+
+    fn models(&self) -> &[crate::provider::ModelInfo] {
+        &self.models
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.stream_prepared_with_options(request, auth, None)
+    }
+}
+
+impl Provider for PiMessagesWireAdapter {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.provider.validate_simple_options(model, options)
+    }
+
+    fn id(&self) -> &str {
+        self.provider.id()
+    }
+
+    fn models(&self) -> &[crate::provider::ModelInfo] {
+        self.provider.models()
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
 }
 
 impl PiMessagesSseMapper {
@@ -1378,11 +1447,9 @@ impl crate::api::contract::ChatApi<PiMessagesOptions> for PiMessagesChatApi {
             // fields stay unused on this path.
             request.thinking = Default::default();
         }
-        let provider = self
-            .provider
+        self.provider
             .clone()
             .with_models(vec![model])
-            .with_native_options(options);
-        provider.stream_prepared(request, auth)
+            .stream_prepared_with_options(request, auth, Some(options))
     }
 }

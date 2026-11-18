@@ -137,7 +137,7 @@ async fn body_44(server: &MockServer) -> serde_json::Value {
 }
 
 async fn run_44(
-    provider: &PiMessagesProvider,
+    provider: &impl Provider,
     request: Request,
 ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
     let stream = provider.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth());
