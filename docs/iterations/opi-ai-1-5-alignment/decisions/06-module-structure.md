@@ -298,3 +298,8 @@ prepared execution owner，catalog personalization 5 项回归与结构检查继
 `provider::routes::VertexRouteContext`，并让其复用 neutral
 `GeminiRouteContext` body engine。Vertex adapter 不再导入具体 Gemini 或
 Vertex profile，`provider_to_provider_edges` 同步减少一条。
+
+2026-11-18 的 #184 将 Bedrock 的 endpoint、client、catalog 与 Smithy
+retry route state 抽取到 `provider::routes::BedrockRouteContext`，并把纯
+endpoint 校验放进 lower contract。现有 provider helper 通过 re-export 保持
+兼容，API adapter 不再导入 Bedrock profile。

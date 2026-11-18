@@ -1196,8 +1196,8 @@ adapter/profile route context 和 Models 内部拆分仍需有证据地推进。
 2026-11-18 的 [#182 Gemini route context](issues/182-invert-gemini-route-context.md)
 将 Gemini route state 抽取到 lower `provider::routes::GeminiRouteContext`，
 API adapter 直接依赖中性上下文，`providers::gemini::GeminiProvider` 保留为
-canonical alias。Gemini fixture 71 项通过，`api_provider_edges` 从 13 降至
-12，`api_route_context_edges=1`。其余 API/profile route context 继续按
+canonical alias。Gemini fixture 71 项通过，`api_provider_edges` 从 14 降至
+13，`api_route_context_edges=1`。其余 API/profile route context 继续按
 [#172](issues/172-freeze-layer-graph-and-lower-provider-contract.md)推进。
 
 紧接着的 [#183 Vertex route context](issues/183-invert-vertex-route-context.md)
@@ -1205,6 +1205,12 @@ canonical alias。Gemini fixture 71 项通过，`api_provider_edges` 从 13 降�
 `provider::routes::VertexRouteContext`，并复用 neutral Gemini body context。
 Vertex fixture 73 项通过，`api_provider_edges=12`，
 `api_route_context_edges=2`，`provider_to_provider_edges=3`。
+
+随后 [#184 Bedrock route context](issues/184-invert-bedrock-route-context.md)
+将 Bedrock endpoint/client/catalog/retry state 抽取到
+`provider::routes::BedrockRouteContext`。Bedrock fixture 179 项通过，当前
+`api_provider_edges=9`，`api_route_context_edges=3`，
+`provider_to_provider_edges=3`。
 
 ## 规划交接记录（历史）
 

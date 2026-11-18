@@ -12,9 +12,14 @@ use secrecy::SecretString;
 use crate::auth::aws::sigv4::AwsCredentials;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
+use crate::provider::routes::BedrockRouteContext;
 use crate::provider::{ModelInfo, ProviderError, ProviderErrorSummary};
 use crate::registry::ModelCapabilities;
 use crate::retry::smithy as retry;
+
+pub use crate::provider::routes::{
+    is_standard_bedrock_endpoint, validate_proxy_placeholder_endpoint,
+};
 
 /// Model families supported by this provider. `openai` exists for the
 /// Bedrock-hosted GPT-OSS/GPT models (pi's effort engine carries dedicated
@@ -46,42 +51,6 @@ pub fn proxy_placeholder_credentials(region: &str) -> AwsCredentials {
     }
 }
 
-/// Whether `base_url` is a standard AWS Bedrock runtime endpoint
-/// (`bedrock-runtime[.-fips].<region>.amazonaws.com[.cn]`).
-pub fn is_standard_bedrock_endpoint(base_url: &str) -> bool {
-    let Ok(url) = url::Url::parse(base_url) else {
-        return false;
-    };
-    let Some(host) = url.host_str() else {
-        return false;
-    };
-    let host = host.to_ascii_lowercase();
-    let Some(rest) = host.strip_prefix("bedrock-runtime") else {
-        return false;
-    };
-    let rest = rest.strip_prefix("-fips").unwrap_or(rest);
-    let Some(rest) = rest.strip_prefix('.') else {
-        return false;
-    };
-    let Some((region, suffix)) = rest.split_once('.') else {
-        return false;
-    };
-    !region.is_empty()
-        && !region.contains('.')
-        && (suffix == "amazonaws.com" || suffix == "amazonaws.com.cn")
-}
-
-/// Reject the explicit proxy-placeholder mode for standard AWS endpoints.
-pub(crate) fn validate_proxy_placeholder_endpoint(base_url: &str) -> Result<(), ProviderError> {
-    if is_standard_bedrock_endpoint(base_url) {
-        return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
-            "Bedrock ProxyPlaceholderSigning requires a caller-supplied nonstandard endpoint; \
-             standard AWS endpoints reject this mode",
-        )));
-    }
-    Ok(())
-}
-
 /// Build the explicit no-real-credential proxy-placeholder prepared
 /// authentication for a caller-supplied nonstandard endpoint and frozen
 /// region.
@@ -105,21 +74,10 @@ pub fn proxy_placeholder_auth(
     })
 }
 
-/// Concrete AWS Bedrock provider profile using the Converse API.
-#[derive(Clone)]
-pub struct BedrockProvider {
-    pub(crate) provider_identity: String,
-    pub(crate) base_url: Option<String>,
-    pub(crate) client: Arc<HttpClient>,
-    /// Dedicated HTTP/1.1 client for the explicit proxy-placeholder mode;
-    /// placeholder-authenticated sends refuse to run without it.
-    pub(crate) placeholder_client: Option<Arc<HttpClient>>,
-    pub(crate) models: Vec<ModelInfo>,
-    /// Frozen AWS retry configuration.
-    pub(crate) retry: retry::SmithyRetryConfig,
-}
+/// Canonical provider-facing name for the neutral Bedrock route context.
+pub type BedrockProvider = BedrockRouteContext;
 
-impl BedrockProvider {
+impl BedrockRouteContext {
     /// Construct a credential-free Bedrock provider profile.
     pub fn new(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
         let models = model_catalog();

@@ -20,10 +20,12 @@ use crate::model_info::{
     bedrock_model_candidates as model_candidates,
     supports_bedrock_adaptive_thinking as supports_adaptive_thinking,
 };
+use crate::provider::routes::{
+    BedrockRouteContext, is_standard_bedrock_endpoint, validate_proxy_placeholder_endpoint,
+};
 use crate::provider::{
     AttemptContext, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
-use crate::providers::bedrock::{BedrockProvider, is_standard_bedrock_endpoint};
 use crate::retry::smithy as retry;
 use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
@@ -35,7 +37,7 @@ use crate::stream::{
 /// immutable across concurrent calls.
 #[derive(Clone)]
 pub struct BedrockWireAdapter {
-    provider: BedrockProvider,
+    provider: BedrockRouteContext,
     native_options: Option<BedrockOptions>,
 }
 
@@ -49,14 +51,14 @@ pub trait BedrockBodyBuilder {
 }
 
 impl BedrockWireAdapter {
-    pub fn new(provider: BedrockProvider) -> Self {
+    pub fn new(provider: BedrockRouteContext) -> Self {
         Self {
             provider,
             native_options: None,
         }
     }
 
-    pub fn with_options(provider: BedrockProvider, options: BedrockOptions) -> Self {
+    pub fn with_options(provider: BedrockRouteContext, options: BedrockOptions) -> Self {
         Self {
             provider,
             native_options: Some(options),
@@ -77,7 +79,7 @@ impl BedrockWireAdapter {
     }
 }
 
-impl BedrockProvider {
+impl BedrockRouteContext {
     /// Build a per-call wire adapter without storing native options on the
     /// registered provider profile.
     pub fn with_native_options(self, options: BedrockOptions) -> BedrockWireAdapter {
@@ -85,7 +87,7 @@ impl BedrockProvider {
     }
 }
 
-impl BedrockProvider {
+impl BedrockRouteContext {
     /// Build the Converse API request body.
     pub fn build_converse_body(
         &self,
@@ -334,12 +336,12 @@ impl BedrockProvider {
     }
 }
 
-impl BedrockBodyBuilder for BedrockProvider {
+impl BedrockBodyBuilder for BedrockRouteContext {
     fn build_converse_body(
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        BedrockProvider::build_converse_body(self, request)
+        BedrockRouteContext::build_converse_body(self, request)
     }
 }
 
@@ -352,7 +354,7 @@ impl BedrockBodyBuilder for BedrockWireAdapter {
     }
 }
 
-impl Provider for BedrockProvider {
+impl Provider for BedrockRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -417,7 +419,7 @@ impl Provider for BedrockProvider {
     }
 }
 
-impl BedrockProvider {
+impl BedrockRouteContext {
     fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -474,8 +476,7 @@ impl BedrockProvider {
             if placeholder_mode {
                 let endpoint = self.base_url.as_deref().or(auth.base_url.as_deref());
                 if let Some(endpoint) = endpoint
-                    && let Err(error) =
-                        crate::providers::bedrock::validate_proxy_placeholder_endpoint(endpoint)
+                    && let Err(error) = validate_proxy_placeholder_endpoint(endpoint)
                 {
                     return Box::pin(stream::iter(vec![Err(error)]));
                 }
@@ -547,10 +548,7 @@ impl BedrockProvider {
             // Validate the endpoint actually selected from the frozen record and
             // resolved authentication; neither may redirect placeholder signing
             // to a standard AWS endpoint after an earlier host was checked.
-            if placeholder_mode
-                && let Err(error) =
-                    crate::providers::bedrock::validate_proxy_placeholder_endpoint(&base_url)
-            {
+            if placeholder_mode && let Err(error) = validate_proxy_placeholder_endpoint(&base_url) {
                 return Box::pin(stream::iter(vec![Err(error)]));
             }
             let timeout = request.timeout;
@@ -684,7 +682,7 @@ impl Provider for BedrockWireAdapter {
 // HTTP streaming
 // ---------------------------------------------------------------------------
 
-impl BedrockProvider {
+impl BedrockRouteContext {
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
@@ -2344,7 +2342,7 @@ fn validate_complete_bedrock_record(
 /// registered provider.
 pub struct BedrockConverseStreamChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<BedrockProvider>,
+    provider: Arc<BedrockRouteContext>,
     model: ModelInfo,
 }
 
@@ -2360,7 +2358,7 @@ impl BedrockConverseStreamChatApi {
     /// Bind a complete Chat record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<BedrockProvider>,
+        provider: Arc<BedrockRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         validate_complete_bedrock_record(&model)?;
