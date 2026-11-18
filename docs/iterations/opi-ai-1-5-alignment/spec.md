@@ -1279,6 +1279,10 @@ Anthropic 155 项与 Bedrock 179 项通过，`models_protocol_branches` 从 5 �
 lib 374 项通过，`models_protocol_branches=0`，结构报告 violations 为空，G5
 关闭。
 
+随后 [#199 composition proof](issues/199-close-composition-proof.md) 通过实际
+`.crate` 的 workspace-external provider protocol consumer，覆盖 11 个 provider
+owners 与 catalog/OAuth store/telemetry support union，G6 关闭。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

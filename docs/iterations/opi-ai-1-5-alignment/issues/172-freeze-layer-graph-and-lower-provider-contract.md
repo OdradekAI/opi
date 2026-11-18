@@ -81,7 +81,7 @@ These gates are the progress ledger. Counts are observations from the
 | G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
 | G4 execution/stream ownership | **closed**: `stream_imports_execution=false`, `stream_reexports_execution=true`, `execution_imports_stream=true` | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
 | G5 Models owners | **closed**: four private owners plus `PreparedProviderCall`; `models_protocol_branches=0` | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
-| G6 composition proof | feature/package slices exist | core/Faux, one-provider and full builtins profiles pass structural checks, focused behavior tests and an external archive consumer |
+| G6 composition proof | **closed**: packaged all-provider-owners-plus-support consumer PASS | core/Faux, one-provider and full builtins profiles pass structural checks, focused behavior tests and an external archive consumer |
 
 Line count is diagnostic only. G5 closes on ownership and dependency checks,
 not on an arbitrary file-size threshold.
@@ -186,6 +186,10 @@ auth contract 108 项与 OAuth store 10 项通过，`models_protocol_branches` �
 将最终 wire fallback identity 下沉到 Provider capability。builtins check 与
 lib 374 项通过，`models_protocol_branches=0`，结构报告 violations 为空，G5
 已关闭。
+
+随后 [#199 composition proof](199-close-composition-proof.md) 通过实际
+`.crate` 的 workspace-external provider protocol consumer，覆盖 11 个 provider
+owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 
 ## Acceptance
 
