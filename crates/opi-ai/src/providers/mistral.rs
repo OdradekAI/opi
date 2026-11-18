@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use crate::api::mistral::MistralOptions;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
@@ -65,15 +64,14 @@ pub fn model_catalog() -> Vec<ModelInfo> {
 /// Native Mistral conversations provider profile.
 ///
 /// This profile owns endpoint, model records, shared transport and the
-/// per-dispatch native option state. The API module implements its wire
-/// projection and Provider/ChatApi behavior.
+/// route identity. The API module owns native options, wire projection and
+/// Provider/ChatApi behavior.
 #[derive(Clone)]
 pub struct MistralConversationsProvider {
     pub(crate) provider_identity: String,
     pub(crate) base_url: String,
     pub(crate) client: Arc<HttpClient>,
     pub(crate) models: Vec<ModelInfo>,
-    pub(crate) native_options: Option<MistralOptions>,
 }
 
 impl std::fmt::Debug for MistralConversationsProvider {
@@ -100,17 +98,11 @@ impl MistralConversationsProvider {
             base_url: base_url.unwrap_or_else(|| BASE_URL.into()),
             client: Arc::new(HttpClient::new()),
             models: Vec::new(),
-            native_options: None,
         }
     }
 
     pub fn with_models(mut self, models: Vec<ModelInfo>) -> Self {
         self.models = models;
-        self
-    }
-
-    pub fn with_native_options(mut self, options: MistralOptions) -> Self {
-        self.native_options = Some(options);
         self
     }
 }

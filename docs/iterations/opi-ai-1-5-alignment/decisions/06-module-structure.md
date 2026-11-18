@@ -237,3 +237,7 @@ contract、adapter/profile、stream/execution 和 Models 内部拆分，再
 lower contract 方向，剩余 API adapter/profile route context、profile native
 state、Models 内拆和 stream/execution owner 仍按 [#172](../issues/172-freeze-layer-graph-and-lower-provider-contract.md)
 推进。
+2026-11-18 的 #173 将 Mistral native options 收拢到
+`api::mistral::MistralConversationsWireAdapter`，移除 profile 的 API-native
+state。Mistral fixture、repeated-finish 回归和 builtins check 均通过，剩余
+Bedrock、Gemini、Pi Messages、Vertex profile 继续按 #172 推进。

@@ -5,7 +5,7 @@
 //! streaming and the typed Chat adapter. Profile state lives in the canonical
 //! providers module; ordinary compatible traffic remains owned by openai_chat.
 
-use crate::provider::{EventStream, Provider, ProviderError, Request};
+use crate::provider::{EventStream, ProviderError, Request};
 use crate::providers::mistral::MistralConversationsProvider;
 use crate::stream::{AssistantStreamEvent, StopReason};
 use base64::Engine as _;
@@ -131,6 +131,43 @@ impl MistralOptions {
     }
 }
 
+/// Mistral wire state for one dispatch. The registered provider profile keeps
+/// only route and catalog state.
+#[derive(Clone)]
+pub struct MistralConversationsWireAdapter {
+    provider: MistralConversationsProvider,
+    native_options: Option<MistralOptions>,
+}
+
+impl MistralConversationsWireAdapter {
+    pub fn new(provider: MistralConversationsProvider) -> Self {
+        Self {
+            provider,
+            native_options: None,
+        }
+    }
+
+    pub fn with_options(provider: MistralConversationsProvider, options: MistralOptions) -> Self {
+        Self {
+            provider,
+            native_options: Some(options),
+        }
+    }
+
+    pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+}
+
+impl MistralConversationsProvider {
+    /// Build a per-call wire adapter without storing native options on the
+    /// registered provider profile.
+    pub fn with_native_options(self, options: MistralOptions) -> MistralConversationsWireAdapter {
+        MistralConversationsWireAdapter::with_options(self, options)
+    }
+}
+
 /// Stateful tool-call id normalizer (pi `createMistralToolCallIdNormalizer`):
 /// alphanumeric-only, exactly-9 passthrough, hash-derived otherwise, with
 /// collision retries. Ids normalize identically on the assistant call and
@@ -214,8 +251,7 @@ impl MistralConversationsProvider {
         let (effort, mode) = simple_reasoning_members(&model, &request.thinking);
         options.reasoning_effort = effort;
         options.prompt_mode = mode;
-        let provider = self.clone().with_native_options(options);
-        provider.stream_prepared(request, auth)
+        self.stream_prepared_with_options(request, auth, Some(options))
     }
 
     fn unknown_model_error(&self, requested: &str) -> ProviderError {
@@ -224,12 +260,16 @@ impl MistralConversationsProvider {
         )))
     }
 
-    fn build_request_body(&self, request: &Request) -> Result<serde_json::Value, ProviderError> {
+    fn build_request_body_with_options(
+        &self,
+        request: &Request,
+        native_options: Option<&MistralOptions>,
+    ) -> Result<serde_json::Value, ProviderError> {
         let model = self
             .resolve_model(&request.model)
             .ok_or_else(|| self.unknown_model_error(&request.model))?;
         let supports_images = model.capabilities.supports_images;
-        let options = self.native_options.as_ref();
+        let options = native_options;
 
         let projection = crate::transcript::compile_request_projection(
             request,
@@ -629,46 +669,12 @@ fn map_mistral_status(
     }
 }
 
-impl crate::provider::Provider for MistralConversationsProvider {
-    fn validate_simple_options(
-        &self,
-        model: &crate::provider::ModelInfo,
-        _options: &crate::api::contract::SimpleOptions,
-    ) -> Result<(), ProviderError> {
-        MistralConversationsChatApi::new(self.clone(), model.clone()).map(|_| ())
-    }
-
-    fn stream_model_resource_attempt(
-        &self,
-        model: crate::provider::ModelInfo,
-        options: crate::api::contract::SimpleOptions,
-        request: Request,
-        auth: crate::auth::ResolvedAuth,
-        attempt: crate::provider::AttemptContext,
-        resources: Option<crate::codex_resources::CallResourceLease>,
-    ) -> EventStream {
-        let mut provider = self.clone();
-        if let Some(base_url) = model.base_url.clone() {
-            provider.base_url = base_url;
-        }
-        provider
-            .with_models(vec![model])
-            .with_native_options(MistralOptions::from_simple(&options))
-            .stream_resource_attempt(request, auth, attempt, resources)
-    }
-
-    fn id(&self) -> &str {
-        &self.provider_identity
-    }
-
-    fn models(&self) -> &[crate::provider::ModelInfo] {
-        &self.models
-    }
-
-    fn stream_prepared(
+impl MistralConversationsProvider {
+    fn stream_prepared_with_options(
         &self,
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
+        native_options: Option<MistralOptions>,
     ) -> EventStream {
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::MistralConversations) {
             Ok(facts) => facts,
@@ -700,7 +706,8 @@ impl crate::provider::Provider for MistralConversationsProvider {
                     return Box::pin(futures_util::stream::iter(vec![Err(error)]));
                 }
             };
-            let body = match self.build_request_body(&request) {
+            let body = match self.build_request_body_with_options(&request, native_options.as_ref())
+            {
                 Ok(body) => body,
                 Err(error) => return Box::pin(futures_util::stream::iter(vec![Err(error)])),
             };
@@ -1032,6 +1039,47 @@ struct MistralSseMapper {
     tool_blocks: Vec<(String, usize, String)>,
     stop_reason: Option<StopReason>,
     stop_error: Option<String>,
+}
+
+impl crate::provider::Provider for MistralConversationsProvider {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        _options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        MistralConversationsChatApi::new(self.clone(), model.clone()).map(|_| ())
+    }
+
+    fn stream_model_resource_attempt(
+        &self,
+        model: crate::provider::ModelInfo,
+        options: crate::api::contract::SimpleOptions,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: crate::provider::AttemptContext,
+        resources: Option<crate::codex_resources::CallResourceLease>,
+    ) -> EventStream {
+        let mut provider = self.clone();
+        if let Some(base_url) = model.base_url.clone() {
+            provider.base_url = base_url;
+        }
+        provider
+            .with_models(vec![model])
+            .with_native_options(MistralOptions::from_simple(&options))
+            .stream_resource_attempt(request, auth, attempt, resources)
+    }
+
+    fn id(&self) -> &str {
+        &self.provider_identity
+    }
+
+    fn models(&self) -> &[crate::provider::ModelInfo] {
+        &self.models
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.stream_prepared_with_options(request, auth, None)
+    }
 }
 
 impl MistralSseMapper {
@@ -1424,6 +1472,29 @@ impl MistralSseMapper {
     }
 }
 
+impl crate::provider::Provider for MistralConversationsWireAdapter {
+    fn validate_simple_options(
+        &self,
+        model: &crate::provider::ModelInfo,
+        options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.provider.validate_simple_options(model, options)
+    }
+
+    fn id(&self) -> &str {
+        self.provider.id()
+    }
+
+    fn models(&self) -> &[crate::provider::ModelInfo] {
+        self.provider.models()
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+}
+
 /// pi `getMistralCachedPromptTokens`: the cached-token detail key family
 /// across snake/camel spellings, clamped into the prompt budget.
 fn mistral_cached_tokens(usage: &serde_json::Value, prompt_tokens: u64) -> u64 {
@@ -1568,11 +1639,9 @@ impl crate::api::contract::ChatApi<MistralOptions> for MistralConversationsChatA
             // fields stay unused on this path.
             request.thinking = Default::default();
         }
-        let provider = self
-            .provider
+        self.provider
             .clone()
             .with_models(vec![model])
-            .with_native_options(options);
-        provider.stream_prepared(request, auth)
+            .stream_prepared_with_options(request, auth, Some(options))
     }
 }

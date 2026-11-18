@@ -752,6 +752,7 @@ async fn mistral_profile_carries_callbacks_through_chat_adapter() {
 mod mistral_43 {
     use super::*;
     use opi_ai::WireApi;
+    use opi_ai::api::mistral::MistralConversationsWireAdapter;
     use opi_ai::api::mistral::{
         MistralConversationsChatApi, MistralOptions, MistralPromptMode, MistralReasoningEffort,
         MistralToolChoice,
@@ -795,7 +796,7 @@ mod mistral_43 {
         server_uri: Option<&str>,
         model: opi_ai::provider::ModelInfo,
         options: MistralOptions,
-    ) -> MistralConversationsProvider {
+    ) -> MistralConversationsWireAdapter {
         MistralConversationsProvider::new(server_uri.map(str::to_owned))
             .with_models(vec![model])
             .with_native_options(options)
@@ -869,7 +870,7 @@ mod mistral_43 {
     }
 
     async fn run_43(
-        provider: &MistralConversationsProvider,
+        provider: &impl Provider,
         request: Request,
     ) -> Vec<Result<AssistantStreamEvent, ProviderError>> {
         let stream =
