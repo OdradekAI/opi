@@ -220,6 +220,10 @@ impl Provider for ApiMappedProvider {
         }
     }
 
+    fn model_allowed_after_auth(&self, model: &ModelInfo, responses_only: bool) -> bool {
+        !responses_only || model.wire_api == crate::WireApi::OpenAiResponses
+    }
+
     fn prepare_model_call(
         &self,
         model: &mut ModelInfo,

@@ -91,6 +91,14 @@ pub trait Provider: Send + Sync {
             request.thinking.level = level;
         }
     }
+
+    /// Decide whether an authenticated route may expose one catalog model.
+    ///
+    /// Providers with source-specific protocol restrictions override this hook
+    /// so Models does not inspect wire identities during availability reads.
+    fn model_allowed_after_auth(&self, _model: &ModelInfo, _responses_only: bool) -> bool {
+        true
+    }
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
 

@@ -1262,6 +1262,10 @@ subadapter 共享 neutral context。Codex fixture 87 项通过，当前
 将 Pi neutral thinking policy 下沉到 `Provider::prepare_simple_request`。
 Pi chat 回归 42 项通过，`models_protocol_branches` 从 8 降至 7。
 
+随后 [#195 authenticated model admission](issues/195-move-auth-model-admission-to-provider.md)
+将 `responses_only` model admission 下沉到 Provider contract。auth contract
+108 项与 OAuth store 10 项通过，`models_protocol_branches` 从 7 降至 6。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

@@ -2856,9 +2856,15 @@ impl Models {
         }
         let mut entries = Vec::new();
         for (provider, model) in self.registry.registry.all_models() {
+            let allowed_after_auth = self
+                .registry
+                .registry
+                .get_provider_arc(provider)
+                .is_none_or(|route| {
+                    route.model_allowed_after_auth(&model, responses_only.contains(provider))
+                });
             if available.iter().any(|id| id == provider)
-                && (!responses_only.contains(provider)
-                    || model.wire_api == crate::WireApi::OpenAiResponses)
+                && allowed_after_auth
                 && account_models
                     .get(provider)
                     .is_none_or(|ids| ids.iter().any(|id| id == &model.id))
