@@ -303,3 +303,8 @@ Vertex profile，`provider_to_provider_edges` 同步减少一条。
 retry route state 抽取到 `provider::routes::BedrockRouteContext`，并把纯
 endpoint 校验放进 lower contract。现有 provider helper 通过 re-export 保持
 兼容，API adapter 不再导入 Bedrock profile。
+
+2026-11-18 的 #185 将 OpenAI-compatible route state 抽取到
+`provider::routes::OpenAiRouteContext`，由 OpenAI Chat adapter 直接消费。
+Mistral、OpenRouter 与 Azure 的复用方向继续通过该 context 收口，避免把
+一个 concrete profile 当成另一个 profile 的 owner。

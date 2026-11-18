@@ -12,6 +12,7 @@ use crate::auth::AuthInvalidPolicy;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
+use crate::provider::routes::{OpenAiModelCompatOverride, OpenAiRouteContext};
 use crate::registry::ModelCapabilities;
 
 // ---------------------------------------------------------------------------
@@ -57,39 +58,13 @@ pub use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 /// At request-build time the provider resolves the effective config by layering
 /// the frozen adapter inference, then the provider-level defaults, then a
 /// model's override (model wins per field).
-#[derive(Debug, Clone, Default)]
-pub struct ModelCompatOverride {
-    /// Override the normalized instruction-role policy for this model only.
-    pub instruction_role: Option<crate::model_info::ChatInstructionRole>,
-    /// Override the normalized store-field policy for this model only.
-    pub store: Option<crate::model_info::ChatStoreField>,
-    /// Override the declared thinking wire format for this model only.
-    pub thinking_format: Option<crate::model_info::ChatThinkingFormat>,
-    /// Override the max-tokens field name for this model only.
-    pub max_tokens_field: Option<String>,
-}
+pub type ModelCompatOverride = OpenAiModelCompatOverride;
 
 // OpenAiChatProvider
 // ---------------------------------------------------------------------------
 
-/// Concrete OpenAI Chat Completions API provider.
-#[derive(Clone)]
-pub struct OpenAiChatProvider {
-    pub(crate) wire: crate::WireApi,
-    pub(crate) base_url: String,
-    pub(crate) models: Vec<ModelInfo>,
-    pub(crate) compat: CompatConfig,
-    pub(crate) model_overrides: HashMap<String, ModelCompatOverride>,
-    pub(crate) provider_id: String,
-    pub(crate) wire_model_override: Option<String>,
-    pub(crate) headers: ProviderHeaders,
-    pub(crate) route_headers: Vec<(String, String)>,
-    pub(crate) catalog_compat: bool,
-    pub(crate) auth_invalid_policy: AuthInvalidPolicy,
-    pub(crate) direct_prompt_cache_key: bool,
-    pub(crate) copilot_initiator: bool,
-    pub(crate) client: Arc<HttpClient>,
-}
+/// Canonical provider-facing name for the neutral OpenAI route context.
+pub type OpenAiChatProvider = OpenAiRouteContext;
 
 /// Built-in OpenAI Chat model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
@@ -131,7 +106,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
     ]
 }
 
-impl OpenAiChatProvider {
+impl OpenAiRouteContext {
     #[cfg(feature = "builtins")]
     pub(crate) fn with_wire_model(mut self, deployment: String) -> Self {
         self.wire_model_override = Some(deployment);

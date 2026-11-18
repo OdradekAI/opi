@@ -91,3 +91,33 @@ pub fn validate_proxy_placeholder_endpoint(
     }
     Ok(())
 }
+
+/// Per-model OpenAI-compatible compatibility override.
+#[cfg(feature = "provider-openai-chat")]
+#[derive(Debug, Clone, Default)]
+pub struct OpenAiModelCompatOverride {
+    pub instruction_role: Option<crate::model_info::ChatInstructionRole>,
+    pub store: Option<crate::model_info::ChatStoreField>,
+    pub thinking_format: Option<crate::model_info::ChatThinkingFormat>,
+    pub max_tokens_field: Option<String>,
+}
+
+/// Route state shared by OpenAI Chat Completions-compatible profiles.
+#[cfg(feature = "provider-openai-chat")]
+#[derive(Clone)]
+pub struct OpenAiRouteContext {
+    pub(crate) wire: WireApi,
+    pub(crate) base_url: String,
+    pub(crate) models: Vec<ModelInfo>,
+    pub(crate) compat: crate::model_info::OpenAiCompletionsCompat,
+    pub(crate) model_overrides: std::collections::HashMap<String, OpenAiModelCompatOverride>,
+    pub(crate) provider_id: String,
+    pub(crate) wire_model_override: Option<String>,
+    pub(crate) headers: crate::types::headers::ProviderHeaders,
+    pub(crate) route_headers: Vec<(String, String)>,
+    pub(crate) catalog_compat: bool,
+    pub(crate) auth_invalid_policy: crate::auth::AuthInvalidPolicy,
+    pub(crate) direct_prompt_cache_key: bool,
+    pub(crate) copilot_initiator: bool,
+    pub(crate) client: Arc<crate::http::HttpClient>,
+}

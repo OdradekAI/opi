@@ -17,11 +17,12 @@ use crate::http::HttpClient;
 use crate::message::{
     AssistantContent, AssistantMessage, OutputContent, TOOL_ERROR_MARKER, ToolCall,
 };
+use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
+use crate::provider::routes::OpenAiRouteContext;
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
     github_copilot_initiator, github_copilot_route_headers,
 };
-use crate::providers::openai::{CompatConfig, OpenAiChatProvider};
 use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
 };
@@ -1376,7 +1377,7 @@ fn detect_chat_baseline(
 
 // ---------------------------------------------------------------------------
 
-impl OpenAiChatProvider {
+impl OpenAiRouteContext {
     fn resolve_compat(&self, model_id: &str) -> CompatConfig {
         let model = self.models.iter().find(|model| model.id == model_id);
         self.resolve_compat_for(model_id, model)
@@ -2634,7 +2635,7 @@ fn apply_chat_cache_control(body: &mut serde_json::Value, marker: &serde_json::V
     }
 }
 
-impl OpenAiChatProvider {
+impl OpenAiRouteContext {
     fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -2886,7 +2887,7 @@ impl OpenAiChatProvider {
     }
 }
 
-impl Provider for OpenAiChatProvider {
+impl Provider for OpenAiRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -3009,7 +3010,7 @@ impl OpenAiCompletionsOptions {
 /// provider configuration; native options never mutate a registered provider.
 pub struct OpenAiCompletionsChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<OpenAiChatProvider>,
+    provider: Arc<OpenAiRouteContext>,
     model: ModelInfo,
 }
 
@@ -3025,7 +3026,7 @@ impl OpenAiCompletionsChatApi {
     /// Bind a complete Chat record. Wrong-wire or invalid records fail before
     /// authentication or network activity.
     pub fn new(
-        provider: Arc<OpenAiChatProvider>,
+        provider: Arc<OpenAiRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         if model.wire_api != crate::model_info::WireApi::OpenAiCompletions
@@ -3045,7 +3046,7 @@ impl OpenAiCompletionsChatApi {
         })
     }
 
-    fn configured(&self, model: ModelInfo) -> OpenAiChatProvider {
+    fn configured(&self, model: ModelInfo) -> OpenAiRouteContext {
         let mut provider = (*self.provider).clone();
         provider.models = vec![model];
         provider.catalog_compat = true;
