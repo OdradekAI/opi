@@ -1304,6 +1304,13 @@ personalization 5 项回归通过，物理 owner 文件数达到 3，facade 中�
 将 `OperationOwner` 从 `models.rs` 迁移到独立的 `models/operation_owner.rs`，四类
 registration map 完成物理迁移，facade 中不再保留 owner 定义。
 
+
+随后 [#204 prepared call module](issues/204-extract-models-prepared-call-module.md)
+将 `PreparedProviderCall`、`PreparedRoute` 与 attempt stream 从 `models.rs` 迁移到
+独立的 `models/prepared_call.rs`。prepared execution 通过 crate-private 构造 seam
+进入，结构报告的 `models_prepared_execution_owner_files=1`，Models facade 降至
+4895 行。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

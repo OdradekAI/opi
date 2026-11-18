@@ -304,6 +304,10 @@ facade 中剩余 1 个 owner 定义。
 map 完成物理迁移。`models.rs` 中 owner 定义数降至 0，registration record types
 仍作为 facade 内部的 crate-private 数据合同保留。
 
+随后 #204 将 `PreparedProviderCall`、`PreparedRoute` 和 attempt stream 放入
+`models/prepared_call.rs`。prepared execution 通过 crate-private 构造 seam 进入，
+执行字段保持在模块内，Models facade 只保留 route preparation 与 orchestration。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有

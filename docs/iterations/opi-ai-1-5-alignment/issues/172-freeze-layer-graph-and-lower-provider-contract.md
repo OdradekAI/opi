@@ -212,6 +212,12 @@ owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 完成物理迁移。当前结构指标为 `models_owner_module_files=4`、
 `models_owner_definitions_in_facade=0`，prepared execution 仍待下一条独立提交。
 
+随后 [#204 prepared call module](204-extract-models-prepared-call-module.md) 将
+`PreparedProviderCall`、`PreparedRoute` 与 attempt stream 迁移到
+`models/prepared_call.rs`。当前结构指标为 `models_owner_module_files=4`、
+`models_owner_definitions_in_facade=0`、`models_prepared_execution_owner_files=1`，
+`models_lines=4895`，Models 五个 owner 已全部具备独立物理模块。
+
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.
