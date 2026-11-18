@@ -9,19 +9,11 @@ use std::sync::Arc;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
+use crate::provider::routes::GeminiRouteContext;
 use crate::registry::ModelCapabilities;
 
-/// Gemini provider profile.
-#[derive(Clone)]
-pub struct GeminiProvider {
-    pub(crate) provider_identity: String,
-    pub(crate) base_url: String,
-    pub(crate) models: Vec<ModelInfo>,
-    pub(crate) client: Arc<HttpClient>,
-    /// Owning Google wire; Vertex reuses the Gemini body engine with a
-    /// different wire-specific policy.
-    pub(crate) wire: WireApi,
-}
+/// Canonical provider-facing name for the neutral Gemini route context.
+pub type GeminiProvider = GeminiRouteContext;
 
 /// Built-in Gemini model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
@@ -55,7 +47,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
     ]
 }
 
-impl GeminiProvider {
+impl GeminiRouteContext {
     pub fn new(base_url: Option<String>) -> Self {
         Self::with_client(base_url, Arc::new(HttpClient::new()))
     }

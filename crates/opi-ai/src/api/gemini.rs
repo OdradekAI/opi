@@ -14,10 +14,10 @@ use tokio_util::sync::CancellationToken;
 use crate::api::shared::headers::ProviderHeaders;
 use crate::message::{AssistantContent, AssistantMessage, OutputContent, ToolCall};
 use crate::model_info::WireApi;
+use crate::provider::routes::GeminiRouteContext;
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
-use crate::providers::gemini::GeminiProvider;
 use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
 };
@@ -27,7 +27,7 @@ use crate::stream::{
 /// so concurrent calls never mutate shared profile state.
 #[derive(Clone)]
 pub struct GeminiWireAdapter {
-    provider: GeminiProvider,
+    provider: GeminiRouteContext,
     native_options: Option<GoogleGenerativeAiOptions>,
 }
 
@@ -41,14 +41,14 @@ pub trait GeminiBodyBuilder {
 }
 
 impl GeminiWireAdapter {
-    pub fn new(provider: GeminiProvider) -> Self {
+    pub fn new(provider: GeminiRouteContext) -> Self {
         Self {
             provider,
             native_options: None,
         }
     }
 
-    pub fn with_options(provider: GeminiProvider, options: GoogleGenerativeAiOptions) -> Self {
+    pub fn with_options(provider: GeminiRouteContext, options: GoogleGenerativeAiOptions) -> Self {
         Self {
             provider,
             native_options: Some(options),
@@ -69,7 +69,7 @@ impl GeminiWireAdapter {
     }
 }
 
-impl GeminiProvider {
+impl GeminiRouteContext {
     /// Build a per-call wire adapter without storing native options on the
     /// registered provider profile.
     pub fn with_native_options(self, options: GoogleGenerativeAiOptions) -> GeminiWireAdapter {
@@ -348,12 +348,12 @@ impl ParsedEvent {
     }
 }
 
-impl GeminiBodyBuilder for GeminiProvider {
+impl GeminiBodyBuilder for GeminiRouteContext {
     fn build_request_body(
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        GeminiProvider::build_request_body(self, request)
+        GeminiRouteContext::build_request_body(self, request)
     }
 }
 
@@ -1002,7 +1002,7 @@ impl GoogleGenerativeAiOptions {
     }
 }
 
-impl GeminiProvider {
+impl GeminiRouteContext {
     /// Build the Gemini `generateContent` request body.
     /// The model ID goes in the URL path, not the body.
     pub fn build_request_body(
@@ -1820,7 +1820,7 @@ fn map_gemini_error(
     }
 }
 
-impl Provider for GeminiProvider {
+impl Provider for GeminiRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -1858,7 +1858,7 @@ impl Provider for GeminiProvider {
     }
 }
 
-impl GeminiProvider {
+impl GeminiRouteContext {
     fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -2007,7 +2007,7 @@ impl GeminiProvider {
 /// complete-stream).
 pub struct GoogleGenerativeAiChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<GeminiProvider>,
+    provider: Arc<GeminiRouteContext>,
     model: ModelInfo,
 }
 
@@ -2023,7 +2023,7 @@ impl GoogleGenerativeAiChatApi {
     /// Bind a complete Chat record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<GeminiProvider>,
+        provider: Arc<GeminiRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         validate_complete_google_record(&model)?;

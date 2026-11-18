@@ -15,6 +15,7 @@ use crate::stream::AssistantStreamEvent;
 pub use crate::model_info::ModelInfo;
 
 pub mod operation;
+pub mod routes;
 
 use operation::{DeferredApi, SimpleOptions};
 

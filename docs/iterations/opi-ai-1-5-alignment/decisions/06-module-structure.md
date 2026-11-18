@@ -287,3 +287,9 @@ prepared execution 继续拆分。
 收拢到 `Models` 私有的 `OperationOwner`。现有 `PreparedProviderCall` 被记录为
 prepared execution owner，catalog personalization 5 项回归与结构检查继续通过，
 `models_owner_modules` 达到 4，`models_prepared_execution_owner=1`。
+
+2026-11-18 的 #182 将 Gemini route state 抽取到 lower
+`provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
+`providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有
+构造与 fixture 调用不变，API/profile 结构边界开始以正向
+`api_route_context_edges` 指标记录。

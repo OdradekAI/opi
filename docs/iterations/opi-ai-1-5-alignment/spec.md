@@ -1193,6 +1193,13 @@ adapter/profile route context 和 Models 内部拆分仍需有证据地推进。
 [#143](issues/143-connect-real-deferred-production-route.md)
 及平台、capability-V、资源、性能和 fuzz 验收。
 
+2026-11-18 的 [#182 Gemini route context](issues/182-invert-gemini-route-context.md)
+将 Gemini route state 抽取到 lower `provider::routes::GeminiRouteContext`，
+API adapter 直接依赖中性上下文，`providers::gemini::GeminiProvider` 保留为
+canonical alias。Gemini fixture 71 项通过，`api_provider_edges` 从 13 降至
+12，`api_route_context_edges=1`。其余 API/profile route context 继续按
+[#172](issues/172-freeze-layer-graph-and-lower-provider-contract.md)推进。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

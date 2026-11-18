@@ -60,6 +60,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
     profile_files = [profile_dir / name for name in PROFILE_FILES]
 
     api_provider = matching_edges(api_files, r"crate::providers::")
+    api_route_context = matching_edges(api_files, r"crate::provider::routes::")
     provider_contract_api = matching_edges([src / "provider.rs"], r"crate::api(?:::|\b)")
     profile_native = matching_edges(
         profile_files,
@@ -95,6 +96,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
 
     return {
         "api_provider_edges": api_provider,
+        "api_route_context_edges": api_route_context,
         "provider_contract_api_edges": provider_contract_api,
         "profile_native_state": profile_native,
         "provider_to_provider_edges": provider_to_provider,
@@ -105,6 +107,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         "models_lines": models_lines,
         "counts": {
             "api_provider_edges": len(api_provider),
+            "api_route_context_edges": len(api_route_context),
             "provider_contract_api_edges": len(provider_contract_api),
             "profile_native_state": len(profile_native),
             "provider_to_provider_edges": len(provider_to_provider),
