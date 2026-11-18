@@ -78,10 +78,17 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         [src / "models.rs"],
         r"WireApi::|supports_bedrock_adaptive_thinking|AnthropicMessages",
     )
+    stream_execution_imports = [
+        match
+        for match in matching_edges([src / "stream.rs"], r"crate::execution::")
+        if not match["text"].lstrip().startswith("pub use ")
+    ]
+    stream_execution_reexports = matching_edges(
+        [src / "stream.rs"], r"pub use crate::execution::"
+    )
     stream_execution = {
-        "stream_imports_execution": bool(
-            matching_edges([src / "stream.rs"], r"crate::execution::")
-        ),
+        "stream_imports_execution": bool(stream_execution_imports),
+        "stream_reexports_execution": bool(stream_execution_reexports),
         "execution_imports_stream": bool(
             matching_edges([src / "execution.rs"], r"crate::stream::")
         ),

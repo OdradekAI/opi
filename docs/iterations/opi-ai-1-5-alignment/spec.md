@@ -1232,6 +1232,10 @@ Chat/Responses contexts。Azure fixture 46 项通过，当前
 `api_provider_edges=2`，`api_route_context_edges=9`，
 `provider_to_provider_edges=0`。
 
+随后 [#193 stream/execution owner gate](issues/193-close-stream-execution-owner-gate.md)
+将兼容 re-export 与实现依赖分开计量。execution lifecycle 41 项通过，G4
+关闭，当前唯一结构 violation 是 Models protocol branches。
+
 随后 [#188 Pi Messages route context](issues/188-invert-pi-messages-route-context.md)
 将 Radius route state 抽取到 `PiMessagesRouteContext`。Pi Messages chat
 回归 42 项通过，当前 `api_provider_edges=6`，`api_route_context_edges=6`，

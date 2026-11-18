@@ -21,7 +21,7 @@ The current graph still contains these structural violations:
 | API adapter → provider profile | All migrated protocols plus Azure dual-wire and Codex Responses now use `provider::routes` contexts; no concrete `crate::providers::` edge remains under `src/api` | Adapters consume a provider-neutral route context and protocol inputs; composition binds concrete profiles to adapters |
 | Provider profile → provider profile | Mistral, OpenRouter and Azure now construct lower route contexts; no concrete profile-to-profile edge remains | Shared protocol configuration and route bindings are reused; one provider profile does not construct another provider profile |
 | Profile → native wire state | No remaining `providers` native-option state after #177 | Profiles own identity, route, auth policy and catalog; adapters own native options and wire state |
-| Stream ↔ execution | `stream.rs` re-exports `StartedChatStream` from `execution.rs`; `execution.rs` consumes private stream types | A stream contract owns event/result consumption; an execution driver owns producer/task state and depends on the lower contract |
+| Stream ↔ execution | `stream.rs` has one compatibility re-export; `execution.rs` consumes private stream contract types in one direction | A stream contract owns event/result consumption; an execution driver owns producer/task state and depends on the lower contract |
 | Models ownership | `models.rs` is 5,335 lines and combines facade, registry, auth/catalog orchestration, four registration families, erased dispatch, prepared calls and execution; it still has Pi/Anthropic/Bedrock wire branches | Keep `Models` as the stable facade and move implementation into private owners. Protocol policy belongs to the adapter/provider capability that owns it |
 
 The `types` and `errors` entries in the bottom row are currently a shared
@@ -79,7 +79,7 @@ These gates are the progress ledger. Counts are observations from the
 | G1 profile native state | 0 tracked references after #177 | `rg` finds no `native_options`, `with_native_options` or API-native option imports under `src/providers` |
 | G2 adapter/profile inversion | **closed**: `api_provider_edges=0`; `api_route_context_edges=11`; `provider_to_provider_edges=0` | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
 | G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
-| G4 execution/stream ownership | mutual implementation references remain | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
+| G4 execution/stream ownership | **closed**: `stream_imports_execution=false`, `stream_reexports_execution=true`, `execution_imports_stream=true` | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
 | G5 Models owners | `RegistryOwner`, `AuthOwner`, `CatalogOwner` and `OperationOwner` extracted, 5,424-line facade implementation remains; `PreparedProviderCall` is the execution owner | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
 | G6 composition proof | feature/package slices exist | core/Faux, one-provider and full builtins profiles pass structural checks, focused behavior tests and an external archive consumer |
 
@@ -159,6 +159,10 @@ endpoint、catalog、HTTP client 与 WebSocket resource state 抽取到
 
 G2 已关闭。全 builtins `cargo check` 通过，lib 回归 374 项通过，剩余
 结构工作集中在 G4 stream/execution owner 与 G5 Models protocol branches。
+
+随后 [#193 stream/execution owner gate](193-close-stream-execution-owner-gate.md)
+确认 `stream.rs` 到 `execution.rs` 只有兼容 re-export，execution lifecycle
+41 项通过，G4 已关闭。当前唯一架构 violation 是 Models protocol branches。
 
 ## Acceptance
 
