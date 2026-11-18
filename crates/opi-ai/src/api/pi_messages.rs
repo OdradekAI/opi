@@ -872,6 +872,11 @@ impl Provider for PiMessagesRouteContext {
         PiMessagesChatApi::new(self.clone(), model.clone()).map(|_| ())
     }
 
+    fn prepare_simple_request(&self, _model: &crate::provider::ModelInfo, _request: &mut Request) {
+        // Pi's neutral entry preserves the requested level and lets the wire
+        // adapter perform its own disabled-thinking fallback.
+    }
+
     fn stream_model_resource_attempt(
         &self,
         model: crate::provider::ModelInfo,
@@ -915,6 +920,10 @@ impl Provider for PiMessagesWireAdapter {
 
     fn id(&self) -> &str {
         self.provider.id()
+    }
+
+    fn prepare_simple_request(&self, _model: &crate::provider::ModelInfo, _request: &mut Request) {
+        // Preserve Pi's neutral thinking level for adapter-owned validation.
     }
 
     fn models(&self) -> &[crate::provider::ModelInfo] {
@@ -1377,6 +1386,10 @@ impl crate::api::contract::ChatApi<PiMessagesOptions> for PiMessagesChatApi {
         options: &crate::api::contract::SimpleOptions,
     ) -> Result<(), ProviderError> {
         Provider::validate_simple_options(&self.provider, model, options)
+    }
+
+    fn prepare_simple_request(&self, _model: &crate::provider::ModelInfo, _request: &mut Request) {
+        // Preserve Pi's neutral thinking level for adapter-owned validation.
     }
 
     fn api_id(&self) -> &crate::types::ApiId {

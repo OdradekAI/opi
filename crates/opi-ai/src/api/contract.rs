@@ -33,6 +33,20 @@ pub trait ChatApi<O: Send + 'static>: Send + Sync {
     ) -> Result<(), ProviderError> {
         options.validate_default()
     }
+
+    /// Normalize a neutral simple request before shared preparation.
+    ///
+    /// Adapter routes that preserve the requested thinking level override this
+    /// default, while ordinary routes clamp to their catalog's nearest level.
+    fn prepare_simple_request(&self, model: &ModelInfo, request: &mut Request) {
+        if request.thinking.enabled
+            && let Some(level) = model
+                .thinking_level_map
+                .nearest_supported(request.thinking.level)
+        {
+            request.thinking.level = level;
+        }
+    }
     /// Validate the fields consumed by this API's native entry before auth.
     /// Native adapters that replace neutral fields validate their own options
     /// and retain the common structural/model checks.

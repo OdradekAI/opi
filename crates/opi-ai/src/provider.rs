@@ -76,6 +76,21 @@ pub trait Provider: Send + Sync {
     ) -> Result<(), ProviderError> {
         options.validate_default()
     }
+
+    /// Normalize a neutral simple request before shared preparation.
+    ///
+    /// Providers may override this when their neutral entry preserves an
+    /// unsupported thinking level for wire-native validation instead of
+    /// clamping it to the nearest catalog level.
+    fn prepare_simple_request(&self, model: &ModelInfo, request: &mut Request) {
+        if request.thinking.enabled
+            && let Some(level) = model
+                .thinking_level_map
+                .nearest_supported(request.thinking.level)
+        {
+            request.thinking.level = level;
+        }
+    }
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
 

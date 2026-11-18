@@ -214,6 +214,12 @@ impl Provider for ApiMappedProvider {
         route.validate_simple_options(model, options)
     }
 
+    fn prepare_simple_request(&self, model: &ModelInfo, request: &mut Request) {
+        if let Some(route) = self.routes.get(&model.wire_api) {
+            route.prepare_simple_request(model, request);
+        }
+    }
+
     fn prepare_model_call(
         &self,
         model: &mut ModelInfo,

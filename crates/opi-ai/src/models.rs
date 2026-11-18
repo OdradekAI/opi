@@ -1891,18 +1891,12 @@ impl Models {
         options: SimpleOptions,
     ) -> ChatCall {
         options.apply(&mut request);
-        // Neutral entry: clamp the requested thinking level to the nearest
-        // supported level (Pi streamSimple) before the shared compiler's
-        // per-wire thinking preflight; native entries retain exact levels and
-        // fail typed preflight instead.
-        if record.info().wire_api != crate::WireApi::PiMessages
-            && request.thinking.enabled
-            && let Some(level) = record
-                .info()
-                .thinking_level_map
-                .nearest_supported(request.thinking.level)
+        if let Some(provider) = self
+            .registry
+            .registry
+            .get_provider_arc(record.provider_id())
         {
-            request.thinking.level = level;
+            provider.prepare_simple_request(record.info(), &mut request);
         }
         let binding = self.provider_binding(&record);
         ChatCall::new(binding, request, CallOptions::Simple(options))
@@ -4827,6 +4821,7 @@ trait ChatApiDispatch: Send + Sync {
         model: &ModelInfo,
         options: &SimpleOptions,
     ) -> Result<(), ProviderError>;
+    fn prepare_simple_erased(&self, model: &ModelInfo, request: &mut Request);
     fn simple_options_erased(&self, options: &SimpleOptions) -> Box<dyn Any + Send>;
     fn validate_native_erased(
         &self,
@@ -4855,6 +4850,9 @@ impl<O: Send + 'static> ChatApiDispatch for TypedChatApi<O> {
         options: &SimpleOptions,
     ) -> Result<(), ProviderError> {
         self.api.validate_simple_options(model, options)
+    }
+    fn prepare_simple_erased(&self, model: &ModelInfo, request: &mut Request) {
+        self.api.prepare_simple_request(model, request)
     }
     fn simple_options_erased(&self, options: &SimpleOptions) -> Box<dyn Any + Send> {
         Box::new(self.api.simple_options_for(options))
@@ -4912,6 +4910,10 @@ impl Provider for ChatApiRouteProvider {
         options: &SimpleOptions,
     ) -> Result<(), ProviderError> {
         self.dispatch.validate_simple_erased(model, options)
+    }
+
+    fn prepare_simple_request(&self, model: &ModelInfo, request: &mut Request) {
+        self.dispatch.prepare_simple_erased(model, request)
     }
     fn id(&self) -> &str {
         &self.provider_id

@@ -80,7 +80,7 @@ These gates are the progress ledger. Counts are observations from the
 | G2 adapter/profile inversion | **closed**: `api_provider_edges=0`; `api_route_context_edges=11`; `provider_to_provider_edges=0` | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
 | G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
 | G4 execution/stream ownership | **closed**: `stream_imports_execution=false`, `stream_reexports_execution=true`, `execution_imports_stream=true` | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
-| G5 Models owners | `RegistryOwner`, `AuthOwner`, `CatalogOwner` and `OperationOwner` extracted, 5,424-line facade implementation remains; `PreparedProviderCall` is the execution owner | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
+| G5 Models owners | `RegistryOwner`, `AuthOwner`, `CatalogOwner` and `OperationOwner` extracted; `PreparedProviderCall` is the execution owner; 7 protocol branches remain | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
 | G6 composition proof | feature/package slices exist | core/Faux, one-provider and full builtins profiles pass structural checks, focused behavior tests and an external archive consumer |
 
 Line count is diagnostic only. G5 closes on ownership and dependency checks,
@@ -163,6 +163,10 @@ G2 已关闭。全 builtins `cargo check` 通过，lib 回归 374 项通过，�
 随后 [#193 stream/execution owner gate](193-close-stream-execution-owner-gate.md)
 确认 `stream.rs` 到 `execution.rs` 只有兼容 re-export，execution lifecycle
 41 项通过，G4 已关闭。当前唯一架构 violation 是 Models protocol branches。
+
+随后 [#194 neutral thinking preparation](194-move-neutral-thinking-preparation-to-provider.md)
+将 Pi 的 neutral thinking policy 下沉到 `Provider::prepare_simple_request`，
+Pi chat 回归 42 项通过，`models_protocol_branches` 从 8 降至 7。
 
 ## Acceptance
 

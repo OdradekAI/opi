@@ -1258,6 +1258,10 @@ subadapter 共享 neutral context。Codex fixture 87 项通过，当前
 `api_provider_edges=0`，`api_route_context_edges=11`，
 `provider_to_provider_edges=0`。
 
+随后 [#194 neutral thinking preparation](issues/194-move-neutral-thinking-preparation-to-provider.md)
+将 Pi neutral thinking policy 下沉到 `Provider::prepare_simple_request`。
+Pi chat 回归 42 项通过，`models_protocol_branches` 从 8 降至 7。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。
