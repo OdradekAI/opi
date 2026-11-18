@@ -9,20 +9,16 @@ use std::sync::Arc;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
+use crate::provider::routes::PiMessagesRouteContext;
 use crate::registry::ModelCapabilities;
 
 /// Default Radius gateway (pi `DEFAULT_RADIUS_GATEWAY`).
 pub const BASE_URL: &str = "https://radius.pi.dev";
 
-/// The native `pi-messages` provider profile (Radius gateway).
-#[derive(Clone)]
-pub struct PiMessagesProvider {
-    pub(crate) base_url: String,
-    pub(crate) client: Arc<HttpClient>,
-    pub(crate) models: Vec<ModelInfo>,
-}
+/// Canonical provider-facing name for the neutral Pi Messages route context.
+pub type PiMessagesProvider = PiMessagesRouteContext;
 
-impl std::fmt::Debug for PiMessagesProvider {
+impl std::fmt::Debug for PiMessagesRouteContext {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("PiMessagesProvider")
@@ -32,7 +28,7 @@ impl std::fmt::Debug for PiMessagesProvider {
     }
 }
 
-impl PiMessagesProvider {
+impl PiMessagesRouteContext {
     pub fn new(base_url: Option<String>) -> Self {
         let models = if base_url.as_deref().is_none_or(|base| base == BASE_URL) {
             model_catalog().to_vec()

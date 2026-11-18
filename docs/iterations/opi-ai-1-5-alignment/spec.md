@@ -1226,6 +1226,11 @@ OpenAI Chat fixture 116 项通过，当前 `api_provider_edges=8`，
 55 项通过，当前 `api_provider_edges=7`，`api_route_context_edges=5`，
 `provider_to_provider_edges=1`。
 
+随后 [#188 Pi Messages route context](issues/188-invert-pi-messages-route-context.md)
+将 Radius route state 抽取到 `PiMessagesRouteContext`。Pi Messages chat
+回归 42 项通过，当前 `api_provider_edges=6`，`api_route_context_edges=6`，
+`provider_to_provider_edges=1`。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

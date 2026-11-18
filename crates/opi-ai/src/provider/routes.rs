@@ -131,3 +131,12 @@ pub struct MistralRouteContext {
     pub(crate) client: Arc<crate::http::HttpClient>,
     pub(crate) models: Vec<ModelInfo>,
 }
+
+/// Route state shared by the Pi Messages adapter.
+#[cfg(feature = "provider-pi-messages")]
+#[derive(Clone)]
+pub struct PiMessagesRouteContext {
+    pub(crate) base_url: String,
+    pub(crate) client: Arc<crate::http::HttpClient>,
+    pub(crate) models: Vec<ModelInfo>,
+}

@@ -316,3 +316,7 @@ Mistral、OpenRouter 与 Azure 的复用方向继续通过该 context 收口，�
 2026-11-18 的 #187 将 native Mistral Conversations route state 抽取到
 `provider::routes::MistralRouteContext`。其 API adapter 与 OpenAI-compatible
 Mistral route 现在共享 lower route contract，但保留各自 wire owner。
+
+2026-11-18 的 #188 将 Pi Messages Radius route state 抽取到
+`provider::routes::PiMessagesRouteContext`，保留默认 catalog 与 client
+配置在 profile 构造路径，wire/native options 继续归 API adapter。

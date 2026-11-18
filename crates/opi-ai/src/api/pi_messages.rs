@@ -24,10 +24,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::message::{AssistantContent, Message, ToolCall, ToolDef};
 use crate::model_info::{ThinkingLevel, WireApi};
+use crate::provider::routes::PiMessagesRouteContext;
 use crate::provider::{
     CacheRetention, EventStream, Provider, ProviderError, ProviderErrorSummary, Request,
 };
-use crate::providers::pi_messages::PiMessagesProvider;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
 
 /// Resolve the wire `options.cacheRetention` member (pi
@@ -126,19 +126,19 @@ impl PiMessagesOptions {
 /// keeps only route, catalog and client state.
 #[derive(Clone)]
 pub struct PiMessagesWireAdapter {
-    provider: PiMessagesProvider,
+    provider: PiMessagesRouteContext,
     native_options: Option<PiMessagesOptions>,
 }
 
 impl PiMessagesWireAdapter {
-    pub fn new(provider: PiMessagesProvider) -> Self {
+    pub fn new(provider: PiMessagesRouteContext) -> Self {
         Self {
             provider,
             native_options: None,
         }
     }
 
-    pub fn with_options(provider: PiMessagesProvider, options: PiMessagesOptions) -> Self {
+    pub fn with_options(provider: PiMessagesRouteContext, options: PiMessagesOptions) -> Self {
         Self {
             provider,
             native_options: Some(options),
@@ -151,7 +151,7 @@ impl PiMessagesWireAdapter {
     }
 }
 
-impl PiMessagesProvider {
+impl PiMessagesRouteContext {
     /// Build a per-call wire adapter without storing native options on the
     /// registered provider profile.
     pub fn with_native_options(self, options: PiMessagesOptions) -> PiMessagesWireAdapter {
@@ -159,7 +159,7 @@ impl PiMessagesProvider {
     }
 }
 
-impl PiMessagesProvider {
+impl PiMessagesRouteContext {
     fn resolve_model(&self, requested: &str) -> Option<&crate::provider::ModelInfo> {
         let id = requested.strip_prefix("radius:").unwrap_or(requested);
         self.models
@@ -525,7 +525,7 @@ fn to_pi_wire_message(message: &Message) -> serde_json::Value {
     }
 }
 
-impl PiMessagesProvider {
+impl PiMessagesRouteContext {
     fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -863,7 +863,7 @@ struct PiMessagesSseMapper {
     received_bytes: bool,
 }
 
-impl Provider for PiMessagesProvider {
+impl Provider for PiMessagesRouteContext {
     fn validate_simple_options(
         &self,
         model: &crate::provider::ModelInfo,
@@ -1331,7 +1331,7 @@ fn parse_usage(event: &serde_json::Value) -> Result<Usage, ProviderError> {
 #[derive(Clone)]
 pub struct PiMessagesChatApi {
     api_id: crate::types::ApiId,
-    provider: PiMessagesProvider,
+    provider: PiMessagesRouteContext,
     model: crate::provider::ModelInfo,
 }
 
@@ -1349,7 +1349,7 @@ impl PiMessagesChatApi {
     /// must be a valid `pi-messages` wire record; anything else is a typed
     /// rejection.
     pub fn new(
-        provider: PiMessagesProvider,
+        provider: PiMessagesRouteContext,
         model: crate::provider::ModelInfo,
     ) -> Result<Self, ProviderError> {
         if model.wire_api != WireApi::PiMessages
