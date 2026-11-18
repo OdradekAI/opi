@@ -1317,6 +1317,12 @@ registration map 完成物理迁移，facade 中不再保留 owner 定义。
 catalog-invisible chat route 从 `models.rs` 迁移到 `models/registration.rs`。结构报告
 新增 registration record 的物理位置指标，ChatCall orchestration 作为下一条独立切片。
 
+
+随后 [#206 ChatCall orchestration](issues/206-extract-models-chat-call-orchestration.md)
+将冻结 binding、auth plan、ChatCall driver、materialization 与 resource stream 从
+`models.rs` 迁移到独立的 `models/chat_call.rs`。结构报告确认 ChatCall
+orchestration 的 8 个定义全部离开 facade，Models facade 降至 3897 行。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

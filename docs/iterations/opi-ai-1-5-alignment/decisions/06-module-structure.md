@@ -313,6 +313,10 @@ handle 和 catalog-invisible chat route 放入 `models/registration.rs`。结构
 registration record 文件数和 facade 剩余数，`FrozenChatBinding` 保留到 ChatCall
 orchestration 切片。
 
+随后 #206 将 `FrozenChatBinding`、`AuthPlan`、`ChatCall`、driver state machine、
+materialization 和 resource stream 放入 `models/chat_call.rs`。Models facade 只
+保留 binding assembly 与公开调用入口。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有

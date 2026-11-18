@@ -224,6 +224,12 @@ owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 `models_registration_records_in_facade=0`、`models_chat_call_files=0`，ChatCall
 orchestration 仍保留 8 个 facade 定义，等待下一条独立提交。
 
+随后 [#206 ChatCall orchestration](206-extract-models-chat-call-orchestration.md)
+将完整 ChatCall 状态机、冻结 binding、auth plan、materialization 和 resource
+stream 迁移到 `models/chat_call.rs`。当前结构指标为
+`models_chat_call_files=1`、`models_chat_call_orchestration_in_facade=0`、
+`models_lines=3897`，registration 与 ChatCall 两条物理拆分均已完成。
+
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.

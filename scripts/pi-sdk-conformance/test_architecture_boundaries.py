@@ -34,9 +34,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(report["counts"]["models_registration_record_files"], 1)
         self.assertEqual(report["counts"]["models_registration_records_in_facade"], 0)
         self.assertEqual(report["counts"]["models_chat_call_orchestration"], 8)
-        self.assertEqual(report["counts"]["models_chat_call_files"], 0)
-        self.assertEqual(report["counts"]["models_chat_call_orchestration_in_facade"], 8)
-        self.assertLess(report["models_lines"], 5000)
+        self.assertEqual(report["counts"]["models_chat_call_files"], 1)
+        self.assertEqual(report["counts"]["models_chat_call_orchestration_in_facade"], 0)
+        self.assertLess(report["models_lines"], 4000)
 
     def test_enforce_is_green_after_current_edges_are_closed(self):
         report = checker.architecture_report()
