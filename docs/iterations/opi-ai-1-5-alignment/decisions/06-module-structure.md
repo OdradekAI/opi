@@ -246,3 +246,8 @@ Bedrock、Gemini、Pi Messages、Vertex profile 继续按 #172 推进。
 `api::pi_messages::PiMessagesWireAdapter`，移除 Radius profile 的 API-native
 state。Pi Messages Chat 和 terminal 回归均通过，剩余 Bedrock、Gemini、Vertex
 profile 继续按 #172 推进。
+
+2026-11-18 的 #175 将 Bedrock native options 收拢到
+`api::bedrock::BedrockWireAdapter`，移除 Bedrock profile 的 API-native state。
+Bedrock fixture 的 179 项测试和 builtins check 均通过，剩余 Gemini、Vertex
+profile 继续按 #172 推进。

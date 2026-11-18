@@ -8709,7 +8709,9 @@ mod constrained_guard_tests {
 
 mod bedrock_42 {
     use super::*;
-    use opi_ai::api::bedrock::{BedrockConverseStreamChatApi, BedrockOptions};
+    use opi_ai::api::bedrock::{
+        BedrockBodyBuilder, BedrockConverseStreamChatApi, BedrockOptions,
+    };
     use opi_ai::message::{OutputContent, ToolNotExecutedReason};
     use opi_ai::model_info::{
         ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi,
@@ -8776,7 +8778,7 @@ mod bedrock_42 {
         BedrockOptions::default()
     }
 
-    fn body_42(provider: &BedrockProvider, request: &Request) -> serde_json::Value {
+    fn body_42(provider: &impl BedrockBodyBuilder, request: &Request) -> serde_json::Value {
         provider
             .build_converse_body(request)
             .expect("bedrock body compiles")

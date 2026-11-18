@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use secrecy::SecretString;
 
-use crate::api::bedrock::BedrockOptions;
 use crate::auth::aws::sigv4::AwsCredentials;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
@@ -116,8 +115,6 @@ pub struct BedrockProvider {
     /// placeholder-authenticated sends refuse to run without it.
     pub(crate) placeholder_client: Option<Arc<HttpClient>>,
     pub(crate) models: Vec<ModelInfo>,
-    /// Typed native options for one direct/native dispatch.
-    pub(crate) native_options: Option<BedrockOptions>,
     /// Frozen AWS retry configuration.
     pub(crate) retry: retry::SmithyRetryConfig,
 }
@@ -132,7 +129,6 @@ impl BedrockProvider {
             models,
             client,
             placeholder_client: None,
-            native_options: None,
             retry: retry::SmithyRetryConfig::default(),
         }
     }
@@ -147,12 +143,6 @@ impl BedrockProvider {
     #[cfg(feature = "builtins")]
     pub(crate) fn with_provider_identity(mut self, provider: &str) -> Self {
         self.provider_identity = provider.to_owned();
-        self
-    }
-
-    /// Bind typed native options for one dispatch.
-    pub fn with_native_options(mut self, options: BedrockOptions) -> Self {
-        self.native_options = Some(options);
         self
     }
 

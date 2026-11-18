@@ -29,13 +29,69 @@ use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
 };
 
+/// Bedrock Converse wire state for one dispatch. The registered provider
+/// profile owns route, catalog, clients and retry configuration. Native
+/// options stay on this short-lived adapter so a shared profile remains
+/// immutable across concurrent calls.
+#[derive(Clone)]
+pub struct BedrockWireAdapter {
+    provider: BedrockProvider,
+    native_options: Option<BedrockOptions>,
+}
+
+/// Shared body-builder surface used by direct adapter tests and integrations
+/// that need to inspect the exact Converse JSON before dispatch.
+pub trait BedrockBodyBuilder {
+    fn build_converse_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError>;
+}
+
+impl BedrockWireAdapter {
+    pub fn new(provider: BedrockProvider) -> Self {
+        Self {
+            provider,
+            native_options: None,
+        }
+    }
+
+    pub fn with_options(provider: BedrockProvider, options: BedrockOptions) -> Self {
+        Self {
+            provider,
+            native_options: Some(options),
+        }
+    }
+
+    pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+
+    pub fn build_converse_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.provider
+            .build_converse_body_inner(request, None, self.native_options.as_ref())
+    }
+}
+
+impl BedrockProvider {
+    /// Build a per-call wire adapter without storing native options on the
+    /// registered provider profile.
+    pub fn with_native_options(self, options: BedrockOptions) -> BedrockWireAdapter {
+        BedrockWireAdapter::with_options(self, options)
+    }
+}
+
 impl BedrockProvider {
     /// Build the Converse API request body.
     pub fn build_converse_body(
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        self.build_converse_body_inner(request, None)
+        self.build_converse_body_inner(request, None, None)
     }
 
     /// Body assembly with the dispatch region (task 20.42): GovCloud
@@ -45,6 +101,7 @@ impl BedrockProvider {
         &self,
         request: &Request,
         gov_region: Option<&str>,
+        native_options: Option<&BedrockOptions>,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let model_id = request
             .model
@@ -168,10 +225,7 @@ impl BedrockProvider {
                 .collect::<Result<Vec<_>, crate::provider::ProviderError>>()?;
             // Pi drops the whole toolConfig for `none`: the tools ride no
             // other member, so the request goes out without them.
-            let tool_choice = self
-                .native_options
-                .as_ref()
-                .and_then(|o| o.tool_choice.clone());
+            let tool_choice = native_options.and_then(|o| o.tool_choice.clone());
             if tool_choice != Some(BedrockToolChoice::None_) {
                 let mut config = serde_json::json!({ "tools": tools });
                 if let Some(choice) = tool_choice {
@@ -193,7 +247,7 @@ impl BedrockProvider {
         // entry consumes the compiled request thinking (budget table plus
         // answer-room clamp in `compile_prepared_request`).
         let model_thinking = model.is_some_and(|model| model.capabilities.supports_thinking);
-        let native = self.native_options.as_ref();
+        let native = native_options;
         let simple = native.is_none_or(|options| options.simple);
         let reasoning = if simple {
             (request.thinking.enabled && model_thinking).then_some(request.thinking.level)
@@ -280,6 +334,24 @@ impl BedrockProvider {
     }
 }
 
+impl BedrockBodyBuilder for BedrockProvider {
+    fn build_converse_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        BedrockProvider::build_converse_body(self, request)
+    }
+}
+
+impl BedrockBodyBuilder for BedrockWireAdapter {
+    fn build_converse_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        BedrockWireAdapter::build_converse_body(self, request)
+    }
+}
+
 impl Provider for BedrockProvider {
     fn validate_simple_options(
         &self,
@@ -298,10 +370,11 @@ impl Provider for BedrockProvider {
         attempt: AttemptContext,
         resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
-        self.clone()
-            .with_models(vec![model])
-            .with_native_options(BedrockOptions::from_simple(&options))
-            .stream_resource_attempt(request, auth, attempt, resources)
+        BedrockWireAdapter::with_options(
+            self.clone().with_models(vec![model]),
+            BedrockOptions::from_simple(&options),
+        )
+        .stream_resource_attempt(request, auth, attempt, resources)
     }
 
     fn id(&self) -> &str {
@@ -336,13 +409,24 @@ impl Provider for BedrockProvider {
             "amz-sdk-request".to_owned(),
             format!("attempt={}; max={}", attempt.attempt, attempt.max_attempts),
         ));
-        self.stream_prepared(request, auth)
+        self.stream_prepared_with_options(request, auth, None)
     }
 
     fn stream_prepared(
         &self,
+        request: Request,
+        auth: crate::auth::ResolvedAuth,
+    ) -> EventStream {
+        self.stream_prepared_with_options(request, auth, None)
+    }
+}
+
+impl BedrockProvider {
+    fn stream_prepared_with_options(
+        &self,
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
+        native_options: Option<BedrockOptions>,
     ) -> EventStream {
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::BedrockConverseStream) {
             Ok(facts) => facts,
@@ -419,10 +503,12 @@ impl Provider for BedrockProvider {
             // Body assembly needs the dispatch region (task 20.42): GovCloud
             // regions omit Claude thinking display/binding fields.
             let gov_region = credentials.as_ref().map(|c| c.region.as_str());
-            let body = match self.build_converse_body_inner(&request, gov_region) {
-                Ok(body) => body,
-                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-            };
+            let body =
+                match self.build_converse_body_inner(&request, gov_region, native_options.as_ref())
+                {
+                    Ok(body) => body,
+                    Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+                };
 
             let model_base = self
                 .models
@@ -555,6 +641,46 @@ impl Provider for BedrockProvider {
                 rx, cancel, snapshot,
             ))
         })
+    }
+}
+
+impl Provider for BedrockWireAdapter {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.provider.validate_simple_options(model, options)
+    }
+
+    fn id(&self) -> &str {
+        self.provider.id()
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        self.provider.models()
+    }
+
+    fn stream_attempt(
+        &self,
+        mut request: Request,
+        auth: crate::auth::ResolvedAuth,
+        attempt: AttemptContext,
+    ) -> EventStream {
+        request
+            .extra_headers
+            .push(("amz-sdk-invocation-id".to_owned(), attempt.invocation_id));
+        request.extra_headers.push((
+            "amz-sdk-request".to_owned(),
+            format!("attempt={}; max={}", attempt.attempt, attempt.max_attempts),
+        ));
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
     }
 }
 
@@ -2249,11 +2375,10 @@ impl BedrockConverseStreamChatApi {
         })
     }
 
-    fn configured(&self, model: ModelInfo, options: BedrockOptions) -> BedrockProvider {
+    fn configured(&self, model: ModelInfo, options: BedrockOptions) -> BedrockWireAdapter {
         let mut provider = (*self.provider).clone();
         provider.models = vec![model];
-        provider.native_options = Some(options);
-        provider
+        BedrockWireAdapter::with_options(provider, options)
     }
 }
 

@@ -1174,7 +1174,7 @@ protocol-adapters consumer 同时检查实际 canonical 文件布局并重新运
 
 随后按第一次结构决策重新核查，`ChatApi` 与 `DeferredApi` 已归属
 `api::contract`，chat adapter 也已不再从 `models` 获取这些 contract；但 adapter
-仍导入具体 `crate::providers::*`，provider profile 仍保存 adapter-native options，
+仍导入具体 `crate::providers::*`，provider profile 仍保存部分 adapter-native options，
 且 230 KB 的 `models.rs` 仍混合 registry、
 auth/catalog、注册擦除、调用执行和 provider-specific thinking 规则。因此
 结构阶段不能收口；[#164](issues/164-audit-unresolved-ownership-boundaries.md)
@@ -1187,8 +1187,9 @@ profile/native-options 解耦，[#169](issues/169-decouple-openai-codex-profile-
   完成 Anthropic profile 的 native-options 与 API 依赖解耦，并将纯
   `ProviderHeaders` 值下沉到 `types::headers`；[#171](issues/171-decouple-azure-openai-profile-options.md)
   完成 Azure profile 的 native-options、selected-record state 与 API 依赖解耦，
-  并将 per-call dual-wire dispatch 收拢到 canonical wire adapter；剩余 profiles、
-adapter/profile route context 和 Models 内部拆分仍需有证据地推进。2026-11-18 的结构复核又发现 lower provider contract 反向依赖 `api::contract`，并且 `stream` 与 `execution` 仍互相持有实现类型；这些边界在目录迁移中没有被解决，不能把 #163 的根模块保留审计当作结构收敛。新的 [#172 结构收敛票](issues/172-freeze-layer-graph-and-lower-provider-contract.md) 将工作顺序改为先冻结依赖图、抽取无环 lower contract、分离 stream/execution owner，再继续剩余 profiles 和 Models 内部拆分。2026-11-18 已完成第一条 G3 切片，将 neutral `SimpleOptions` 与 Deferred backend contracts 移入 `provider::operation`，`api::contract` 保留公开重导出，`provider.rs` 已解除对 `api::*` 的代码依赖。随后完成 #173 Mistral profile native-options 解耦与 #174 Pi Messages profile native-options 解耦，profile native-state 基线从 18 个引用降至 10 个，剩余 Bedrock、Gemini、Vertex 三个 profile。进度按 G0–G6 结构门槛、契约回归和外部包消费证据衡量，而不是按新增目录或 issue 数量衡量。完成这些边界后再回到
+  并将 per-call dual-wire dispatch 收拢到 canonical wire adapter；[#175](issues/175-decouple-bedrock-profile-options.md)
+  完成 Bedrock profile 的 native-options 解耦并保留 SigV4/retry 行为；剩余 profiles、
+adapter/profile route context 和 Models 内部拆分仍需有证据地推进。2026-11-18 的结构复核又发现 lower provider contract 反向依赖 `api::contract`，并且 `stream` 与 `execution` 仍互相持有实现类型；这些边界在目录迁移中没有被解决，不能把 #163 的根模块保留审计当作结构收敛。新的 [#172 结构收敛票](issues/172-freeze-layer-graph-and-lower-provider-contract.md) 将工作顺序改为先冻结依赖图、抽取无环 lower contract、分离 stream/execution owner，再继续剩余 profiles 和 Models 内部拆分。2026-11-18 已完成第一条 G3 切片，将 neutral `SimpleOptions` 与 Deferred backend contracts 移入 `provider::operation`，`api::contract` 保留公开重导出，`provider.rs` 已解除对 `api::*` 的代码依赖。随后完成 #173 Mistral profile native-options 解耦、#174 Pi Messages profile native-options 解耦与 #175 Bedrock profile native-options 解耦，profile native-state 基线从 18 个引用降至 6 个，剩余 Gemini、Vertex 两个 profile。进度按 G0–G6 结构门槛、契约回归和外部包消费证据衡量，而不是按新增目录或 issue 数量衡量。完成这些边界后再回到
 [#143](issues/143-connect-real-deferred-production-route.md)
 及平台、capability-V、资源、性能和 fuzz 验收。
 
