@@ -22,6 +22,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertGreater(report["counts"]["api_provider_edges"], 0)
         self.assertEqual(report["counts"]["profile_native_state"], 0)
         self.assertGreaterEqual(report["counts"]["models_owner_modules"], 1)
+        self.assertEqual(report["counts"]["models_prepared_execution_owner"], 1)
         self.assertGreater(report["models_lines"], 5000)
 
     def test_enforce_is_red_until_current_edges_are_closed(self):

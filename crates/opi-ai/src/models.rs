@@ -624,6 +624,29 @@ impl CatalogOwner {
     }
 }
 
+/// Operation registration owner behind the [`Models`] facade.
+///
+/// Chat, image, classifier and deferred adapters share exact API identity
+/// registration and capture rules, so their maps move together behind one
+/// private owner.
+struct OperationOwner {
+    chat_apis: BTreeMap<ApiId, ChatApiRegistration>,
+    image_apis: BTreeMap<(String, ApiId), ImageApiRegistration>,
+    classifier_apis: BTreeMap<(String, ApiId), ClassifierApiRegistration>,
+    deferred_apis: BTreeMap<ApiId, DeferredApiRegistration>,
+}
+
+impl OperationOwner {
+    fn new() -> Self {
+        Self {
+            chat_apis: BTreeMap::new(),
+            image_apis: BTreeMap::new(),
+            classifier_apis: BTreeMap::new(),
+            deferred_apis: BTreeMap::new(),
+        }
+    }
+}
+
 /// A single driver of providers/models that owns provider+model lookup, auth
 /// resolution, compatibility metadata, and every chat-call entry.
 ///
@@ -636,35 +659,7 @@ pub struct Models {
     auth_owner: AuthOwner,
     compat: HashMap<String, CompatMetadata>,
     catalog_owner: CatalogOwner,
-    /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
-    /// providers. The secret-free descriptor cannot perform IO, so the async
-    /// outer command path probes the store and injects the result here;
-    /// [`Models::probe`] exposes it for listing/auth-status display.
-    /// Per-route live auth resolvers. A route
-    /// is dispatchable only when it has a resolver here; legacy metadata-only
-    /// registration leaves this absent.
-    /// Per-route non-secret source classification used to build auth provenance.
-    /// Registered SDK OAuth flows keyed by provider id; the login command
-    /// dispatches here and persists through the attached credential store.
-    /// Routes whose resolver is generated from the attached OAuth store.
-    /// Default/chat auth slots still owned by their builtin registrar.
-    /// Typed custom chat API registrations keyed by exact [`ApiId`]. Entries
-    /// are captured (cloned `Arc`s) at call creation, so later registration
-    /// changes never mutate an existing call.
-    chat_apis: BTreeMap<ApiId, ChatApiRegistration>,
-    /// Typed custom image API registrations keyed by exact [`ApiId`] (task
-    /// 20.45). The image operation dispatches on the record's API identity;
-    /// image records never enter the chat catalog.
-    image_apis: BTreeMap<(String, ApiId), ImageApiRegistration>,
-    /// Typed custom classifier API registrations keyed by exact [`ApiId`]
-    /// (task 20.46). The classifier operation dispatches on the record's
-    /// API identity; classifier records never enter the chat catalog.
-    classifier_apis: BTreeMap<(String, ApiId), ClassifierApiRegistration>,
-    /// Typed deferred-response backend registrations keyed by exact
-    /// [`ApiId`] (task 20.50). Deferred fetch/cancel dispatch on the
-    /// handle's API identity after route validation; deferred backends
-    /// never enter the chat catalog.
-    deferred_apis: BTreeMap<ApiId, DeferredApiRegistration>,
+    operation_owner: OperationOwner,
 }
 
 impl Models {
@@ -677,10 +672,7 @@ impl Models {
             auth_owner: AuthOwner::new(),
             compat: HashMap::new(),
             catalog_owner: CatalogOwner::new(),
-            chat_apis: BTreeMap::new(),
-            image_apis: BTreeMap::new(),
-            classifier_apis: BTreeMap::new(),
-            deferred_apis: BTreeMap::new(),
+            operation_owner: OperationOwner::new(),
         }
     }
 
@@ -700,10 +692,7 @@ impl Models {
             auth_owner: AuthOwner::new(),
             compat: HashMap::new(),
             catalog_owner: CatalogOwner::new(),
-            chat_apis: BTreeMap::new(),
-            image_apis: BTreeMap::new(),
-            classifier_apis: BTreeMap::new(),
-            deferred_apis: BTreeMap::new(),
+            operation_owner: OperationOwner::new(),
         }
     }
 
@@ -822,7 +811,7 @@ impl Models {
             .insert(provider_id.clone(), resolver);
         self.auth_owner.sources.insert(provider_id.clone(), source);
         self.compat.remove(&provider_id);
-        self.chat_apis.insert(
+        self.operation_owner.chat_apis.insert(
             api_id.clone(),
             ChatApiRegistration {
                 provider_id,
@@ -854,7 +843,7 @@ impl Models {
         let record = api.complete_record().clone();
         self.auth_owner.sources.insert(provider_id.clone(), source);
         self.catalog_owner.publication_generation = Arc::new(());
-        self.image_apis.insert(
+        self.operation_owner.image_apis.insert(
             (provider_id.clone(), api_id.clone()),
             ImageApiRegistration {
                 builtin_auth: false,
@@ -877,6 +866,7 @@ impl Models {
         record: crate::images::ImageModelRecord,
     ) -> Result<(), ModelsError> {
         let Some(registration) = self
+            .operation_owner
             .image_apis
             .get_mut(&(record.provider_id.clone(), record.api.clone()))
         else {
@@ -917,7 +907,7 @@ impl Models {
         let record = api.complete_record().clone();
         self.auth_owner.sources.insert(provider_id.clone(), source);
         self.catalog_owner.publication_generation = Arc::new(());
-        self.classifier_apis.insert(
+        self.operation_owner.classifier_apis.insert(
             (provider_id.clone(), api_id.clone()),
             ClassifierApiRegistration {
                 builtin_auth: false,
@@ -946,6 +936,7 @@ impl Models {
         record: crate::classifier::ClassifierModelRecord,
     ) -> Result<(), ModelsError> {
         let Some(registration) = self
+            .operation_owner
             .classifier_apis
             .get_mut(&(record.provider_id.clone(), record.api.clone()))
         else {
@@ -989,7 +980,7 @@ impl Models {
         let model_id = api.model_id().to_owned();
         self.auth_owner.sources.insert(provider_id.clone(), source);
         self.catalog_owner.publication_generation = Arc::new(());
-        self.deferred_apis.insert(
+        self.operation_owner.deferred_apis.insert(
             api_id.clone(),
             DeferredApiRegistration {
                 api_id: api_id.clone(),
@@ -1011,7 +1002,7 @@ impl Models {
         api: &ApiId,
         request: Request,
     ) -> crate::stream::ChatStream {
-        let Some(registration) = self.deferred_apis.get(api) else {
+        let Some(registration) = self.operation_owner.deferred_apis.get(api) else {
             let api = api.as_str().to_owned();
             return crate::stream::ChatStream::new(Box::pin(stream::once(async move {
                 Err::<AssistantStreamEvent, ProviderError>(ProviderError::Config(
@@ -1322,7 +1313,8 @@ impl Models {
         &self,
         handle: &DeferredHandle,
     ) -> Result<&DeferredApiRegistration, DeferredError> {
-        self.deferred_apis
+        self.operation_owner
+            .deferred_apis
             .get(&ApiId::new(handle.api.clone()))
             .filter(|registration| registration.provider_id == handle.provider)
             .ok_or_else(|| DeferredError::Unsupported {
@@ -1349,6 +1341,7 @@ impl Models {
                     crate::catalog::CatalogRecord::Classifier(record)
                         if record.id == id
                             && self
+                                .operation_owner
                                 .classifier_apis
                                 .contains_key(&(provider.to_owned(), record.api.clone())) =>
                     {
@@ -1361,7 +1354,7 @@ impl Models {
                     id: id.into(),
                 });
         }
-        for registration in self.classifier_apis.values() {
+        for registration in self.operation_owner.classifier_apis.values() {
             for record in &registration.records {
                 if record.provider_id == provider && record.id == id {
                     return Ok(record.clone());
@@ -1390,6 +1383,7 @@ impl Models {
         call: crate::classifier::ClassifierCall,
     ) -> crate::api::ClassifierFuture<'static> {
         let registration = self
+            .operation_owner
             .classifier_apis
             .get(&(record.provider_id.clone(), record.api.clone()))
             .cloned();
@@ -1414,6 +1408,7 @@ impl Models {
         options: ClassifierNativeOptions<O>,
     ) -> crate::api::ClassifierFuture<'static> {
         let registration = self
+            .operation_owner
             .classifier_apis
             .get(&(record.provider_id.clone(), record.api.clone()))
             .cloned();
@@ -1515,7 +1510,7 @@ impl Models {
     ) -> Result<Vec<crate::classifier::ClassifierModelRecord>, ModelsError> {
         let mut records = Vec::new();
         let mut allowed = HashMap::new();
-        for ((_, api_id), registration) in &self.classifier_apis {
+        for ((_, api_id), registration) in &self.operation_owner.classifier_apis {
             let id = &registration.provider_id;
             if provider.is_some_and(|wanted| wanted != id) {
                 continue;
@@ -1584,6 +1579,7 @@ impl Models {
                     crate::catalog::CatalogRecord::Image(record)
                         if record.id == id
                             && self
+                                .operation_owner
                                 .image_apis
                                 .contains_key(&(provider.to_owned(), record.api.clone())) =>
                     {
@@ -1596,7 +1592,7 @@ impl Models {
                     id: id.into(),
                 });
         }
-        for registration in self.image_apis.values() {
+        for registration in self.operation_owner.image_apis.values() {
             for record in &registration.records {
                 if record.provider_id == provider && record.id == id {
                     return Ok(record.clone());
@@ -1625,6 +1621,7 @@ impl Models {
         call: crate::images::ImagesCall,
     ) -> crate::api::ImageFuture<'static> {
         let registration = self
+            .operation_owner
             .image_apis
             .get(&(record.provider_id.clone(), record.api.clone()))
             .cloned();
@@ -1649,6 +1646,7 @@ impl Models {
         options: ImageNativeOptions<O>,
     ) -> crate::api::ImageFuture<'static> {
         let registration = self
+            .operation_owner
             .image_apis
             .get(&(record.provider_id.clone(), record.api.clone()))
             .cloned();
@@ -1799,7 +1797,7 @@ impl Models {
         options: &NativeOptions<O>,
         auth_plan: AuthPlan,
     ) -> FrozenChatBinding {
-        let registration = self.chat_apis.get(options.api_id());
+        let registration = self.operation_owner.chat_apis.get(options.api_id());
         let resource_owner = registration.and_then(|entry| entry.resource_owner.clone());
         let entry = registration.map(|registration| ChatApiEntry {
             provider_id: registration.provider_id.clone(),
@@ -2113,22 +2111,26 @@ impl Models {
     pub fn provider_ids(&self) -> Vec<&str> {
         let mut ids: BTreeSet<&str> = self.registry.registry.provider_ids().into_iter().collect();
         ids.extend(
-            self.chat_apis
+            self.operation_owner
+                .chat_apis
                 .values()
                 .map(|entry| entry.provider_id.as_str()),
         );
         ids.extend(
-            self.image_apis
+            self.operation_owner
+                .image_apis
                 .values()
                 .map(|entry| entry.provider_id.as_str()),
         );
         ids.extend(
-            self.classifier_apis
+            self.operation_owner
+                .classifier_apis
                 .values()
                 .map(|entry| entry.provider_id.as_str()),
         );
         ids.extend(
-            self.deferred_apis
+            self.operation_owner
+                .deferred_apis
                 .values()
                 .map(|entry| entry.provider_id.as_str()),
         );
@@ -2155,13 +2157,17 @@ impl Models {
         self.auth_owner.builtin_auth_factories.remove(provider);
         self.auth_owner.builtin_auth_checks.remove(provider);
         self.auth_owner.builtin_default_auth.remove(provider);
-        self.chat_apis
+        self.operation_owner
+            .chat_apis
             .retain(|_, entry| entry.provider_id != provider);
-        self.image_apis
+        self.operation_owner
+            .image_apis
             .retain(|_, entry| entry.provider_id != provider);
-        self.classifier_apis
+        self.operation_owner
+            .classifier_apis
             .retain(|_, entry| entry.provider_id != provider);
-        self.deferred_apis
+        self.operation_owner
+            .deferred_apis
             .retain(|_, entry| entry.provider_id != provider);
         true
     }
@@ -2237,7 +2243,7 @@ impl Models {
             } else {
                 match operation {
                     CatalogOperation::Image => {
-                        for ((id, api), registration) in &self.image_apis {
+                        for ((id, api), registration) in &self.operation_owner.image_apis {
                             if id == owner {
                                 records.extend(
                                     registration
@@ -2253,7 +2259,7 @@ impl Models {
                         }
                     }
                     CatalogOperation::Classifier => {
-                        for ((id, api), registration) in &self.classifier_apis {
+                        for ((id, api), registration) in &self.operation_owner.classifier_apis {
                             if id == owner {
                                 records.extend(
                                     registration
@@ -2313,7 +2319,7 @@ impl Models {
             CatalogOperation::Image => {
                 let mut records = Vec::new();
                 let mut builtin_status = HashMap::new();
-                for ((owner, api), registration) in &self.image_apis {
+                for ((owner, api), registration) in &self.operation_owner.image_apis {
                     if provider.is_some_and(|wanted| wanted != owner) {
                         continue;
                     }
@@ -2550,7 +2556,11 @@ impl Models {
 
     #[cfg(feature = "builtins")]
     pub(crate) fn mark_builtin_image_auth(&mut self, provider: &str, api: &ApiId) {
-        if let Some(registration) = self.image_apis.get_mut(&(provider.into(), api.clone())) {
+        if let Some(registration) = self
+            .operation_owner
+            .image_apis
+            .get_mut(&(provider.into(), api.clone()))
+        {
             registration.builtin_auth = true;
         }
     }
@@ -2558,6 +2568,7 @@ impl Models {
     #[cfg(feature = "builtins")]
     pub(crate) fn mark_builtin_classifier_auth(&mut self, provider: &str, api: &ApiId) {
         if let Some(registration) = self
+            .operation_owner
             .classifier_apis
             .get_mut(&(provider.into(), api.clone()))
         {
@@ -2583,6 +2594,7 @@ impl Models {
                 .insert(provider.to_owned(), AuthProvenanceSource::Static);
         }
         for registration in self
+            .operation_owner
             .image_apis
             .values_mut()
             .filter(|entry| entry.provider_id == provider && entry.builtin_auth)
@@ -2590,6 +2602,7 @@ impl Models {
             registration.resolver = bindings.chat.clone();
         }
         for registration in self
+            .operation_owner
             .classifier_apis
             .values_mut()
             .filter(|entry| entry.provider_id == provider && entry.builtin_auth)
@@ -3516,12 +3529,14 @@ impl Models {
             crate::catalog::CatalogRecord::Image(model) => {
                 model.provider_id == provider
                     && self
+                        .operation_owner
                         .image_apis
                         .contains_key(&(provider.into(), model.api.clone()))
             }
             crate::catalog::CatalogRecord::Classifier(model) => {
                 model.provider_id == provider
                     && self
+                        .operation_owner
                         .classifier_apis
                         .contains_key(&(provider.into(), model.api.clone()))
             }
@@ -3623,8 +3638,13 @@ impl Models {
             |message: String| ProviderError::Config(ProviderErrorSummary::sanitized(message));
         crate::catalog::wire::validate_provider_entry(provider, entry).map_err(invalid)?;
         if self.registry.registry.get_provider(provider).is_none()
-            && !self.image_apis.keys().any(|(owner, _)| owner == provider)
             && !self
+                .operation_owner
+                .image_apis
+                .keys()
+                .any(|(owner, _)| owner == provider)
+            && !self
+                .operation_owner
                 .classifier_apis
                 .keys()
                 .any(|(owner, _)| owner == provider)

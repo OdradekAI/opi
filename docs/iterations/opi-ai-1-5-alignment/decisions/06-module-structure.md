@@ -282,3 +282,8 @@ publisher provenance、acknowledged catalog entries 与 publication generation
 收拢到 `Models` 私有的 `CatalogOwner`。catalog personalization 5 项回归与
 结构检查通过，`models_owner_modules` 达到 3；operation registration 与
 prepared execution 继续拆分。
+
+2026-11-18 的 #181 把 chat、image、classifier 与 deferred registration maps
+收拢到 `Models` 私有的 `OperationOwner`。现有 `PreparedProviderCall` 被记录为
+prepared execution owner，catalog personalization 5 项回归与结构检查继续通过，
+`models_owner_modules` 达到 4，`models_prepared_execution_owner=1`。
