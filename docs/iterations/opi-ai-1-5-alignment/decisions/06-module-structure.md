@@ -270,3 +270,9 @@ cleanup owner list 与 registration gate 收拢到 `Models` 私有的
 `RegistryOwner`。Models facade 的公开路径保持不变，lib 374 项测试通过，
 结构报告新增 `models_owner_modules=1`。这是 G5 的第一条 owner slice，auth、
 catalog、operation registration 与 prepared execution 继续拆分。
+
+2026-11-18 的 #179 把 route auth descriptors、resolver/source maps、OAuth
+bindings、builtin auth factories、ambient auth context 与 credential store
+收拢到 `Models` 私有的 `AuthOwner`。lib 374 项测试与结构检查继续通过，
+`models_owner_modules` 达到 2；catalog、operation registration 与 prepared
+execution 继续拆分。

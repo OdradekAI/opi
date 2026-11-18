@@ -561,6 +561,45 @@ impl RegistryOwner {
     }
 }
 
+/// Authentication and source-resolution owner behind [`Models`].
+///
+/// Resolver maps, OAuth bindings, credential-store state and builtin auth
+/// factories share lifecycle and source-ownership rules, so the facade keeps
+/// them behind one private owner.
+struct AuthOwner {
+    auth: HashMap<String, AuthDescriptor>,
+    probed: HashMap<String, CredentialSource>,
+    resolvers: HashMap<String, Arc<dyn AuthResolver>>,
+    sources: HashMap<String, AuthProvenanceSource>,
+    oauth_flows: HashMap<String, std::sync::Arc<dyn crate::auth::OAuthProvider>>,
+    oauth_routes: std::collections::HashSet<String>,
+    builtin_auth_factories: HashMap<String, BuiltinAuthFactory>,
+    builtin_auth_checks: HashMap<String, BuiltinAuthCheck>,
+    builtin_default_auth: std::collections::HashSet<String>,
+    auth_context: std::sync::Arc<dyn crate::auth::AuthContext>,
+    credential_store: Option<std::sync::Arc<dyn CredentialStore>>,
+    credential_store_explicit: bool,
+}
+
+impl AuthOwner {
+    fn new() -> Self {
+        Self {
+            auth: HashMap::new(),
+            probed: HashMap::new(),
+            resolvers: HashMap::new(),
+            sources: HashMap::new(),
+            oauth_flows: HashMap::new(),
+            oauth_routes: std::collections::HashSet::new(),
+            builtin_auth_factories: HashMap::new(),
+            builtin_auth_checks: HashMap::new(),
+            builtin_default_auth: std::collections::HashSet::new(),
+            auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
+            credential_store: Some(Arc::new(crate::InMemoryCredentialStore::new())),
+            credential_store_explicit: false,
+        }
+    }
+}
+
 /// A single driver of providers/models that owns provider+model lookup, auth
 /// resolution, compatibility metadata, and every chat-call entry.
 ///
@@ -570,28 +609,20 @@ impl RegistryOwner {
 /// description.
 pub struct Models {
     registry: RegistryOwner,
-    auth: HashMap<String, AuthDescriptor>,
+    auth_owner: AuthOwner,
     compat: HashMap<String, CompatMetadata>,
     /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
     /// providers. The secret-free descriptor cannot perform IO, so the async
     /// outer command path probes the store and injects the result here;
     /// [`Models::probe`] exposes it for listing/auth-status display.
-    probed: HashMap<String, CredentialSource>,
     /// Per-route live auth resolvers. A route
     /// is dispatchable only when it has a resolver here; legacy metadata-only
     /// registration leaves this absent.
-    resolvers: HashMap<String, Arc<dyn AuthResolver>>,
     /// Per-route non-secret source classification used to build auth provenance.
-    sources: HashMap<String, AuthProvenanceSource>,
     /// Registered SDK OAuth flows keyed by provider id; the login command
     /// dispatches here and persists through the attached credential store.
-    oauth_flows: HashMap<String, std::sync::Arc<dyn crate::auth::OAuthProvider>>,
     /// Routes whose resolver is generated from the attached OAuth store.
-    oauth_routes: std::collections::HashSet<String>,
-    builtin_auth_factories: HashMap<String, BuiltinAuthFactory>,
-    builtin_auth_checks: HashMap<String, BuiltinAuthCheck>,
     /// Default/chat auth slots still owned by their builtin registrar.
-    builtin_default_auth: std::collections::HashSet<String>,
     /// Typed custom chat API registrations keyed by exact [`ApiId`]. Entries
     /// are captured (cloned `Arc`s) at call creation, so later registration
     /// changes never mutate an existing call.
@@ -613,13 +644,10 @@ pub struct Models {
     /// management operations. Defaults to the lazy
     /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
     /// and registration never touch it.
-    auth_context: std::sync::Arc<dyn crate::auth::AuthContext>,
     /// Credential store backing auth management. Each constructor owns an
     /// independent memory store; callers may replace it explicitly.
-    credential_store: Option<std::sync::Arc<dyn CredentialStore>>,
     /// Explicit stores own configuration absence/errors. Only empty default
     /// memory may consult label-only probe metadata for configuration checks.
-    credential_store_explicit: bool,
     /// Optional persisted dynamic-catalog store. Attached explicitly via
     /// [`Models::set_models_store`]; the SDK never creates one or fetches a
     /// remote catalog by default.
@@ -644,23 +672,12 @@ impl Models {
     pub fn new() -> Self {
         Self {
             registry: RegistryOwner::new(ProviderRegistry::new()),
-            auth: HashMap::new(),
+            auth_owner: AuthOwner::new(),
             compat: HashMap::new(),
-            probed: HashMap::new(),
-            resolvers: HashMap::new(),
-            sources: HashMap::new(),
-            oauth_flows: HashMap::new(),
-            oauth_routes: std::collections::HashSet::new(),
-            builtin_auth_factories: HashMap::new(),
-            builtin_auth_checks: HashMap::new(),
-            builtin_default_auth: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
             deferred_apis: BTreeMap::new(),
-            auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
-            credential_store: Some(Arc::new(crate::InMemoryCredentialStore::new())),
-            credential_store_explicit: false,
             models_store: None,
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
@@ -682,23 +699,12 @@ impl Models {
     pub fn from_registry(registry: ProviderRegistry) -> Self {
         Self {
             registry: RegistryOwner::new(registry),
-            auth: HashMap::new(),
+            auth_owner: AuthOwner::new(),
             compat: HashMap::new(),
-            probed: HashMap::new(),
-            resolvers: HashMap::new(),
-            sources: HashMap::new(),
-            oauth_flows: HashMap::new(),
-            oauth_routes: std::collections::HashSet::new(),
-            builtin_auth_factories: HashMap::new(),
-            builtin_auth_checks: HashMap::new(),
-            builtin_default_auth: std::collections::HashSet::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
             deferred_apis: BTreeMap::new(),
-            auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
-            credential_store: Some(Arc::new(crate::InMemoryCredentialStore::new())),
-            credential_store_explicit: false,
             models_store: None,
             catalog_sources: Vec::new(),
             catalog_publishers: HashMap::new(),
@@ -730,12 +736,12 @@ impl Models {
         self.registry.registry.register_provider(provider)?;
         self.clear_catalog_entry(&id);
         self.replace_resource_owner(&id, resource_owner);
-        self.builtin_default_auth.remove(&id);
-        self.resolvers.remove(&id);
-        self.oauth_routes.remove(&id);
-        self.sources.remove(&id);
-        self.probed.remove(&id);
-        self.auth.insert(id.clone(), auth);
+        self.auth_owner.builtin_default_auth.remove(&id);
+        self.auth_owner.resolvers.remove(&id);
+        self.auth_owner.oauth_routes.remove(&id);
+        self.auth_owner.sources.remove(&id);
+        self.auth_owner.probed.remove(&id);
+        self.auth_owner.auth.insert(id.clone(), auth);
         self.compat.insert(id, compat);
         Ok(())
     }
@@ -765,12 +771,12 @@ impl Models {
         self.registry.registry.register_provider(provider)?;
         self.clear_catalog_entry(&id);
         self.replace_resource_owner(&id, resource_owner);
-        self.builtin_default_auth.remove(&id);
-        self.oauth_routes.remove(&id);
-        self.auth.remove(&id);
-        self.probed.remove(&id);
-        self.resolvers.insert(id.clone(), resolver);
-        self.sources.insert(id.clone(), source);
+        self.auth_owner.builtin_default_auth.remove(&id);
+        self.auth_owner.oauth_routes.remove(&id);
+        self.auth_owner.auth.remove(&id);
+        self.auth_owner.probed.remove(&id);
+        self.auth_owner.resolvers.insert(id.clone(), resolver);
+        self.auth_owner.sources.insert(id.clone(), source);
         self.compat.insert(id, compat);
         Ok(())
     }
@@ -813,12 +819,14 @@ impl Models {
             }))?;
         self.clear_catalog_entry(&provider_id);
         self.replace_resource_owner(&provider_id, resource_owner.clone());
-        self.builtin_default_auth.remove(&provider_id);
-        self.auth.remove(&provider_id);
-        self.oauth_routes.remove(&provider_id);
-        self.probed.remove(&provider_id);
-        self.resolvers.insert(provider_id.clone(), resolver);
-        self.sources.insert(provider_id.clone(), source);
+        self.auth_owner.builtin_default_auth.remove(&provider_id);
+        self.auth_owner.auth.remove(&provider_id);
+        self.auth_owner.oauth_routes.remove(&provider_id);
+        self.auth_owner.probed.remove(&provider_id);
+        self.auth_owner
+            .resolvers
+            .insert(provider_id.clone(), resolver);
+        self.auth_owner.sources.insert(provider_id.clone(), source);
         self.compat.remove(&provider_id);
         self.chat_apis.insert(
             api_id.clone(),
@@ -850,7 +858,7 @@ impl Models {
             return Err(RegistrationError::EmptyProviderId);
         }
         let record = api.complete_record().clone();
-        self.sources.insert(provider_id.clone(), source);
+        self.auth_owner.sources.insert(provider_id.clone(), source);
         self.publication_generation = Arc::new(());
         self.image_apis.insert(
             (provider_id.clone(), api_id.clone()),
@@ -913,7 +921,7 @@ impl Models {
             return Err(RegistrationError::EmptyProviderId);
         }
         let record = api.complete_record().clone();
-        self.sources.insert(provider_id.clone(), source);
+        self.auth_owner.sources.insert(provider_id.clone(), source);
         self.publication_generation = Arc::new(());
         self.classifier_apis.insert(
             (provider_id.clone(), api_id.clone()),
@@ -985,7 +993,7 @@ impl Models {
             return Err(RegistrationError::EmptyProviderId);
         }
         let model_id = api.model_id().to_owned();
-        self.sources.insert(provider_id.clone(), source);
+        self.auth_owner.sources.insert(provider_id.clone(), source);
         self.publication_generation = Arc::new(());
         self.deferred_apis.insert(
             api_id.clone(),
@@ -1520,7 +1528,7 @@ impl Models {
             }
             let builtin_check = registration
                 .builtin_auth
-                .then(|| self.builtin_auth_checks.get(id))
+                .then(|| self.auth_owner.builtin_auth_checks.get(id))
                 .flatten();
             let available = if let Some(check) = builtin_check {
                 if let Some(value) = allowed.get(id) {
@@ -1762,8 +1770,9 @@ impl Models {
         &self,
         provider_id: &str,
     ) -> (Option<Arc<dyn AuthResolver>>, AuthProvenanceSource) {
-        let resolver = self.resolvers.get(provider_id).cloned();
+        let resolver = self.auth_owner.resolvers.get(provider_id).cloned();
         let source = self
+            .auth_owner
             .sources
             .get(provider_id)
             .cloned()
@@ -2036,6 +2045,7 @@ impl Models {
         }
         compile_prepared_request(&provider_id, model, &mut request)?;
         let resolver = self
+            .auth_owner
             .resolvers
             .get(&provider_id)
             .ok_or_else(|| ModelsError::RouteNotDispatchable {
@@ -2050,6 +2060,7 @@ impl Models {
                 ModelsError::Registry(RegistryError::UnknownProvider(provider_id.clone()))
             })?;
         let source = self
+            .auth_owner
             .sources
             .get(&provider_id)
             .cloned()
@@ -2140,16 +2151,16 @@ impl Models {
         self.registry.registry.remove_provider(provider);
         self.clear_catalog_entry(provider);
         self.registry.resource_owners.remove(provider);
-        self.auth.remove(provider);
+        self.auth_owner.auth.remove(provider);
         self.compat.remove(provider);
-        self.probed.remove(provider);
-        self.resolvers.remove(provider);
-        self.sources.remove(provider);
-        self.oauth_routes.remove(provider);
-        self.oauth_flows.remove(provider);
-        self.builtin_auth_factories.remove(provider);
-        self.builtin_auth_checks.remove(provider);
-        self.builtin_default_auth.remove(provider);
+        self.auth_owner.probed.remove(provider);
+        self.auth_owner.resolvers.remove(provider);
+        self.auth_owner.sources.remove(provider);
+        self.auth_owner.oauth_routes.remove(provider);
+        self.auth_owner.oauth_flows.remove(provider);
+        self.auth_owner.builtin_auth_factories.remove(provider);
+        self.auth_owner.builtin_auth_checks.remove(provider);
+        self.auth_owner.builtin_default_auth.remove(provider);
         self.chat_apis
             .retain(|_, entry| entry.provider_id != provider);
         self.image_apis
@@ -2314,7 +2325,7 @@ impl Models {
                     }
                     let available = if let Some(check) = registration
                         .builtin_auth
-                        .then(|| self.builtin_auth_checks.get(owner))
+                        .then(|| self.auth_owner.builtin_auth_checks.get(owner))
                         .flatten()
                     {
                         if let Some(available) = builtin_status.get(owner) {
@@ -2377,7 +2388,7 @@ impl Models {
     pub fn validate_dispatchable_route(&self, spec: &str) -> Result<(), ModelsError> {
         let (provider, _) = self.registry.registry.resolve(spec)?;
         let provider_id = provider.id();
-        if !self.resolvers.contains_key(provider_id) {
+        if !self.auth_owner.resolvers.contains_key(provider_id) {
             return Err(ModelsError::RouteNotDispatchable {
                 provider: provider_id.to_owned(),
             });
@@ -2392,7 +2403,7 @@ impl Models {
 
     /// The auth descriptor associated with a provider, if any.
     pub fn auth_descriptor(&self, provider_id: &str) -> Option<&AuthDescriptor> {
-        self.auth.get(provider_id)
+        self.auth_owner.auth.get(provider_id)
     }
 
     /// Inject the ambient-source access used by the auth management
@@ -2405,7 +2416,7 @@ impl Models {
     /// Injecting has no other effect; registration and static lookups perform
     /// zero source access either way.
     pub fn set_auth_context(&mut self, context: std::sync::Arc<dyn crate::auth::AuthContext>) {
-        self.auth_context = context;
+        self.auth_owner.auth_context = context;
     }
 
     /// Cancel and await the session-scoped connection resources of every
@@ -2486,9 +2497,9 @@ impl Models {
     /// credentials are not copied from the replaced store. Construction,
     /// registration and static lookup perform no external store access.
     pub fn set_credential_store(&mut self, store: std::sync::Arc<dyn CredentialStore>) {
-        for id in &self.oauth_routes {
-            if let Some(flow) = self.oauth_flows.get(id) {
-                self.resolvers.insert(
+        for id in &self.auth_owner.oauth_routes {
+            if let Some(flow) = self.auth_owner.oauth_flows.get(id) {
+                self.auth_owner.resolvers.insert(
                     id.clone(),
                     Arc::new(crate::auth::store_oauth::StoreOAuthResolver::new(
                         store.clone(),
@@ -2498,9 +2509,14 @@ impl Models {
                 );
             }
         }
-        self.credential_store = Some(store);
-        self.credential_store_explicit = true;
-        let providers: Vec<_> = self.builtin_auth_factories.keys().cloned().collect();
+        self.auth_owner.credential_store = Some(store);
+        self.auth_owner.credential_store_explicit = true;
+        let providers: Vec<_> = self
+            .auth_owner
+            .builtin_auth_factories
+            .keys()
+            .cloned()
+            .collect();
         for id in providers {
             self.rebind_builtin_auth(&id);
         }
@@ -2511,7 +2527,7 @@ impl Models {
         &self,
         provider: &str,
     ) -> Option<Arc<dyn crate::auth::OAuthProvider>> {
-        self.oauth_flows.get(provider).cloned()
+        self.auth_owner.oauth_flows.get(provider).cloned()
     }
 
     #[cfg(feature = "builtins")]
@@ -2520,7 +2536,8 @@ impl Models {
         provider: &str,
         factory: BuiltinAuthFactory,
     ) {
-        self.builtin_auth_factories
+        self.auth_owner
+            .builtin_auth_factories
             .insert(provider.to_owned(), factory);
         self.rebind_builtin_auth(provider);
     }
@@ -2528,9 +2545,12 @@ impl Models {
     #[cfg(feature = "builtins")]
     pub(crate) fn mark_builtin_default_auth(&mut self, provider: &str, only_if_unbound: bool) {
         if !only_if_unbound
-            || (!self.resolvers.contains_key(provider) && !self.auth.contains_key(provider))
+            || (!self.auth_owner.resolvers.contains_key(provider)
+                && !self.auth_owner.auth.contains_key(provider))
         {
-            self.builtin_default_auth.insert(provider.to_owned());
+            self.auth_owner
+                .builtin_default_auth
+                .insert(provider.to_owned());
         }
     }
 
@@ -2552,18 +2572,20 @@ impl Models {
     }
 
     fn rebind_builtin_auth(&mut self, provider: &str) {
-        let Some(factory) = self.builtin_auth_factories.get(provider) else {
+        let Some(factory) = self.auth_owner.builtin_auth_factories.get(provider) else {
             return;
         };
         let bindings = factory(
-            self.credential_store.clone(),
-            self.oauth_flows.get(provider).cloned(),
+            self.auth_owner.credential_store.clone(),
+            self.auth_owner.oauth_flows.get(provider).cloned(),
         );
-        if self.builtin_default_auth.contains(provider) {
-            self.resolvers
+        if self.auth_owner.builtin_default_auth.contains(provider) {
+            self.auth_owner
+                .resolvers
                 .insert(provider.to_owned(), bindings.chat.clone());
-            self.auth.remove(provider);
-            self.sources
+            self.auth_owner.auth.remove(provider);
+            self.auth_owner
+                .sources
                 .insert(provider.to_owned(), AuthProvenanceSource::Static);
         }
         for registration in self
@@ -2580,7 +2602,8 @@ impl Models {
         {
             registration.resolver = bindings.classifier.clone();
         }
-        self.builtin_auth_checks
+        self.auth_owner
+            .builtin_auth_checks
             .insert(provider.to_owned(), bindings.check);
     }
 
@@ -2593,23 +2616,25 @@ impl Models {
         provider_id: &str,
         flow: std::sync::Arc<dyn crate::auth::OAuthProvider>,
     ) {
-        if self.builtin_default_auth.contains(provider_id)
-            || self.oauth_routes.contains(provider_id)
-            || (!self.resolvers.contains_key(provider_id) && !self.auth.contains_key(provider_id))
+        if self.auth_owner.builtin_default_auth.contains(provider_id)
+            || self.auth_owner.oauth_routes.contains(provider_id)
+            || (!self.auth_owner.resolvers.contains_key(provider_id)
+                && !self.auth_owner.auth.contains_key(provider_id))
         {
-            self.sources.insert(
+            self.auth_owner.sources.insert(
                 provider_id.to_owned(),
                 AuthProvenanceSource::OAuth {
                     kind: provider_id.to_owned(),
                 },
             );
         }
-        self.oauth_flows
+        self.auth_owner
+            .oauth_flows
             .insert(provider_id.to_owned(), flow.clone());
-        if self.oauth_routes.contains(provider_id)
-            && let Some(store) = &self.credential_store
+        if self.auth_owner.oauth_routes.contains(provider_id)
+            && let Some(store) = &self.auth_owner.credential_store
         {
-            self.resolvers.insert(
+            self.auth_owner.resolvers.insert(
                 provider_id.to_owned(),
                 Arc::new(crate::auth::store_oauth::StoreOAuthResolver::new(
                     store.clone(),
@@ -2632,7 +2657,7 @@ impl Models {
         compat: CompatMetadata,
     ) -> Result<(), ModelsError> {
         let id = provider.id().to_owned();
-        let store = self.credential_store.clone().ok_or_else(|| {
+        let store = self.auth_owner.credential_store.clone().ok_or_else(|| {
             ModelsError::CredentialStore(CredentialStoreError::Backend {
                 provider: id.clone(),
                 reason: "no credential store attached".to_owned(),
@@ -2652,7 +2677,7 @@ impl Models {
             compat,
         )?;
         self.register_oauth_flow(&id, flow);
-        self.oauth_routes.insert(id);
+        self.auth_owner.oauth_routes.insert(id);
         Ok(())
     }
 
@@ -2672,13 +2697,14 @@ impl Models {
         provider_id: &str,
         presenter: &dyn crate::auth::LoginPresenter,
     ) -> Result<crate::auth::OAuthCredential, ModelsError> {
-        let flow =
-            self.oauth_flows
-                .get(provider_id)
-                .ok_or_else(|| ModelsError::UnknownOAuthFlow {
-                    provider: provider_id.to_owned(),
-                })?;
-        let store = self.credential_store.clone().ok_or_else(|| {
+        let flow = self
+            .auth_owner
+            .oauth_flows
+            .get(provider_id)
+            .ok_or_else(|| ModelsError::UnknownOAuthFlow {
+                provider: provider_id.to_owned(),
+            })?;
+        let store = self.auth_owner.credential_store.clone().ok_or_else(|| {
             ModelsError::CredentialStore(CredentialStoreError::Backend {
                 provider: provider_id.to_owned(),
                 reason: "no credential store attached".to_owned(),
@@ -2713,7 +2739,7 @@ impl Models {
 
     /// The ambient-source access this collection consults on demand.
     pub fn auth_context(&self) -> &std::sync::Arc<dyn crate::auth::AuthContext> {
-        &self.auth_context
+        &self.auth_owner.auth_context
     }
 
     /// Check whether one provider has complete source configuration, on
@@ -2735,8 +2761,8 @@ impl Models {
     /// configuration checker when present, then their non-secret source
     /// classification. Checking never resolves or refreshes authentication.
     pub async fn check_auth(&self, provider_id: &str) -> Result<Option<AuthCheck>, ModelsError> {
-        if self.builtin_default_auth.contains(provider_id)
-            && let Some(check) = self.builtin_auth_checks.get(provider_id)
+        if self.auth_owner.builtin_default_auth.contains(provider_id)
+            && let Some(check) = self.auth_owner.builtin_auth_checks.get(provider_id)
         {
             return check()
                 .await
@@ -2746,13 +2772,13 @@ impl Models {
                     error: Box::new(error),
                 });
         }
-        if let Some(descriptor) = self.auth.get(provider_id) {
+        if let Some(descriptor) = self.auth_owner.auth.get(provider_id) {
             return self.check_descriptor(provider_id, descriptor).await;
         }
         if !self.check_route_configuration(provider_id).await? {
             return Ok(None);
         }
-        match self.sources.get(provider_id) {
+        match self.auth_owner.sources.get(provider_id) {
             Some(source) => self.check_source(provider_id, source).await,
             None => Ok(None),
         }
@@ -2783,8 +2809,8 @@ impl Models {
         let mut account_models = std::collections::HashMap::new();
         let mut responses_only = std::collections::HashSet::new();
         for id in ids {
-            if self.builtin_default_auth.contains(&id)
-                && let Some(check) = self.builtin_auth_checks.get(&id)
+            if self.auth_owner.builtin_default_auth.contains(&id)
+                && let Some(check) = self.auth_owner.builtin_auth_checks.get(&id)
             {
                 if let Some(status) =
                     check().await.map_err(|error| ModelsError::AuthResolution {
@@ -2802,12 +2828,12 @@ impl Models {
                 }
                 continue;
             }
-            if !self.auth.contains_key(&id)
+            if !self.auth_owner.auth.contains_key(&id)
                 && matches!(
-                    self.sources.get(&id),
+                    self.auth_owner.sources.get(&id),
                     Some(AuthProvenanceSource::OAuth { .. })
                 )
-                && let Some(store) = &self.credential_store
+                && let Some(store) = &self.auth_owner.credential_store
             {
                 if !self.check_route_configuration(&id).await? {
                     continue;
@@ -2844,6 +2870,7 @@ impl Models {
 
     async fn check_route_configuration(&self, provider_id: &str) -> Result<bool, ModelsError> {
         let Some(check) = self
+            .auth_owner
             .resolvers
             .get(provider_id)
             .and_then(|resolver| resolver.check_configuration())
@@ -2921,7 +2948,7 @@ impl Models {
                 },
             )));
         }
-        if let Some(resolver) = self.resolvers.get(provider_id) {
+        if let Some(resolver) = self.auth_owner.resolvers.get(provider_id) {
             return match resolver.resolve().await {
                 Ok(resolved) => Ok(Some(resolved)),
                 Err(ProviderError::CredentialNeeded { .. }) => Ok(None),
@@ -2931,7 +2958,7 @@ impl Models {
                 }),
             };
         }
-        let Some(descriptor) = self.auth.get(provider_id) else {
+        let Some(descriptor) = self.auth_owner.auth.get(provider_id) else {
             return Ok(None);
         };
         match descriptor {
@@ -2945,22 +2972,24 @@ impl Models {
                     provenance: AuthProvenance::default(),
                 }))
             }
-            AuthDescriptor::EnvApiKey { env_var } => match self.auth_context.env(env_var)? {
-                Some(value) => Ok(Some(ResolvedAuth {
-                    env: Default::default(),
-                    scheme: AuthScheme::ApiKey,
-                    secret: secrecy::SecretString::from(value),
-                    base_url: None,
-                    account_id: None,
-                    provenance: AuthProvenance {
-                        source: AuthProvenanceSource::Environment {
-                            name: env_var.clone(),
+            AuthDescriptor::EnvApiKey { env_var } => {
+                match self.auth_owner.auth_context.env(env_var)? {
+                    Some(value) => Ok(Some(ResolvedAuth {
+                        env: Default::default(),
+                        scheme: AuthScheme::ApiKey,
+                        secret: secrecy::SecretString::from(value),
+                        base_url: None,
+                        account_id: None,
+                        provenance: AuthProvenance {
+                            source: AuthProvenanceSource::Environment {
+                                name: env_var.clone(),
+                            },
+                            fallback: AuthFallback::NotAttempted,
                         },
-                        fallback: AuthFallback::NotAttempted,
-                    },
-                })),
-                None => Ok(None),
-            },
+                    })),
+                    None => Ok(None),
+                }
+            }
             // Label-only descriptor: the secret is owned by a route/flow that
             // is not part of this collection.
             AuthDescriptor::Resolved { .. } => Ok(None),
@@ -3022,7 +3051,8 @@ impl Models {
     /// generations. Constructors provide an independent local memory barrier;
     /// explicitly sharing a store also shares its cutoff and receipts.
     pub fn mutation_barrier(&self) -> Option<crate::mutation::MutationBarrier> {
-        self.credential_store
+        self.auth_owner
+            .credential_store
             .as_ref()
             .map(|store| store.mutation_barrier())
     }
@@ -3038,12 +3068,14 @@ impl Models {
                 source: Some("static api key".to_owned()),
                 kind: AuthCheckKind::ApiKey,
             })),
-            AuthDescriptor::EnvApiKey { env_var } => {
-                Ok(self.auth_context.env(env_var)?.map(|_| AuthCheck {
+            AuthDescriptor::EnvApiKey { env_var } => Ok(self
+                .auth_owner
+                .auth_context
+                .env(env_var)?
+                .map(|_| AuthCheck {
                     source: Some(env_var.clone()),
                     kind: AuthCheckKind::ApiKey,
-                }))
-            }
+                })),
             AuthDescriptor::Resolved { source } => {
                 Ok((!source.trim().is_empty()).then(|| AuthCheck {
                     source: Some(source.clone()),
@@ -3069,7 +3101,7 @@ impl Models {
                 kind: AuthCheckKind::ApiKey,
             })),
             AuthProvenanceSource::Environment { name } => {
-                Ok(self.auth_context.env(name)?.map(|_| AuthCheck {
+                Ok(self.auth_owner.auth_context.env(name)?.map(|_| AuthCheck {
                     source: Some(name.clone()),
                     kind: AuthCheckKind::ApiKey,
                 }))
@@ -3111,7 +3143,7 @@ impl Models {
         key: &str,
         fallback_kind: AuthCheckKind,
     ) -> Result<Option<AuthCheck>, ModelsError> {
-        if let Some(store) = self.credential_store.as_ref() {
+        if let Some(store) = self.auth_owner.credential_store.as_ref() {
             match store.read(key).await? {
                 Some(Credential::ApiKey(_)) => {
                     return Ok(Some(AuthCheck {
@@ -3125,11 +3157,11 @@ impl Models {
                         kind: AuthCheckKind::OAuth,
                     }));
                 }
-                None if self.credential_store_explicit => return Ok(None),
+                None if self.auth_owner.credential_store_explicit => return Ok(None),
                 None => {}
             }
         }
-        match self.probed.get(provider_id) {
+        match self.auth_owner.probed.get(provider_id) {
             Some(CredentialSource::Present { label }) => Ok(Some(AuthCheck {
                 source: Some(label.clone()),
                 kind: fallback_kind,
@@ -3151,7 +3183,7 @@ impl Models {
         _provider_id: &str,
         key: &str,
     ) -> Result<Option<ResolvedAuth>, ModelsError> {
-        let Some(store) = self.credential_store.as_ref() else {
+        let Some(store) = self.auth_owner.credential_store.as_ref() else {
             return Ok(None);
         };
         match store.read(key).await? {
@@ -3200,13 +3232,15 @@ impl Models {
     /// the store and passes the resulting [`CredentialSource`] here so the
     /// secret-free descriptor does not have to perform IO.
     pub fn set_probe(&mut self, provider_id: &str, source: CredentialSource) {
-        self.probed.insert(provider_id.to_owned(), source);
+        self.auth_owner
+            .probed
+            .insert(provider_id.to_owned(), source);
     }
 
     /// The redacted probe state previously injected for a StoreCredential
     /// provider, if any.
     pub fn probe(&self, provider_id: &str) -> Option<&CredentialSource> {
-        self.probed.get(provider_id)
+        self.auth_owner.probed.get(provider_id)
     }
 
     /// The compatibility metadata associated with a provider, if any.
