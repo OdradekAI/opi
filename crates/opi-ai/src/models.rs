@@ -4173,11 +4173,15 @@ fn drive_resolved_call_registered(
                     .map_or(request.model.as_str(), |(_, id)| id)
         })
     });
+    let wire_api = record
+        .map(|model| model.wire_api)
+        .or_else(|| provider.models().first().map(|model| model.wire_api))
+        .unwrap_or_else(|| provider.default_wire_api());
     let projection = match crate::transcript::compile_request_projection(
         &request,
         provider.id(),
         record,
-        record.map_or(crate::WireApi::OpenAiCompletions, |model| model.wire_api),
+        wire_api,
     ) {
         Ok(projection) => projection.facts,
         Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
@@ -4190,19 +4194,7 @@ fn drive_resolved_call_registered(
             .split_once(':')
             .map_or(request.model.as_str(), |(_, id)| id)
             .to_owned(),
-        wire_api: provider
-            .models()
-            .iter()
-            .find(|model| {
-                model.id
-                    == request
-                        .model
-                        .split_once(':')
-                        .map_or(request.model.as_str(), |(_, id)| id)
-            })
-            .map_or(crate::model_info::WireApi::OpenAiCompletions, |model| {
-                model.wire_api
-            }),
+        wire_api,
     };
     let policy = provider.acquisition_policy_default();
     let prepared = PreparedProviderCall {

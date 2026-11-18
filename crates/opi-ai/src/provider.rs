@@ -156,6 +156,12 @@ pub trait Provider: Send + Sync {
             request.thinking.budget_tokens = Some(budget.min(limit.saturating_sub(1_024)));
         }
     }
+
+    /// Fallback wire identity for route metadata when a caller supplies no
+    /// complete catalog record.
+    fn default_wire_api(&self) -> crate::WireApi {
+        crate::WireApi::OpenAiCompletions
+    }
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
 

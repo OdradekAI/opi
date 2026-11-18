@@ -29,9 +29,9 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertEqual(report["counts"]["models_prepared_execution_owner"], 1)
         self.assertGreater(report["models_lines"], 5000)
 
-    def test_enforce_is_red_until_current_edges_are_closed(self):
+    def test_enforce_is_green_after_current_edges_are_closed(self):
         report = checker.architecture_report()
-        self.assertTrue(checker.violations(report))
+        self.assertFalse(checker.violations(report))
 
 
 if __name__ == "__main__":
