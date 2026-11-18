@@ -19,7 +19,7 @@ The current graph still contains these structural violations:
 | --- | --- | --- |
 | Provider contract ↔ API contract | `src/provider.rs:10,71,84,152` imports `api::contract`; `src/api/contract.rs:15` imports provider request/stream/error types | The lower provider contract may be consumed by API adapters, but it must not import API contracts |
 | API adapter → provider profile | Gemini, Vertex, Bedrock and OpenAI Chat now use `provider::routes` contexts; 8 concrete `crate::providers::` edges remain under `src/api` | Adapters consume a provider-neutral route context and protocol inputs; composition binds concrete profiles to adapters |
-| Provider profile → provider profile | OpenRouter, Mistral, Azure and Vertex profiles still reuse concrete OpenAI/Gemini profile structs | Shared protocol configuration and route bindings are reused; one provider profile does not construct another provider profile |
+| Provider profile → provider profile | Mistral and OpenRouter now construct `OpenAiRouteContext`; Azure is the remaining concrete OpenAI profile edge | Shared protocol configuration and route bindings are reused; one provider profile does not construct another provider profile |
 | Profile → native wire state | No remaining `providers` native-option state after #177 | Profiles own identity, route, auth policy and catalog; adapters own native options and wire state |
 | Stream ↔ execution | `stream.rs` re-exports `StartedChatStream` from `execution.rs`; `execution.rs` consumes private stream types | A stream contract owns event/result consumption; an execution driver owns producer/task state and depends on the lower contract |
 | Models ownership | `models.rs` is 5,335 lines and combines facade, registry, auth/catalog orchestration, four registration families, erased dispatch, prepared calls and execution; it still has Pi/Anthropic/Bedrock wire branches | Keep `Models` as the stable facade and move implementation into private owners. Protocol policy belongs to the adapter/provider capability that owns it |
@@ -126,6 +126,10 @@ edges 继续按本票推进。
 将 OpenAI-compatible route state 抽取到 `OpenAiRouteContext`，OpenAI Chat
 fixture 116 项通过，当前 `api_provider_edges=8`、
 `api_route_context_edges=4`。
+
+随后 [#186 OpenAI route context sharing](186-share-openai-route-context-across-profiles.md)
+将 Mistral 与 OpenRouter 直接接到 `OpenAiRouteContext`，profile-to-profile
+edges 从 3 降至 1。Azure 的 dual-wire route context 继续按本票推进。
 
 ## Acceptance
 

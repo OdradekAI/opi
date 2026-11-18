@@ -4,9 +4,10 @@
 //! Provider-specific endpoint, identification headers and bundled model
 //! metadata; the wire implementation remains in [`crate::api::openai`].
 
+use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
-use crate::providers::openai::{CompatConfig, OpenAiChatProvider};
+use crate::provider::routes::OpenAiRouteContext;
 use crate::registry::ModelCapabilities;
 
 pub use crate::api::shared::openrouter_usage::{
@@ -25,9 +26,9 @@ const BASE_URL: &str = "https://openrouter.ai/api";
 ///
 /// Authentication remains per-call: the resolved auth arrives through the
 /// existing Provider dispatch seam instead of being captured by this profile.
-pub fn openrouter_provider(base_url: Option<String>) -> OpenAiChatProvider {
+pub fn openrouter_provider(base_url: Option<String>) -> OpenAiRouteContext {
     let base = base_url.unwrap_or_else(|| BASE_URL.into());
-    OpenAiChatProvider::new_for_profile(
+    OpenAiRouteContext::new_for_profile(
         base,
         "openrouter".into(),
         CompatConfig::default(),

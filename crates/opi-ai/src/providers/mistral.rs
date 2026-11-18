@@ -7,9 +7,10 @@
 use std::sync::Arc;
 
 use crate::http::HttpClient;
+use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
-use crate::providers::openai::{CompatConfig, OpenAiChatProvider};
+use crate::provider::routes::OpenAiRouteContext;
 use crate::registry::ModelCapabilities;
 
 /// Default Mistral API base URL (without the /v1 suffix, which the adapter adds).
@@ -20,9 +21,9 @@ const BASE_URL: &str = "https://api.mistral.ai";
 /// The provider resolves mistral:model specs and routes through the
 /// OpenAI Chat Completions adapter. Authentication arrives per call via the
 /// resolved auth passed to the Provider dispatch seam.
-pub fn mistral_provider(base_url: Option<String>) -> OpenAiChatProvider {
+pub fn mistral_provider(base_url: Option<String>) -> OpenAiRouteContext {
     let base = base_url.unwrap_or_else(|| BASE_URL.into());
-    OpenAiChatProvider::new_for_profile(
+    OpenAiRouteContext::new_for_profile(
         base,
         "mistral".into(),
         CompatConfig::default(),

@@ -1217,6 +1217,10 @@ Vertex fixture 73 项通过，`api_provider_edges=12`，
 OpenAI Chat fixture 116 项通过，当前 `api_provider_edges=8`，
 `api_route_context_edges=4`，`provider_to_provider_edges=3`。
 
+[#186 OpenAI route context sharing](issues/186-share-openai-route-context-across-profiles.md)
+随后将 Mistral 与 OpenRouter factory 接到 `OpenAiRouteContext`，profile-to-profile
+边从 3 降至 1，Azure dual-wire profile edge 保留到下一条 route context 切片。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

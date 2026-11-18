@@ -308,3 +308,7 @@ endpoint 校验放进 lower contract。现有 provider helper 通过 re-export �
 `provider::routes::OpenAiRouteContext`，由 OpenAI Chat adapter 直接消费。
 Mistral、OpenRouter 与 Azure 的复用方向继续通过该 context 收口，避免把
 一个 concrete profile 当成另一个 profile 的 owner。
+
+2026-11-18 的 #186 将 Mistral 与 OpenRouter 的 OpenAI-compatible factory
+改为直接构造 `OpenAiRouteContext`。Azure 仍保留一条 dual-wire profile
+复用边，等待 Responses route context 一并收口。
