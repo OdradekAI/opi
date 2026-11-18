@@ -22,6 +22,61 @@ use crate::provider::{
 use crate::providers::vertex::VertexProvider;
 use crate::stream::{AssistantStreamEvent, send_or_cancel};
 
+/// Vertex wire state for one dispatch. The registered profile owns project,
+/// location, endpoint, catalog and client state. Native options stay on this
+/// adapter and are applied to the cloned route snapshot for one call.
+#[derive(Clone)]
+pub struct VertexWireAdapter {
+    provider: VertexProvider,
+    native_options: Option<GoogleVertexOptions>,
+}
+
+/// Body inspection surface shared by the Vertex profile and wire adapter.
+pub trait VertexBodyBuilder {
+    fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError>;
+}
+
+impl VertexWireAdapter {
+    pub fn new(provider: VertexProvider) -> Self {
+        Self {
+            provider,
+            native_options: None,
+        }
+    }
+
+    pub fn with_options(mut provider: VertexProvider, options: GoogleVertexOptions) -> Self {
+        if let Some(project) = options.project.as_ref() {
+            provider.project = project.clone();
+        }
+        if let Some(location) = options.location.as_ref() {
+            provider.location = location.clone();
+        }
+        Self {
+            provider,
+            native_options: Some(options),
+        }
+    }
+
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.provider
+            .build_request_body_with_options(request, self.native_options.as_ref())
+    }
+}
+
+impl VertexProvider {
+    /// Build a per-call wire adapter without storing native options on the
+    /// registered provider profile.
+    pub fn with_native_options(self, options: GoogleVertexOptions) -> VertexWireAdapter {
+        VertexWireAdapter::with_options(self, options)
+    }
+}
+
 impl VertexProvider {
     /// Build the Vertex AI streaming URL for a given model.
     ///
@@ -50,10 +105,15 @@ impl VertexProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        let native_options = self
-            .native_options
-            .as_ref()
-            .map(GoogleVertexOptions::google);
+        self.build_request_body_with_options(request, None)
+    }
+
+    fn build_request_body_with_options(
+        &self,
+        request: &Request,
+        native_options: Option<&GoogleVertexOptions>,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        let native_options = native_options.map(GoogleVertexOptions::google);
         self.inner
             .build_request_body_with_options(request, native_options.as_ref())
     }
@@ -110,10 +170,11 @@ impl Provider for VertexProvider {
         attempt: crate::provider::AttemptContext,
         resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
-        self.clone()
-            .with_models(vec![model])
-            .with_native_options(GoogleVertexOptions::from_simple(&options))
-            .stream_resource_attempt(request, auth, attempt, resources)
+        VertexWireAdapter::with_options(
+            self.clone().with_models(vec![model]),
+            GoogleVertexOptions::from_simple(&options),
+        )
+        .stream_resource_attempt(request, auth, attempt, resources)
     }
 
     fn id(&self) -> &str {
@@ -124,10 +185,17 @@ impl Provider for VertexProvider {
         &self.models
     }
 
-    fn stream_prepared(
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.stream_prepared_with_options(request, auth, None)
+    }
+}
+
+impl VertexProvider {
+    fn stream_prepared_with_options(
         &self,
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
+        native_options: Option<GoogleVertexOptions>,
     ) -> EventStream {
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::GoogleVertex) {
             Ok(facts) => facts,
@@ -234,7 +302,8 @@ impl Provider for VertexProvider {
                 }
             };
             let requested_model = model_id;
-            let body = match self.build_request_body(&request) {
+            let body = match self.build_request_body_with_options(&request, native_options.as_ref())
+            {
                 Ok(body) => body,
                 Err(error) => return Box::pin(stream::once(async move { Err(error) })),
             };
@@ -556,6 +625,47 @@ fn map_vertex_status(
     }
 }
 
+impl VertexBodyBuilder for VertexProvider {
+    fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        VertexProvider::build_request_body(self, request)
+    }
+}
+
+impl VertexBodyBuilder for VertexWireAdapter {
+    fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        VertexWireAdapter::build_request_body(self, request)
+    }
+}
+
+impl Provider for VertexWireAdapter {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.provider.validate_simple_options(model, options)
+    }
+
+    fn id(&self) -> &str {
+        self.provider.id()
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        self.provider.models()
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Public direct adapter (task 20.41)
 // ---------------------------------------------------------------------------
@@ -670,10 +780,10 @@ impl GoogleVertexChatApi {
         })
     }
 
-    fn configured(&self, model: ModelInfo, options: GoogleVertexOptions) -> VertexProvider {
+    fn configured(&self, model: ModelInfo, options: GoogleVertexOptions) -> VertexWireAdapter {
         let mut provider = (*self.provider).clone();
         provider = provider.with_models(vec![model]);
-        provider.with_native_options(options)
+        VertexWireAdapter::with_options(provider, options)
     }
 }
 

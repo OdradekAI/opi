@@ -257,3 +257,10 @@ profile 继续按 #172 推进。
 options，供 Vertex 复用。Gemini fixture 71 项与 Vertex fixture 73 项均通过。
 Vertex 暂时保留自己的 native option 值，下一条 #177 将其迁移到 Vertex
 wire adapter 并关闭最后的 G1 profile-state 引用。
+
+2026-11-18 的 #177 将 Vertex native options 收拢到
+`api::vertex::VertexWireAdapter`，同时把 project/location override 绑定到
+adapter-owned route snapshot。Vertex fixture 的 73 项测试通过，结构报告的
+`profile_native_state` 达到 0，G1 收口。后续结构工作转向 API/profile route
+context、provider-to-provider edges、stream/execution owner 和 Models 内部
+owner 拆分。

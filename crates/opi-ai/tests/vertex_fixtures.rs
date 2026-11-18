@@ -3774,7 +3774,7 @@ mod google_41 {
     use super::*;
     use opi_ai::api::contract::{SimpleOptions, SimpleToolChoice};
     use opi_ai::api::gemini::{GoogleApiThinkingLevel, GoogleThinkingConfig, GoogleToolChoice};
-    use opi_ai::api::vertex::{GoogleVertexChatApi, GoogleVertexOptions};
+    use opi_ai::api::vertex::{GoogleVertexChatApi, GoogleVertexOptions, VertexBodyBuilder};
     use opi_ai::model_info::{ModelCapabilities, ModelInfo, ThinkingLevel};
     use opi_ai::models::{ChatModelRecord, Models};
     use opi_ai::providers::gemini::GeminiProvider;
@@ -3840,7 +3840,7 @@ mod google_41 {
         )
     }
 
-    fn body_41(provider: &VertexProvider, request: &Request) -> serde_json::Value {
+    fn body_41(provider: &impl VertexBodyBuilder, request: &Request) -> serde_json::Value {
         provider
             .build_request_body(request)
             .expect("vertex body compiles")
