@@ -300,6 +300,10 @@ prepared execution owner，catalog personalization 5 项回归与结构检查继
 publication generation 的一致性状态。物理拆分指标达到 3 个独立 owner 文件，
 facade 中剩余 1 个 owner 定义。
 
+随后 #203 将 `OperationOwner` 放入 `models/operation_owner.rs`，四类 registration
+map 完成物理迁移。`models.rs` 中 owner 定义数降至 0，registration record types
+仍作为 facade 内部的 crate-private 数据合同保留。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有

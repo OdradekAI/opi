@@ -35,7 +35,7 @@
 //! changes may occur between minor versions without a major version bump.
 
 use std::any::{Any, TypeId};
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -534,28 +534,8 @@ pub(crate) use auth_owner::AuthOwner;
 mod catalog_owner;
 pub(crate) use catalog_owner::CatalogOwner;
 
-/// Operation registration owner behind the [`Models`] facade.
-///
-/// Chat, image, classifier and deferred adapters share exact API identity
-/// registration and capture rules, so their maps move together behind one
-/// private owner.
-struct OperationOwner {
-    chat_apis: BTreeMap<ApiId, ChatApiRegistration>,
-    image_apis: BTreeMap<(String, ApiId), ImageApiRegistration>,
-    classifier_apis: BTreeMap<(String, ApiId), ClassifierApiRegistration>,
-    deferred_apis: BTreeMap<ApiId, DeferredApiRegistration>,
-}
-
-impl OperationOwner {
-    fn new() -> Self {
-        Self {
-            chat_apis: BTreeMap::new(),
-            image_apis: BTreeMap::new(),
-            classifier_apis: BTreeMap::new(),
-            deferred_apis: BTreeMap::new(),
-        }
-    }
-}
+mod operation_owner;
+pub(crate) use operation_owner::OperationOwner;
 
 /// A single driver of providers/models that owns provider+model lookup, auth
 /// resolution, compatibility metadata, and every chat-call entry.
@@ -4336,7 +4316,7 @@ impl<O: Send + 'static> std::fmt::Debug for ImageNativeOptions<O> {
 
 /// Type-erased storage for one registered image adapter.
 #[derive(Clone)]
-struct ImageApiRegistration {
+pub(crate) struct ImageApiRegistration {
     builtin_auth: bool,
     provider_id: String,
     options_type: TypeId,
@@ -4484,7 +4464,7 @@ impl<O: Send + 'static> std::fmt::Debug for ClassifierNativeOptions<O> {
 /// records (the adapter's complete record seeds the set; providers serving
 /// multiple models under one API append the rest).
 #[derive(Clone)]
-struct ClassifierApiRegistration {
+pub(crate) struct ClassifierApiRegistration {
     builtin_auth: bool,
     provider_id: String,
     options_type: TypeId,
@@ -4493,7 +4473,7 @@ struct ClassifierApiRegistration {
     records: Vec<crate::classifier::ClassifierModelRecord>,
 }
 
-struct DeferredApiRegistration {
+pub(crate) struct DeferredApiRegistration {
     api_id: ApiId,
     provider_id: String,
     model_id: String,
@@ -4661,7 +4641,7 @@ fn no_classifier_api_result(
 }
 
 /// Type-erased storage for one registered adapter.
-struct ChatApiRegistration {
+pub(crate) struct ChatApiRegistration {
     provider_id: String,
     options_type: TypeId,
     dispatch: Arc<dyn ChatApiDispatch>,

@@ -1299,6 +1299,11 @@ facade 中剩余定义数。行为回归保持 374 项 lib 测试通过，开始
 将 `CatalogOwner` 从 `models.rs` 迁移到独立的 `models/catalog_owner.rs`。catalog
 personalization 5 项回归通过，物理 owner 文件数达到 3，facade 中剩余 owner 定义降至 1。
 
+
+随后 [#203 operation owner module](issues/203-extract-models-operation-owner-module.md)
+将 `OperationOwner` 从 `models.rs` 迁移到独立的 `models/operation_owner.rs`，四类
+registration map 完成物理迁移，facade 中不再保留 owner 定义。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

@@ -207,6 +207,11 @@ owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 `models_owner_module_files=3`、`models_owner_definitions_in_facade=1`，总 owner
 定义数仍为 4。operation 与 prepared execution 继续按独立提交迁移。
 
+随后 [#203 operation owner module](203-extract-models-operation-owner-module.md)
+将 `OperationOwner` 迁移到 `models/operation_owner.rs`，四类 registration map
+完成物理迁移。当前结构指标为 `models_owner_module_files=4`、
+`models_owner_definitions_in_facade=0`，prepared execution 仍待下一条独立提交。
+
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.
