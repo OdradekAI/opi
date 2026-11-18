@@ -528,44 +528,8 @@ impl RefreshReport {
 mod registry_owner;
 pub(crate) use registry_owner::RegistryOwner;
 
-/// Authentication and source-resolution owner behind [`Models`].
-///
-/// Resolver maps, OAuth bindings, credential-store state and builtin auth
-/// factories share lifecycle and source-ownership rules, so the facade keeps
-/// them behind one private owner.
-struct AuthOwner {
-    auth: HashMap<String, AuthDescriptor>,
-    probed: HashMap<String, CredentialSource>,
-    resolvers: HashMap<String, Arc<dyn AuthResolver>>,
-    sources: HashMap<String, AuthProvenanceSource>,
-    oauth_flows: HashMap<String, std::sync::Arc<dyn crate::auth::OAuthProvider>>,
-    oauth_routes: std::collections::HashSet<String>,
-    builtin_auth_factories: HashMap<String, BuiltinAuthFactory>,
-    builtin_auth_checks: HashMap<String, BuiltinAuthCheck>,
-    builtin_default_auth: std::collections::HashSet<String>,
-    auth_context: std::sync::Arc<dyn crate::auth::AuthContext>,
-    credential_store: Option<std::sync::Arc<dyn CredentialStore>>,
-    credential_store_explicit: bool,
-}
-
-impl AuthOwner {
-    fn new() -> Self {
-        Self {
-            auth: HashMap::new(),
-            probed: HashMap::new(),
-            resolvers: HashMap::new(),
-            sources: HashMap::new(),
-            oauth_flows: HashMap::new(),
-            oauth_routes: std::collections::HashSet::new(),
-            builtin_auth_factories: HashMap::new(),
-            builtin_auth_checks: HashMap::new(),
-            builtin_default_auth: std::collections::HashSet::new(),
-            auth_context: std::sync::Arc::new(crate::auth::AmbientAuthContext),
-            credential_store: Some(Arc::new(crate::InMemoryCredentialStore::new())),
-            credential_store_explicit: false,
-        }
-    }
-}
+mod auth_owner;
+pub(crate) use auth_owner::AuthOwner;
 
 /// Dynamic catalog and publication owner behind the [`Models`] facade.
 ///

@@ -1289,6 +1289,11 @@ owners 与 catalog/OAuth store/telemetry support union，G6 关闭。
 facade 中剩余定义数。行为回归保持 374 项 lib 测试通过，开始推进 Models 的物理
 模块拆分。
 
+
+随后 [#201 auth owner module](issues/201-extract-models-auth-owner-module.md)
+将 `AuthOwner` 从 `models.rs` 迁移到独立的 `models/auth_owner.rs`。374 项 lib
+测试与结构检查通过，物理 owner 文件数达到 2，facade 中剩余 owner 定义降至 2。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

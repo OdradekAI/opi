@@ -292,6 +292,10 @@ prepared execution owner，catalog personalization 5 项回归与结构检查继
 `models/registry_owner.rs`。结构报告同时保留 owner 定义总数，并新增独立 owner
 文件数和 facade 中的剩余定义数，避免把“已定义”误当作“已物理隔离”。
 
+随后 #201 将 `AuthOwner` 放入 `models/auth_owner.rs`，继续保持 facade 的公开
+接口与 auth 生命周期行为不变。物理拆分指标达到 2 个独立 owner 文件，facade
+中剩余 2 个 owner 定义。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有
