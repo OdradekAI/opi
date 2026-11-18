@@ -328,3 +328,7 @@ Mistral route 现在共享 lower route contract，但保留各自 wire owner。
 2026-11-18 的 #190 将 OpenAI Responses route state 与 affinity policy
 抽取到 `provider::routes::OpenAiResponsesRouteContext`，为 Azure dual-wire
 route 复用提供了中性上下文。
+
+2026-11-18 的 #191 将 Azure dual-wire endpoint、deployment 与 client state
+抽取到 `provider::routes::AzureRouteContext`，同时以 neutral Chat/Responses
+contexts 组装两个 wire，profile-to-profile edge 收口为零。

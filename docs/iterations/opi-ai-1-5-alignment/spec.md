@@ -1226,6 +1226,12 @@ OpenAI Chat fixture 116 项通过，当前 `api_provider_edges=8`，
 55 项通过，当前 `api_provider_edges=7`，`api_route_context_edges=5`，
 `provider_to_provider_edges=1`。
 
+随后 [#191 Azure route context](issues/191-invert-azure-route-context.md)
+将 Azure dual-wire route state 抽取到 `AzureRouteContext`，并复用 neutral
+Chat/Responses contexts。Azure fixture 46 项通过，当前
+`api_provider_edges=2`，`api_route_context_edges=9`，
+`provider_to_provider_edges=0`。
+
 随后 [#188 Pi Messages route context](issues/188-invert-pi-messages-route-context.md)
 将 Radius route state 抽取到 `PiMessagesRouteContext`。Pi Messages chat
 回归 42 项通过，当前 `api_provider_edges=6`，`api_route_context_edges=6`，

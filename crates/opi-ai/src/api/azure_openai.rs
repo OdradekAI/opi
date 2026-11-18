@@ -19,11 +19,11 @@ use crate::api::openai_responses::{
 use crate::api::shared::headers::ProviderHeaders;
 use crate::api::shared::openai_responses::{ResponsesMapper, drain_sse_frames};
 use crate::model_info::{ModelInfo, WireApi};
-use crate::provider::{EventStream, Provider, ProviderError, ProviderErrorSummary, Request};
-use crate::providers::azure_openai::{
-    AzureOpenAIProvider, parse_deployment_map, resolve_azure_base_url, responses_url,
+use crate::provider::routes::{
+    AzureRouteContext, OpenAiResponsesRouteContext, parse_deployment_map, resolve_azure_base_url,
+    responses_url,
 };
-use crate::providers::openai_responses::OpenAiResponsesProvider;
+use crate::provider::{EventStream, Provider, ProviderError, ProviderErrorSummary, Request};
 use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 
 /// Azure OpenAI wire adapter.
@@ -32,14 +32,14 @@ use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_can
 /// The registered provider profile remains an immutable route/catalog description.
 #[derive(Clone)]
 pub struct AzureOpenAIWireAdapter {
-    provider: AzureOpenAIProvider,
+    provider: AzureRouteContext,
     native_options: Option<AzureOpenAIOptions>,
     active_record: Option<ModelInfo>,
 }
 
 impl AzureOpenAIWireAdapter {
     /// Construct a neutral adapter from an Azure provider profile.
-    pub fn new(provider: AzureOpenAIProvider) -> Self {
+    pub fn new(provider: AzureRouteContext) -> Self {
         Self {
             provider,
             native_options: None,
@@ -48,7 +48,7 @@ impl AzureOpenAIWireAdapter {
     }
 
     /// Construct a per-call adapter with explicit native options.
-    pub fn with_options(provider: AzureOpenAIProvider, options: AzureOpenAIOptions) -> Self {
+    pub fn with_options(provider: AzureRouteContext, options: AzureOpenAIOptions) -> Self {
         Self {
             provider,
             native_options: Some(options),
@@ -151,7 +151,7 @@ impl AzureOpenAIWireAdapter {
                 service_tier: None,
                 simple: native.simple,
             };
-            let inner = OpenAiResponsesProvider::for_route(
+            let inner = OpenAiResponsesRouteContext::for_route(
                 None,
                 "azure".into(),
                 ProviderHeaders::default(),
@@ -467,7 +467,7 @@ impl Provider for AzureOpenAIWireAdapter {
         })
     }
 }
-impl AzureOpenAIProvider {
+impl AzureRouteContext {
     /// Compile a neutral Azure Chat request through the canonical wire adapter.
     pub fn build_request_body(
         &self,
@@ -482,7 +482,7 @@ impl AzureOpenAIProvider {
     }
 }
 
-impl Provider for AzureOpenAIProvider {
+impl Provider for AzureRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -850,7 +850,7 @@ async fn stream_azure_responses_http(
                 match mapper.decode_frame(&frame) {
                     crate::api::shared::openai_responses::ParsedEvent::Valid(event) => {
                         for item in mapper.process(event) {
-                            let item = OpenAiResponsesProvider::stamp_done_duration(
+                            let item = OpenAiResponsesRouteContext::stamp_done_duration(
                                 item,
                                 response_activated_at,
                             );
@@ -887,7 +887,7 @@ async fn stream_azure_responses_http(
         if mapper.has_pending_terminal() {
             for item in mapper.flush_pending_terminal() {
                 let item =
-                    OpenAiResponsesProvider::stamp_done_duration(item, response_activated_at);
+                    OpenAiResponsesRouteContext::stamp_done_duration(item, response_activated_at);
                 if !send_or_cancel(&cancel, tx, item).await? {
                     return Ok(());
                 }
@@ -964,7 +964,7 @@ impl AzureOpenAIOptions {
 /// responses wire; native options never mutate a registered provider.
 pub struct AzureOpenAIResponsesChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<AzureOpenAIProvider>,
+    provider: Arc<AzureRouteContext>,
     model: ModelInfo,
 }
 
@@ -979,10 +979,7 @@ impl std::fmt::Debug for AzureOpenAIResponsesChatApi {
 impl AzureOpenAIResponsesChatApi {
     /// Bind a complete azure responses record. Wrong-wire or invalid
     /// records fail before authentication or network activity.
-    pub fn new(
-        provider: Arc<AzureOpenAIProvider>,
-        model: ModelInfo,
-    ) -> Result<Self, ProviderError> {
+    pub fn new(provider: Arc<AzureRouteContext>, model: ModelInfo) -> Result<Self, ProviderError> {
         validate_complete_azure_responses_record(&model)?;
         Ok(Self {
             api_id: crate::types::ApiId::new("azure-openai-responses"),

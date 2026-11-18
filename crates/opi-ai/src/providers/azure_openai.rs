@@ -7,146 +7,15 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::http::HttpClient;
+use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 use crate::model_info::WireApi;
+use crate::provider::routes::{
+    AzureRouteContext, OpenAiRouteContext, parse_deployment_map, responses_url,
+};
 use crate::provider::{ModelInfo, ProviderError, ProviderErrorSummary};
-use crate::providers::openai::{CompatConfig, OpenAiChatProvider};
 use crate::registry::ModelCapabilities;
 
-/// Default Azure OpenAI API version (source: pi 1.3.0
-/// `azure-openai-config.ts` `DEFAULT_AZURE_API_VERSION`).
-const DEFAULT_API_VERSION: &str = "v1";
-
-/// Azure hosts whose configured base URL is normalized to the resource root
-/// (opi's builder appends the `/openai/...` path segments itself).
-const AZURE_HOST_SUFFIXES: [&str; 3] = [
-    ".openai.azure.com",
-    ".cognitiveservices.azure.com",
-    ".ai.azure.com",
-];
-
-/// Base-path shapes treated as "the resource root" on an Azure host.
-const AZURE_ROOT_PATHS: [&str; 5] = ["", "/", "/openai", "/openai/v1", "/openai/v1/responses"];
-
-/// Resolve the Azure base URL (task 20.38, pinned source precedence):
-/// explicit base URL, then resource name, then the model's base URL; a
-/// typed failure when none is configured. Azure hosts carrying one of the
-/// known `/openai[/v1][/responses]` path shapes normalize to the resource
-/// root; non-Azure hosts keep their configured path.
-pub fn resolve_azure_base_url(
-    explicit_base_url: Option<&str>,
-    resource_name: Option<&str>,
-    model_base_url: Option<&str>,
-) -> Result<String, ProviderError> {
-    let explicit = explicit_base_url
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let resolved = explicit
-        .map(str::to_owned)
-        .or_else(|| {
-            resource_name
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(|resource| format!("https://{resource}.openai.azure.com"))
-        })
-        .or_else(|| {
-            model_base_url
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_owned)
-        })
-        .ok_or_else(|| {
-            azure_config_error(
-                "Azure OpenAI base URL is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.",
-            )
-        })?;
-
-    normalize_azure_base_url(&resolved)
-}
-
-/// Normalize a resolved base URL: strip the trailing slash and, on Azure
-/// hosts, collapse the known `/openai[/v1][/responses]` path shapes to the
-/// resource root. Invalid URLs fail typed.
-fn normalize_azure_base_url(base_url: &str) -> Result<String, ProviderError> {
-    let trimmed = base_url.trim().trim_end_matches('/');
-    if trimmed.is_empty() {
-        return Err(azure_config_error(
-            "Azure OpenAI base URL must not be empty.",
-        ));
-    }
-    let url = url::Url::parse(trimmed).map_err(|_| {
-        ProviderError::Config(ProviderErrorSummary::sanitized(format!(
-            "Invalid Azure OpenAI base URL: {trimmed}"
-        )))
-    })?;
-    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-        return Err(azure_config_error(
-            "Azure OpenAI requires an absolute HTTP or HTTPS API base URL.",
-        ));
-    }
-    let host = url.host_str().unwrap_or_default();
-    let is_azure_host = AZURE_HOST_SUFFIXES
-        .iter()
-        .any(|suffix| host.ends_with(suffix));
-    if !is_azure_host {
-        return Ok(trimmed.to_owned());
-    }
-    let path = url.path().trim_end_matches('/');
-    if AZURE_ROOT_PATHS.contains(&path) {
-        return Ok(format!("{}://{host}", url.scheme()));
-    }
-    Ok(trimmed.to_owned())
-}
-
-pub(crate) fn responses_url(endpoint: &str, api_version: &str) -> String {
-    let mut url = url::Url::parse(endpoint).expect("Azure endpoint was validated at resolution");
-    let path = url.path().trim_end_matches('/');
-    let standard_resource = url.host_str().is_some_and(|host| {
-        AZURE_HOST_SUFFIXES
-            .iter()
-            .any(|suffix| host.ends_with(suffix))
-    }) && AZURE_ROOT_PATHS.contains(&path);
-    let path = if standard_resource {
-        "/openai/v1/responses".to_owned()
-    } else if path.ends_with("/responses") {
-        path.to_owned()
-    } else {
-        format!("{path}/responses")
-    };
-    url.set_path(&path);
-    url.query_pairs_mut()
-        .append_pair("api-version", api_version);
-    url.into()
-}
-
-/// Resolve the request api-version: explicit value wins, else the pinned
-/// source default `v1`.
-pub fn resolve_azure_api_version(explicit: Option<&str>) -> String {
-    explicit
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_API_VERSION)
-        .to_owned()
-}
-
-/// Parse a `modelId=deployment,modelId2=deployment2` map (source:
-/// `AZURE_OPENAI_DEPLOYMENT_NAME_MAP`).
-pub(crate) fn parse_deployment_map(
-    value: Option<&str>,
-) -> std::collections::HashMap<String, String> {
-    let mut map = std::collections::HashMap::new();
-    let Some(value) = value else { return map };
-    for entry in value.split(',') {
-        let Some((model_id, deployment)) = entry.trim().split_once('=') else {
-            continue;
-        };
-        let (model_id, deployment) = (model_id.trim(), deployment.trim());
-        if model_id.is_empty() || deployment.is_empty() {
-            continue;
-        }
-        map.insert(model_id.to_owned(), deployment.to_owned());
-    }
-    map
-}
+pub use crate::provider::routes::{resolve_azure_api_version, resolve_azure_base_url};
 
 /// Resolve the deployment name for one model (pinned source precedence):
 /// explicit deployment, then the configured deployment map, then the model
@@ -166,28 +35,10 @@ pub fn resolve_deployment_name(
         .unwrap_or_else(|| model_id.to_owned())
 }
 
-fn azure_config_error(message: &'static str) -> ProviderError {
-    ProviderError::Config(ProviderErrorSummary::attested_static(message))
-}
+/// Canonical provider-facing name for the neutral Azure route context.
+pub type AzureOpenAIProvider = AzureRouteContext;
 
-/// Azure OpenAI service profile.
-///
-/// The profile composes the shared OpenAI Chat adapter and stores immutable
-/// endpoint, deployment and route metadata. Wire transport and
-/// request-scoped options are implemented by the canonical Azure API adapter.
-#[derive(Clone)]
-pub struct AzureOpenAIProvider {
-    pub(crate) endpoint: String,
-    pub(crate) api_version: String,
-    pub(crate) models: Vec<ModelInfo>,
-    pub(crate) inner: OpenAiChatProvider,
-    pub(crate) client: Arc<HttpClient>,
-    /// Optional `modelId=deployment` map (task 20.38): explicit per-call
-    /// deployment options win, then this map, then the model id.
-    pub(crate) deployment_map: Option<String>,
-}
-
-impl fmt::Debug for AzureOpenAIProvider {
+impl fmt::Debug for AzureRouteContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("AzureOpenAIProvider")
             .field("endpoint", &self.endpoint)
@@ -197,7 +48,7 @@ impl fmt::Debug for AzureOpenAIProvider {
     }
 }
 
-impl AzureOpenAIProvider {
+impl AzureRouteContext {
     /// Create a new Azure OpenAI provider.
     ///
     /// `deployment` is a default deployment name (used for model list display).
@@ -215,7 +66,7 @@ impl AzureOpenAIProvider {
             ));
         }
         let models = vec![deployment_model(&deployment)];
-        let inner = OpenAiChatProvider::new_for_profile(
+        let inner = OpenAiRouteContext::new_for_profile(
             endpoint.clone(),
             "azure".into(),
             CompatConfig::default(),
@@ -255,7 +106,7 @@ impl AzureOpenAIProvider {
             .iter()
             .map(|deployment| deployment_model(deployment))
             .collect();
-        let inner = OpenAiChatProvider::new_for_profile(
+        let inner = OpenAiRouteContext::new_for_profile(
             endpoint.clone(),
             "azure".into(),
             CompatConfig::default(),
@@ -294,7 +145,7 @@ impl AzureOpenAIProvider {
                 ),
             ));
         }
-        let inner = OpenAiChatProvider::new_for_profile(
+        let inner = OpenAiRouteContext::new_for_profile(
             endpoint.clone(),
             "azure".into(),
             CompatConfig::default(),
@@ -323,7 +174,7 @@ impl AzureOpenAIProvider {
     /// tool schema, max-tokens field, tool-result name) as config-driven
     /// profiles.
     pub fn with_compat(mut self, compat: CompatConfig) -> Self {
-        self.inner = OpenAiChatProvider::new_for_profile(
+        self.inner = OpenAiRouteContext::new_for_profile(
             self.endpoint.clone(),
             "azure".into(),
             compat,
