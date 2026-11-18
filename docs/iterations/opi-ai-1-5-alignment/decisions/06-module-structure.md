@@ -264,3 +264,9 @@ adapter-owned route snapshot。Vertex fixture 的 73 项测试通过，结构报
 `profile_native_state` 达到 0，G1 收口。后续结构工作转向 API/profile route
 context、provider-to-provider edges、stream/execution owner 和 Models 内部
 owner 拆分。
+
+2026-11-18 的 #178 把 `ProviderRegistry`、provider resource namespaces、
+cleanup owner list 与 registration gate 收拢到 `Models` 私有的
+`RegistryOwner`。Models facade 的公开路径保持不变，lib 374 项测试通过，
+结构报告新增 `models_owner_modules=1`。这是 G5 的第一条 owner slice，auth、
+catalog、operation registration 与 prepared execution 继续拆分。

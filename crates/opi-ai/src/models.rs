@@ -525,6 +525,42 @@ impl RefreshReport {
 // Models
 // ---------------------------------------------------------------------------
 
+/// Registry and resource-lifetime owner behind the public [`Models`] facade.
+///
+/// Provider lookup, registration serialization and session-resource
+/// namespaces change together, so they stay behind one private owner instead
+/// of being scattered across the facade's auth and catalog state.
+struct RegistryOwner {
+    registry: ProviderRegistry,
+    resource_owners: HashMap<String, Arc<dyn crate::codex_resources::SessionResourceOwner>>,
+    all_resource_owners:
+        Arc<std::sync::Mutex<Vec<Arc<dyn crate::codex_resources::SessionResourceOwner>>>>,
+    registration_gate: Arc<std::sync::Mutex<()>>,
+}
+
+impl RegistryOwner {
+    fn new(registry: ProviderRegistry) -> Self {
+        let resource_owners: HashMap<_, _> = registry
+            .providers()
+            .iter()
+            .filter_map(|provider| {
+                provider
+                    .session_resources()
+                    .map(|owner| (provider.id().to_owned(), owner.new_namespace()))
+            })
+            .collect();
+        let all_resource_owners = Arc::new(std::sync::Mutex::new(
+            resource_owners.values().cloned().collect(),
+        ));
+        Self {
+            registry,
+            resource_owners,
+            all_resource_owners,
+            registration_gate: Arc::default(),
+        }
+    }
+}
+
 /// A single driver of providers/models that owns provider+model lookup, auth
 /// resolution, compatibility metadata, and every chat-call entry.
 ///
@@ -533,11 +569,7 @@ impl RefreshReport {
 /// machine. See the [module-level documentation](self) for the full seam
 /// description.
 pub struct Models {
-    registry: ProviderRegistry,
-    resource_owners: HashMap<String, Arc<dyn crate::codex_resources::SessionResourceOwner>>,
-    all_resource_owners:
-        Arc<std::sync::Mutex<Vec<Arc<dyn crate::codex_resources::SessionResourceOwner>>>>,
-    registration_gate: Arc<std::sync::Mutex<()>>,
+    registry: RegistryOwner,
     auth: HashMap<String, AuthDescriptor>,
     compat: HashMap<String, CompatMetadata>,
     /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
@@ -611,10 +643,7 @@ impl Models {
     /// discovery or environment/file/network I/O.
     pub fn new() -> Self {
         Self {
-            registry: ProviderRegistry::new(),
-            resource_owners: HashMap::new(),
-            all_resource_owners: Arc::default(),
-            registration_gate: Arc::default(),
+            registry: RegistryOwner::new(ProviderRegistry::new()),
             auth: HashMap::new(),
             compat: HashMap::new(),
             probed: HashMap::new(),
@@ -651,23 +680,8 @@ impl Models {
     /// [`prepare_call`](Self::prepare_call) returns
     /// [`ModelsError::RouteNotDispatchable`].
     pub fn from_registry(registry: ProviderRegistry) -> Self {
-        let resource_owners: HashMap<_, _> = registry
-            .providers()
-            .iter()
-            .filter_map(|provider| {
-                provider
-                    .session_resources()
-                    .map(|owner| (provider.id().to_owned(), owner.new_namespace()))
-            })
-            .collect();
-        let all_resource_owners = Arc::new(std::sync::Mutex::new(
-            resource_owners.values().cloned().collect(),
-        ));
         Self {
-            registry,
-            resource_owners,
-            all_resource_owners,
-            registration_gate: Arc::default(),
+            registry: RegistryOwner::new(registry),
             auth: HashMap::new(),
             compat: HashMap::new(),
             probed: HashMap::new(),
@@ -713,7 +727,7 @@ impl Models {
         let resource_owner = provider
             .session_resources()
             .map(|owner| owner.new_namespace());
-        self.registry.register_provider(provider)?;
+        self.registry.registry.register_provider(provider)?;
         self.clear_catalog_entry(&id);
         self.replace_resource_owner(&id, resource_owner);
         self.builtin_default_auth.remove(&id);
@@ -748,7 +762,7 @@ impl Models {
         let resource_owner = provider
             .session_resources()
             .map(|owner| owner.new_namespace());
-        self.registry.register_provider(provider)?;
+        self.registry.registry.register_provider(provider)?;
         self.clear_catalog_entry(&id);
         self.replace_resource_owner(&id, resource_owner);
         self.builtin_default_auth.remove(&id);
@@ -792,6 +806,7 @@ impl Models {
         // Catalog-invisible route: a Provider with no models keeps the adapter
         // dispatchable through provider-route entries without listing it.
         self.registry
+            .registry
             .register_provider(Box::new(ChatApiRouteProvider {
                 provider_id: provider_id.clone(),
                 dispatch: Arc::clone(&dispatch),
@@ -1737,6 +1752,7 @@ impl Models {
     pub fn get_model(&self, provider: &str, id: &str) -> Option<ModelInfo> {
         let spec = format!("{provider}:{id}");
         self.registry
+            .registry
             .resolve(&spec)
             .ok()
             .map(|(_, model)| model.clone())
@@ -1760,11 +1776,17 @@ impl Models {
         provider: &str,
         owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
     ) {
-        self.resource_owners.remove(provider);
+        self.registry.resource_owners.remove(provider);
         if let Some(owner) = owner {
             // Earlier revisions stay reachable by cleanup and owned calls.
-            self.all_resource_owners.lock().unwrap().push(owner.clone());
-            self.resource_owners.insert(provider.to_owned(), owner);
+            self.registry
+                .all_resource_owners
+                .lock()
+                .unwrap()
+                .push(owner.clone());
+            self.registry
+                .resource_owners
+                .insert(provider.to_owned(), owner);
         }
     }
 
@@ -1783,7 +1805,7 @@ impl Models {
         });
         FrozenChatBinding {
             record: record.clone(),
-            registration_gate: self.registration_gate.clone(),
+            registration_gate: self.registry.registration_gate.clone(),
             resource_owner,
             route: FrozenRoute::ChatApi {
                 api_id: options.api_id().clone(),
@@ -1794,11 +1816,18 @@ impl Models {
     }
 
     fn provider_binding(&self, record: &ChatModelRecord) -> FrozenChatBinding {
-        let provider = self.registry.get_provider_arc(record.provider_id());
+        let provider = self
+            .registry
+            .registry
+            .get_provider_arc(record.provider_id());
         FrozenChatBinding {
             record: record.clone(),
-            registration_gate: self.registration_gate.clone(),
-            resource_owner: self.resource_owners.get(record.provider_id()).cloned(),
+            registration_gate: self.registry.registration_gate.clone(),
+            resource_owner: self
+                .registry
+                .resource_owners
+                .get(record.provider_id())
+                .cloned(),
             route: FrozenRoute::Provider {
                 provider_id: record.provider_id().to_owned(),
                 provider,
@@ -1947,7 +1976,7 @@ impl Models {
         // Ordinary entries freeze the provider's protocol-default
         // acquisition policy (helper/Codex wires default to zero extra
         // sends; Bedrock freezes its resolved Smithy configuration).
-        let (provider_ref, _model) = self.registry.resolve(spec)?;
+        let (provider_ref, _model) = self.registry.registry.resolve(spec)?;
         let policy = provider_ref.acquisition_policy_default();
         self.prepare_call_with_policy(spec, request, policy).await
     }
@@ -1979,14 +2008,14 @@ impl Models {
         mut request: Request,
         policy: crate::retry::AcquisitionPolicy,
     ) -> Result<PreparedProviderCall, ModelsError> {
-        let (provider_ref, model) = self.registry.resolve(spec)?;
+        let (provider_ref, model) = self.registry.registry.resolve(spec)?;
         request.callbacks = request.callbacks.for_call();
         let provider_id = provider_ref.id().to_owned();
         let model_id = model.id.clone();
         let wire_api = model.wire_api;
-        let resource_owner = self.resource_owners.get(&provider_id).cloned();
+        let resource_owner = self.registry.resource_owners.get(&provider_id).cloned();
         let resources = {
-            let _registration = self.registration_gate.lock().unwrap();
+            let _registration = self.registry.registration_gate.lock().unwrap();
             resource_owner
                 .as_ref()
                 .and_then(|owner| owner.register_call(&request))
@@ -2014,6 +2043,7 @@ impl Models {
             })?
             .clone();
         let provider = self
+            .registry
             .registry
             .get_provider_arc(&provider_id)
             .ok_or_else(|| {
@@ -2071,12 +2101,12 @@ impl Models {
 
     /// Access the underlying registry (for `--list-models`, overrides, etc.).
     pub fn registry(&self) -> &ProviderRegistry {
-        &self.registry
+        &self.registry.registry
     }
 
     /// Return sorted registered provider ids.
     pub fn provider_ids(&self) -> Vec<&str> {
-        let mut ids: BTreeSet<&str> = self.registry.provider_ids().into_iter().collect();
+        let mut ids: BTreeSet<&str> = self.registry.registry.provider_ids().into_iter().collect();
         ids.extend(
             self.chat_apis
                 .values()
@@ -2107,9 +2137,9 @@ impl Models {
         if !self.provider_ids().contains(&provider) {
             return false;
         }
-        self.registry.remove_provider(provider);
+        self.registry.registry.remove_provider(provider);
         self.clear_catalog_entry(provider);
-        self.resource_owners.remove(provider);
+        self.registry.resource_owners.remove(provider);
         self.auth.remove(provider);
         self.compat.remove(provider);
         self.probed.remove(provider);
@@ -2144,11 +2174,12 @@ impl Models {
     /// providers. This performs no authentication or source work.
     pub fn get_models(&self, provider: Option<&str>) -> Vec<ModelInfo> {
         self.registry
+            .registry
             .all_models()
             .into_iter()
             .filter(|(owner, _)| {
                 provider.is_none_or(|wanted| wanted == *owner)
-                    && self.registry.get_provider(owner).is_some()
+                    && self.registry.registry.get_provider(owner).is_some()
             })
             .map(|(_, model)| model.clone())
             .collect()
@@ -2338,13 +2369,13 @@ impl Models {
 
     /// Resolve a `provider:model` spec into provider reference + model info.
     pub fn resolve(&self, spec: &str) -> Result<(&dyn Provider, &ModelInfo), RegistryError> {
-        self.registry.resolve(spec)
+        self.registry.registry.resolve(spec)
     }
 
     /// Validate that `spec` resolves to a provider/model route backed by a live
     /// authentication resolver, without performing authentication I/O.
     pub fn validate_dispatchable_route(&self, spec: &str) -> Result<(), ModelsError> {
-        let (provider, _) = self.registry.resolve(spec)?;
+        let (provider, _) = self.registry.registry.resolve(spec)?;
         let provider_id = provider.id();
         if !self.resolvers.contains_key(provider_id) {
             return Err(ModelsError::RouteNotDispatchable {
@@ -2356,7 +2387,7 @@ impl Models {
 
     /// Query capabilities for a `provider:model` spec.
     pub fn capabilities(&self, spec: &str) -> Result<ModelCapabilities, RegistryError> {
-        self.registry.capabilities(spec)
+        self.registry.registry.capabilities(spec)
     }
 
     /// The auth descriptor associated with a provider, if any.
@@ -2406,8 +2437,8 @@ impl Models {
     + 'static
     + use<> {
         let session = session.map(str::to_owned);
-        let resource_owners = self.all_resource_owners.clone();
-        let registration_gate = self.registration_gate.clone();
+        let resource_owners = self.registry.all_resource_owners.clone();
+        let registration_gate = self.registry.registration_gate.clone();
         async move {
             if session.as_deref() == Some("") {
                 return Err(crate::codex_resources::CleanupError::EmptySessionId);
@@ -2742,6 +2773,7 @@ impl Models {
     ) -> Result<Vec<(String, ModelInfo)>, ModelsError> {
         let ids: Vec<String> = self
             .registry
+            .registry
             .provider_ids()
             .into_iter()
             .filter(|id| provider_id.is_none_or(|wanted| wanted == *id))
@@ -2796,7 +2828,7 @@ impl Models {
             }
         }
         let mut entries = Vec::new();
-        for (provider, model) in self.registry.all_models() {
+        for (provider, model) in self.registry.registry.all_models() {
             if available.iter().any(|id| id == provider)
                 && (!responses_only.contains(provider)
                     || model.wire_api == crate::WireApi::OpenAiResponses)
@@ -3252,7 +3284,7 @@ impl Models {
         }
         publishers.retain(|provider, _| merged.contains_key(provider));
         for id in &selected {
-            let Some(provider) = self.registry.get_provider(id) else {
+            let Some(provider) = self.registry.registry.get_provider(id) else {
                 continue;
             };
             let context = crate::catalog::CatalogRefreshContext {
@@ -3449,7 +3481,7 @@ impl Models {
     ) -> bool {
         match record {
             crate::catalog::CatalogRecord::Chat(_) => {
-                self.registry.get_provider(provider).is_some()
+                self.registry.registry.get_provider(provider).is_some()
             }
             crate::catalog::CatalogRecord::Image(model) => {
                 model.provider_id == provider
@@ -3481,13 +3513,16 @@ impl Models {
     }
 
     fn chat_model_admitted(&self, provider: &str, model: &ModelInfo) -> bool {
-        self.registry.get_provider(provider).is_some_and(|owner| {
-            // This existing pre-auth gate checks the real mapped route graph
-            // without credentials or seed-model membership.
-            owner
-                .validate_simple_options(model, &SimpleOptions::default())
-                .is_ok()
-        })
+        self.registry
+            .registry
+            .get_provider(provider)
+            .is_some_and(|owner| {
+                // This existing pre-auth gate checks the real mapped route graph
+                // without credentials or seed-model membership.
+                owner
+                    .validate_simple_options(model, &SimpleOptions::default())
+                    .is_ok()
+            })
     }
 
     fn apply_selected_catalog_entries(
@@ -3525,7 +3560,7 @@ impl Models {
         let chat = self
             .dynamic_catalogs
             .iter()
-            .filter(|(id, _)| self.registry.get_provider(id).is_some())
+            .filter(|(id, _)| self.registry.registry.get_provider(id).is_some())
             .map(|(id, entry)| {
                 (
                     id.clone(),
@@ -3542,7 +3577,7 @@ impl Models {
                 )
             })
             .collect();
-        self.registry.replace_all_dynamic_catalogs(chat);
+        self.registry.registry.replace_all_dynamic_catalogs(chat);
     }
 
     fn validate_catalog_entry(
@@ -3553,7 +3588,7 @@ impl Models {
         let invalid =
             |message: String| ProviderError::Config(ProviderErrorSummary::sanitized(message));
         crate::catalog::wire::validate_provider_entry(provider, entry).map_err(invalid)?;
-        if self.registry.get_provider(provider).is_none()
+        if self.registry.registry.get_provider(provider).is_none()
             && !self.image_apis.keys().any(|(owner, _)| owner == provider)
             && !self
                 .classifier_apis

@@ -86,6 +86,9 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         ),
     }
     models_lines = len((src / "models.rs").read_text(encoding="utf-8").splitlines())
+    models_owner_modules = matching_edges(
+        [src / "models.rs"], r"struct [A-Za-z_]+Owner\s*\{"
+    )
 
     return {
         "api_provider_edges": api_provider,
@@ -93,6 +96,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         "profile_native_state": profile_native,
         "provider_to_provider_edges": provider_to_provider,
         "models_protocol_branches": models_protocol,
+        "models_owner_modules": models_owner_modules,
         "stream_execution_edges": stream_execution,
         "models_lines": models_lines,
         "counts": {
@@ -101,6 +105,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
             "profile_native_state": len(profile_native),
             "provider_to_provider_edges": len(provider_to_provider),
             "models_protocol_branches": len(models_protocol),
+            "models_owner_modules": len(models_owner_modules),
         },
     }
 
