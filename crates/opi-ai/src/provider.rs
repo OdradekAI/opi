@@ -99,6 +99,11 @@ pub trait Provider: Send + Sync {
     fn model_allowed_after_auth(&self, _model: &ModelInfo, _responses_only: bool) -> bool {
         true
     }
+
+    /// Whether this route owns neutral request preparation completely.
+    fn skips_shared_request_preparation(&self, _model: &ModelInfo) -> bool {
+        false
+    }
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
 

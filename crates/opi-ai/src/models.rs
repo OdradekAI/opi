@@ -2029,7 +2029,7 @@ impl Models {
                 route_model: model_id,
             });
         }
-        compile_prepared_request(&provider_id, model, &mut request)?;
+        compile_prepared_request(provider_ref, model, &mut request)?;
         let resolver = self
             .auth_owner
             .resolvers
@@ -4278,13 +4278,13 @@ fn drive_resolved_call_registered(
 /// thinking resolution, model/context clamping, and capability/wire validation,
 /// without mutating the caller's original `Request` (the compiler owns a copy).
 fn compile_prepared_request(
-    provider_id: &str,
+    provider: &dyn Provider,
     model: &ModelInfo,
     request: &mut Request,
 ) -> Result<(), ProviderError> {
-    if model.wire_api == crate::WireApi::PiMessages {
+    if provider.skips_shared_request_preparation(model) {
         return crate::provider::validate_request_structure_for_model(
-            provider_id,
+            provider.id(),
             Some(model),
             request,
         );
@@ -4368,7 +4368,7 @@ fn compile_prepared_request(
         // Zero numeric budgets retain their wire-specific mapping:
         // Anthropic sends the source default 1024; Bedrock preserves zero.
     }
-    crate::provider::validate_request_for_model(provider_id, Some(model), request)
+    crate::provider::validate_request_for_model(provider.id(), Some(model), request)
 }
 
 /// The one auth resolution shared by advanced preparation and every ordinary
@@ -4828,6 +4828,7 @@ trait ChatApiDispatch: Send + Sync {
         options: &SimpleOptions,
     ) -> Result<(), ProviderError>;
     fn prepare_simple_erased(&self, model: &ModelInfo, request: &mut Request);
+    fn skips_shared_request_preparation(&self, model: &ModelInfo) -> bool;
     fn simple_options_erased(&self, options: &SimpleOptions) -> Box<dyn Any + Send>;
     fn validate_native_erased(
         &self,
@@ -4859,6 +4860,9 @@ impl<O: Send + 'static> ChatApiDispatch for TypedChatApi<O> {
     }
     fn prepare_simple_erased(&self, model: &ModelInfo, request: &mut Request) {
         self.api.prepare_simple_request(model, request)
+    }
+    fn skips_shared_request_preparation(&self, model: &ModelInfo) -> bool {
+        self.api.skips_shared_request_preparation(model)
     }
     fn simple_options_erased(&self, options: &SimpleOptions) -> Box<dyn Any + Send> {
         Box::new(self.api.simple_options_for(options))
@@ -4920,6 +4924,10 @@ impl Provider for ChatApiRouteProvider {
 
     fn prepare_simple_request(&self, model: &ModelInfo, request: &mut Request) {
         self.dispatch.prepare_simple_erased(model, request)
+    }
+
+    fn skips_shared_request_preparation(&self, model: &ModelInfo) -> bool {
+        self.dispatch.skips_shared_request_preparation(model)
     }
     fn id(&self) -> &str {
         &self.provider_id
@@ -5366,12 +5374,8 @@ async fn materialize_chat_call(
             provider
                 .validate_simple_options(binding.record.info(), &simple_options)
                 .map_err(setup_failure)?;
-            compile_prepared_request(
-                binding.record.provider_id(),
-                binding.record.info(),
-                &mut request,
-            )
-            .map_err(setup_failure)?;
+            compile_prepared_request(provider.as_ref(), binding.record.info(), &mut request)
+                .map_err(setup_failure)?;
             let projection = crate::transcript::compile_request_projection(
                 &request,
                 binding.record.provider_id(),

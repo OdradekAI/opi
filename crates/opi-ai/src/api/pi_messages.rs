@@ -877,6 +877,10 @@ impl Provider for PiMessagesRouteContext {
         // adapter perform its own disabled-thinking fallback.
     }
 
+    fn skips_shared_request_preparation(&self, _model: &crate::provider::ModelInfo) -> bool {
+        true
+    }
+
     fn stream_model_resource_attempt(
         &self,
         model: crate::provider::ModelInfo,
@@ -924,6 +928,10 @@ impl Provider for PiMessagesWireAdapter {
 
     fn prepare_simple_request(&self, _model: &crate::provider::ModelInfo, _request: &mut Request) {
         // Preserve Pi's neutral thinking level for adapter-owned validation.
+    }
+
+    fn skips_shared_request_preparation(&self, _model: &crate::provider::ModelInfo) -> bool {
+        true
     }
 
     fn models(&self) -> &[crate::provider::ModelInfo] {
@@ -1390,6 +1398,10 @@ impl crate::api::contract::ChatApi<PiMessagesOptions> for PiMessagesChatApi {
 
     fn prepare_simple_request(&self, _model: &crate::provider::ModelInfo, _request: &mut Request) {
         // Preserve Pi's neutral thinking level for adapter-owned validation.
+    }
+
+    fn skips_shared_request_preparation(&self, _model: &crate::provider::ModelInfo) -> bool {
+        true
     }
 
     fn api_id(&self) -> &crate::types::ApiId {

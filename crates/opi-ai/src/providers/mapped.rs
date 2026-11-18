@@ -224,6 +224,12 @@ impl Provider for ApiMappedProvider {
         !responses_only || model.wire_api == crate::WireApi::OpenAiResponses
     }
 
+    fn skips_shared_request_preparation(&self, model: &ModelInfo) -> bool {
+        self.routes
+            .get(&model.wire_api)
+            .is_some_and(|route| route.skips_shared_request_preparation(model))
+    }
+
     fn prepare_model_call(
         &self,
         model: &mut ModelInfo,

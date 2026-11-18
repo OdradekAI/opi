@@ -47,6 +47,11 @@ pub trait ChatApi<O: Send + 'static>: Send + Sync {
             request.thinking.level = level;
         }
     }
+
+    /// Whether this registered adapter owns neutral request preparation.
+    fn skips_shared_request_preparation(&self, _model: &ModelInfo) -> bool {
+        false
+    }
     /// Validate the fields consumed by this API's native entry before auth.
     /// Native adapters that replace neutral fields validate their own options
     /// and retain the common structural/model checks.

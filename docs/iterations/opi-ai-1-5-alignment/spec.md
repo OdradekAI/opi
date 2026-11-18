@@ -1266,6 +1266,10 @@ Pi chat 回归 42 项通过，`models_protocol_branches` 从 8 降至 7。
 将 `responses_only` model admission 下沉到 Provider contract。auth contract
 108 项与 OAuth store 10 项通过，`models_protocol_branches` 从 7 降至 6。
 
+随后 [#196 Pi preparation policy](issues/196-move-pi-preparation-policy-to-provider.md)
+将 Pi shared-preparation bypass 下沉到 Provider/ChatApi capability。Pi chat
+回归 42 项通过，`models_protocol_branches` 从 6 降至 5。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。
