@@ -600,6 +600,30 @@ impl AuthOwner {
     }
 }
 
+/// Dynamic catalog and publication owner behind the [`Models`] facade.
+///
+/// Store restoration, source registration, publisher retention and
+/// publication generations form one consistency boundary for refresh rounds.
+struct CatalogOwner {
+    models_store: Option<crate::catalog::ModelsStore>,
+    catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
+    catalog_publishers: HashMap<String, crate::catalog::CatalogPublisher>,
+    dynamic_catalogs: HashMap<String, crate::catalog::ModelsStoreEntry>,
+    publication_generation: Arc<()>,
+}
+
+impl CatalogOwner {
+    fn new() -> Self {
+        Self {
+            models_store: None,
+            catalog_sources: Vec::new(),
+            catalog_publishers: HashMap::new(),
+            dynamic_catalogs: HashMap::new(),
+            publication_generation: Arc::new(()),
+        }
+    }
+}
+
 /// A single driver of providers/models that owns provider+model lookup, auth
 /// resolution, compatibility metadata, and every chat-call entry.
 ///
@@ -611,6 +635,7 @@ pub struct Models {
     registry: RegistryOwner,
     auth_owner: AuthOwner,
     compat: HashMap<String, CompatMetadata>,
+    catalog_owner: CatalogOwner,
     /// Redacted, precomputed probe state for [`AuthDescriptor::StoreCredential`]
     /// providers. The secret-free descriptor cannot perform IO, so the async
     /// outer command path probes the store and injects the result here;
@@ -640,29 +665,6 @@ pub struct Models {
     /// handle's API identity after route validation; deferred backends
     /// never enter the chat catalog.
     deferred_apis: BTreeMap<ApiId, DeferredApiRegistration>,
-    /// Injectable ambient-source access consulted on demand by the auth
-    /// management operations. Defaults to the lazy
-    /// [`AmbientAuthContext`](crate::auth::AmbientAuthContext); construction
-    /// and registration never touch it.
-    /// Credential store backing auth management. Each constructor owns an
-    /// independent memory store; callers may replace it explicitly.
-    /// Explicit stores own configuration absence/errors. Only empty default
-    /// memory may consult label-only probe metadata for configuration checks.
-    /// Optional persisted dynamic-catalog store. Attached explicitly via
-    /// [`Models::set_models_store`]; the SDK never creates one or fetches a
-    /// remote catalog by default.
-    models_store: Option<crate::catalog::ModelsStore>,
-    /// Explicitly registered dynamic-catalog sources, fetched only during
-    /// network-enabled refresh rounds in registration order.
-    catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
-    /// Publisher ownership from the same acknowledged revision as each
-    /// dynamic catalog; unrelated sources cannot retain a native snapshot.
-    catalog_publishers: HashMap<String, crate::catalog::CatalogPublisher>,
-    /// Acknowledged catalogs for all three operations; chat is projected into the registry.
-    dynamic_catalogs: HashMap<String, crate::catalog::ModelsStoreEntry>,
-    /// Identity of this instance's current registration/publication owner.
-    /// Captured older identities cannot publish into a replacement owner.
-    publication_generation: Arc<()>,
 }
 
 impl Models {
@@ -674,15 +676,11 @@ impl Models {
             registry: RegistryOwner::new(ProviderRegistry::new()),
             auth_owner: AuthOwner::new(),
             compat: HashMap::new(),
+            catalog_owner: CatalogOwner::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
             deferred_apis: BTreeMap::new(),
-            models_store: None,
-            catalog_sources: Vec::new(),
-            catalog_publishers: HashMap::new(),
-            dynamic_catalogs: HashMap::new(),
-            publication_generation: Arc::new(()),
         }
     }
 
@@ -701,15 +699,11 @@ impl Models {
             registry: RegistryOwner::new(registry),
             auth_owner: AuthOwner::new(),
             compat: HashMap::new(),
+            catalog_owner: CatalogOwner::new(),
             chat_apis: BTreeMap::new(),
             image_apis: BTreeMap::new(),
             classifier_apis: BTreeMap::new(),
             deferred_apis: BTreeMap::new(),
-            models_store: None,
-            catalog_sources: Vec::new(),
-            catalog_publishers: HashMap::new(),
-            dynamic_catalogs: HashMap::new(),
-            publication_generation: Arc::new(()),
         }
     }
 
@@ -859,7 +853,7 @@ impl Models {
         }
         let record = api.complete_record().clone();
         self.auth_owner.sources.insert(provider_id.clone(), source);
-        self.publication_generation = Arc::new(());
+        self.catalog_owner.publication_generation = Arc::new(());
         self.image_apis.insert(
             (provider_id.clone(), api_id.clone()),
             ImageApiRegistration {
@@ -922,7 +916,7 @@ impl Models {
         }
         let record = api.complete_record().clone();
         self.auth_owner.sources.insert(provider_id.clone(), source);
-        self.publication_generation = Arc::new(());
+        self.catalog_owner.publication_generation = Arc::new(());
         self.classifier_apis.insert(
             (provider_id.clone(), api_id.clone()),
             ClassifierApiRegistration {
@@ -994,7 +988,7 @@ impl Models {
         }
         let model_id = api.model_id().to_owned();
         self.auth_owner.sources.insert(provider_id.clone(), source);
-        self.publication_generation = Arc::new(());
+        self.catalog_owner.publication_generation = Arc::new(());
         self.deferred_apis.insert(
             api_id.clone(),
             DeferredApiRegistration {
@@ -1347,7 +1341,7 @@ impl Models {
         provider: &str,
         id: &str,
     ) -> Result<crate::classifier::ClassifierModelRecord, ModelsError> {
-        if let Some(entry) = self.dynamic_catalogs.get(provider) {
+        if let Some(entry) = self.catalog_owner.dynamic_catalogs.get(provider) {
             return entry
                 .models
                 .iter()
@@ -1554,7 +1548,7 @@ impl Models {
                 }
             };
             if available {
-                if let Some(entry) = self.dynamic_catalogs.get(id) {
+                if let Some(entry) = self.catalog_owner.dynamic_catalogs.get(id) {
                     records.extend(entry.models.iter().filter_map(|model| match model {
                         crate::catalog::CatalogRecord::Classifier(record)
                             if &record.api == api_id =>
@@ -1582,7 +1576,7 @@ impl Models {
         provider: &str,
         id: &str,
     ) -> Result<crate::images::ImageModelRecord, ModelsError> {
-        if let Some(entry) = self.dynamic_catalogs.get(provider) {
+        if let Some(entry) = self.catalog_owner.dynamic_catalogs.get(provider) {
             return entry
                 .models
                 .iter()
@@ -2229,7 +2223,7 @@ impl Models {
             .into_iter()
             .filter(|owner| provider.is_none_or(|wanted| wanted == *owner))
         {
-            if let Some(entry) = self.dynamic_catalogs.get(owner) {
+            if let Some(entry) = self.catalog_owner.dynamic_catalogs.get(owner) {
                 records.extend(
                     entry
                         .models
@@ -2994,7 +2988,7 @@ impl Models {
             // is not part of this collection.
             AuthDescriptor::Resolved { .. } => Ok(None),
             AuthDescriptor::StoreCredential { key, .. } => {
-                self.resolve_from_store(provider_id, key).await
+                self.resolve_from_store(provider_id, key.as_str()).await
             }
         }
     }
@@ -3288,30 +3282,31 @@ impl Models {
             }
             return Ok(report);
         }
-        let generation = self.publication_generation.clone();
+        let generation = self.catalog_owner.publication_generation.clone();
         // The complete persisted map remains the merge base even when this
         // instance restores only a subset or knows only some of its owners.
-        let (guard, mut merged, mut publishers) = if let Some(store) = &self.models_store {
-            let (guard, snapshot, publishers) = store.begin_snapshot(Some(token.clone()));
-            self.apply_selected_catalog_entries(&selected, &snapshot.catalogs, &publishers);
-            for id in &selected {
-                if let Some(entry) = self.dynamic_catalogs.get(id) {
-                    report.entries.push(RefreshReportEntry {
-                        id: id.clone(),
-                        outcome: RefreshOutcome::Restored {
-                            models: entry.models.len(),
-                        },
-                    });
+        let (guard, mut merged, mut publishers) =
+            if let Some(store) = &self.catalog_owner.models_store {
+                let (guard, snapshot, publishers) = store.begin_snapshot(Some(token.clone()));
+                self.apply_selected_catalog_entries(&selected, &snapshot.catalogs, &publishers);
+                for id in &selected {
+                    if let Some(entry) = self.catalog_owner.dynamic_catalogs.get(id) {
+                        report.entries.push(RefreshReportEntry {
+                            id: id.clone(),
+                            outcome: RefreshOutcome::Restored {
+                                models: entry.models.len(),
+                            },
+                        });
+                    }
                 }
-            }
-            (Some(guard), snapshot.catalogs, publishers)
-        } else {
-            (
-                None,
-                self.dynamic_catalogs.clone(),
-                self.catalog_publishers.clone(),
-            )
-        };
+                (Some(guard), snapshot.catalogs, publishers)
+            } else {
+                (
+                    None,
+                    self.catalog_owner.dynamic_catalogs.clone(),
+                    self.catalog_owner.catalog_publishers.clone(),
+                )
+            };
         if !options.allow_network {
             report.status = RefreshStatus::OfflineRestored;
             return Ok(report);
@@ -3375,7 +3370,7 @@ impl Models {
                     // A source's ownership is limited to its declared provider
                     // scope; unrelated sources cannot retain this snapshot.
                     let source_owned = matches!(publishers.get(id), Some(crate::catalog::CatalogPublisher::Source {id:source_id})
-                        if self.catalog_sources.iter().any(|source| source.id() == source_id && source.provider_ids().contains(id)));
+                        if self.catalog_owner.catalog_sources.iter().any(|source| source.id() == source_id && source.provider_ids().contains(id)));
                     if !source_owned {
                         merged.remove(id);
                         publishers.remove(id);
@@ -3393,7 +3388,7 @@ impl Models {
                 }),
             }
         }
-        for source in &self.catalog_sources {
+        for source in &self.catalog_owner.catalog_sources {
             let source_selected: BTreeSet<String> = source
                 .provider_ids()
                 .iter()
@@ -3468,7 +3463,7 @@ impl Models {
             report.status = RefreshStatus::Cancelled;
             return Ok(report);
         }
-        if !Arc::ptr_eq(&generation, &self.publication_generation) {
+        if !Arc::ptr_eq(&generation, &self.catalog_owner.publication_generation) {
             report.status = RefreshStatus::Superseded;
             return Ok(report);
         }
@@ -3477,7 +3472,8 @@ impl Models {
                 Ok((commit, publishers)) => {
                     if token.is_cancelled() {
                         report.status = RefreshStatus::Cancelled;
-                    } else if !Arc::ptr_eq(&generation, &self.publication_generation) {
+                    } else if !Arc::ptr_eq(&generation, &self.catalog_owner.publication_generation)
+                    {
                         report.status = RefreshStatus::Superseded;
                     } else {
                         self.apply_selected_catalog_entries(
@@ -3503,9 +3499,9 @@ impl Models {
     }
 
     fn clear_catalog_entry(&mut self, provider: &str) {
-        self.dynamic_catalogs.remove(provider);
-        self.catalog_publishers.remove(provider);
-        self.publication_generation = Arc::new(());
+        self.catalog_owner.dynamic_catalogs.remove(provider);
+        self.catalog_owner.catalog_publishers.remove(provider);
+        self.catalog_owner.publication_generation = Arc::new(());
     }
 
     fn catalog_record_registered(
@@ -3575,23 +3571,27 @@ impl Models {
                 if !acknowledged_empty && entry.models.is_empty() {
                     // A stale nonempty catalog for retired API owners is not an
                     // authoritative empty publication by the replacement owner.
-                    self.dynamic_catalogs.remove(id);
-                    self.catalog_publishers.remove(id);
+                    self.catalog_owner.dynamic_catalogs.remove(id);
+                    self.catalog_owner.catalog_publishers.remove(id);
                     continue;
                 }
-                self.dynamic_catalogs.insert(id.clone(), entry);
+                self.catalog_owner
+                    .dynamic_catalogs
+                    .insert(id.clone(), entry);
                 if let Some(publisher) = publishers.get(id) {
-                    self.catalog_publishers
+                    self.catalog_owner
+                        .catalog_publishers
                         .insert(id.clone(), publisher.clone());
                 } else {
-                    self.catalog_publishers.remove(id);
+                    self.catalog_owner.catalog_publishers.remove(id);
                 }
             } else {
-                self.dynamic_catalogs.remove(id);
-                self.catalog_publishers.remove(id);
+                self.catalog_owner.dynamic_catalogs.remove(id);
+                self.catalog_owner.catalog_publishers.remove(id);
             }
         }
         let chat = self
+            .catalog_owner
             .dynamic_catalogs
             .iter()
             .filter(|(id, _)| self.registry.registry.get_provider(id).is_some())
@@ -3649,8 +3649,8 @@ impl Models {
     /// Attach a persisted dynamic-catalog store. Restores happen at the next
     /// refresh round; nothing is fetched or written here.
     pub fn set_models_store(&mut self, store: crate::catalog::ModelsStore) {
-        self.models_store = Some(store);
-        self.publication_generation = Arc::new(());
+        self.catalog_owner.models_store = Some(store);
+        self.catalog_owner.publication_generation = Arc::new(());
     }
 
     /// Register a dynamic-catalog source fetched during network-enabled refresh
@@ -3659,8 +3659,8 @@ impl Models {
         &mut self,
         source: std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>,
     ) {
-        self.catalog_sources.push(source);
-        self.publication_generation = Arc::new(());
+        self.catalog_owner.catalog_sources.push(source);
+        self.catalog_owner.publication_generation = Arc::new(());
     }
 }
 

@@ -276,3 +276,9 @@ bindings、builtin auth factories、ambient auth context 与 credential store
 收拢到 `Models` 私有的 `AuthOwner`。lib 374 项测试与结构检查继续通过，
 `models_owner_modules` 达到 2；catalog、operation registration 与 prepared
 execution 继续拆分。
+
+2026-11-18 的 #180 把 persisted models store、dynamic catalog sources、
+publisher provenance、acknowledged catalog entries 与 publication generation
+收拢到 `Models` 私有的 `CatalogOwner`。catalog personalization 5 项回归与
+结构检查通过，`models_owner_modules` 达到 3；operation registration 与
+prepared execution 继续拆分。
