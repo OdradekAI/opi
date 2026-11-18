@@ -60,3 +60,12 @@ imports; no behavior assertions change.
 `delete`: root `deferred.rs` and its old public module path.  
 `retain`: value semantics, route validation, cancellation and telemetry
 behavior.
+
+## Lower-contract follow-up
+
+On 2026-11-18 the first G3 slice moved the implementation owner of the
+provider-facing deferred backend seam to `provider::operation`. The public
+`api::contract` names remain re-exported from that lower module, so existing
+callers and adapters keep their accepted paths while `provider.rs` no longer
+imports `api::contract`. `DeferredHandle`, `DeferredError` and
+`RouteMismatchDetail` remain under `types::deferred`.

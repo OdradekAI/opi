@@ -7,13 +7,16 @@ use futures_core::Stream;
 use http::header::{HeaderName, HeaderValue};
 use tokio_util::sync::CancellationToken;
 
-use crate::api::contract::DeferredApi;
 use crate::credential::BoxAuthFuture;
 use crate::message::{InputContent, Message, OutputContent};
 use crate::model_info::ThinkingLevel;
 use crate::stream::AssistantStreamEvent;
 
 pub use crate::model_info::ModelInfo;
+
+pub mod operation;
+
+use operation::{DeferredApi, SimpleOptions};
 
 /// Per-attempt dispatch context for providers that stamp retry-observability
 /// wire headers (task 20.20, `amz-sdk-invocation-id`/`amz-sdk-request`).
@@ -68,7 +71,7 @@ pub trait Provider: Send + Sync {
     fn validate_simple_options(
         &self,
         _model: &ModelInfo,
-        options: &crate::api::contract::SimpleOptions,
+        options: &SimpleOptions,
     ) -> Result<(), ProviderError> {
         options.validate_default()
     }
@@ -149,7 +152,7 @@ pub trait Provider: Send + Sync {
     fn stream_model_resource_attempt(
         &self,
         _model: ModelInfo,
-        _options: crate::api::contract::SimpleOptions,
+        _options: SimpleOptions,
         request: Request,
         auth: crate::auth::ResolvedAuth,
         attempt: AttemptContext,
@@ -380,12 +383,12 @@ pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
 /// Rejects header names that are empty, contain control characters, or match
 /// the provider-managed auth header set. Reserved-name rejection reuses the
 /// single canonical `RESERVED_PROVIDER_HEADERS` list in
-/// `api::shared::headers`
-/// shared with `ProviderHeaders`, so every wire enforces the same gate.
+/// `types::headers` shared with `ProviderHeaders`, so every wire enforces
+/// the same gate.
 ///
 /// Returns `Err(ProviderError::RequestFailed(...))` on the first invalid header.
 pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), ProviderError> {
-    use crate::api::shared::headers::RESERVED_PROVIDER_HEADERS;
+    use crate::types::headers::RESERVED_PROVIDER_HEADERS;
 
     for (name, value) in headers {
         if name.is_empty() {

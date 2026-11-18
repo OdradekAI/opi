@@ -78,7 +78,7 @@ These gates are the progress ledger. Counts are observations from the
 | G0 canonical root paths | #157–#162 complete | No deleted root provider/helper path is recreated; canonical archive consumer stays green |
 | G1 profile native state | 5 profile families remain | `rg` finds no `native_options`, `with_native_options` or API-native option imports under `src/providers` |
 | G2 adapter/profile inversion | 23 textual occurrences / 17 concrete references remain, plus concrete profile-to-profile reuse | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
-| G3 lower contract direction | `provider.rs` imports `api::contract`; `api::contract` imports provider types | `provider`/`types` own the neutral request, prepared dispatch, stream/error inputs; `provider.rs` has no `crate::api` dependency. The remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
+| G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
 | G4 execution/stream ownership | mutual implementation references remain | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
 | G5 Models owners | one 5,335-line implementation | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
 | G6 composition proof | feature/package slices exist | core/Faux, one-provider and full builtins profiles pass structural checks, focused behavior tests and an external archive consumer |
@@ -112,6 +112,9 @@ composition.
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.
+- `python scripts/pi-sdk-conformance/check_architecture_boundaries.py --json`
+  emits the current edge counts, and `--enforce` fails while any forbidden
+  edge remains.
 - A structural check fails on any API adapter concrete-profile import, any
   profile-owned native option, and any lower provider contract import of
   `api::*`.

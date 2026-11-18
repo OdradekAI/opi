@@ -1188,7 +1188,7 @@ profile/native-options 解耦，[#169](issues/169-decouple-openai-codex-profile-
   `ProviderHeaders` 值下沉到 `types::headers`；[#171](issues/171-decouple-azure-openai-profile-options.md)
   完成 Azure profile 的 native-options、selected-record state 与 API 依赖解耦，
   并将 per-call dual-wire dispatch 收拢到 canonical wire adapter；剩余 profiles、
-adapter/profile route context 和 Models 内部拆分仍需有证据地推进。2026-11-18 的结构复核又发现 lower provider contract 反向依赖 `api::contract`，并且 `stream` 与 `execution` 仍互相持有实现类型；这些边界在目录迁移中没有被解决，不能把 #163 的根模块保留审计当作结构收敛。新的 [#172 结构收敛票](issues/172-freeze-layer-graph-and-lower-provider-contract.md) 将工作顺序改为先冻结依赖图、抽取无环 lower contract、分离 stream/execution owner，再继续剩余 profiles 和 Models 内部拆分。进度按 G0–G6 结构门槛、契约回归和外部包消费证据衡量，而不是按新增目录或 issue 数量衡量。完成这些边界后再回到
+adapter/profile route context 和 Models 内部拆分仍需有证据地推进。2026-11-18 的结构复核又发现 lower provider contract 反向依赖 `api::contract`，并且 `stream` 与 `execution` 仍互相持有实现类型；这些边界在目录迁移中没有被解决，不能把 #163 的根模块保留审计当作结构收敛。新的 [#172 结构收敛票](issues/172-freeze-layer-graph-and-lower-provider-contract.md) 将工作顺序改为先冻结依赖图、抽取无环 lower contract、分离 stream/execution owner，再继续剩余 profiles 和 Models 内部拆分。2026-11-18 已完成第一条 G3 切片，将 neutral `SimpleOptions` 与 Deferred backend contracts 移入 `provider::operation`，`api::contract` 保留公开重导出，`provider.rs` 已解除对 `api::*` 的代码依赖。进度按 G0–G6 结构门槛、契约回归和外部包消费证据衡量，而不是按新增目录或 issue 数量衡量。完成这些边界后再回到
 [#143](issues/143-connect-real-deferred-production-route.md)
 及平台、capability-V、资源、性能和 fuzz 验收。
 

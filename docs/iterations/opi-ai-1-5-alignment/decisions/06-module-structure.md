@@ -229,3 +229,11 @@ canonical `transport::codex`；[#170](../issues/170-decouple-anthropic-profile-o
 contract、adapter/profile、stream/execution 和 Models 内部拆分，再
 并行推进 #143 及其余平台、能力、资源、性能和 fuzz 验收。详见
 [#163](../issues/163-audit-root-module-ownership.md)。
+
+2026-11-18 的第一条 G3 切片将 `SimpleOptions`、Deferred call values 和
+`DeferredApi` backend contract 的实现移动到 `provider::operation`。`api::contract`
+继续提供公开重导出，工作区调用方不需要同步改路径；`provider.rs` 不再导入
+`api::*`，请求头保留名校验也改为直接依赖 `types::headers`。该切片只处理
+lower contract 方向，剩余 API adapter/profile route context、profile native
+state、Models 内拆和 stream/execution owner 仍按 [#172](../issues/172-freeze-layer-graph-and-lower-provider-contract.md)
+推进。
