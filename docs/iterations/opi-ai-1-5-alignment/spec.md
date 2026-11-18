@@ -1248,6 +1248,12 @@ Chat/Responses contexts。Azure fixture 46 项通过，当前
 fixture 84 项通过，当前 `api_provider_edges=4`，`api_route_context_edges=8`，
 `provider_to_provider_edges=1`。
 
+随后 [#192 Codex route context](issues/192-invert-codex-route-context.md)
+将 Codex route state 抽取到 `OpenAiCodexRouteContext`，主 wire 与 native
+subadapter 共享 neutral context。Codex fixture 87 项通过，当前
+`api_provider_edges=0`，`api_route_context_edges=11`，
+`provider_to_provider_edges=0`。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

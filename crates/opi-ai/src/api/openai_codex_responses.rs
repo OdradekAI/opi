@@ -15,11 +15,11 @@ use crate::api::shared::openai_responses::{
     ParsedEvent, ResponsesMapper, convert_projected_messages, drain_sse_frames,
 };
 use crate::auth::{AuthScheme, ResolvedAuth};
+use crate::provider::routes::{OPENAI_CODEX_PROVIDER_ID as PROVIDER_ID, OpenAiCodexRouteContext};
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
     TransportPreference,
 };
-use crate::providers::openai_codex::{OpenAiCodexResponsesProvider, PROVIDER_ID};
 use crate::transport::codex as ws_transport;
 
 mod native;
@@ -56,7 +56,7 @@ const MANAGED_HEADERS: &[&str] = &[
     "x-client-request-id",
 ];
 
-impl OpenAiCodexResponsesProvider {
+impl OpenAiCodexRouteContext {
     /// Build the subscription-specific Codex request body.
     pub fn build_request_body(
         &self,
@@ -370,7 +370,7 @@ impl OpenAiCodexResponsesProvider {
     }
 }
 
-impl crate::codex_resources::SessionResourceOwner for OpenAiCodexResponsesProvider {
+impl crate::codex_resources::SessionResourceOwner for OpenAiCodexRouteContext {
     fn new_namespace(&self) -> Arc<dyn crate::codex_resources::SessionResourceOwner> {
         Arc::new(CodexResourceOwner {
             state: Arc::default(),
@@ -472,7 +472,7 @@ fn cleanup_state(
     })
 }
 
-impl Provider for OpenAiCodexResponsesProvider {
+impl Provider for OpenAiCodexRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -544,7 +544,7 @@ impl Provider for OpenAiCodexResponsesProvider {
     }
 }
 
-impl OpenAiCodexResponsesProvider {
+impl OpenAiCodexRouteContext {
     pub(super) fn stream_resource_attempt_with_options(
         &self,
         request: Request,
@@ -890,7 +890,7 @@ async fn stream_sse(
     producer_cancel: CancellationToken,
 ) {
     let failure_snapshot = snapshot.clone();
-    if let Err(error) = OpenAiCodexResponsesProvider::stream_http(
+    if let Err(error) = OpenAiCodexRouteContext::stream_http(
         client,
         resolved,
         wire_facts,

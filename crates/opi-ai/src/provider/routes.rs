@@ -217,6 +217,19 @@ pub struct AzureRouteContext {
     pub(crate) deployment_map: Option<String>,
 }
 
+/// Route state shared by the subscription-specific Codex Responses adapters.
+#[cfg(feature = "provider-openai-codex-responses")]
+#[derive(Clone)]
+pub struct OpenAiCodexRouteContext {
+    pub(crate) base_url: String,
+    pub(crate) models: Vec<ModelInfo>,
+    pub(crate) client: Arc<crate::http::HttpClient>,
+    pub(crate) ws_state: Arc<crate::transport::codex::WsTransportState>,
+}
+
+#[cfg(feature = "provider-openai-codex-responses")]
+pub const OPENAI_CODEX_PROVIDER_ID: &str = "openai-codex";
+
 #[cfg(feature = "provider-azure-openai")]
 const AZURE_API_VERSION: &str = "v1";
 #[cfg(feature = "provider-azure-openai")]

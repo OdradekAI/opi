@@ -332,3 +332,7 @@ route 复用提供了中性上下文。
 2026-11-18 的 #191 将 Azure dual-wire endpoint、deployment 与 client state
 抽取到 `provider::routes::AzureRouteContext`，同时以 neutral Chat/Responses
 contexts 组装两个 wire，profile-to-profile edge 收口为零。
+
+2026-11-18 的 #192 将 Codex endpoint、catalog、HTTP client 与 WebSocket
+resource state 抽取到 `provider::routes::OpenAiCodexRouteContext`，主 wire
+与 native subadapter 共享该 context，API/profile inversion 收口。

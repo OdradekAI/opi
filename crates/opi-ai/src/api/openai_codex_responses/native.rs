@@ -9,11 +9,11 @@ use crate::api::contract::{ChatApi, SimpleOptions, SimpleToolChoice};
 use crate::auth::ResolvedAuth;
 use crate::codex_resources::{CallResourceLease, SessionResourceOwner};
 use crate::model_info::{ModelInfo, ThinkingLevel, WireApi};
+use crate::provider::routes::OpenAiCodexRouteContext;
 use crate::provider::{
     AttemptContext, EventStream, PayloadVariant, Provider, ProviderError, ProviderErrorSummary,
     Request,
 };
-use crate::providers::openai_codex::OpenAiCodexResponsesProvider;
 use crate::types::ApiId;
 
 /// Native effort spelling. Native calls retain the requested level rather
@@ -117,7 +117,7 @@ pub struct CodexOptions {
 /// shared transport owner; native options never mutate a registered provider.
 pub struct CodexChatApi {
     api_id: ApiId,
-    provider: Arc<OpenAiCodexResponsesProvider>,
+    provider: Arc<OpenAiCodexRouteContext>,
     model: ModelInfo,
 }
 
@@ -126,7 +126,7 @@ pub struct CodexChatApi {
 /// dispatch, never to the registered provider route.
 #[derive(Clone)]
 struct ConfiguredCodexProvider {
-    provider: Arc<OpenAiCodexResponsesProvider>,
+    provider: Arc<OpenAiCodexRouteContext>,
     options: CodexOptions,
 }
 
@@ -214,7 +214,7 @@ impl CodexChatApi {
     /// Bind a complete Codex record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<OpenAiCodexResponsesProvider>,
+        provider: Arc<OpenAiCodexRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, ProviderError> {
         if model.wire_api != WireApi::OpenAiCodexResponses

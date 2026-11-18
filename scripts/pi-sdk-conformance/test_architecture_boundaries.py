@@ -19,7 +19,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         report = checker.architecture_report()
         self.assertIn("counts", report)
         self.assertIn("violations", {"violations": checker.violations(report)})
-        self.assertGreater(report["counts"]["api_provider_edges"], 0)
+        self.assertEqual(report["counts"]["api_provider_edges"], 0)
         self.assertGreaterEqual(report["counts"]["api_route_context_edges"], 1)
         self.assertEqual(report["counts"]["profile_native_state"], 0)
         self.assertGreaterEqual(report["counts"]["models_owner_modules"], 1)
