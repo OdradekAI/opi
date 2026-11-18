@@ -52,8 +52,9 @@ serde_json = "1"
 
 ## Feature profile
 
-`catalog-bundled`、`http-transport`、`tls-backend`、`cloud-auth`、`websocket-compression`、`protocol-adapters`、`oauth-store` 与
-`telemetry-tracing` 可独立选择。为保持兼容，`builtins` 包含 catalog、共享
+`catalog-bundled`、`http-transport` 与 `telemetry-tracing` 可独立选择。
+`tls-backend`、`cloud-auth`、`websocket-compression`、`protocol-adapters` 与
+`oauth-store` 也可独立选择。为保持兼容，`builtins` 包含 catalog、共享
 HTTP transport、provider protocol adapters 和 provider OAuth flow，默认配置仍
 保留原有完整 surface。
 
@@ -170,7 +171,7 @@ use opi_ai::CallFailure;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript;
 use opi_ai::{AmbientAuthContext, AuthContext, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;
@@ -301,7 +302,7 @@ use futures_util::StreamExt;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::transcript;
 use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
@@ -421,7 +422,7 @@ use opi_ai::message::{
     ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript::{self, TranscriptContext};
 use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;

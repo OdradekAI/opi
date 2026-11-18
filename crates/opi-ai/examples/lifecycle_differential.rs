@@ -10,11 +10,9 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use futures_util::{FutureExt, Stream, StreamExt};
-use opi_ai::deferred::{
-    DeferredApi, DeferredCancelCall, DeferredError, DeferredFetchCall, DeferredHandle,
-};
+use opi_ai::api::contract::{DeferredApi, DeferredCancelCall, DeferredFetchCall};
 use opi_ai::message::{AssistantContent, AssistantMessage};
-use opi_ai::models::{ApiId, ChatCall, CompatMetadata};
+use opi_ai::models::{ChatCall, CompatMetadata};
 use opi_ai::provider::{
     EventStream, ProviderError, ProviderErrorSummary, Request, extract_diagnostic_error,
 };
@@ -26,6 +24,8 @@ use opi_ai::test_support::{
     CountingAuthResolver, MockProvider, ScriptedDeferredBackend, base_assistant,
     single_route_collection,
 };
+use opi_ai::types::ApiId;
+use opi_ai::types::deferred::{DeferredError, DeferredHandle};
 use opi_ai::{
     AuthProvenanceSource, AuthResolver, AuthScheme, BoxAuthFuture, ChatModelRecord, ModelInfo,
     Models, Provider, ResolvedAuth, StaticAuthResolver,

@@ -66,7 +66,7 @@ TelemetryStore/query/render、数据库后端和完整 exporter 产品是另一�
 
 - AI 所需 schema/typed metrics：`.pi/pi-1.5.0/packages/ai/src/telemetry.ts:1–10,15–105,109–153`；schema 经 `src/models.ts:73` 与 `src/index.ts:30` 公开。typed starter 不做运行时验证：`packages/telemetry/src/index.ts:448–456`；typed metrics 将定义传给 adapter：`src/metrics.ts:129–143`。
 - Store/query/render：`packages/telemetry/src/index.ts:32–94`、`src/render.ts:10`；AI observer 无调用。它们是独立包的额外范围，不自动从 pi-ai 对齐目标推出。
-- No-op：Pi `packages/telemetry/src/noop.ts:4–5` 直接执行 callback；opi `crates/opi-ai/src/telemetry.rs:113–119,139–152` 在 scope/poll/drop 安装无操作 dispatcher。当前 provider 缺省 None 分支与显式 noop 也不同（`openai_chat.rs:3175–3178`）。若保留静音行为，应作为独立后端策略/差异记录。
+- No-op：Pi `packages/telemetry/src/noop.ts:4–5` 直接执行 callback；opi `crates/opi-ai/src/telemetry.rs:113–119,139–152` 在 scope/poll/drop 安装无操作 dispatcher。当前 provider 缺省 None 分支与显式 noop 也不同（`api/openai.rs:3175–3178`）。若保留静音行为，应作为独立后端策略/差异记录。
 - 请求生命周期：`packages/ai/src/models.ts:907–917` 在 setup 前建立 observer；`api/lazy.ts:37–82` 从转发路径观察并等待结果；`telemetry.ts:139–153,192–207` 通过 finish 结算、aborted 保持 ok、排除 pending/deferred poll 的 token/cost。Rust stream 返回不等于请求结算。
 
 ## Answer

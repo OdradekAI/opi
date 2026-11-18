@@ -203,14 +203,14 @@ struct GenerationRegistration {
 #[derive(Clone)]
 pub struct CallResourceLease {
     #[cfg(feature = "provider-openai-codex-responses")]
-    pub(crate) state: Arc<crate::openai_codex_responses::ws_transport::WsTransportState>,
+    pub(crate) state: Arc<crate::transport::codex::WsTransportState>,
     pub(crate) guard: GenerationGuard,
 }
 
 impl CallResourceLease {
     #[cfg(feature = "provider-openai-codex-responses")]
     pub(crate) fn new(
-        state: Arc<crate::openai_codex_responses::ws_transport::WsTransportState>,
+        state: Arc<crate::transport::codex::WsTransportState>,
         request: &crate::provider::Request,
     ) -> Self {
         let guard = state
@@ -304,7 +304,12 @@ impl GenerationGuard {
     #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
     fn activity(&self) -> Option<GenerationActivity> {
         let mut inner = self.0.registry.inner.lock().unwrap();
-        let generation = inner.generations.get_mut(&self.0.id)?;
+        let generation = match inner.generations.get_mut(&self.0.id) {
+            Some(generation) => generation,
+            None => {
+                return None;
+            }
+        };
         if generation.cancel.is_cancelled() {
             return None;
         }

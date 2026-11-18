@@ -765,9 +765,9 @@ mod frozen_target_wire {
         let server = MockServer::start().await;
         mount(&server).await;
 
-        let provider = std::sync::Arc::new(opi_ai::anthropic::AnthropicProvider::new(Some(
-            server.uri(),
-        )));
+        let provider = std::sync::Arc::new(opi_ai::providers::anthropic::AnthropicProvider::new(
+            Some(server.uri()),
+        ));
         let calls = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
         let calls_for_factory = calls.clone();
 
@@ -839,9 +839,9 @@ mod frozen_target_wire {
             .mount(&server)
             .await;
 
-        let provider = std::sync::Arc::new(opi_ai::anthropic::AnthropicProvider::new(Some(
-            server.uri(),
-        )));
+        let provider = std::sync::Arc::new(opi_ai::providers::anthropic::AnthropicProvider::new(
+            Some(server.uri()),
+        ));
 
         let result = super::retry_assistant_call(
             move || {
@@ -917,11 +917,13 @@ mod quota_transport {
             .mount(&server)
             .await;
         let provider: Box<dyn Provider> = if responses {
-            Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
-                Some(server.uri()),
-            ))
+            Box::new(
+                opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(
+                    server.uri(),
+                )),
+            )
         } else {
-            Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+            Box::new(opi_ai::providers::openai::OpenAiChatProvider::new(Some(
                 server.uri(),
             )))
         };
@@ -1070,11 +1072,13 @@ mod quota_transport {
                     .mount(&server)
                     .await;
                 let provider: Box<dyn Provider> = if responses {
-                    Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
-                        Some(server.uri()),
-                    ))
+                    Box::new(
+                        opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(
+                            server.uri(),
+                        )),
+                    )
                 } else {
-                    Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+                    Box::new(opi_ai::providers::openai::OpenAiChatProvider::new(Some(
                         server.uri(),
                     )))
                 };
@@ -1176,11 +1180,15 @@ mod quota_transport {
                 }
             });
             let provider: Box<dyn Provider> = if responses {
-                Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
-                    Some(endpoint),
-                ))
+                Box::new(
+                    opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(
+                        endpoint,
+                    )),
+                )
             } else {
-                Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(endpoint)))
+                Box::new(opi_ai::providers::openai::OpenAiChatProvider::new(Some(
+                    endpoint,
+                )))
             };
             let request = super::frozen_target_wire::logical_request();
             let cancel = request.cancel.clone();
@@ -1211,8 +1219,8 @@ mod quota_transport {
 async fn responses_failed_sse_reaches_the_explicit_whole_call_policy() {
     use futures_util::StreamExt;
     use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
-    use opi_ai::openai_responses::OpenAiResponsesProvider;
     use opi_ai::provider::{Provider, ProviderError};
+    use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
     use opi_ai::retry::{AcquisitionPolicy, AcquisitionSeal, classify_whole_call_retry};
     use opi_ai::stream::AssistantStreamEvent;
     use opi_telemetry::{AttributeValue, SpanStatus, memory::Recorder};

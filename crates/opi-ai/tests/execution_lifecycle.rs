@@ -8,9 +8,8 @@ use std::time::Duration;
 
 use futures_core::Stream;
 use futures_util::StreamExt;
-use opi_ai::deferred::{DeferredApi, DeferredCancelCall, DeferredFetchCall, DeferredHandle};
+use opi_ai::api::contract::{DeferredApi, DeferredCancelCall, DeferredFetchCall};
 use opi_ai::message::AssistantMessage;
-use opi_ai::models::ApiId;
 use opi_ai::provider::{EventStream, ProviderError, ProviderErrorSummary, Request};
 use opi_ai::stream::{
     AssistantStreamEvent, CallFailure, ChatStream, StartedChatStream, StopReason,
@@ -18,6 +17,8 @@ use opi_ai::stream::{
 use opi_ai::test_support::{
     CountingAuthResolver, MockProvider, base_assistant, single_route_collection,
 };
+use opi_ai::types::ApiId;
+use opi_ai::types::deferred::DeferredHandle;
 use opi_ai::{AuthProvenanceSource, BoxAuthFuture, ChatModelRecord, ModelInfo, Models, Provider};
 use opi_telemetry::memory::Recorder;
 use tokio::sync::{mpsc, oneshot};

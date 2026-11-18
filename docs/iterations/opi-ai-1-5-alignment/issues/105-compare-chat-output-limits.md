@@ -45,7 +45,7 @@ response for a serialized limit of one. Otherwise they return a two-token
 reason, response ID and usage for each reply.
 [Pi budget compiler](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/api/simple-options.ts#L15-L55) ·
 [Opi compiler](../../../../crates/opi-ai/src/models.rs#L4102) ·
-[Opi Chat projection](../../../../crates/opi-ai/src/openai_chat.rs#L1849)
+[Opi Chat projection](../../../../crates/opi-ai/src/api/openai.rs#L1849)
 
 ## Source and callers
 

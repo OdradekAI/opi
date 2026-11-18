@@ -15,8 +15,9 @@ use opi_ai::http::HttpClient;
 use opi_ai::images::{
     ImageCostRates, ImageModelRecord, ImageOutputModality, ImagesContext, ImagesStopReason,
 };
-use opi_ai::models::{ApiId, Models};
+use opi_ai::models::Models;
 use opi_ai::provider::{ProviderError, Request};
+use opi_ai::types::ApiId;
 use opi_ai::{
     AuthProvenanceSource, ChatModelRecord, ModelCapabilities, ModelInfo, ModelPricing, WireApi,
 };
@@ -63,7 +64,7 @@ fn registered_collection(store: ModelsStore, endpoint: &str, auth: Arc<FixtureAu
     );
     models
         .register_route(
-            Box::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+            Box::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                 Some(endpoint.into()),
                 "fixture".into(),
                 Default::default(),

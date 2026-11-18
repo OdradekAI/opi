@@ -2,17 +2,24 @@ use std::any::type_name;
 
 #[test]
 fn protocol_adapters_are_available_without_catalog_bundle() {
-    let _ = opi_ai::anthropic::parse_sse_events("");
-    let _ = opi_ai::openai_chat::parse_sse_events("");
-    let _ = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);
-    let _ = opi_ai::openrouter::model_catalog();
-    let _ = opi_ai::mistral::mistral_provider(None);
-    let _ = opi_ai::pi_messages::PiMessagesProvider::new(Some("http://127.0.0.1:1".to_owned()));
-    let _ = opi_ai::bedrock::is_standard_bedrock_endpoint(
+    let _ = opi_ai::api::anthropic::parse_sse_events("");
+    let _ = opi_ai::api::openai::parse_sse_events("");
+    let _ = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);
+    let _ = opi_ai::providers::openrouter::model_catalog();
+    let _ = opi_ai::providers::mistral::mistral_provider(None);
+    let _ = std::any::type_name::<opi_ai::api::pi_messages::PiMessagesOptions>();
+    let _ = opi_ai::providers::pi_messages::PiMessagesProvider::new(Some(
+        "http://127.0.0.1:1".to_owned(),
+    ));
+    let _ = opi_ai::providers::bedrock::is_standard_bedrock_endpoint(
         "https://bedrock-runtime.us-east-1.amazonaws.com",
     );
-    let _ = opi_ai::vertex::VertexProvider::express(None);
-    let _ = opi_ai::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test"));
+    let _ = opi_ai::providers::vertex::VertexProvider::express(None);
+    let _ = opi_ai::providers::azure_openai::resolve_azure_base_url(
+        None,
+        None,
+        Some("https://example.test"),
+    );
 }
 
 #[test]

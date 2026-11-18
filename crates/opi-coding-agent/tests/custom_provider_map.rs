@@ -1288,7 +1288,7 @@ vllm_priority = {priority}
             document["providers"]["acme"]["models"][0]["x-opi"]["compat"]["vllmPriority"].as_i64(),
             Some(priority)
         );
-        let provider = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+        let provider = opi_ai::providers::openai::OpenAiChatProvider::for_route(
             Some("http://127.0.0.1:1".into()),
             "acme".into(),
             Default::default(),

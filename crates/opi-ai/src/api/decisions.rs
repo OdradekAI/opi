@@ -251,11 +251,9 @@ impl ClassifierApi<OpenAiDecisionsOptions> for OpenAiDecisionsApi {
             };
 
             let url = format!("{}/decisions", record.base_url.trim_end_matches('/'));
-            let headers = match crate::ProviderHeaders::default().merge_model_request(
-                &record.headers,
-                &[],
-                &call.extra_headers,
-            ) {
+            let headers = match crate::api::shared::headers::ProviderHeaders::default()
+                .merge_model_request(&record.headers, &[], &call.extra_headers)
+            {
                 Ok(headers) => headers,
                 Err(error) => return failure_from_error(&record, &call, error),
             };

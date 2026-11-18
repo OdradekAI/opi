@@ -1,6 +1,6 @@
 //! Fixed-`O` operation APIs beyond chat.
 //!
-//! [`ImageApi`] and [`ClassifierApi`] mirror [`crate::models::ChatApi`]:
+//! [`ImageApi`] and [`ClassifierApi`] mirror [`crate::api::contract::ChatApi`]:
 //! object-safe adapter traits with one typed native-options type `O`,
 //! registered through [`crate::models::Models::register_image_api`] /
 //! [`crate::models::Models::register_classifier_api`] and dispatched with
@@ -10,6 +10,19 @@
 //! without folding them into the chat wire types: one shared conformance
 //! spans all real classifier protocols through the same seam.
 
+// Protocol-neutral wire mappers are kept below the API layer. The shared
+// namespace also owns the public provider-header value/merge contract; its
+// protocol-specific mappers remain crate-private implementation seams.
+pub mod contract;
+pub mod shared;
+
+#[cfg(feature = "provider-openai-chat")]
+pub mod openai;
+#[cfg(feature = "provider-openai-codex-responses")]
+pub mod openai_codex_responses;
+#[cfg(feature = "provider-openai-responses")]
+pub mod openai_responses;
+
 use std::future::Future;
 use std::pin::Pin;
 
@@ -18,7 +31,7 @@ use crate::classifier::{
     ClassifierCall, ClassifierContext, ClassifierModelRecord, ClassifierResult,
 };
 use crate::images::{ImageModelRecord, ImagesCall, ImagesContext, ImagesResult};
-use crate::models::ApiId;
+use crate::types::ApiId;
 
 /// A boxed image-generation future, the object-safe return of
 /// [`ImageApi::generate_images_prepared`].
@@ -81,6 +94,11 @@ pub trait ImageApi<O: Send + 'static>: Send + Sync {
 /// [`ClassifierApi::classify_prepared`].
 pub type ClassifierFuture<'a> = Pin<Box<dyn Future<Output = ClassifierResult> + Send + 'a>>;
 
+pub use contract::{
+    ChatApi, ChatApiHandle, DeferredApi, DeferredApiHandle, DeferredCancelCall, DeferredFetchCall,
+    NativeOptions, SimpleOptions, SimpleToolChoice,
+};
+
 /// One classifier adapter with its fixed, typed native options type `O`.
 ///
 /// Object-safe: registrations hold `Arc<dyn ClassifierApi<O>>`. The adapter
@@ -136,13 +154,27 @@ pub trait ClassifierApi<O: Send + 'static>: Send + Sync {
     ) -> ClassifierFuture<'a>;
 }
 
+#[cfg(feature = "provider-anthropic")]
+pub mod anthropic;
+#[cfg(feature = "provider-azure-openai")]
+pub mod azure_openai;
+#[cfg(feature = "provider-bedrock")]
+pub mod bedrock;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod cloudflare;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod decisions;
+#[cfg(feature = "provider-gemini")]
+pub mod gemini;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod llama;
+#[cfg(feature = "provider-mistral")]
+pub mod mistral;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod openrouter_images;
+#[cfg(feature = "provider-pi-messages")]
+pub mod pi_messages;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod system_one;
+#[cfg(feature = "provider-vertex")]
+pub mod vertex;

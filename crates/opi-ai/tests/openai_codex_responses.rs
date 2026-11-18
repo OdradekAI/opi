@@ -6,8 +6,8 @@ use opi_ai::http::HttpClient;
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, ToolDef, UserMessage,
 };
-use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason, Usage};
 use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi};
 use secrecy::SecretString;

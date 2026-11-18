@@ -1,21 +1,21 @@
 use std::sync::Arc;
 
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::azure_openai::AzureOpenAIProvider;
-use opi_ai::bedrock::BedrockProvider;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::HttpClient;
 use opi_ai::message::ToolDef;
-use opi_ai::mistral::mistral_provider;
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
-use opi_ai::openrouter::openrouter_provider;
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+use opi_ai::providers::bedrock::BedrockProvider;
+use opi_ai::providers::gemini::GeminiProvider;
+use opi_ai::providers::mistral::mistral_provider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::openrouter::openrouter_provider;
+use opi_ai::providers::vertex::VertexProvider;
 use opi_ai::transcript::{
     Context, SystemMessage, SystemSection, ToolReference, TranscriptContext, normalize_context,
 };
-use opi_ai::vertex::VertexProvider;
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -867,7 +867,7 @@ async fn azure_native_tool_call(
     Result<opi_ai::message::AssistantMessage, opi_ai::stream::CallFailure>,
     Vec<Value>,
 ) {
-    use opi_ai::azure_openai::{AzureOpenAIOptions, AzureOpenAIResponsesChatApi};
+    use opi_ai::api::azure_openai::{AzureOpenAIOptions, AzureOpenAIResponsesChatApi};
     use wiremock::{
         Mock, MockServer, ResponseTemplate,
         matchers::{method, path, query_param},
@@ -1180,7 +1180,7 @@ async fn inline_metadata_call(
                 .await
         }
         InlineMetadataWire::Azure => {
-            use opi_ai::azure_openai::{AzureOpenAIOptions, AzureOpenAIResponsesChatApi};
+            use opi_ai::api::azure_openai::{AzureOpenAIOptions, AzureOpenAIResponsesChatApi};
             let model = model.with_base_url(format!("{}/openai/v1", server.uri()));
             let provider = Arc::new(
                 AzureOpenAIProvider::for_records(

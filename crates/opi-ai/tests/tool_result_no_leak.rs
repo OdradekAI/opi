@@ -8,15 +8,15 @@
 //! `GeminiProvider`, so the four builders below cover every chat-style path.
 //! Bedrock's converse body is exercised by `bedrock_fixtures.rs`.
 
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
     ToolResultMessage, UserMessage,
 };
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::gemini::GeminiProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use tokio_util::sync::CancellationToken;
 
 fn request_with_truncated_tool_result() -> Request {

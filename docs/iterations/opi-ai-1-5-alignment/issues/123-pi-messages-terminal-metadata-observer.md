@@ -32,7 +32,9 @@ request.
 ## Implementation and caller map
 
 `PiMessagesSseMapper` now maps `responseModel` in the shared `done`/`error`
-branch. The public producer is `PiMessagesProvider::stream_prepared`, with
+branch. The canonical wire adapter is `crate::api::pi_messages`, while the
+Radius profile is `crate::providers::pi_messages`. The public producer is
+`PiMessagesProvider::stream_prepared`, with
 `stream_simple`, `PiMessagesChatApi`, `Models::{stream_simple,complete_simple,
 stream_direct,complete_direct}` and the existing Agent result/cost/transcript
 consumers using the same terminal message. `RequestCallbacks::on_raw` remains

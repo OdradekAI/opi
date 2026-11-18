@@ -941,7 +941,7 @@ mod cancellation_tests {
         let cancel = CancellationToken::new();
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         let snapshot = super::ProducerSnapshot::default();
-        let mut mapper = crate::anthropic::AnthropicMapper::new();
+        let mut mapper = crate::api::anthropic::AnthropicMapper::new();
         mapper.set_snapshot(snapshot.clone());
         // Silent facts belong to the producer even when no public snapshot
         // was queued. A task barrier ensures they exist before cancellation.
@@ -951,9 +951,9 @@ mod cancellation_tests {
             let _keep_sender = tx;
             assert!(
                 mapper
-                    .process(crate::anthropic::AnthropicEvent::MessageDelta {
+                    .process(crate::api::anthropic::AnthropicEvent::MessageDelta {
                         stop_reason: None,
-                        usage: crate::anthropic::AnthropicUsageDelta {
+                        usage: crate::api::anthropic::AnthropicUsageDelta {
                             input_tokens: Some(10),
                             output_tokens: Some(7),
                             ..Default::default()
@@ -963,9 +963,9 @@ mod cancellation_tests {
             );
             assert!(
                 mapper
-                    .process(crate::anthropic::AnthropicEvent::ContentBlockStart {
+                    .process(crate::api::anthropic::AnthropicEvent::ContentBlockStart {
                         index: 0,
-                        block_type: crate::anthropic::ContentBlockType::RedactedThinking {
+                        block_type: crate::api::anthropic::ContentBlockType::RedactedThinking {
                             data: "opaque-artificial".into(),
                         },
                     })

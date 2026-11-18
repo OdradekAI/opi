@@ -359,8 +359,8 @@ mod acquisition {
     use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
     use opi_ai::http::HttpClientBuilder;
     use opi_ai::message::AssistantMessage;
-    use opi_ai::openai_chat::OpenAiChatProvider;
     use opi_ai::provider::{CacheRetention, EventStream, Provider, ProviderError};
+    use opi_ai::providers::openai::OpenAiChatProvider;
     use opi_ai::retry::{AcquisitionPolicy, AcquisitionSeal};
     use opi_ai::stream::ChatStream;
     use opi_ai::test_support::{MockProvider, MockResponse, text_response};
@@ -1103,13 +1103,13 @@ mod acquisition {
 // ---------------------------------------------------------------------------
 
 mod smithy {
-    use opi_ai::bedrock::retry::{
+    use opi_ai::provider::{ProviderError, ProviderErrorSummary};
+    use opi_ai::retry::smithy::{
         AdaptiveRateLimiter, AwsRetryConfigError, MaxAttemptsSource, ScopedRetryInputs,
         SmithyClock, SmithyErrorClass, SmithyRetryConfig, SmithyRetryMode, SmithyRetryQuota,
         classify_service_failure, parse_smithy_retry_after, read_profile_retry_entries,
         resolve_smithy_retry_config, smithy_backoff_delay_ms, smithy_capacity_cost,
     };
-    use opi_ai::provider::{ProviderError, ProviderErrorSummary};
     use opi_ai::retry::{AcquisitionPolicy, RetrySourcePolicy};
 
     #[test]
@@ -1271,7 +1271,7 @@ mod smithy {
     #[test]
     fn transport_classification_maps_timeout_network_rate_limited() {
         use SmithyErrorClass::*;
-        use opi_ai::bedrock::retry::classify_attempt_failure;
+        use opi_ai::retry::smithy::classify_attempt_failure;
         assert_eq!(classify_attempt_failure(&ProviderError::Timeout), Transient);
         assert_eq!(classify_attempt_failure(&sanitized_network()), Transient);
         assert_eq!(

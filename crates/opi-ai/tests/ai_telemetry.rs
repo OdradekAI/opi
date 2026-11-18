@@ -1,8 +1,9 @@
 use futures_util::stream;
+use opi_ai::api::contract::SimpleOptions;
+use opi_ai::api::contract::{DeferredCancelCall, DeferredFetchCall};
 use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
-use opi_ai::deferred::{DeferredCancelCall, DeferredFetchCall};
 use opi_ai::message::ToolCall;
-use opi_ai::models::{ChatModelRecord, SimpleOptions};
+use opi_ai::models::ChatModelRecord;
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::retry::AcquisitionPolicy;
 use opi_ai::stream::{AssistantStreamEvent, ChatStream, StopReason};

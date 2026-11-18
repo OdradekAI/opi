@@ -622,11 +622,9 @@ async fn classify_llama(
         root: llama_server_root(&record.base_url),
         model: record.id.clone(),
         bearer,
-        extra_headers: match crate::ProviderHeaders::default().merge_model_request(
-            &record.headers,
-            &[],
-            &call.extra_headers,
-        ) {
+        extra_headers: match crate::api::shared::headers::ProviderHeaders::default()
+            .merge_model_request(&record.headers, &[], &call.extra_headers)
+        {
             Ok(headers) => headers,
             Err(error) => {
                 return ClassifierResult::failure(

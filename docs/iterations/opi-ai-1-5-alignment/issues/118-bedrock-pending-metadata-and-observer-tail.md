@@ -38,7 +38,7 @@ before mapping each frame, so the change covers:
 
 | Seam | Owner/caller | Evidence |
 | --- | --- | --- |
-| Event stream mapper | BedrockProvider::stream_from_fixture / BedrockMapper | crates/opi-ai/src/bedrock/mod.rs, tests/bedrock_pending_metadata.rs |
+| Event stream mapper | BedrockProvider::stream_from_fixture / BedrockMapper | crates/opi-ai/src/api/bedrock.rs, tests/bedrock_pending_metadata.rs |
 | Production HTTP adapter | BedrockProvider::stream_prepared and Converse stream route | tests/bedrock_fixtures.rs |
 | Public Chat | Models::stream_simple/complete_simple and direct prepared callers | shared provider stream contract |
 | Agent/session | existing Chat result, cost and transcript persistence consumers | existing Agent/session suites; no new ownership seam |

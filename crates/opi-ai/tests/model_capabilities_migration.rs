@@ -2,8 +2,8 @@
 //! ModelCapabilities is non-exhaustive with constructor/builder, cache fields
 //! exist, and Anthropic built-in models have cache capabilities enabled.
 
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::provider::Provider;
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::registry::{ModelCapabilities, ProviderRegistry};
 
 // ---------------------------------------------------------------------------

@@ -73,7 +73,7 @@ pub(crate) fn validate_classifier_request(
             ),
         ));
     }
-    crate::ProviderHeaders::default()
+    crate::api::shared::headers::ProviderHeaders::default()
         .merge_model_request(&record.headers, &[], &call.extra_headers)
         .map(|_| ())
 }

@@ -41,9 +41,10 @@ are interpreted only on an OpenRouter route.
 - Pi source: `.pi/pi-1.5.0/packages/ai/src/utils/openrouter-cost.ts:1-56`.
 - Pi source: `.pi/pi-1.5.0/packages/ai/src/api/openai-completions.ts:1510-1553`.
 - Rust implementation: `crates/opi-ai/src/types/usage.rs`,
-  `crates/opi-ai/src/types/model.rs`, `crates/opi-ai/src/openrouter.rs`.
-- Provider paths: `crates/opi-ai/src/openai_chat.rs`,
-  `crates/opi-ai/src/anthropic.rs`.
+  `crates/opi-ai/src/types/model.rs`, `crates/opi-ai/src/providers/openrouter.rs`.
+- Provider paths: `crates/opi-ai/src/api/openai.rs`,
+  `crates/opi-ai/src/providers/anthropic.rs` and
+  `crates/opi-ai/src/api/anthropic.rs`.
 - Regressions: `crates/opi-ai/tests/usage_cost.rs`,
   `crates/opi-ai/tests/openrouter_cost.rs`,
   `crates/opi-ai/tests/ai_telemetry.rs::provider_reported_cost_drives_telemetry_total`.

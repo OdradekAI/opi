@@ -3,14 +3,15 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
+use opi_ai::api::openai_codex_responses::{
+    CodexChatApi, CodexOptions, CodexReasoningEffort, CodexReasoningSummary, CodexServiceTier,
+    CodexTextVerbosity, CodexToolChoice,
+};
 use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_codex_responses::{
-    CodexChatApi, CodexOptions, CodexReasoningEffort, CodexReasoningSummary, CodexServiceTier,
-    CodexTextVerbosity, CodexToolChoice, OpenAiCodexResponsesProvider,
-};
 use opi_ai::provider::{ProviderError, Request, ThinkingConfig, TransportPreference};
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
 use opi_ai::{
     AuthProvenanceSource, ChatModelRecord, ModelCapabilities, ModelInfo, Models, SimpleOptions,
     SimpleToolChoice, ThinkingLevel, ThinkingLevelMapping, WireApi,

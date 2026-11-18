@@ -48,15 +48,13 @@ use futures_util::future::BoxFuture;
 use futures_util::{Stream, StreamExt, stream};
 use tokio_util::sync::CancellationToken;
 
+use crate::api::contract::{CallOptions, ChatApi, ChatApiHandle, NativeOptions, SimpleOptions};
+use crate::api::contract::{DeferredApi, DeferredApiHandle, DeferredCancelCall, DeferredFetchCall};
 use crate::auth::{
     AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme,
     AwsSigV4Credentials, ResolvedAuth,
 };
 use crate::credential::{Credential, CredentialSource, CredentialStore, CredentialStoreError};
-use crate::deferred::{
-    DeferredApi, DeferredApiHandle, DeferredCancelCall, DeferredError, DeferredFetchCall,
-    DeferredHandle,
-};
 use crate::message::AssistantMessage;
 use crate::mutation::{MutationError, MutationOutcome};
 use crate::provider::{
@@ -64,7 +62,9 @@ use crate::provider::{
 };
 use crate::registry::{ModelCapabilities, ProviderRegistry, RegistrationError, RegistryError};
 use crate::stream::{AssistantStreamEvent, CallFailure, ChatStream};
-pub use crate::types::{ApiId, ChatModelRecord};
+use crate::types::ApiId;
+pub use crate::types::ChatModelRecord;
+use crate::types::deferred::{DeferredError, DeferredHandle};
 
 // ---------------------------------------------------------------------------
 // SecretKey — redacted credential value
@@ -814,10 +814,7 @@ impl Models {
                 resource_owner,
             },
         );
-        Ok(ChatApiHandle {
-            api_id,
-            _options: PhantomData,
-        })
+        Ok(ChatApiHandle::new(api_id))
     }
 
     /// Register one typed image adapter (task 20.45): the fixed-`O`
@@ -986,6 +983,92 @@ impl Models {
             },
         );
         Ok(DeferredApiHandle::new(api_id))
+    }
+
+    /// Submit one explicit asynchronous generation through a registered
+    /// deferred backend. The request is validated against the backend's fixed
+    /// provider/model identity before authentication; no implicit polling or
+    /// ordinary-route fallback occurs.
+    pub fn stream_deferred_submit(
+        &self,
+        api: &ApiId,
+        request: Request,
+    ) -> crate::stream::ChatStream {
+        let Some(registration) = self.deferred_apis.get(api) else {
+            let api = api.as_str().to_owned();
+            return crate::stream::ChatStream::new(Box::pin(stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(ProviderError::Config(
+                    ProviderErrorSummary::sanitized(format!(
+                        "no deferred backend is registered for API '{}'",
+                        api
+                    )),
+                ))
+            })));
+        };
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model)| model)
+            .unwrap_or(&request.model);
+        if request
+            .model
+            .split_once(':')
+            .is_some_and(|(provider, _)| provider != registration.provider_id)
+            || model_id != registration.model_id
+        {
+            let expected = format!("{}:{}", registration.provider_id, registration.model_id);
+            return crate::stream::ChatStream::new(Box::pin(stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(ProviderError::Config(
+                    ProviderErrorSummary::sanitized(format!(
+                        "deferred submit request model does not match registered route '{expected}'"
+                    )),
+                ))
+            })));
+        }
+        let options = registration.dispatch.default_options_erased();
+        let resolver = Arc::clone(&registration.resolver);
+        let dispatch = Arc::clone(&registration.dispatch);
+        let telemetry_context = request.telemetry_context.clone();
+        let stream = stream::once(async move {
+            match resolver.resolve().await {
+                Ok(auth) => {
+                    let mut events = dispatch.submit_erased(request, options.as_ref(), auth);
+                    let mut collected = Vec::new();
+                    while let Some(event) = events.next().await {
+                        collected.push(event);
+                    }
+                    collected
+                }
+                Err(error) => vec![Err(error)],
+            }
+        })
+        .flat_map(stream::iter);
+        let stream = Box::pin(stream) as EventStream;
+        let attributes = crate::telemetry::AiRequestAttributes::new(
+            registration.provider_id.clone(),
+            registration.model_id.clone(),
+            registration.api_id.as_str().to_owned(),
+        );
+        crate::stream::ChatStream::new_with_telemetry(
+            stream,
+            telemetry_context.as_ref(),
+            attributes,
+        )
+        .with_requested_route(
+            registration.provider_id.clone(),
+            registration.model_id.clone(),
+        )
+    }
+
+    /// Submit one explicit asynchronous generation and await its first
+    /// normalized outcome. A successful result has `StopReason::Deferred` and
+    /// a serializable handle; a provider may also complete immediately.
+    pub async fn submit_deferred(
+        &self,
+        api: &ApiId,
+        request: Request,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.stream_deferred_submit(api, request).result().await
     }
 
     /// Validate the handle against its exact API and provider registration,
@@ -4251,216 +4334,6 @@ fn setup_config_error(message: String) -> ProviderError {
 }
 
 // ---------------------------------------------------------------------------
-// Typed custom chat API registration (AIR-045)
-// ---------------------------------------------------------------------------
-
-/// Neutral options accepted by [`Models::stream_simple`] /
-/// [`Models::complete_simple`].
-///
-/// `Some` fields override the corresponding request fields before the shared
-/// compiler runs; `None` leaves the request untouched.
-#[derive(Debug, Clone, Default, PartialEq)]
-pub struct SimpleOptions {
-    /// Explicit tool selection on an adapter that admits this neutral option.
-    pub tool_choice: Option<SimpleToolChoice>,
-    /// Sampling temperature override.
-    pub temperature: Option<f64>,
-    /// Output-limit override.
-    pub max_tokens: Option<u64>,
-    /// Per-call timeout override.
-    pub timeout: Option<Duration>,
-    /// Stop-sequence override (applied when non-empty).
-    pub stop_sequences: Vec<String>,
-}
-
-/// Neutral tool selection. Adapter-specific forced-tool forms remain native.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SimpleToolChoice {
-    Auto,
-    None,
-}
-
-impl SimpleOptions {
-    pub(crate) fn validate_default(&self) -> Result<(), ProviderError> {
-        if self.tool_choice.is_some() {
-            return Err(ProviderError::UnsupportedCapability(
-                ProviderErrorSummary::attested_static(
-                    "this adapter does not support the neutral tool selection option",
-                ),
-            ));
-        }
-        Ok(())
-    }
-    fn apply(&self, request: &mut Request) {
-        if self.temperature.is_some() {
-            request.temperature = self.temperature;
-        }
-        if self.max_tokens.is_some() {
-            request.max_tokens = self.max_tokens;
-        }
-        if self.timeout.is_some() {
-            request.timeout = self.timeout;
-        }
-        if !self.stop_sequences.is_empty() {
-            request.stop_sequences = self.stop_sequences.clone();
-        }
-    }
-}
-
-/// One custom chat adapter with its fixed, typed native options type `O`.
-///
-/// Object-safe: registrations hold `Arc<dyn ChatApi<O>>`. The adapter owns
-/// its exact [`ApiId`], its provider route identity, its complete record, and
-/// the neutral-to-native mapping used by the simple entry.
-pub trait ChatApi<O: Send + 'static>: Send + Sync {
-    /// Validate explicit neutral options before auth. Adapters opt in only to
-    /// options their simple mapping consumes; defaults reject new wire inputs.
-    fn validate_simple_options(
-        &self,
-        _model: &ModelInfo,
-        options: &SimpleOptions,
-    ) -> Result<(), ProviderError> {
-        options.validate_default()
-    }
-    /// Validate the fields consumed by this API's native entry before auth.
-    /// Native adapters that replace neutral fields validate their own options
-    /// and retain the common structural/model checks.
-    fn validate_native_request(
-        &self,
-        model: &ModelInfo,
-        request: &Request,
-        _options: &O,
-    ) -> Result<(), ProviderError> {
-        crate::provider::validate_request_for_model(self.provider_id(), Some(model), request)
-    }
-
-    /// Dispatch with the caller's frozen complete record. The default keeps
-    /// existing custom adapters source-compatible; metadata-aware adapters
-    /// consume this record rather than their construction-time exemplar.
-    fn stream_model_resource_prepared(
-        &self,
-        _model: ModelInfo,
-        request: Request,
-        options: O,
-        auth: ResolvedAuth,
-        resources: Option<crate::codex_resources::CallResourceLease>,
-    ) -> EventStream {
-        self.stream_resource_prepared(request, options, auth, resources)
-    }
-
-    /// Map the neutral options consumed by this registered API.
-    fn simple_options_for(&self, _options: &SimpleOptions) -> O {
-        self.simple_options()
-    }
-
-    /// Instance-owned connection resources, when this API has a transport pool.
-    fn session_resources(&self) -> Option<&dyn crate::codex_resources::SessionResourceOwner> {
-        None
-    }
-
-    /// Consume a generation registered before authentication. Resource-owning
-    /// APIs forward it to their real adapter; other APIs use the ordinary seam.
-    fn stream_resource_prepared(
-        &self,
-        request: Request,
-        options: O,
-        auth: ResolvedAuth,
-        _resources: Option<crate::codex_resources::CallResourceLease>,
-    ) -> EventStream {
-        self.stream_prepared(request, options, auth)
-    }
-    /// The exact API identity this adapter serves.
-    fn api_id(&self) -> &ApiId;
-
-    /// The provider route this adapter owns.
-    fn provider_id(&self) -> &str;
-
-    /// The adapter's complete record. Serves documentation and callers that
-    /// need a starting record; it never enters catalog reads.
-    fn complete_record(&self) -> ModelInfo;
-
-    /// The adapter's neutral options mapping used by [`Models::stream_simple`].
-    fn simple_options(&self) -> O;
-
-    /// Dispatch one prepared request with resolved authentication. This is
-    /// the same prepared-auth seam [`Provider::stream_prepared`] uses; the
-    /// adapter consumes the supplied [`ResolvedAuth`] directly and never
-    /// consults a resolver.
-    fn stream_prepared(&self, request: Request, options: O, auth: ResolvedAuth) -> EventStream;
-}
-
-/// Handle to one registered [`ChatApi`]; the only way to create its typed
-/// [`NativeOptions`].
-///
-/// The handle carries no instance capability: its options stay valid for any
-/// [`Models`] with a compatible registration (same exact [`ApiId`], same
-/// options type), and a compatible registration upsert never invalidates
-/// them.
-pub struct ChatApiHandle<O: Send + 'static> {
-    api_id: ApiId,
-    _options: PhantomData<fn() -> O>,
-}
-
-impl<O: Send + 'static> ChatApiHandle<O> {
-    /// The exact API identity of the registration that produced this handle.
-    pub fn api_id(&self) -> &ApiId {
-        &self.api_id
-    }
-
-    /// Wrap one options value, tagging it with the registration's API/type
-    /// identity so portability and mismatch checks stay truthful.
-    pub fn options(&self, value: O) -> NativeOptions<O> {
-        NativeOptions {
-            api_id: self.api_id.clone(),
-            type_id: TypeId::of::<O>(),
-            value,
-        }
-    }
-}
-
-/// Typed native options created by a [`ChatApiHandle`].
-///
-/// Carries the API/type tag of its creating registration, not an instance
-/// capability: the same value may cross [`Models`] instances whose
-/// registrations share the exact [`ApiId`] and options type.
-pub struct NativeOptions<O: Send + 'static> {
-    api_id: ApiId,
-    type_id: TypeId,
-    value: O,
-}
-
-impl<O: Send + 'static> NativeOptions<O> {
-    /// The exact API identity tagged at creation.
-    pub fn api_id(&self) -> &ApiId {
-        &self.api_id
-    }
-
-    fn into_call_options(self) -> CallOptions {
-        CallOptions::Native {
-            type_id: self.type_id,
-            value: Box::new(self.value),
-        }
-    }
-}
-
-impl<O: Send + 'static + Clone> Clone for NativeOptions<O> {
-    fn clone(&self) -> Self {
-        Self {
-            api_id: self.api_id.clone(),
-            type_id: self.type_id,
-            value: self.value.clone(),
-        }
-    }
-}
-
-impl<O: Send + 'static> std::fmt::Debug for NativeOptions<O> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("NativeOptions")
-            .field("api_id", &self.api_id)
-            .finish()
-    }
-}
-
 /// Handle to one registered [`crate::api::ImageApi`]; the only way to create
 /// its typed [`ImageNativeOptions`].
 ///
@@ -4685,6 +4558,12 @@ struct DeferredApiRegistration {
 /// Object-safe dispatch over one fixed deferred options type.
 trait DeferredApiDispatch: Send + Sync {
     fn default_options_erased(&self) -> Box<dyn std::any::Any + Send>;
+    fn submit_erased(
+        &self,
+        request: Request,
+        options: &(dyn std::any::Any + Send),
+        auth: crate::auth::ResolvedAuth,
+    ) -> crate::provider::EventStream;
     fn fetch_erased(
         &self,
         handle: &DeferredHandle,
@@ -4708,6 +4587,18 @@ struct TypedDeferredApi<O: Send + 'static> {
 impl<O: Send + 'static> DeferredApiDispatch for TypedDeferredApi<O> {
     fn default_options_erased(&self) -> Box<dyn std::any::Any + Send> {
         Box::new(self.api.default_options())
+    }
+
+    fn submit_erased(
+        &self,
+        request: Request,
+        options: &(dyn std::any::Any + Send),
+        auth: crate::auth::ResolvedAuth,
+    ) -> crate::provider::EventStream {
+        let Some(options) = options.downcast_ref::<O>() else {
+            unreachable!("dispatch only receives its registration's options type")
+        };
+        self.api.submit_prepared(request, options, auth)
     }
 
     fn fetch_erased(
@@ -5009,14 +4900,6 @@ impl AuthPlan {
             source,
         }
     }
-}
-
-enum CallOptions {
-    Simple(SimpleOptions),
-    Native {
-        type_id: TypeId,
-        value: Box<dyn Any + Send>,
-    },
 }
 
 /// The consumer of one ordinary [`Models`] chat call: native, simple, or direct.

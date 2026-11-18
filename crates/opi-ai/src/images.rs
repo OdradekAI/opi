@@ -55,7 +55,7 @@ pub(crate) fn validate_image_request(
     record: &ImageModelRecord,
     call: &ImagesCall,
 ) -> Result<(), ProviderError> {
-    crate::ProviderHeaders::default()
+    crate::api::shared::headers::ProviderHeaders::default()
         .merge_model_request(&record.headers, &[], &call.extra_headers)
         .map(|_| ())
 }

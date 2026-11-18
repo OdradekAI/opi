@@ -33,7 +33,7 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
 use opi_ai::http::{HttpClient, HttpClientBuilder, TlsOptions};
 use opi_ai::models::Models;
-use opi_ai::openai_chat::OpenAiChatProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
 use opi_ai::stream::ChatStream;
 use opi_ai::transcript;

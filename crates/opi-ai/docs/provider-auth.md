@@ -56,17 +56,17 @@ the historical provider collection and credential factories.
 
 | Module | Provider id | Backend |
 |--------|-------------|---------|
-| `anthropic` | `anthropic` | Anthropic Messages streaming |
-| `openai_chat` | `openai` | OpenAI Chat Completions streaming |
-| `openai_responses` | `openai-responses` | OpenAI Responses streaming |
-| `openai_codex_responses` | `openai-codex` | Subscription-specific OpenAI Codex Responses streaming |
-| `api_mapped` | caller-defined | One provider identity/catalog routed across checked concrete wires |
-| `openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
-| `mistral` | `mistral` | OpenAI-compatible Mistral profile |
-| `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
-| `bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 or Bearer authentication |
-| `azure_openai` | `azure` | Azure OpenAI deployment-specific Chat **and** Responses wires |
-| `vertex` | `vertex` | Google Vertex AI Gemini streaming |
+| `providers::anthropic` + `api::anthropic` | `anthropic` | Anthropic Messages streaming |
+| `providers::openai` + `api::openai` | `openai` | OpenAI Chat Completions streaming |
+| `providers::openai_responses` + `api::openai_responses` | `openai-responses` | OpenAI Responses streaming |
+| `providers::openai_codex` + `api::openai_codex_responses` | `openai-codex` | Subscription-specific OpenAI Codex Responses streaming |
+| `providers::mapped` | caller-defined | One provider identity/catalog routed across checked concrete wires |
+| `providers::openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
+| `providers::mistral` + `api::mistral` | `mistral` | OpenAI-compatible Mistral profile |
+| `providers::gemini` + `api::gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
+| `providers::bedrock` + `api::bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 or Bearer authentication |
+| `providers::azure_openai` + `api::azure_openai` | `azure` | Azure OpenAI deployment-specific Chat **and** Responses wires |
+| `providers::vertex` + `api::vertex` | `vertex` | Google Vertex AI Gemini streaming |
 
 Built-in model lists are finite and intended for capability checks and model
 listing. Site-specific models, fine-tuned models, and deployments should be
@@ -91,7 +91,7 @@ Radius flows. `opi-coding-agent` supplies the OS-keychain store and terminal
 presenter; SDK flows use the injected presenter and never launch a browser.
 
 `WireApi` gives every `ModelInfo` one exact request wire, while public
-`ApiMappedProvider` exposes one provider identity and catalog and validates
+`providers::mapped::ApiMappedProvider` exposes one provider identity and catalog and validates
 its `WireApi -> Provider` routes before dispatch. One mapped provider shares
 one lazy `AuthResolver` across all routes; provider/model metadata chooses the
 route before network IO. Unknown models, missing routes, and wire/compatibility
@@ -643,7 +643,7 @@ dynamic radius). Legacy opi ids (`gemini`, `vertex`, `bedrock`,
 `openai-responses`) are not aliases — the table never registers them.
 Provider display names include Amazon Bedrock, Anthropic and Google Vertex AI;
 credential labels remain separate metadata.
-`provider_collection::register_builtin` turns the table plus the bundled
+`providers::collection::register_builtin` turns the table plus the bundled
 catalog into registered providers over the completed wire adapters: one
 mapped provider per profile (Azure and google-vertex stay config-gated with
 typed skip reasons, bedrock registers lookup-only behind its AWS-chain

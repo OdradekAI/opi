@@ -4,12 +4,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use opi_ai::api::openai::OpenAiCompletionsChatApi;
 use opi_ai::auth::AuthResolver;
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
 use opi_ai::model_info::ChatStoreField;
-use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider, OpenAiCompletionsChatApi};
 use opi_ai::provider::{CacheRetention, ProviderError, Request};
+use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
 use opi_ai::stream::Usage;
 use opi_ai::test_support::{base_assistant, resolved_bearer_auth};
 use opi_ai::transcript::{Context, normalize_context};

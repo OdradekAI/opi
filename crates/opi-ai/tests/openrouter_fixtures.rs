@@ -5,10 +5,10 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
-use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
+use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_telemetry::memory::Recorder;
@@ -18,7 +18,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create an OpenRouter-configured provider.
 fn openrouter_provider() -> OpenAiChatProvider {
-    opi_ai::openrouter::openrouter_provider(None)
+    opi_ai::providers::openrouter::openrouter_provider(None)
 }
 
 /// Helper: collect stream events asynchronously.
@@ -330,7 +330,8 @@ fn openrouter_has_model_list() {
 
 #[test]
 fn openrouter_custom_base_url() {
-    let provider = opi_ai::openrouter::openrouter_provider(Some("https://custom.proxy".into()));
+    let provider =
+        opi_ai::providers::openrouter::openrouter_provider(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "openrouter");
 }
 
@@ -367,7 +368,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::openrouter::openrouter_provider(Some(server.uri()));
+    let provider = opi_ai::providers::openrouter::openrouter_provider(Some(server.uri()));
     let request = Request {
         projection: Default::default(),
         transport: Default::default(),
@@ -535,13 +536,13 @@ fn openrouter_profile_inherits_shared_compat_flags() {
 async fn stream_cancellation_aborts_before_completion() {
     // The CancellationToken is threaded into the OpenRouter adapter's HTTP
     // body-stream loop (inherited from the shared OpenAI-compat path; see
-    // openai_chat.rs `cancel.cancelled()` select arm). Cancelling while the
+    // api/openai.rs `cancel.cancelled()` select arm). Cancelling while the
     // stream is open must terminate it before the delayed terminal chunk
     // arrives, proving the inherited adapter path observes cancellation.
     let server = spawn_stalled_openrouter_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openrouter::openrouter_provider(Some(server));
+    let provider = opi_ai::providers::openrouter::openrouter_provider(Some(server));
     let request = Request {
         projection: Default::default(),
         transport: Default::default(),
@@ -616,7 +617,8 @@ use opi_ai::images::{
     ImageCostRates, ImageModelRecord, ImageOutputModality, ImagesCall, ImagesContext, ImagesInput,
     ImagesOutput, ImagesStopReason,
 };
-use opi_ai::models::{ApiId, Models};
+use opi_ai::models::Models;
+use opi_ai::types::ApiId;
 fn image_cost_rates() -> ImageCostRates {
     ImageCostRates {
         input: 3.0,
@@ -2459,7 +2461,7 @@ async fn custom_chat_replacement_keeps_its_resolver_after_store_attachment() {
     let mut models = Models::new();
     let context: Arc<dyn opi_ai::auth::AuthContext> = Arc::new(NoAmbient);
     models.set_auth_context(context.clone());
-    opi_ai::provider_collection::register_builtin(
+    opi_ai::providers::collection::register_builtin(
         &mut models,
         context,
         Arc::new(HttpClient::new()),
@@ -2473,8 +2475,10 @@ async fn custom_chat_replacement_keeps_its_resolver_after_store_attachment() {
         opi_ai::ModelCapabilities::new(8192, 1024).with_streaming(true),
     )
     .with_base_url(server.uri());
-    let api = opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
-        Arc::new(opi_ai::openrouter::openrouter_provider(Some(server.uri()))),
+    let api = opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+        Arc::new(opi_ai::providers::openrouter::openrouter_provider(Some(
+            server.uri(),
+        ))),
         info.clone(),
     )
     .unwrap();

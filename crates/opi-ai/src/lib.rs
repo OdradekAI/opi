@@ -21,15 +21,8 @@
     )
 )]
 
-#[cfg(feature = "provider-anthropic")]
-pub mod anthropic;
 pub mod api;
-pub mod api_mapped;
 pub mod auth;
-#[cfg(feature = "provider-azure-openai")]
-pub mod azure_openai;
-#[cfg(feature = "provider-bedrock")]
-pub mod bedrock;
 pub mod callbacks;
 pub mod cancel;
 pub mod catalog;
@@ -38,9 +31,6 @@ pub mod codex_resources;
 pub mod constrained_sampling;
 pub mod context;
 pub use auth::credential;
-pub mod deferred;
-#[cfg(feature = "provider-protocol-common")]
-mod endpoint;
 mod execution;
 // Private upstream crypto substrate (RDF-23): explicit-provider key
 // admission/signing owner over unmodified crates.io rustls/aws-lc-rs.
@@ -49,37 +39,15 @@ mod execution;
 #[allow(dead_code)]
 #[cfg(feature = "tls-backend")]
 mod crypto;
-#[cfg(feature = "provider-gemini")]
-pub mod gemini;
 #[cfg(feature = "http-transport")]
 pub mod http;
 pub mod identity;
 pub mod images;
 pub use types::message;
-#[cfg(feature = "provider-mistral")]
-pub mod mistral;
 pub use types::model as model_info;
 pub mod models;
 pub use auth::mutation;
-#[cfg(feature = "provider-openai-chat")]
-pub mod openai_chat;
-#[cfg(feature = "provider-openai-codex-responses")]
-pub mod openai_codex_responses;
-#[cfg(feature = "provider-openai-responses")]
-pub mod openai_responses;
-#[cfg(feature = "provider-openai-responses-shared")]
-mod openai_responses_shared;
-#[cfg(feature = "provider-openrouter")]
-pub mod openrouter;
-#[cfg(feature = "provider-openrouter-usage")]
-mod openrouter_usage;
-#[cfg(feature = "provider-pi-messages")]
-pub mod pi_messages;
 pub mod provider;
-#[cfg(feature = "builtins")]
-pub mod provider_collection;
-pub mod provider_env;
-pub mod provider_headers;
 #[cfg(feature = "provider-protocol-common")]
 pub mod providers;
 pub mod registry;
@@ -93,18 +61,22 @@ pub mod streaming_json;
 pub mod telemetry;
 #[doc(hidden)]
 pub mod test_support;
-#[cfg(feature = "provider-protocol-common")]
-mod text_decode;
 pub mod time;
 #[cfg(feature = "tls-backend")]
 pub mod tls;
 pub mod transcript;
-#[cfg(feature = "provider-vertex")]
-pub mod vertex;
+#[cfg(feature = "provider-openai-codex-responses")]
+pub(crate) mod transport;
 #[cfg(feature = "websocket-compression")]
 pub mod ws;
 
-pub use api_mapped::{ApiMapError, ApiMappedProvider};
+pub use api::contract::{
+    ChatApi, ChatApiHandle, DeferredApi, DeferredApiHandle, DeferredCancelCall, DeferredFetchCall,
+    NativeOptions, SimpleOptions, SimpleToolChoice,
+};
+pub use api::shared::headers::{
+    ProviderHeaders, ProviderHeadersError, merge_provider_header_sources,
+};
 pub use auth::{
     AmbientAuthContext, AuthContext, AuthContextError, AuthFallback, AuthInvalidPolicy,
     AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, AwsCredentialSource,
@@ -125,10 +97,9 @@ pub use model_info::{
     calculate_cost_tiered, resolve_sampling_params,
 };
 pub use models::{
-    ApiId, AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatApi,
-    ChatApiHandle, ChatCall, ChatModelRecord, CompatMetadata, Models, ModelsError,
-    ModelsRefreshOptions, NativeOptions, PreparedProviderCall, PreparedRoute, RefreshOutcome,
-    RefreshReport, RefreshReportEntry, RefreshStatus, SecretKey, SimpleOptions, SimpleToolChoice,
+    AuthCheck, AuthCheckKind, AuthDescriptor, AuthResolutionOverrides, ChatCall, ChatModelRecord,
+    CompatMetadata, Models, ModelsError, ModelsRefreshOptions, PreparedProviderCall, PreparedRoute,
+    RefreshOutcome, RefreshReport, RefreshReportEntry, RefreshStatus, SecretKey,
 };
 pub use mutation::{
     BarrierEntry, BarrierReport, CredentialMutationOp, CredentialRevision, CredentialUpdateOp,
@@ -137,13 +108,14 @@ pub use mutation::{
     MutationReceipt, MutationSlot, MutationSlotView, delete_mutation, write_mutation,
 };
 pub use provider::Provider;
-pub use provider_headers::{ProviderHeaders, ProviderHeadersError};
 pub use registry::{ProviderRegistry, RegistrationError, RegistryError};
 pub use stream::AssistantStreamEvent;
 pub use stream::{
     CallFailure, ChatStream, CostBreakdown, CumulativeUsage, Pricing, ServiceTier,
     StartedChatStream, calculate_cost,
 };
+pub use types::ApiId;
+pub use types::deferred::{DeferredError, DeferredHandle, RouteMismatchDetail};
 
 pub mod errors;
 pub mod types;

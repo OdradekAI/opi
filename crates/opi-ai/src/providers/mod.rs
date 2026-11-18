@@ -4,13 +4,39 @@
 //! factories in the pi 1.3.0 capability inventory: canonical ids, display
 //! names, default base URLs, env API-key names, auth schemes, OAuth
 //! availability and endpoint semantics. The table is data only —
-//! construction lives in [`crate::provider_collection`], which turns these
+//! construction lives in [`crate::providers::collection`], which turns these
 //! profiles plus the bundled catalog into registered providers over the
 //! existing wire adapters. Legacy opi ids (`gemini`, `vertex`, `bedrock`,
 //! `openai-responses`) are not aliases here: canonical ids replace them and
 //! the coding agent migrates references at its boundary.
 
 use crate::auth::AuthScheme;
+
+#[cfg(feature = "provider-anthropic")]
+pub mod anthropic;
+#[cfg(feature = "provider-azure-openai")]
+pub mod azure_openai;
+#[cfg(feature = "provider-bedrock")]
+pub mod bedrock;
+#[cfg(feature = "builtins")]
+pub mod collection;
+#[cfg(feature = "provider-gemini")]
+pub mod gemini;
+pub mod mapped;
+#[cfg(feature = "provider-mistral")]
+pub mod mistral;
+#[cfg(feature = "provider-openai-chat")]
+pub mod openai;
+#[cfg(feature = "provider-openai-codex-responses")]
+pub mod openai_codex;
+#[cfg(feature = "provider-openai-responses")]
+pub mod openai_responses;
+#[cfg(feature = "provider-openrouter")]
+pub mod openrouter;
+#[cfg(feature = "provider-pi-messages")]
+pub mod pi_messages;
+#[cfg(feature = "provider-vertex")]
+pub mod vertex;
 
 /// Endpoint semantics of one builtin profile.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

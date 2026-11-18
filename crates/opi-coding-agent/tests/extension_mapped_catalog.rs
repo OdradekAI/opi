@@ -4,7 +4,8 @@ use opi_agent::extension::{Extension, ExtensionRegistry};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
-use opi_ai::{ApiMappedProvider, ModelCapabilities, ModelInfo, WireApi};
+use opi_ai::providers::mapped::ApiMappedProvider;
+use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use tokio_util::sync::CancellationToken;
 
 struct ModelExtension;

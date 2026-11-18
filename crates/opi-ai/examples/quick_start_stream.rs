@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::transcript;
 use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};

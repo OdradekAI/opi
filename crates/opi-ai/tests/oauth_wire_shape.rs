@@ -28,17 +28,18 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::api::shared::headers::ProviderHeaders;
 use opi_ai::auth::{AuthInvalidPolicy, AuthProvenance, AuthScheme, ResolvedAuth};
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::mistral::mistral_provider;
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
-use opi_ai::openrouter::openrouter_provider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
-use opi_ai::{ModelCapabilities, ModelInfo, ProviderHeaders, WireApi};
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::mistral::mistral_provider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::openrouter::openrouter_provider;
+use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;

@@ -91,6 +91,7 @@ pub async fn agent_loop(
 pub struct AgentLoopResult {
     pub(crate) state: NextTurnState,
     pub(crate) committed_state: Option<NextTurnState>,
+    pub(crate) pending_deferred: Option<opi_ai::types::deferred::DeferredHandle>,
     pub(crate) identities: crate::evidence::IdentityAllocator,
     pub(crate) evidence_health: crate::evidence::EvidenceHealth,
     pub(crate) terminal_outcome: crate::evidence::TerminalOutcome,
@@ -102,6 +103,7 @@ impl std::fmt::Debug for AgentLoopResult {
         formatter
             .debug_struct("AgentLoopResult")
             .field("state", &self.state)
+            .field("pending_deferred", &self.pending_deferred)
             .field("error", &self.error)
             .field("terminal_outcome", &self.terminal_outcome)
             .field("evidence_health", &self.evidence_health)
@@ -120,6 +122,15 @@ impl AgentLoopResult {
     /// Undelivered selected queue input is excluded from this rollback baseline.
     pub fn committed_state(&self) -> Option<&NextTurnState> {
         self.committed_state.as_ref()
+    }
+
+    /// Handle retained when the provider submitted an asynchronous response.
+    ///
+    /// A pending Deferred terminal is a successful, resumable turn. The
+    /// caller owns the next explicit fetch or cancel operation; the loop never
+    /// polls or cancels it implicitly.
+    pub fn pending_deferred(&self) -> Option<&opi_ai::types::deferred::DeferredHandle> {
+        self.pending_deferred.as_ref()
     }
 
     /// The owning execution error, if the loop did not complete normally.
@@ -235,6 +246,7 @@ async fn run_operation(
     let run = identities.run_id();
     let mut state = context.state;
     let mut committed_state = None;
+    let mut pending_deferred = None;
     let mut pending_preparation = Vec::new();
     let mut preparation_calls = Vec::new();
     let mut preparation_uncertainty = None;
@@ -278,6 +290,7 @@ async fn run_operation(
             return AgentLoopResult {
                 state,
                 committed_state,
+                pending_deferred,
                 identities,
                 evidence_health,
                 terminal_outcome: preparation_uncertainty
@@ -297,6 +310,7 @@ async fn run_operation(
             return AgentLoopResult {
                 state,
                 committed_state,
+                pending_deferred,
                 identities,
                 evidence_health,
                 terminal_outcome: crate::evidence::TerminalOutcome::Success,
@@ -722,6 +736,34 @@ async fn run_operation(
                                         ),
                                     Err(_) => {}
                                 }
+                            }
+
+                            // Deferred submission is a successful terminal with
+                            // caller-owned follow-up work. Retain the handle and
+                            // end this invocation before tool dispatch, queue
+                            // polling, or hook-driven continuation can treat the
+                            // placeholder as an ordinary completed answer.
+                            if let AgentMessage::Llm(Message::Assistant(assistant)) = &agent_msg
+                                && assistant.stop_reason == opi_ai::stream::StopReason::Deferred
+                            {
+                                let Some(handle) = assistant.deferred.as_deref().cloned() else {
+                                    emit_agent_end(&events, &state.context);
+                                    finish_with_error!(AgentError::ProviderProtocol {
+                                        detail: opi_ai::provider::ProviderErrorSummary::sanitized(
+                                            "deferred terminal did not carry a handle",
+                                        ),
+                                    });
+                                };
+                                pending_deferred = Some(handle);
+                                emit_public_event(
+                                    &events,
+                                    AgentEvent::TurnEnd {
+                                        message: agent_msg.clone(),
+                                        tool_results: vec![],
+                                    },
+                                );
+                                emit_agent_end(&events, &state.context);
+                                finish_success!();
                             }
 
                             let content = match &agent_msg {

@@ -51,8 +51,8 @@ continues reading the same socket with its existing request and retry
 budget. This deliberately changes the result and callbacks for a frame
 that identifies the previous response. The identity rule follows the
 frozen schema's ID semantics and the observed continuation corruption.
-[Socket continuation](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L835) ·
-[Terminal guard](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L1161)
+[Socket continuation](../../../../crates/opi-ai/src/transport/codex.rs#L835) ·
+[Terminal guard](../../../../crates/opi-ai/src/transport/codex.rs#L1161)
 
 The other 24 pairs preserve baseline Opi behavior. They cover normal
 completion, repeated IDs with and without `response.created`, a new

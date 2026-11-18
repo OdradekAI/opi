@@ -9,9 +9,9 @@ use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
+use opi_ai::providers::vertex::VertexProvider;
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
-use opi_ai::vertex::VertexProvider;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -81,7 +81,7 @@ async fn node5_five_native_wires_reject_known_image_input_before_auth() {
         }
     }
     async fn check<O: Send + 'static>(
-        api: Arc<dyn opi_ai::models::ChatApi<O>>,
+        api: Arc<dyn opi_ai::api::contract::ChatApi<O>>,
         model: opi_ai::provider::ModelInfo,
         options: O,
     ) {
@@ -140,20 +140,22 @@ async fn node5_five_native_wires_reject_known_image_input_before_auth() {
     let google = model(opi_ai::WireApi::GoogleGenerativeAi);
     check(
         Arc::new(
-            opi_ai::gemini::GoogleGenerativeAiChatApi::new(
-                Arc::new(opi_ai::gemini::GeminiProvider::new(Some(server.uri()))),
+            opi_ai::api::gemini::GoogleGenerativeAiChatApi::new(
+                Arc::new(opi_ai::providers::gemini::GeminiProvider::new(Some(
+                    server.uri(),
+                ))),
                 google.clone(),
             )
             .unwrap(),
         ),
         google,
-        opi_ai::gemini::GoogleGenerativeAiOptions::default(),
+        opi_ai::api::gemini::GoogleGenerativeAiOptions::default(),
     )
     .await;
     let vertex = model(opi_ai::WireApi::GoogleVertex);
     check(
         Arc::new(
-            opi_ai::vertex::GoogleVertexChatApi::new(
+            opi_ai::api::vertex::GoogleVertexChatApi::new(
                 Arc::new(VertexProvider::new(
                     "fixture-project".into(),
                     "fixture-location".into(),
@@ -164,14 +166,14 @@ async fn node5_five_native_wires_reject_known_image_input_before_auth() {
             .unwrap(),
         ),
         vertex,
-        opi_ai::vertex::GoogleVertexOptions::default(),
+        opi_ai::api::vertex::GoogleVertexOptions::default(),
     )
     .await;
     let bedrock = model(opi_ai::WireApi::BedrockConverseStream);
     check(
         Arc::new(
-            opi_ai::bedrock::BedrockConverseStreamChatApi::new(
-                Arc::new(opi_ai::bedrock::BedrockProvider::new(
+            opi_ai::api::bedrock::BedrockConverseStreamChatApi::new(
+                Arc::new(opi_ai::providers::bedrock::BedrockProvider::new(
                     Some(server.uri()),
                     Arc::new(opi_ai::http::HttpClient::new()),
                 )),
@@ -180,33 +182,33 @@ async fn node5_five_native_wires_reject_known_image_input_before_auth() {
             .unwrap(),
         ),
         bedrock,
-        opi_ai::bedrock::BedrockOptions::default(),
+        opi_ai::api::bedrock::BedrockOptions::default(),
     )
     .await;
     let mistral = model(opi_ai::WireApi::MistralConversations);
     check(
         Arc::new(
-            opi_ai::mistral::MistralConversationsChatApi::new(
-                opi_ai::mistral::MistralConversationsProvider::new(Some(server.uri())),
+            opi_ai::api::mistral::MistralConversationsChatApi::new(
+                opi_ai::providers::mistral::MistralConversationsProvider::new(Some(server.uri())),
                 mistral.clone(),
             )
             .unwrap(),
         ),
         mistral,
-        opi_ai::mistral::MistralOptions::default(),
+        opi_ai::api::mistral::MistralOptions::default(),
     )
     .await;
     let pi = model(opi_ai::WireApi::PiMessages);
     check(
         Arc::new(
-            opi_ai::pi_messages::PiMessagesChatApi::new(
-                opi_ai::pi_messages::PiMessagesProvider::new(Some(server.uri())),
+            opi_ai::api::pi_messages::PiMessagesChatApi::new(
+                opi_ai::providers::pi_messages::PiMessagesProvider::new(Some(server.uri())),
                 pi.clone(),
             )
             .unwrap(),
         ),
         pi,
-        opi_ai::pi_messages::PiMessagesOptions::native(None, None, false),
+        opi_ai::api::pi_messages::PiMessagesOptions::native(None, None, false),
     )
     .await;
     assert!(server.received_requests().await.unwrap().is_empty());
@@ -216,7 +218,7 @@ mod builtin_routes {
     use super::*;
     use opi_ai::auth::{AuthContext, AuthContextError};
     use opi_ai::message::{AssistantContent, ToolResultMessage};
-    use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
     use opi_ai::{ChatModelRecord, Models};
     use std::collections::BTreeMap;
     use std::sync::{Arc, Mutex};
@@ -361,7 +363,7 @@ mod builtin_routes {
                 let handle = models
                     .register_chat_api(
                         Arc::new(
-                            opi_ai::vertex::GoogleVertexChatApi::new(
+                            opi_ai::api::vertex::GoogleVertexChatApi::new(
                                 Arc::new(provider.clone()),
                                 model.clone(),
                             )
@@ -375,7 +377,7 @@ mod builtin_routes {
                     .complete(
                         ChatModelRecord::new("vertex", model.clone()),
                         lifecycle_text_request(),
-                        handle.options(opi_ai::vertex::GoogleVertexOptions::default()),
+                        handle.options(opi_ai::api::vertex::GoogleVertexOptions::default()),
                     )
                     .await
                     .unwrap();
@@ -2044,9 +2046,9 @@ mod adc_vertex {
     use opi_ai::auth::adc::native::{AdcAuthSelection, AdcNativeOwner, ReqwestAdcTransport};
     use opi_ai::auth::{AdcCredentialSource, AuthContext, AuthContextError, AuthResolver};
     use opi_ai::models::CompatMetadata;
+    use opi_ai::providers::vertex::VertexProvider;
     use opi_ai::registry::ProviderRegistry;
     use opi_ai::stream::AssistantStreamEvent;
-    use opi_ai::vertex::VertexProvider;
     use opi_ai::{AuthProvenance, AuthProvenanceSource, BoxAuthFuture, Models, ResolvedAuth};
     use secrecy::ExposeSecret;
     use std::collections::HashMap;
@@ -2623,8 +2625,8 @@ mod adc_external {
         AdcCredentialSource, AuthContext, AuthContextError, AuthResolver, ExternalAccountSupplier,
     };
     use opi_ai::models::CompatMetadata;
+    use opi_ai::providers::vertex::VertexProvider;
     use opi_ai::registry::ProviderRegistry;
-    use opi_ai::vertex::VertexProvider;
     use opi_ai::{AuthProvenance, AuthProvenanceSource, BoxAuthFuture, Models, ResolvedAuth};
     use secrecy::ExposeSecret;
     use std::collections::HashMap;
@@ -3076,8 +3078,8 @@ mod adc_impersonation {
         AdcCredentialSource, AuthContext, AuthContextError, AuthResolver, ExternalAccountSupplier,
     };
     use opi_ai::models::CompatMetadata;
+    use opi_ai::providers::vertex::VertexProvider;
     use opi_ai::registry::ProviderRegistry;
-    use opi_ai::vertex::VertexProvider;
     use opi_ai::{AuthProvenance, AuthProvenanceSource, BoxAuthFuture, Models, ResolvedAuth};
     use secrecy::ExposeSecret;
     use std::collections::HashMap;
@@ -3770,13 +3772,13 @@ mod constrained_guard_tests {
 
 mod google_41 {
     use super::*;
-    use opi_ai::gemini::{
-        GeminiProvider, GoogleApiThinkingLevel, GoogleThinkingConfig, GoogleToolChoice,
-    };
+    use opi_ai::api::contract::{SimpleOptions, SimpleToolChoice};
+    use opi_ai::api::gemini::{GoogleApiThinkingLevel, GoogleThinkingConfig, GoogleToolChoice};
+    use opi_ai::api::vertex::{GoogleVertexChatApi, GoogleVertexOptions};
     use opi_ai::model_info::{ModelCapabilities, ModelInfo, ThinkingLevel};
-    use opi_ai::models::{ChatModelRecord, Models, SimpleOptions, SimpleToolChoice};
+    use opi_ai::models::{ChatModelRecord, Models};
+    use opi_ai::providers::gemini::GeminiProvider;
     use opi_ai::stream::StopReason;
-    use opi_ai::vertex::{GoogleVertexChatApi, GoogleVertexOptions};
     use secrecy::SecretString;
     use std::sync::Arc;
     use wiremock::matchers::{body_partial_json, method, path, query_param};

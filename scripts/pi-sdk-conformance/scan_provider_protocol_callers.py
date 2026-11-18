@@ -17,12 +17,16 @@ OWNERS = {
     "provider-bedrock": ["bedrock"],
     "provider-gemini": ["gemini"],
     "provider-mistral": ["mistral"],
-    "provider-openai-chat": ["openai_chat"],
+    "provider-openai-chat": ["openai"],
     "provider-openai-codex-responses": ["openai_codex_responses", "codex_resources"],
-    "provider-openai-responses": ["openai_responses", "openai_responses_shared"],
+    "provider-openai-responses": ["openai_responses"],
     "provider-openrouter": ["openrouter"],
     "provider-pi-messages": ["pi_messages"],
     "provider-vertex": ["vertex"],
+}
+
+CANONICAL_SHARED = {
+    "provider-openai-responses": ["api::shared::openai_responses"],
 }
 
 
@@ -52,9 +56,15 @@ def main() -> int:
     candidates = files()
     inventory["files_scanned"] = len(candidates)
     for owner, modules in OWNERS.items():
+        module_pattern = "|".join(re.escape(module) for module in modules)
         patterns = [
-            re.compile(rf"(?:crate|opi_ai)::(?:{'|'.join(re.escape(module) for module in modules)})(?:::|\b)")
+            re.compile(rf"(?:crate|opi_ai)::(?:{module_pattern})(?:::|\b)"),
+            re.compile(rf"(?:crate|opi_ai)::(?:api|providers)::(?:{module_pattern})(?:::|\b)"),
         ]
+        shared_pattern = CANONICAL_SHARED.get(owner, [])
+        if shared_pattern:
+            shared_pattern = "|".join(re.escape(module) for module in shared_pattern)
+            patterns.append(re.compile(rf"(?:crate|opi_ai)::(?:{shared_pattern})(?:::|\b)"))
         matches = []
         for path in candidates:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -73,9 +83,13 @@ def main() -> int:
             "interpretation": "direct module references are provider-owned; provider_collection and builtins profile registration remain compatibility-group callers",
         }
     shared = {
-        "provider_collection": ["crates/opi-ai/src/provider_collection.rs"],
-        "shared_openai_chat": ["crates/opi-ai/src/openai_chat.rs", "crates/opi-ai/src/mistral.rs", "crates/opi-ai/src/openrouter.rs", "crates/opi-ai/src/azure_openai.rs"],
-        "shared_gemini": ["crates/opi-ai/src/gemini.rs", "crates/opi-ai/src/vertex.rs"],
+        "provider_collection": ["crates/opi-ai/src/providers/collection.rs"],
+        "shared_openai_chat": ["crates/opi-ai/src/api/openai.rs", "crates/opi-ai/src/providers/openai.rs", "crates/opi-ai/src/api/mistral.rs", "crates/opi-ai/src/providers/mistral.rs", "crates/opi-ai/src/providers/openrouter.rs", "crates/opi-ai/src/api/azure_openai.rs"],
+        "shared_openai_responses": ["crates/opi-ai/src/api/shared/openai_responses.rs", "crates/opi-ai/src/api/openai_responses.rs", "crates/opi-ai/src/providers/openai_responses.rs", "crates/opi-ai/src/api/azure_openai.rs", "crates/opi-ai/src/api/openai_codex_responses.rs", "crates/opi-ai/src/providers/openai_codex.rs"],
+        "shared_openrouter_usage": ["crates/opi-ai/src/api/shared/openrouter_usage.rs", "crates/opi-ai/src/api/anthropic.rs", "crates/opi-ai/src/api/openai.rs", "crates/opi-ai/src/providers/openrouter.rs"],
+        "bedrock_profile_and_wire": ["crates/opi-ai/src/providers/bedrock.rs", "crates/opi-ai/src/api/bedrock.rs", "crates/opi-ai/src/api/bedrock/event_stream.rs", "crates/opi-ai/src/providers/collection.rs"],
+        "mapped_provider_composition": ["crates/opi-ai/src/providers/mapped.rs", "crates/opi-ai/src/providers/collection.rs", "crates/opi-coding-agent/src/provider_factory.rs"],
+        "shared_gemini": ["crates/opi-ai/src/api/gemini.rs", "crates/opi-ai/src/providers/gemini.rs", "crates/opi-ai/src/api/vertex.rs", "crates/opi-ai/src/providers/vertex.rs"],
         "shared_resource_contract": ["crates/opi-ai/src/codex_resources.rs", "crates/opi-ai/src/provider.rs", "crates/opi-ai/src/models.rs"],
     }
     for label, paths in shared.items():

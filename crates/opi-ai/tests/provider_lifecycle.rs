@@ -7,9 +7,9 @@
 //! Uses wiremock to simulate Anthropic's SSE endpoint without live API calls.
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request};
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
@@ -1124,12 +1124,12 @@ async fn assert_drop_closes_owned_http_attempt(bedrock: bool, response_started: 
     let url = format!("http://{}", listener.local_addr().unwrap());
     let cancel = CancellationToken::new();
     let provider: Box<dyn Provider> = if bedrock {
-        Box::new(opi_ai::bedrock::BedrockProvider::new(
+        Box::new(opi_ai::providers::bedrock::BedrockProvider::new(
             Some(url),
             std::sync::Arc::new(opi_ai::http::HttpClient::new()),
         ))
     } else {
-        Box::new(opi_ai::gemini::GeminiProvider::new(Some(url)))
+        Box::new(opi_ai::providers::gemini::GeminiProvider::new(Some(url)))
     };
     let auth = if bedrock {
         opi_ai::ResolvedAuth::aws_sigv4(
@@ -1188,7 +1188,7 @@ async fn assert_drop_closes_owned_http_attempt(bedrock: bool, response_started: 
             .await
             .unwrap();
         let body = if bedrock {
-            opi_ai::bedrock::event_stream::build_test_frame(
+            opi_ai::api::bedrock::event_stream::build_test_frame(
                 "messageStart",
                 "application/json",
                 br#"{"role":"assistant"}"#,

@@ -98,7 +98,7 @@ endpoint = "https://myresource.openai.azure.com"
 
 #[test]
 fn azure_provider_builds_with_key() {
-    let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
+    let provider = opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         Some("2024-06-01".into()),
@@ -109,7 +109,7 @@ fn azure_provider_builds_with_key() {
 
 #[test]
 fn azure_provider_from_config_with_deployments() {
-    let provider = opi_ai::azure_openai::AzureOpenAIProvider::from_config(
+    let provider = opi_ai::providers::azure_openai::AzureOpenAIProvider::from_config(
         Some("https://myresource.openai.azure.com".into()),
         vec!["deploy1".into(), "deploy2".into()],
         None,
@@ -133,7 +133,7 @@ fn azure_api_key_not_in_debug() {
     // Phase 17.5 moved auth off the provider object onto the collection-owned
     // route, so {provider:?} no longer carries any secret field. The redaction
     // surface is now ResolvedAuth, whose Debug redacts the secret.
-    let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
+    let provider = opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         None,
@@ -166,7 +166,7 @@ fn azure_api_key_not_in_debug() {
 
 #[test]
 fn azure_config_endpoint_visible_in_debug() {
-    let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
+    let provider = opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         None,
@@ -178,7 +178,7 @@ fn azure_config_endpoint_visible_in_debug() {
 
 #[test]
 fn azure_url_does_not_contain_api_key() {
-    let provider = opi_ai::azure_openai::AzureOpenAIProvider::new(
+    let provider = opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
         Some("https://myresource.openai.azure.com".into()),
         "my-deploy".into(),
         None,

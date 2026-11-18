@@ -192,6 +192,8 @@ pub fn build_harness_collection(
         collection.set_credential_store(store);
     }
     for (provider, auth_resolver) in routes {
+        let deferred_api = provider.deferred_api();
+        let deferred_resolver = std::sync::Arc::clone(&auth_resolver);
         collection
             .register_route(
                 provider,
@@ -200,6 +202,15 @@ pub fn build_harness_collection(
                 CompatMetadata::default(),
             )
             .expect("registering a dispatch route must succeed at startup");
+        if let Some(deferred_api) = deferred_api {
+            collection
+                .register_deferred_api(
+                    deferred_api,
+                    deferred_resolver,
+                    opi_ai::AuthProvenanceSource::Static,
+                )
+                .expect("registering a provider-owned deferred route must succeed at startup");
+        }
     }
     Arc::new(collection)
 }
@@ -211,7 +222,7 @@ pub fn build_harness_collection(
 /// becomes a dispatch route) so the active provider's effective catalog
 /// includes extension additions/overrides; the registry override layer only
 /// holds non-active providers. A provider that rejects the replacement (e.g. an
-/// [`opi_ai::ApiMappedProvider`] whose override wire has no concrete route)
+/// [`opi_ai::providers::mapped::ApiMappedProvider`] whose override wire has no concrete route)
 /// leaves its catalog unchanged and surfaces a diagnostic.
 pub fn materialize_active_overrides(
     provider: &mut dyn Provider,
@@ -1036,33 +1047,33 @@ fn build_list_models_metadata(
     let (proxy, models) = match provider_id {
         "anthropic" => (
             config.providers.anthropic.proxy.as_ref(),
-            opi_ai::anthropic::model_catalog(),
+            opi_ai::providers::anthropic::model_catalog(),
         ),
         "openai" => (
             config.providers.openai.proxy.as_ref(),
-            opi_ai::openai_chat::model_catalog(),
+            opi_ai::providers::openai::model_catalog(),
         ),
         "openrouter" => (
             config.providers.openrouter.proxy.as_ref(),
-            opi_ai::openrouter::model_catalog(),
+            opi_ai::providers::openrouter::model_catalog(),
         ),
         "mistral" => (
             config.providers.mistral.proxy.as_ref(),
-            opi_ai::mistral::model_catalog(),
+            opi_ai::providers::mistral::model_catalog(),
         ),
         "openai-responses" => (
             config.providers.openai_responses.proxy.as_ref(),
-            opi_ai::openai_responses::model_catalog(),
+            opi_ai::providers::openai_responses::model_catalog(),
         ),
         "github-copilot" => (None, crate::github_copilot::github_copilot_catalog()),
         "openai-codex" => (None, crate::openai_codex::openai_codex_catalog()),
         "google" => (
             config.providers.google.proxy.as_ref(),
-            opi_ai::gemini::model_catalog(),
+            opi_ai::providers::gemini::model_catalog(),
         ),
         "amazon-bedrock" => (
             config.providers.amazon_bedrock.proxy.as_ref(),
-            opi_ai::bedrock::model_catalog(),
+            opi_ai::providers::bedrock::model_catalog(),
         ),
         "azure" => {
             let azure = &config.providers.azure;
@@ -1102,7 +1113,7 @@ fn build_list_models_metadata(
                 }
             }
             let models = if vertex.models.is_empty() {
-                opi_ai::vertex::model_catalog()
+                opi_ai::providers::vertex::model_catalog()
             } else {
                 configured_models(&vertex.models, WireApi::GoogleVertex, 1_000_000, 65536)
             };
@@ -1198,11 +1209,12 @@ fn openai_compatible_model_catalog(
 fn build_openai_compatible_profile(
     profile: &OpenAiCompatibleProviderConfig,
     client: Arc<opi_ai::http::HttpClient>,
-) -> Result<opi_ai::ApiMappedProvider, String> {
+) -> Result<opi_ai::providers::mapped::ApiMappedProvider, String> {
     let models = openai_compatible_model_catalog(profile)?;
-    let headers = opi_ai::ProviderHeaders::try_new(profile.extra_headers.clone())
-        .map_err(|e| e.to_string())?;
-    let route = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+    let headers =
+        opi_ai::api::shared::headers::ProviderHeaders::try_new(profile.extra_headers.clone())
+            .map_err(|e| e.to_string())?;
+    let route = opi_ai::providers::openai::OpenAiChatProvider::for_route(
         Some(profile.base_url.clone()),
         profile.id.clone(),
         headers,
@@ -1212,15 +1224,15 @@ fn build_openai_compatible_profile(
     let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
         std::collections::BTreeMap::new();
     routes.insert(WireApi::OpenAiCompletions, Box::new(route));
-    opi_ai::ApiMappedProvider::try_new(profile.id.clone(), models, routes)
+    opi_ai::providers::mapped::ApiMappedProvider::try_new(profile.id.clone(), models, routes)
         .map_err(|error| error.to_string())
 }
 
 fn build_custom_provider(
     profile: &CustomProviderConfig,
-) -> Result<opi_ai::ApiMappedProvider, ProviderBuildError> {
+) -> Result<opi_ai::providers::mapped::ApiMappedProvider, ProviderBuildError> {
     let client = build_proxied_client(profile.proxy.as_ref())?;
-    let headers = opi_ai::ProviderHeaders::try_new(profile.headers.clone())
+    let headers = opi_ai::api::shared::headers::ProviderHeaders::try_new(profile.headers.clone())
         .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
     let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
         std::collections::BTreeMap::new();
@@ -1238,7 +1250,7 @@ fn build_custom_provider(
             .collect();
         let route: Box<dyn Provider> = match wire {
             WireApi::AnthropicMessages => {
-                Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+                Box::new(opi_ai::providers::anthropic::AnthropicProvider::for_route(
                     profile.id.clone(),
                     models,
                     profile.base_url.clone(),
@@ -1248,7 +1260,7 @@ fn build_custom_provider(
                 ))
             }
             WireApi::OpenAiCompletions => {
-                Box::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                Box::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                     profile.base_url.clone(),
                     profile.id.clone(),
                     headers.clone(),
@@ -1257,7 +1269,7 @@ fn build_custom_provider(
                 ))
             }
             WireApi::OpenAiResponses => Box::new(
-                opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+                opi_ai::providers::openai_responses::OpenAiResponsesProvider::for_route(
                     profile.base_url.clone(),
                     profile.id.clone(),
                     headers.clone(),
@@ -1269,8 +1281,12 @@ fn build_custom_provider(
         };
         routes.insert(wire, route);
     }
-    opi_ai::ApiMappedProvider::try_new(profile.id.clone(), profile.models.clone(), routes)
-        .map_err(|error| ProviderBuildError::Config(error.to_string()))
+    opi_ai::providers::mapped::ApiMappedProvider::try_new(
+        profile.id.clone(),
+        profile.models.clone(),
+        routes,
+    )
+    .map_err(|error| ProviderBuildError::Config(error.to_string()))
 }
 
 // ---------------------------------------------------------------------------
@@ -1407,11 +1423,11 @@ fn build_anthropic_route(
         oauth_env_var: "ANTHROPIC_OAUTH_TOKEN".into(),
         api_key_env_var: config.providers.anthropic.api_key_env.clone(),
     });
-    let provider = opi_ai::anthropic::AnthropicProvider::for_route(
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::for_route(
         "anthropic".into(),
-        opi_ai::anthropic::model_catalog(),
+        opi_ai::providers::anthropic::model_catalog(),
         config.providers.anthropic.base_url.clone(),
-        opi_ai::ProviderHeaders::default(),
+        opi_ai::api::shared::headers::ProviderHeaders::default(),
         client,
         true,
     )
@@ -1436,9 +1452,10 @@ async fn build_copilot_oauth(
         provider_id: "github-copilot".into(),
         oauth,
     });
-    let headers =
-        opi_ai::ProviderHeaders::try_new(crate::github_copilot::github_copilot_static_headers())
-            .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
+    let headers = opi_ai::api::shared::headers::ProviderHeaders::try_new(
+        crate::github_copilot::github_copilot_static_headers(),
+    )
+    .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
     let catalog = crate::github_copilot::github_copilot_catalog();
     let mut routes: std::collections::BTreeMap<WireApi, Box<dyn Provider>> =
         std::collections::BTreeMap::new();
@@ -1457,7 +1474,7 @@ async fn build_copilot_oauth(
             Some(crate::github_copilot::GITHUB_COPILOT_DEFAULT_BASE_URL.to_owned());
         let route: Box<dyn Provider> = match wire {
             WireApi::AnthropicMessages => Box::new(
-                opi_ai::anthropic::AnthropicProvider::for_route(
+                opi_ai::providers::anthropic::AnthropicProvider::for_route(
                     "github-copilot".into(),
                     models,
                     default_base_url,
@@ -1469,7 +1486,7 @@ async fn build_copilot_oauth(
                 .with_copilot_headers(),
             ),
             WireApi::OpenAiCompletions => Box::new(
-                opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                opi_ai::providers::openai::OpenAiChatProvider::for_route(
                     default_base_url,
                     "github-copilot".into(),
                     headers.clone(),
@@ -1480,7 +1497,7 @@ async fn build_copilot_oauth(
                 .with_copilot_initiator(),
             ),
             WireApi::OpenAiResponses => Box::new(
-                opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+                opi_ai::providers::openai_responses::OpenAiResponsesProvider::for_route(
                     default_base_url,
                     "github-copilot".into(),
                     headers.clone(),
@@ -1495,8 +1512,9 @@ async fn build_copilot_oauth(
         routes.insert(wire, route);
     }
 
-    let provider = opi_ai::ApiMappedProvider::try_new("github-copilot", catalog, routes)
-        .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
+    let provider =
+        opi_ai::providers::mapped::ApiMappedProvider::try_new("github-copilot", catalog, routes)
+            .map_err(|error| ProviderBuildError::Config(error.to_string()))?;
     Ok((Box::new(provider), auth))
 }
 
@@ -1514,7 +1532,7 @@ async fn build_codex_oauth(
         provider_id: "openai-codex".into(),
         oauth,
     });
-    let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+    let provider = opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider::new(
         None,
         crate::openai_codex::openai_codex_catalog(),
         client,
@@ -1824,17 +1842,19 @@ fn build_runtime_adapter(
         "anthropic" => {
             let client = build_proxied_client(config.providers.anthropic.proxy.as_ref())?;
             (
-                Box::new(opi_ai::anthropic::AnthropicProvider::with_client(
-                    config.providers.anthropic.base_url.clone(),
-                    client,
-                )) as Box<dyn Provider>,
+                Box::new(
+                    opi_ai::providers::anthropic::AnthropicProvider::with_client(
+                        config.providers.anthropic.base_url.clone(),
+                        client,
+                    ),
+                ) as Box<dyn Provider>,
                 WireApi::AnthropicMessages,
             )
         }
         "openai" => {
             let client = build_proxied_client(config.providers.openai.proxy.as_ref())?;
             (
-                Box::new(opi_ai::openai_chat::OpenAiChatProvider::with_client(
+                Box::new(opi_ai::providers::openai::OpenAiChatProvider::with_client(
                     config.providers.openai.base_url.clone(),
                     "openai".into(),
                     vec![],
@@ -1853,21 +1873,21 @@ fn build_runtime_adapter(
                     .base_url
                     .clone()
                     .unwrap_or_else(|| "https://openrouter.ai/api".into());
-                let compat = opi_ai::openai_chat::CompatConfig::default();
+                let compat = opi_ai::providers::openai::CompatConfig::default();
                 let extra_headers = vec![
                     ("HTTP-Referer".into(), referer.clone()),
                     ("X-Title".into(), "opi".into()),
                 ];
-                opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+                opi_ai::providers::openai::OpenAiChatProvider::new_for_profile(
                     base_url,
                     "openrouter".into(),
                     compat,
                     extra_headers,
-                    opi_ai::openrouter::model_catalog(),
+                    opi_ai::providers::openrouter::model_catalog(),
                 )
                 .with_shared_client(client)
             } else {
-                opi_ai::openrouter::openrouter_provider(
+                opi_ai::providers::openrouter::openrouter_provider(
                     config.providers.openrouter.base_url.clone(),
                 )
                 .with_shared_client(client)
@@ -1881,8 +1901,10 @@ fn build_runtime_adapter(
             let client = build_proxied_client(config.providers.mistral.proxy.as_ref())?;
             (
                 Box::new(
-                    opi_ai::mistral::mistral_provider(config.providers.mistral.base_url.clone())
-                        .with_shared_client(client),
+                    opi_ai::providers::mistral::mistral_provider(
+                        config.providers.mistral.base_url.clone(),
+                    )
+                    .with_shared_client(client),
                 ) as Box<dyn Provider>,
                 WireApi::OpenAiCompletions,
             )
@@ -1891,7 +1913,7 @@ fn build_runtime_adapter(
             let client = build_proxied_client(config.providers.openai_responses.proxy.as_ref())?;
             (
                 Box::new(
-                    opi_ai::openai_responses::OpenAiResponsesProvider::with_client(
+                    opi_ai::providers::openai_responses::OpenAiResponsesProvider::with_client(
                         config.providers.openai_responses.base_url.clone(),
                         client,
                     ),
@@ -1901,7 +1923,7 @@ fn build_runtime_adapter(
         }
         "google" => {
             let client = build_proxied_client(config.providers.google.proxy.as_ref())?;
-            let provider = opi_ai::gemini::GeminiProvider::with_client(
+            let provider = opi_ai::providers::gemini::GeminiProvider::with_client(
                 config.providers.google.base_url.clone(),
                 client,
             );
@@ -1909,7 +1931,11 @@ fn build_runtime_adapter(
             // The adapter keeps its historical id; the route publishes the
             // canonical one.
             (
-                opi_ai::provider_collection::canonical_route("google", models, Box::new(provider)),
+                opi_ai::providers::collection::canonical_route(
+                    "google",
+                    models,
+                    Box::new(provider),
+                ),
                 WireApi::GoogleGenerativeAi,
             )
         }
@@ -1917,7 +1943,7 @@ fn build_runtime_adapter(
             let provider = build_bedrock_adapter(config)?;
             let models = provider.models().to_vec();
             (
-                opi_ai::provider_collection::canonical_route("amazon-bedrock", models, provider),
+                opi_ai::providers::collection::canonical_route("amazon-bedrock", models, provider),
                 WireApi::BedrockConverseStream,
             )
         }
@@ -1932,13 +1958,13 @@ fn build_runtime_adapter(
                         "azure provider has no configured deployment for this route".to_owned(),
                     )
                 })?;
-                opi_ai::azure_openai::AzureOpenAIProvider::new(
+                opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
                     azure_config.endpoint.clone(),
                     deployment.to_string(),
                     azure_config.api_version.clone(),
                 )?
             } else {
-                opi_ai::azure_openai::AzureOpenAIProvider::from_config(
+                opi_ai::providers::azure_openai::AzureOpenAIProvider::from_config(
                     azure_config.endpoint.clone(),
                     azure_config.deployments.clone(),
                     azure_config.api_version.clone(),
@@ -1954,7 +1980,7 @@ fn build_runtime_adapter(
             let provider = vertex_adapter(&config.providers.google_vertex)?;
             let models = provider.models().to_vec();
             (
-                opi_ai::provider_collection::canonical_route("google-vertex", models, provider),
+                opi_ai::providers::collection::canonical_route("google-vertex", models, provider),
                 WireApi::GoogleVertex,
             )
         }
@@ -2189,13 +2215,13 @@ fn vertex_adapter(
     ) {
         (Some(project), Some(location)) => {
             let provider = if vertex_config.models.is_empty() {
-                opi_ai::vertex::VertexProvider::new(
+                opi_ai::providers::vertex::VertexProvider::new(
                     project.to_owned(),
                     location.to_owned(),
                     vertex_config.base_url.clone(),
                 )
             } else {
-                opi_ai::vertex::VertexProvider::from_config(
+                opi_ai::providers::vertex::VertexProvider::from_config(
                     project.to_owned(),
                     location.to_owned(),
                     vertex_config.models.clone(),
@@ -2205,17 +2231,18 @@ fn vertex_adapter(
             let provider =
                 provider.with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
             let models = provider.models().to_vec();
-            Ok(opi_ai::provider_collection::canonical_route(
+            Ok(opi_ai::providers::collection::canonical_route(
                 "google-vertex",
                 models,
                 Box::new(provider),
             ))
         }
         (None, None) => {
-            let provider = opi_ai::vertex::VertexProvider::express(vertex_config.base_url.clone())
-                .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
+            let provider =
+                opi_ai::providers::vertex::VertexProvider::express(vertex_config.base_url.clone())
+                    .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
             let models = provider.models().to_vec();
-            Ok(opi_ai::provider_collection::canonical_route(
+            Ok(opi_ai::providers::collection::canonical_route(
                 "google-vertex",
                 models,
                 Box::new(provider),
@@ -2394,10 +2421,11 @@ fn complete_bedrock_credential_pair(access_key_id: Option<&str>, secret_key: Opt
 fn build_bedrock_adapter(config: &OpiConfig) -> Result<Box<dyn Provider>, ProviderBuildError> {
     let bedrock_config = &config.providers.amazon_bedrock;
     let client = build_proxied_client(bedrock_config.proxy.as_ref())?;
-    let provider = opi_ai::bedrock::BedrockProvider::new(bedrock_config.base_url.clone(), client);
+    let provider =
+        opi_ai::providers::bedrock::BedrockProvider::new(bedrock_config.base_url.clone(), client);
     let models = provider.models().to_vec();
     // The adapter keeps its historical id; routes publish the canonical one.
-    Ok(opi_ai::provider_collection::canonical_route(
+    Ok(opi_ai::providers::collection::canonical_route(
         "amazon-bedrock",
         models,
         Box::new(provider),

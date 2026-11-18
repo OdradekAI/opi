@@ -1164,7 +1164,7 @@ fn register_oauth_assembly_route(
     )];
     let provider: Box<dyn Provider> = match wire {
         opi_ai::WireApi::AnthropicMessages => {
-            Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+            Box::new(opi_ai::providers::anthropic::AnthropicProvider::for_route(
                 id,
                 catalog,
                 Some(base_url),
@@ -1174,7 +1174,7 @@ fn register_oauth_assembly_route(
             ))
         }
         opi_ai::WireApi::OpenAiCompletions => {
-            let provider = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+            let provider = opi_ai::providers::openai::OpenAiChatProvider::for_route(
                 Some(base_url),
                 id.clone(),
                 Default::default(),
@@ -1188,7 +1188,7 @@ fn register_oauth_assembly_route(
             })
         }
         opi_ai::WireApi::OpenAiResponses => Box::new(
-            opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+            opi_ai::providers::openai_responses::OpenAiResponsesProvider::for_route(
                 Some(base_url),
                 id,
                 Default::default(),
@@ -1197,7 +1197,7 @@ fn register_oauth_assembly_route(
             ),
         ),
         opi_ai::WireApi::OpenAiCodexResponses => Box::new(
-            opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+            opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider::new(
                 Some(base_url),
                 catalog,
                 client,
@@ -2978,7 +2978,7 @@ async fn copilot_public_available_models_use_acknowledged_account_allowlist() {
                 )
             })
             .to_vec();
-        let provider = opi_ai::openai_chat::OpenAiChatProvider::for_route(
+        let provider = opi_ai::providers::openai::OpenAiChatProvider::for_route(
             Some("http://127.0.0.1:1".into()),
             "github-copilot".into(),
             Default::default(),

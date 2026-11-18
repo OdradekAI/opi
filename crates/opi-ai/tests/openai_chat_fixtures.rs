@@ -8,12 +8,10 @@
 //! All tests use fixture strings — no live provider calls (red flag #10).
 
 use futures_util::StreamExt;
+use opi_ai::api::openai::{OpenAiChatEvent, OpenAiChatMapper, ParsedEvent, parse_sse_events};
 use opi_ai::message::{AssistantContent, AssistantMessage, ToolCall};
-use opi_ai::openai_chat::{
-    CompatConfig, OpenAiChatEvent, OpenAiChatMapper, OpenAiChatProvider, ParsedEvent,
-    parse_sse_events,
-};
 use opi_ai::provider::{CacheRetention, EventStream, Provider, validate_request_capabilities};
+use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -1105,7 +1103,7 @@ fn thinking_chat_model(id: &str, thinking: bool) -> ModelInfo {
 
 fn profile_provider(
     provider_id: &str,
-    compat: opi_ai::openai_chat::CompatConfig,
+    compat: opi_ai::providers::openai::CompatConfig,
     models: Vec<ModelInfo>,
 ) -> OpenAiChatProvider {
     OpenAiChatProvider::new_for_profile(
@@ -1641,7 +1639,7 @@ fn chat_baseline_inference_non_standard_endpoint_omits_store_and_effort() {
 
 #[test]
 fn chat_explicit_store_and_role_overrides_beat_inference() {
-    let compat = opi_ai::openai_chat::CompatConfig {
+    let compat = opi_ai::providers::openai::CompatConfig {
         store: Some(ChatStoreField::Omit),
         instruction_role: Some(ChatInstructionRole::System),
         ..Default::default()
@@ -1664,7 +1662,7 @@ fn chat_explicit_store_and_role_overrides_beat_inference() {
         "explicit System wins for a reasoning model"
     );
 
-    let developer_fixed = opi_ai::openai_chat::CompatConfig {
+    let developer_fixed = opi_ai::providers::openai::CompatConfig {
         instruction_role: Some(ChatInstructionRole::Developer),
         ..Default::default()
     };
@@ -1685,7 +1683,7 @@ fn chat_explicit_store_and_role_overrides_beat_inference() {
 
 #[test]
 fn chat_usage_in_stream_explicit_false_omits_stream_options() {
-    let compat = opi_ai::openai_chat::CompatConfig {
+    let compat = opi_ai::providers::openai::CompatConfig {
         usage_in_stream: Some(false),
         ..Default::default()
     };
@@ -1701,7 +1699,7 @@ fn chat_usage_in_stream_explicit_false_omits_stream_options() {
 
 #[test]
 fn chat_max_tokens_field_explicit_override_beats_inference() {
-    let compat = opi_ai::openai_chat::CompatConfig {
+    let compat = opi_ai::providers::openai::CompatConfig {
         max_tokens_field: Some("max_tokens".into()),
         ..Default::default()
     };
@@ -1717,14 +1715,14 @@ fn chat_max_tokens_field_explicit_override_beats_inference() {
 fn chat_model_level_override_beats_profile_and_inference() {
     use std::collections::HashMap;
 
-    let compat = opi_ai::openai_chat::CompatConfig {
+    let compat = opi_ai::providers::openai::CompatConfig {
         instruction_role: Some(ChatInstructionRole::System),
         ..Default::default()
     };
     let mut overrides = HashMap::new();
     overrides.insert(
         "o3".into(),
-        opi_ai::openai_chat::ModelCompatOverride {
+        opi_ai::providers::openai::ModelCompatOverride {
             instruction_role: Some(ChatInstructionRole::Developer),
             ..Default::default()
         },
@@ -2563,7 +2561,7 @@ fn model_level_override_takes_precedence_over_provider_profile() {
     // other models inherit the profile default. Provider-level flags
     // (strict_tool_schema) apply to all models.
     use opi_ai::model_info::ChatInstructionRole;
-    use opi_ai::openai_chat::ModelCompatOverride;
+    use opi_ai::providers::openai::ModelCompatOverride;
     let base = CompatConfig {
         instruction_role: Some(ChatInstructionRole::System),
         max_tokens_field: Some("max_tokens".into()),
@@ -2864,7 +2862,7 @@ async fn profile_extra_headers_reach_the_http_wire() {
 #[tokio::test]
 async fn stream_cancellation_aborts_before_completion() {
     // The CancellationToken is threaded into the OpenAI Chat adapter's HTTP
-    // body-stream loop (openai_chat.rs `cancel.cancelled()` select arm).
+    // body-stream loop (api/openai.rs `cancel.cancelled()` select arm).
     // This fixture sends one Start-producing chunk, then stalls for a full
     // second before the terminal chunk. Cancellation must close the stream well
     // before that delayed terminal data could arrive.
@@ -3062,14 +3060,14 @@ fn initial_chat_tool_call_arguments_are_emitted_after_start() {
         }]
     });
     let sse = format!("data: {chunk}\n\n");
-    let events = match opi_ai::openai_chat::parse_sse_events(&sse)
+    let events = match opi_ai::api::openai::parse_sse_events(&sse)
         .next()
         .expect("one frame")
     {
-        opi_ai::openai_chat::ParsedEvent::Valid(events) => events,
-        opi_ai::openai_chat::ParsedEvent::Done => panic!("expected a data frame"),
-        opi_ai::openai_chat::ParsedEvent::UsageError(error) => panic!("{error}"),
-        opi_ai::openai_chat::ParsedEvent::Malformed { error, .. } => panic!("{error}"),
+        opi_ai::api::openai::ParsedEvent::Valid(events) => events,
+        opi_ai::api::openai::ParsedEvent::Done => panic!("expected a data frame"),
+        opi_ai::api::openai::ParsedEvent::UsageError(error) => panic!("{error}"),
+        opi_ai::api::openai::ParsedEvent::Malformed { error, .. } => panic!("{error}"),
     };
 
     assert!(matches!(
@@ -3378,8 +3376,9 @@ mod constrained_guard_tests {
 // direct adapter calls through the registered openai-completions adapter.
 // ---------------------------------------------------------------------------
 
-use opi_ai::models::{ChatModelRecord, Models, SimpleOptions, SimpleToolChoice};
-use opi_ai::openai_chat::{OpenAiCompletionsChatApi, OpenAiCompletionsOptions, OpenAiToolChoice};
+use opi_ai::api::contract::{SimpleOptions, SimpleToolChoice};
+use opi_ai::api::openai::{OpenAiCompletionsChatApi, OpenAiCompletionsOptions, OpenAiToolChoice};
+use opi_ai::models::{ChatModelRecord, Models};
 use std::sync::Arc as StdArc;
 
 fn chat_sse_ok() -> String {
@@ -3410,7 +3409,7 @@ async fn registered_chat_models(
     model: ModelInfo,
 ) -> (
     Models,
-    opi_ai::models::ChatApiHandle<OpenAiCompletionsOptions>,
+    opi_ai::api::contract::ChatApiHandle<OpenAiCompletionsOptions>,
 ) {
     let provider = StdArc::new(
         OpenAiChatProvider::new_with_compat(Some(server_uri), Default::default())

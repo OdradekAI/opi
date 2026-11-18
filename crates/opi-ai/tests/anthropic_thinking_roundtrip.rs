@@ -1,9 +1,9 @@
 //! Signed and opaque thinking must survive the stream, storage and tool continuation.
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{AssistantMessage, Message, OutputContent, ToolDef, ToolResultMessage};
 use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
@@ -330,7 +330,7 @@ async fn signatures_stay_with_their_blocks_including_empty_thinking() {
 
 #[test]
 fn bedrock_omits_opaque_only_assistants_and_preserves_readable_content() {
-    let provider = opi_ai::bedrock::BedrockProvider::new(
+    let provider = opi_ai::providers::bedrock::BedrockProvider::new(
         None,
         std::sync::Arc::new(opi_ai::http::HttpClient::new()),
     );
@@ -373,7 +373,7 @@ fn bedrock_omits_opaque_only_assistants_and_preserves_readable_content() {
 
 #[tokio::test]
 async fn compiled_effort_survives_storage_and_replays_before_the_corresponding_assistant() {
-    use opi_ai::anthropic::{AnthropicMessagesChatApi, AnthropicMessagesOptions};
+    use opi_ai::api::anthropic::{AnthropicMessagesChatApi, AnthropicMessagesOptions};
     use opi_ai::catalog::{Catalog, CatalogOperation};
     use opi_ai::message::{InputContent, UserMessage};
     use std::sync::Arc;
@@ -586,7 +586,7 @@ mod empty_signature_source_compat {
             false,
         ));
         let api =
-            opi_ai::anthropic::AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
+            opi_ai::api::anthropic::AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
         let auth = Arc::new(FixtureAuth::default());
         let mut models = Models::new();
         models

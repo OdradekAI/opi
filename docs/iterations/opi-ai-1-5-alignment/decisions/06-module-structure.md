@@ -162,3 +162,70 @@ Cargo feature 是依赖图中的加法合并：能力开关不能意外改变无
 - 重构先建立公共能力与消费者映射，再按本票建议顺序调整责任、执行、适配和配置。backend 替换与测试删除各自需要证据，不随搬目录自动批准。
 
 此结论是后续实施依据；本轮不改生产代码、README、依赖或现有测试，不声称已实现独立接入或通过行为验收。
+
+## 后续实施记录
+
+2026-11-17 的 #158 将内置 provider 装配模块从 crate 根迁移到
+`providers::collection`。该模块负责 profile、catalog、auth resolver 与已构造
+wire route 的组合，不负责任何 wire 序列化，因此归入 `providers`；旧
+`provider_collection` 根入口已删除，没有保留兼容 shim。此实现遵循本票的
+“内置 provider 工厂是装配位置”结论，并由 builtins 行为测试、coding-agent
+调用方测试和实际归档包外部 consumer 验证。
+
+2026-11-17 的 #159 将 provider/model/request header 合同从 crate 根迁移到
+`api::shared::headers`。该模块只负责跨 wire 的 header 语法、保留名保护和
+确定性合并，不负责 provider identity、endpoint 或 catalog，因此归入
+`api::shared`；`ProviderHeaders` 的根级 re-export 仍是精选 facade，旧
+`provider_headers` 模块路径已删除。协议 mapper 继续保持 crate-private，实际
+归档包 consumer 直接解析并运行 `api::shared::headers`。
+
+2026-11-17 的 #160 将 provider environment lookup 从 crate 根迁移到
+`api::shared::env`。该 helper 只做 scoped-first/ambient fallback 的惰性解析，
+不选择 provider、不构造 endpoint、不处理鉴权或 proxy，也不序列化 wire；因此
+它属于共享 API adapter contract，而不是 `providers` profile 或 composition。
+旧 `provider_env` 根模块已删除，实际归档包 consumer 直接解析并运行
+`api::shared::env`。
+
+2026-11-17 的 #161 将增量 UTF-8 `StreamTextDecoder` 从 crate 根迁移到
+`api::shared::text_decode`。它只维护跨网络 chunk 的字节尾部和 pinned
+replacement 语义，被多个 API wire adapter 复用，不负责 provider profile、
+endpoint、鉴权或 transport；因此保留为 `api::shared` 下的 crate-private
+shared seam，不扩成公共 consumer API。旧 `text_decode` 根模块已删除，协议
+adapter 与归档包 consumer 验证均使用新实现。
+
+2026-11-17 的 #162 将 `join_endpoint` 从 crate 根迁移到
+`api::shared::endpoint`。它只对已解析的 endpoint 字符串和 API path 做确定性
+斜杠拼接，被多个 API wire adapter 复用，不选择或验证 provider endpoint，不处理
+鉴权、catalog 或 transport；因此归入 `api::shared` 下的 crate-private shared
+seam，不扩成公共 consumer API。旧 `endpoint` 根模块已删除，调用方与实际归档
+包 consumer 均验证 canonical 路径。详见 [#162](../issues/162-migrate-endpoint-to-api-shared.md)。
+
+2026-11-17 的 #163 完成的是剩余 crate 根模块的保留审计。`codex_resources`
+虽然起源于 Codex 资源场景，但它是 `Models`、`Provider` 和多个 adapter 共同
+使用的公开 resource-generation/lease/cleanup 合同；`time` 被 agent、Models、
+stream 和 adapter 共同使用；私有 `execution` 拥有 chat 执行状态。三者均不属于
+`api::shared`。其余根模块分别保留为公共领域合同、transport/backend、auth/
+catalog、跨 provider 语义或私有 substrate。这一步没有发现仅因根目录位置就
+应迁移的模块，但它没有证明跨层职责已经解耦。复核后 `ChatApi`/`DeferredApi`
+已分别收口到 `api::contract`，但 API adapter 仍依赖具体 provider profile，
+profile 仍保存 adapter-native options，且 `models.rs` 继续拥有多类注册、
+auth/catalog 编排、调用执行与 wire-specific 规则。详见
+[#164](../issues/164-audit-unresolved-ownership-boundaries.md)；其中 OpenAI Chat
+profile 的 native options 已由 [#167](../issues/167-decouple-openai-chat-profile-options.md)
+移出，OpenAI Responses profile 也已由 [#168](../issues/168-decouple-openai-responses-profile-options.md)
+移出；[#169](../issues/169-decouple-openai-codex-profile-options.md) 又将 Codex
+profile 的 native options 与 API 依赖移出，并把其会话级 WebSocket 状态归入
+canonical `transport::codex`；[#170](../issues/170-decouple-anthropic-profile-options.md)
+随后将 Anthropic 的 native options 收拢到 canonical wire adapter，并把纯
+  `ProviderHeaders` 值下沉到 `types::headers`，移出 profile 的 API 依赖；[#171](../issues/171-decouple-azure-openai-profile-options.md)
+  又将 Azure 的 per-call options 与 dual-wire dispatch state 收拢到
+  `api::azure_openai::AzureOpenAIWireAdapter`，移出 profile 的 API 依赖。其余
+  profiles 仍未完成。2026-11-18 的结构复核进一步确认
+  `provider.rs` 反向导入 `api::contract`，而 `stream.rs` 与 `execution.rs`
+  互相依赖实现类型；这两条边界不能由目录存在或根模块保留审计代替。
+  [#172](../issues/172-freeze-layer-graph-and-lower-provider-contract.md)
+  把 lower provider contract、stream/execution owner 和结构检查列为后续
+  收敛门槛。结构阶段保持开放，必须先完成有证据的
+contract、adapter/profile、stream/execution 和 Models 内部拆分，再
+并行推进 #143 及其余平台、能力、资源、性能和 fuzz 验收。详见
+[#163](../issues/163-audit-root-module-ownership.md)。

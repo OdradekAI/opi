@@ -19,52 +19,114 @@ REPO = Path(__file__).resolve().parents[2]
 OWNERS = {
     "provider-anthropic": {
         "features": {"http-transport", "provider-anthropic", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": 'let _ = opi_ai::anthropic::parse_sse_events("");',
+        "source": 'let _ = opi_ai::api::anthropic::parse_sse_events(""); let _ = std::any::type_name::<opi_ai::api::anthropic::AnthropicMessagesWireAdapter>(); let _ = std::any::type_name::<opi_ai::providers::anthropic::AnthropicProvider>();',
     },
     "provider-azure-openai": {
         "features": {"http-transport", "provider-azure-openai", "provider-openai-chat", "provider-openai-responses", "provider-openai-responses-shared", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": 'let _ = opi_ai::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test"));',
+        "source": 'let _ = opi_ai::providers::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test")); let _ = std::any::type_name::<opi_ai::api::azure_openai::AzureOpenAIOptions>(); let _ = std::any::type_name::<opi_ai::api::azure_openai::AzureOpenAIWireAdapter>(); let _ = std::any::type_name::<opi_ai::providers::azure_openai::AzureOpenAIProvider>();',
     },
     "provider-bedrock": {
         "features": {"cloud-auth", "http-transport", "provider-bedrock", "provider-protocol-common", "tls-backend"},
-        "source": 'assert!(opi_ai::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com"));',
+        "source": 'assert!(opi_ai::providers::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com")); let _ = std::any::type_name::<opi_ai::providers::bedrock::BedrockProvider>(); let _ = std::any::type_name::<opi_ai::api::bedrock::BedrockOptions>();',
     },
     "provider-gemini": {
         "features": {"http-transport", "provider-gemini", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = opi_ai::gemini::GeminiProvider::new(None);",
+        "source": "let _ = std::any::type_name::<opi_ai::api::gemini::GoogleGenerativeAiOptions>(); let _ = std::any::type_name::<opi_ai::providers::gemini::GeminiProvider>();",
     },
     "provider-mistral": {
         "features": {"http-transport", "provider-mistral", "provider-openai-chat", "provider-openai-responses-shared", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = opi_ai::mistral::mistral_provider(None);",
+        "source": "let _ = opi_ai::providers::mistral::mistral_provider(None); let _ = std::any::type_name::<opi_ai::api::mistral::MistralOptions>(); let _ = std::any::type_name::<opi_ai::providers::mistral::MistralConversationsProvider>();",
     },
     "provider-openai-chat": {
         "features": {"http-transport", "provider-openai-chat", "provider-openai-responses-shared", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": 'let _ = opi_ai::openai_chat::parse_sse_events("");',
+        "source": 'let _ = opi_ai::api::openai::parse_sse_events(""); let _ = std::any::type_name::<opi_ai::api::openai::OpenAiCompletionsOptions>(); let _ = std::any::type_name::<opi_ai::providers::openai::OpenAiChatProvider>();',
     },
     "provider-openai-codex-responses": {
         "features": {"http-transport", "provider-openai-codex-responses", "provider-openai-responses-shared", "provider-protocol-common", "tls-backend", "websocket-compression"},
-        "source": "let _ = std::any::type_name::<opi_ai::openai_codex_responses::CodexOptions>();",
+        "source": "let _ = std::any::type_name::<opi_ai::api::openai_codex_responses::CodexOptions>(); let _ = std::any::type_name::<opi_ai::api::openai_codex_responses::CodexChatApi>(); let _ = std::any::type_name::<opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider>();",
     },
     "provider-openai-responses": {
         "features": {"http-transport", "provider-openai-responses", "provider-openai-responses-shared", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);",
+        "source": "let _ = std::any::type_name::<opi_ai::api::openai_responses::OpenAiResponsesOptions>(); let _ = std::any::type_name::<opi_ai::api::openai_responses::OpenAiResponsesChatApi>(); let _ = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);",
     },
     "provider-openrouter": {
         "features": {"http-transport", "provider-openai-chat", "provider-openai-responses-shared", "provider-openrouter", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = opi_ai::openrouter::model_catalog();",
+        "source": "let _ = opi_ai::providers::openrouter::model_catalog(); let _ = std::any::type_name::<opi_ai::providers::openrouter::OpenRouterUsageAccounting>(); let _ = std::any::type_name::<opi_ai::providers::openrouter::OpenRouterCostDetails>();",
     },
     "provider-pi-messages": {
         "features": {"http-transport", "provider-pi-messages", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = opi_ai::pi_messages::PiMessagesProvider::new(None);",
+        "source": "let _ = std::any::type_name::<opi_ai::api::pi_messages::PiMessagesOptions>(); let _ = std::any::type_name::<opi_ai::providers::pi_messages::PiMessagesProvider>();",
     },
     "provider-vertex": {
         "features": {"cloud-auth", "http-transport", "provider-gemini", "provider-protocol-common", "provider-vertex", "tls-backend"},
-        "source": "let _ = opi_ai::vertex::VertexProvider::express(None);",
+        "source": "let _ = opi_ai::providers::vertex::VertexProvider::express(None); let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexOptions>(); let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexChatApi>();",
     },
 }
 
 CLOUD_PACKAGES = {"hmac", "aws-smithy-query", "aws-smithy-xml", "xmlparser", "p256", "sha1"}
 WS_PACKAGES = {"libz-rs-sys", "flate2"}
+
+
+def check_canonical_operation_contract_layout(package: Path) -> dict:
+    """Ensure the packaged operation contracts have one canonical owner."""
+    deferred_root = package / "src" / "deferred.rs"
+    contract = package / "src" / "api" / "contract.rs"
+    models = package / "src" / "models.rs"
+    if deferred_root.exists():
+        raise ValueError("archive still contains the deleted root deferred module")
+    if not contract.exists():
+        raise ValueError("archive is missing api/contract.rs")
+    if "pub trait ChatApi" in models.read_text(encoding="utf-8"):
+        raise ValueError("archive still owns ChatApi in models.rs")
+    return {
+        "root_deferred_absent": True,
+        "canonical_operation_contract_present": True,
+        "models_chat_contract_absent": True,
+    }
+
+
+def check_openai_profile_layout(package: Path) -> dict:
+    """Ensure OpenAI profiles do not retain API-native option state."""
+    profile = package / "src" / "providers" / "openai.rs"
+    source = profile.read_text(encoding="utf-8")
+    if "native_options" in source:
+        raise ValueError("OpenAI provider profile still stores native options")
+    if "api::openai::OpenAiCompletionsOptions" in source:
+        raise ValueError("OpenAI provider profile still imports wire options")
+    responses_profile = package / "src" / "providers" / "openai_responses.rs"
+    responses_source = responses_profile.read_text(encoding="utf-8")
+    if "native_options" in responses_source:
+        raise ValueError("OpenAI Responses provider profile still stores native options")
+    if "api::openai_responses::OpenAiResponsesOptions" in responses_source:
+        raise ValueError("OpenAI Responses provider profile still imports wire options")
+    codex_profile = package / "src" / "providers" / "openai_codex.rs"
+    codex_source = codex_profile.read_text(encoding="utf-8")
+    if "native_options" in codex_source:
+        raise ValueError("OpenAI Codex provider profile still stores native options")
+    if "crate::api" in codex_source or "api::" in codex_source:
+        raise ValueError("OpenAI Codex provider profile still depends on the API layer")
+    anthropic_profile = package / "src" / "providers" / "anthropic.rs"
+    anthropic_source = anthropic_profile.read_text(encoding="utf-8")
+    if "native_options" in anthropic_source:
+        raise ValueError("Anthropic provider profile still stores native options")
+    if "crate::api" in anthropic_source or "api::" in anthropic_source:
+        raise ValueError("Anthropic provider profile still depends on the API layer")
+    azure_profile = package / "src" / "providers" / "azure_openai.rs"
+    azure_source = azure_profile.read_text(encoding="utf-8")
+    if "native_options" in azure_source or "azure_native" in azure_source:
+        raise ValueError("Azure OpenAI provider profile still stores native options")
+    if "crate::api" in azure_source or "api::" in azure_source:
+        raise ValueError("Azure OpenAI provider profile still depends on the API layer")
+    return {
+        "openai_profile_has_no_native_options": True,
+        "openai_responses_profile_has_no_native_options": True,
+        "openai_codex_profile_has_no_native_options": True,
+        "openai_codex_profile_has_no_api_dependency": True,
+        "anthropic_profile_has_no_native_options": True,
+        "anthropic_profile_has_no_api_dependency": True,
+        "azure_openai_profile_has_no_native_options": True,
+        "azure_openai_profile_has_no_api_dependency": True,
+    }
 
 
 def check_graph(metadata: dict, package: Path, owner: str) -> dict:
@@ -178,6 +240,8 @@ def main() -> int:
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
         package, evidence["package"], candidate = shared.package_sdk(run, scratch, target)
+        evidence["canonical_operation_contract_layout"] = check_canonical_operation_contract_layout(package)
+        evidence["openai_profile_layout"] = check_openai_profile_layout(package)
         selected = [(args.owner, OWNERS[args.owner])] if args.owner else list(OWNERS.items())
         for index, (owner, config) in enumerate(selected, start=1):
             consumer = scratch / owner

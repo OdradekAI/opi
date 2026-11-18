@@ -1,0 +1,435 @@
+{
+  "family": "provider-protocol-package",
+  "scope": "external consumers of each provider protocol/source owner from the actual opi-ai archive",
+  "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+  "cargo_configs": [
+    {
+      "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+      "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+    }
+  ],
+  "runner_sha256": "54d95947508cc7a737aa83d394a5cb69ee5ac7eaf84d51e9f4a735d1bf6c6440",
+  "owners": [
+    {
+      "owner": "provider-openrouter",
+      "graph": {
+        "owner": "provider-openrouter",
+        "features": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "catalog_absent": true,
+        "cloud_auth_present": [],
+        "websocket_compression_present": [],
+        "packages": [
+          "aho-corasick@1.1.5",
+          "atomic-waker@1.1.2",
+          "aws-lc-rs@1.18.2",
+          "aws-lc-sys@0.46.0",
+          "base64@0.22.1",
+          "base64@0.23.1",
+          "bitflags@2.13.2",
+          "block-buffer@0.10.4",
+          "bumpalo@3.20.3",
+          "bytes@1.12.1",
+          "cc@1.9.0",
+          "cfg-if@1.0.5",
+          "cfg_aliases@0.2.2",
+          "chacha20@0.10.2",
+          "cmake@0.1.58",
+          "core-foundation-sys@0.8.7",
+          "core-foundation@0.10.1",
+          "cpufeatures@0.2.17",
+          "cpufeatures@0.3.1",
+          "crypto-common@0.1.7",
+          "deranged@0.5.8",
+          "digest@0.10.7",
+          "displaydoc@0.2.7",
+          "dunce@1.0.5",
+          "equivalent@1.0.3",
+          "errno@0.3.14",
+          "find-msvc-tools@0.1.15",
+          "fnv@1.0.7",
+          "foldhash@0.2.0",
+          "form_urlencoded@1.2.2",
+          "fs_extra@1.3.0",
+          "futures-channel@0.3.34",
+          "futures-core@0.3.34",
+          "futures-io@0.3.34",
+          "futures-macro@0.3.34",
+          "futures-sink@0.3.34",
+          "futures-task@0.3.34",
+          "futures-util@0.3.34",
+          "generic-array@0.14.7",
+          "getrandom@0.2.17",
+          "getrandom@0.4.3",
+          "h2@0.4.20",
+          "hashbrown@0.17.1",
+          "hex@0.4.3",
+          "http-body-util@0.1.5",
+          "http-body@1.1.0",
+          "http@1.5.0",
+          "httparse@1.10.1",
+          "hyper-rustls@0.27.10",
+          "hyper-util@0.1.21",
+          "hyper@1.12.0",
+          "icu_collections@2.3.0",
+          "icu_locale_core@2.3.0",
+          "icu_normalizer@2.3.0",
+          "icu_normalizer_data@2.3.0",
+          "icu_properties@2.3.0",
+          "icu_properties_data@2.3.0",
+          "icu_provider@2.3.1",
+          "idna@1.1.0",
+          "idna_adapter@1.2.2",
+          "indexmap@2.14.2",
+          "ipnet@2.12.2",
+          "itoa@1.0.18",
+          "jobserver@0.1.35",
+          "js-sys@0.3.106",
+          "libc@0.2.191",
+          "litemap@0.8.3",
+          "log@0.4.34",
+          "lru-slab@0.1.3",
+          "memchr@2.8.3",
+          "mio@1.2.4",
+          "num-conv@0.2.2",
+          "once_cell@1.21.4",
+          "openssl-probe@0.2.1",
+          "opi-ai@0.8.3",
+          "opi-provider-openrouter-consumer@0.0.0",
+          "opi-telemetry@0.8.3",
+          "percent-encoding@2.3.2",
+          "pin-project-lite@0.2.17",
+          "pkg-config@0.3.34",
+          "potential_utf@0.1.6",
+          "powerfmt@0.2.0",
+          "ppv-lite86@0.2.21",
+          "proc-macro2@1.0.107",
+          "quinn-proto@0.11.19",
+          "quinn-udp@0.5.16",
+          "quinn@0.11.12",
+          "quote@1.0.47",
+          "r-efi@6.0.0",
+          "rand@0.10.3",
+          "rand@0.8.8",
+          "rand_chacha@0.3.1",
+          "rand_core@0.10.1",
+          "rand_core@0.6.4",
+          "rand_pcg@0.10.2",
+          "regex-automata@0.4.18",
+          "regex-syntax@0.8.11",
+          "regex@1.13.1",
+          "regress@0.12.0",
+          "reqwest@0.12.28",
+          "ring@0.17.14",
+          "rustc-hash@2.1.3",
+          "rustls-native-certs@0.8.5",
+          "rustls-pki-types@1.15.1",
+          "rustls-webpki@0.103.15",
+          "rustls@0.23.40",
+          "rustversion@1.0.23",
+          "ryu-js@1.0.2",
+          "ryu@1.0.23",
+          "schannel@0.1.30",
+          "secrecy@0.10.3",
+          "security-framework-sys@2.17.0",
+          "security-framework@3.7.0",
+          "serde@1.0.229",
+          "serde_core@1.0.229",
+          "serde_derive@1.0.229",
+          "serde_json@1.0.154",
+          "serde_urlencoded@0.7.1",
+          "sha2@0.10.9",
+          "shlex@2.0.1",
+          "signal-hook-registry@1.4.8",
+          "slab@0.4.12",
+          "smallvec@1.16.3",
+          "socket2@0.6.5",
+          "stable_deref_trait@1.2.1",
+          "subtle@2.6.1",
+          "syn@2.0.119",
+          "syn@3.0.9",
+          "sync_wrapper@1.0.2",
+          "synstructure@0.14.0",
+          "thiserror-impl@2.0.21",
+          "thiserror@2.0.21",
+          "time-core@0.1.8",
+          "time-macros@0.2.27",
+          "time@0.3.47",
+          "tinystr@0.8.4",
+          "tinyvec@1.13.3",
+          "tokio-macros@2.7.2",
+          "tokio-rustls@0.26.6",
+          "tokio-util@0.7.20",
+          "tokio@1.53.3",
+          "tower-http@0.6.11",
+          "tower-layer@0.3.3",
+          "tower-service@0.3.3",
+          "tower@0.5.3",
+          "tracing-attributes@0.1.31",
+          "tracing-core@0.1.36",
+          "tracing@0.1.44",
+          "try-lock@0.2.5",
+          "typenum@1.20.1",
+          "unicode-ident@1.0.27",
+          "unicode-normalization@0.1.26",
+          "untrusted@0.9.0",
+          "url@2.5.8",
+          "utf8_iter@1.0.4",
+          "uuid@1.26.1",
+          "version_check@0.9.5",
+          "want@0.3.2",
+          "wasi@0.11.1+wasi-snapshot-preview1",
+          "wasm-bindgen-futures@0.4.79",
+          "wasm-bindgen-macro-support@0.2.129",
+          "wasm-bindgen-macro@0.2.129",
+          "wasm-bindgen-shared@0.2.129",
+          "wasm-bindgen@0.2.129",
+          "wasm-streams@0.4.2",
+          "web-sys@0.3.106",
+          "web-time@1.1.0",
+          "webpki-roots@1.0.10",
+          "windows-link@0.2.1",
+          "windows-sys@0.52.0",
+          "windows-sys@0.61.2",
+          "windows-targets@0.52.6",
+          "windows_aarch64_gnullvm@0.52.6",
+          "windows_aarch64_msvc@0.52.6",
+          "windows_i686_gnu@0.52.6",
+          "windows_i686_gnullvm@0.52.6",
+          "windows_i686_msvc@0.52.6",
+          "windows_x86_64_gnu@0.52.6",
+          "windows_x86_64_gnullvm@0.52.6",
+          "windows_x86_64_msvc@0.52.6",
+          "writeable@0.6.4",
+          "yoke-derive@0.8.4",
+          "yoke@0.8.3",
+          "zerocopy-derive@0.8.63",
+          "zerocopy@0.8.63",
+          "zerofrom-derive@0.1.8",
+          "zerofrom@0.1.8",
+          "zeroize@1.9.1",
+          "zerotrie@0.2.5",
+          "zerovec-derive@0.11.6",
+          "zerovec@0.11.8",
+          "zmij@1.0.23"
+        ]
+      },
+      "consumer_sources": {
+        "Cargo.toml": "c6eef86560ab1f0c678266a52da388498c97e91d7a90de91b485a2c5fcf31149",
+        "src/main.rs": "c8effbe8ff63edc39757b4365077d2c7ed3d4981ff602ed73060ca07b2e97abb",
+        "Cargo.lock": "00b0742d86360fabf797f1fc90071854c9a8c3eb9451656bd4b4ab45ed8a8fda"
+      }
+    }
+  ],
+  "verdict": "PASS",
+  "steps": [
+    {
+      "name": "rustc-version",
+      "command": [
+        "rustc",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.03,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\rustc-version.stdout",
+        "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\rustc-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cargo-version",
+      "command": [
+        "cargo",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.05,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\cargo-version.stdout",
+        "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\cargo-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "41456"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.17,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\lease-start.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\lease-start.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "opi-telemetry",
+        "-p",
+        "opi-ai",
+        "--allow-dirty",
+        "--no-verify",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.64,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\package.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\package.stderr",
+        "sha256": "48bc08466f5fad749bc53a465194e04f673d49fc5a12edf9fb9eae4cd1210c0c"
+      }
+    },
+    {
+      "name": "owner-01-provider-openrouter-lock",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\candidate-telemetry.toml",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.44,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-lock.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-lock.stderr",
+        "sha256": "69e8f889cf2f29ad42f07a7bfc3bb282751488682631cb2a29426d367e9ee4fe"
+      }
+    },
+    {
+      "name": "owner-01-provider-openrouter-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\candidate-telemetry.toml",
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.17,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-metadata.stdout",
+        "sha256": "0ece520e6bfa23f00eb38878b70614296ce6e43e45b6ecdfbb3ac4d3ade2114e"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-metadata.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "owner-01-provider-openrouter-build",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\candidate-telemetry.toml",
+        "build",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 14.69,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-build.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-build.stderr",
+        "sha256": "f03442de35719ec5d8eb37ef633a37c2ac096804ccd4bee60aceb0a5375b8885"
+      }
+    },
+    {
+      "name": "owner-01-provider-openrouter-run",
+      "command": [
+        "cargo",
+        "--config",
+        "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\candidate-telemetry.toml",
+        "run",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.97,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-run.stdout",
+        "sha256": "5c6e1fcfb1413e6e1d59e3058a9dda322409c663922213f96553cee5a78208ae"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\owner-01-provider-openrouter-run.stderr",
+        "sha256": "a38cd3ce1428cd80f571dcd9d5c456d79fec3fb4a5ef482aa6b8d737c913165d"
+      }
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "41456"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.17,
+      "stdout": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\lease-end.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "C:\\Temp\\opi-openrouter-migration-consumer-20261117-r2\\lease-end.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "package": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "8634b06017c099d6e32bf1bc1ac1d2ef164c6aa22327ec7d7209657f1574278b",
+    "dependencies": [
+      {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "481635cec8d576dd17087506e6d2be3c806d47452613921dfefe7706c42c3a30",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      }
+    ]
+  }
+}

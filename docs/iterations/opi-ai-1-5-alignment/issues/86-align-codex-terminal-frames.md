@@ -37,8 +37,8 @@ with its raw status retained. Only a normal completion can promote
 its stop reason to `ToolUse`. The Rust result also retains the
 provider's reported model. Ordinary OpenAI and Azure keep their
 existing decoding scope.
-[Decode](../../../../crates/opi-ai/src/openai_responses_shared.rs#L367) ·
-[Status map](../../../../crates/opi-ai/src/openai_responses_shared.rs#L594)
+[Decode](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L339) ·
+[Status map](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L599)
 
 Pi 1.5.0 revision `f9a26365568127461c47a07a37dcb42c140a3ac5` handles
 the aliases in `packages/ai/src/api/openai-codex-responses.ts:791–809`.
@@ -82,7 +82,7 @@ chunk while the server holds the response body open. Opi invokes the
 raw callback through the first terminal, delivers one result and
 releases the body. The sessionless WebSocket fixture verifies one
 terminal and the same callback cutoff for that call.
-[SSE cutoff](../../../../crates/opi-ai/src/openai_codex_responses.rs#L365) ·
+[SSE cutoff](../../../../crates/opi-ai/src/api/openai_codex_responses.rs#L330) ·
 [Held body test](../../../../crates/opi-ai/tests/openai_codex_responses/terminal.rs#L232)
 
 ## Verification

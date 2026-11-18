@@ -51,7 +51,7 @@ preserves the other session's route and the healthy connection. The
 generation cutoff serializes marker removal with pending calls and the
 cleanup report confirms the selected local releases.
 [Public cleanup](../../../../crates/opi-ai/src/models.rs#L2311) ·
-[Marker removal](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L167) ·
+[Marker removal](../../../../crates/opi-ai/src/transport/codex.rs#L167) ·
 [Existing transport contract](../../../../crates/opi-ai/docs/transport.md#websocket-upgrade)
 
 Pi 1.5.0 at `f9a26365568127461c47a07a37dcb42c140a3ac5` exports

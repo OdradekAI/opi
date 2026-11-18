@@ -41,8 +41,8 @@ existing shared stream owner.
 
 | Seam | Owner/caller | Evidence |
 | --- | --- | --- |
-| Anthropic mapper | `AnthropicMapper::process`, `flush_pending_terminal` | `crates/opi-ai/src/anthropic.rs`, `tests/anthropic_repeated_message_stop.rs` |
-| Shared HTTP route | `AnthropicProvider::stream_prepared` | `crates/opi-ai/src/anthropic.rs`, `tests/anthropic_fixtures.rs` |
+| Anthropic mapper | `AnthropicMapper::process`, `flush_pending_terminal` | `crates/opi-ai/src/api/anthropic.rs`, `tests/anthropic_repeated_message_stop.rs` |
+| Shared HTTP route | `AnthropicProvider::stream_prepared` | `crates/opi-ai/src/api/anthropic.rs`, `tests/anthropic_fixtures.rs` |
 | Public Chat | `Models::stream_simple`, `stream_direct`, `complete_simple`, `complete_direct` | existing Chat result/cost/transcript consumers receive the settled final snapshot |
 | Agent/session | existing Agent Chat and persistence/recovery callers | no new ownership seam; terminal settlement remains in the shared Chat stream |
 

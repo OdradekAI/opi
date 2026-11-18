@@ -47,7 +47,9 @@ use opi_agent::session_context::reconstruct_context;
 use opi_agent::session_event::{SessionDiagnosticCounts, ThinkingLevel};
 use opi_agent::tool::Tool;
 use opi_agent::{Agent, DiagnosticSink, RecordingSink};
-use opi_ai::message::Message;
+use opi_ai::api::contract::{DeferredCancelCall, DeferredFetchCall};
+use opi_ai::message::{AssistantMessage, Message};
+use opi_ai::types::deferred::DeferredHandle;
 
 use crate::evidence::{
     EvidenceBuilderConfig, EvidenceCapture, RunDynamicFacts, build_finalized_manifest,
@@ -712,6 +714,10 @@ pub struct CodingHarness {
     /// Extension state loaded from a resumed session and restored before the
     /// next async agent operation.
     pending_extension_state: Option<serde_json::Value>,
+    /// Explicitly owned production Deferred job. This is populated by a
+    /// successful submit or restored from the latest active session context;
+    /// it is never polled or cancelled implicitly.
+    pending_deferred: Option<DeferredHandle>,
     /// Optional recording sink that captures runtime diagnostics (retry,
     /// cancellation, provider/tool failures) emitted during a run, so a run
     /// summary can report severity counts. `None` (the default) leaves the
@@ -1507,6 +1513,12 @@ impl CodingHarness {
         let resume_extension_state = resume
             .as_ref()
             .and_then(|info| crate::session_coordinator::latest_extension_state(&info.entries));
+        let resume_pending_deferred = resume.as_ref().and_then(|info| {
+            Self::pending_deferred_from_entries(
+                &info.entries,
+                &opi_agent::session::CrashRecovery::default(),
+            )
+        });
         let resume_diagnostics = resume
             .as_ref()
             .map(|info| info.diagnostics.clone())
@@ -1990,6 +2002,11 @@ impl CodingHarness {
             turn_offset: initial_len,
             pending_images: Vec::new(),
             pending_extension_state: resume_extension_state,
+            pending_deferred: if deferred_resume.is_some() {
+                None
+            } else {
+                resume_pending_deferred
+            },
             diagnostics,
             evidence,
             runtime_input_source,
@@ -2625,6 +2642,7 @@ impl CodingHarness {
         // reusable opi-agent context API instead of the product-only walker.
         let ctx = reconstruct_context(entries, recovery);
         let message_count = ctx.messages.len();
+        let pending_deferred = Self::pending_deferred_from_entries(entries, recovery);
         self.replace_agent_context(ctx.messages)?;
         self.defer_extension_state_from_entries(entries);
 
@@ -2662,6 +2680,7 @@ impl CodingHarness {
         }
         self.sync_session_cost_model();
         self.turn_offset = message_count;
+        self.pending_deferred = pending_deferred;
         Ok(message_count)
     }
 
@@ -2938,6 +2957,7 @@ impl CodingHarness {
 
     /// Send a user prompt and run the agent loop.
     pub async fn prompt(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_no_pending_deferred()?;
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.ensure_request_output_limit()?;
@@ -2978,6 +2998,7 @@ impl CodingHarness {
         &mut self,
         content: Vec<opi_ai::message::InputContent>,
     ) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_no_pending_deferred()?;
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.ensure_request_output_limit()?;
@@ -3016,6 +3037,7 @@ impl CodingHarness {
     /// The user message from the original `prompt`/`continue_` call is already
     /// in the agent's message list, so re-prompting would duplicate it.
     pub async fn retry_last_prompt(&mut self) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_no_pending_deferred()?;
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.ensure_request_output_limit()?;
@@ -3048,6 +3070,7 @@ impl CodingHarness {
 
     /// Continue the conversation with an additional message.
     pub async fn continue_(&mut self, text: &str) -> Result<Vec<AgentMessage>, AgentError> {
+        self.ensure_no_pending_deferred()?;
         let run = self.take_or_arm_run();
         self.ensure_session_resume_ready()?;
         self.ensure_request_output_limit()?;
@@ -3127,6 +3150,7 @@ impl CodingHarness {
         } else {
             &run_messages
         };
+        let pending_deferred = result.pending_deferred().cloned();
         let execution_succeeded = result.error().is_none();
         let committed_messages = if execution_succeeded {
             if let Err(persistence_error) =
@@ -3144,6 +3168,7 @@ impl CodingHarness {
             // Commit the live/persisted projection before evidence finalization
             // so a publication failure cannot rewind durable turn bytes later.
             self.turn_offset = committed.len();
+            self.pending_deferred = pending_deferred;
             Some(committed)
         } else {
             if preparation_committed
@@ -3179,6 +3204,169 @@ impl CodingHarness {
                 Ok(committed_messages.expect("successful execution committed its live boundary"))
             }
         }
+    }
+
+    fn ensure_no_pending_deferred(&self) -> Result<(), AgentError> {
+        if self.pending_deferred.is_some() {
+            return Err(AgentError::Hook(
+                "a Deferred response is pending; poll or cancel it before starting another turn"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn pending_deferred_from_entries(
+        entries: &[opi_agent::session::SessionEntry],
+        recovery: &opi_agent::session::CrashRecovery,
+    ) -> Option<DeferredHandle> {
+        for message in reconstruct_context(entries, recovery)
+            .messages
+            .into_iter()
+            .rev()
+        {
+            match message {
+                // Compaction summaries are not turn outcomes. Continue until
+                // the active chain's latest provider-facing message decides
+                // whether a Deferred job is still owned.
+                AgentMessage::CompactionSummary(_) | AgentMessage::BranchSummary(_) => continue,
+                AgentMessage::Llm(Message::Assistant(assistant)) => {
+                    return (assistant.stop_reason == opi_ai::stream::StopReason::Deferred)
+                        .then(|| assistant.deferred.map(|handle| *handle))
+                        .flatten();
+                }
+                // A later user/tool/custom message means the older Deferred
+                // terminal is no longer the active pending boundary.
+                AgentMessage::Llm(_) | AgentMessage::Custom(_) => return None,
+                _ => return None,
+            }
+        }
+        None
+    }
+
+    /// Append one explicit Deferred poll outcome to the agent/session
+    /// projection. The provider result is already terminal, so persistence is
+    /// the commit point: if it fails, restore the pre-poll state and retain the
+    /// previous handle for a retry.
+    async fn persist_deferred_outcome(
+        &mut self,
+        message: AssistantMessage,
+    ) -> Result<(), AgentError> {
+        let pending_deferred = if message.stop_reason == opi_ai::stream::StopReason::Deferred {
+            let Some(handle) = message.deferred.as_deref().cloned() else {
+                return Err(AgentError::ProviderProtocol {
+                    detail: opi_ai::provider::ProviderErrorSummary::sanitized(
+                        "deferred poll terminal did not carry a handle",
+                    ),
+                });
+            };
+            Some(handle)
+        } else {
+            None
+        };
+        let agent_message = AgentMessage::Llm(Message::Assistant(message));
+        let previous_state = self.agent.state_snapshot();
+        let turn_start_agent_index = previous_state.context.len();
+        let mut next_state = previous_state.clone();
+        next_state.context.push(agent_message.clone());
+        self.agent.replace_state(next_state)?;
+
+        if let Some(session) = &mut self.session
+            && let Err(error) = session.persist_prepared_messages(
+                std::slice::from_ref(&agent_message),
+                turn_start_agent_index,
+            )
+        {
+            if let Err(rollback_error) = self.agent.replace_state(previous_state) {
+                self.record_harness_diagnostic(Diagnostic::from(&rollback_error));
+            }
+            self.agent.emit_event(AgentEvent::SessionPersistError {
+                message: format!("session write failed: {error}"),
+            });
+            return Err(AgentError::SessionPersist(error.to_string()));
+        }
+
+        self.persist_extension_state().await;
+        self.turn_offset = self.agent.messages_snapshot().len();
+        self.pending_deferred = pending_deferred;
+        Ok(())
+    }
+
+    fn deferred_message_for_handle(
+        &self,
+        handle: &DeferredHandle,
+        stop_reason: opi_ai::stream::StopReason,
+        error_message: Option<String>,
+    ) -> AssistantMessage {
+        let mut message = self
+            .agent
+            .messages_snapshot()
+            .into_iter()
+            .rev()
+            .find_map(|message| match message {
+                AgentMessage::Llm(Message::Assistant(assistant))
+                    if assistant.stop_reason == opi_ai::stream::StopReason::Deferred
+                        && assistant.deferred.as_deref().is_some_and(|candidate| {
+                            candidate.id == handle.id
+                                && candidate.provider == handle.provider
+                                && candidate.model_id == handle.model_id
+                                && candidate.api == handle.api
+                        }) =>
+                {
+                    Some(assistant)
+                }
+                _ => None,
+            })
+            .unwrap_or_else(|| AssistantMessage {
+                projection: None,
+                content: Vec::new(),
+                api: opi_ai::ApiKind::OpenAi,
+                provider: handle.provider.clone(),
+                model: handle.model_id.clone(),
+                response_model: None,
+                wire: handle.api.parse().ok(),
+                response_id: Some(handle.id.clone()),
+                usage: opi_ai::stream::Usage::default(),
+                stop_reason,
+                error_message: error_message.clone(),
+                timestamp_ms: opi_ai::time::now_ms(),
+                diagnostics: Vec::new(),
+                duration_ms: None,
+                raw_stop_reason: None,
+                provider_thinking_level: None,
+                deferred: None,
+            });
+        message.stop_reason = stop_reason;
+        message.error_message = error_message;
+        message.deferred = None;
+        if message.response_id.is_none() {
+            message.response_id = Some(handle.id.clone());
+        }
+        message
+    }
+
+    fn deferred_failure_message(
+        handle: &DeferredHandle,
+        failure: &opi_ai::stream::CallFailure,
+    ) -> AssistantMessage {
+        let mut message = failure.message().clone();
+        message.stop_reason = opi_ai::stream::StopReason::Error;
+        message.deferred = None;
+        message.response_id.get_or_insert_with(|| handle.id.clone());
+        if message.error_message.is_none() {
+            message.error_message = Some(failure.cause().to_string());
+        }
+        message
+    }
+
+    /// The poll policy is explicit and bounded at the caller boundary:
+    /// Retryable transport/rate failures and a locally cancelled fetch keep
+    /// the existing handle for a caller-issued retry, while terminal provider
+    /// failures are settled once as an error assistant and clear local
+    /// ownership. No automatic fetch or resubmission occurs, so a failed poll
+    /// never duplicates a remote job.
+    fn deferred_poll_is_retryable(cause: &opi_ai::provider::ProviderError) -> bool {
+        cause.is_retryable() || matches!(cause, opi_ai::provider::ProviderError::Cancelled)
     }
 
     /// Sum usage across every assistant message produced during a turn.
@@ -3610,6 +3798,76 @@ impl CodingHarness {
     /// returns only the bare model-id half and mirrors [`Agent::model`].
     pub fn model_spec(&self) -> String {
         self.agent.model_spec()
+    }
+
+    /// Submit one explicit OpenAI Responses background generation.
+    ///
+    /// The request is dispatched through the same [`opi_ai::Models`] owner and
+    /// credential resolver as ordinary coding-agent calls. A pending response
+    /// returns an assistant message with `StopReason::Deferred` and a
+    /// serializable [`DeferredHandle`]; this method never polls implicitly.
+    pub async fn submit_deferred(
+        &mut self,
+        request: opi_ai::provider::Request,
+    ) -> Result<opi_ai::message::AssistantMessage, opi_ai::stream::CallFailure> {
+        let message = self
+            .model_registry
+            .submit_deferred(&opi_ai::types::ApiId::new("openai-responses"), request)
+            .await?;
+        self.pending_deferred = message.deferred.as_deref().cloned();
+        Ok(message)
+    }
+
+    /// Poll one production Deferred handle once, append the normalized outcome
+    /// to the active session, and return the result. Pending jobs retain the
+    /// updated handle for a later explicit call; ready jobs clear local
+    /// ownership after the final assistant message is durable.
+    pub async fn poll_deferred(
+        &mut self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> Result<AssistantMessage, AgentError> {
+        let message = match self.model_registry.fetch_deferred_ready(handle, call).await {
+            Ok(message) => message,
+            Err(failure) => {
+                let cause = failure.cause().clone();
+                if !Self::deferred_poll_is_retryable(&cause) {
+                    let terminal = Self::deferred_failure_message(handle, &failure);
+                    self.persist_deferred_outcome(terminal).await?;
+                }
+                return Err(AgentError::from(cause));
+            }
+        };
+        self.persist_deferred_outcome(message.clone()).await?;
+        Ok(message)
+    }
+
+    /// Explicitly request remote cancellation for one production Deferred
+    /// handle. A provider acknowledgement is appended as an `Aborted`
+    /// assistant terminal and clears the durable pending boundary. A failed
+    /// cancellation leaves the handle owned so the caller can retry explicitly;
+    /// dropping a stream or harness never calls this implicitly.
+    pub async fn cancel_deferred(
+        &mut self,
+        handle: &DeferredHandle,
+        call: DeferredCancelCall,
+    ) -> Result<(), AgentError> {
+        match self.model_registry.cancel_deferred(handle, call).await {
+            Ok(()) => {
+                let terminal = self.deferred_message_for_handle(
+                    handle,
+                    opi_ai::stream::StopReason::Aborted,
+                    Some("deferred remote cancellation acknowledged".to_owned()),
+                );
+                self.persist_deferred_outcome(terminal).await
+            }
+            Err(error) => Err(AgentError::from(error)),
+        }
+    }
+
+    /// Return the currently owned production Deferred handle, if any.
+    pub fn pending_deferred(&self) -> Option<&DeferredHandle> {
+        self.pending_deferred.as_ref()
     }
 
     /// Return the current thinking configuration, including a resumed
@@ -4421,7 +4679,7 @@ impl Provider for ConfiguredOutputProvider {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
-        options: &opi_ai::models::SimpleOptions,
+        options: &opi_ai::api::contract::SimpleOptions,
     ) -> Result<(), opi_ai::provider::ProviderError> {
         self.inner.validate_simple_options(model, options)
     }
@@ -4472,7 +4730,7 @@ impl Provider for ConfiguredOutputProvider {
     fn stream_model_resource_attempt(
         &self,
         model: ModelInfo,
-        options: opi_ai::models::SimpleOptions,
+        options: opi_ai::api::contract::SimpleOptions,
         mut request: opi_ai::provider::Request,
         auth: opi_ai::auth::ResolvedAuth,
         attempt: opi_ai::provider::AttemptContext,
@@ -5752,7 +6010,7 @@ mod configured_output_ceiling_tests {
     struct SeenDispatch {
         method: &'static str,
         model: Option<ModelInfo>,
-        options: Option<opi_ai::models::SimpleOptions>,
+        options: Option<opi_ai::api::contract::SimpleOptions>,
         request: Request,
         auth: ResolvedAuth,
         attempt: Option<opi_ai::provider::AttemptContext>,
@@ -5810,7 +6068,7 @@ mod configured_output_ceiling_tests {
         fn validate_simple_options(
             &self,
             _: &ModelInfo,
-            options: &opi_ai::models::SimpleOptions,
+            options: &opi_ai::api::contract::SimpleOptions,
         ) -> Result<(), ProviderError> {
             self.trace.validations.fetch_add(1, Ordering::SeqCst);
             if options.temperature == Some(-1.0) {
@@ -5885,7 +6143,7 @@ mod configured_output_ceiling_tests {
         fn stream_model_resource_attempt(
             &self,
             model: ModelInfo,
-            options: opi_ai::models::SimpleOptions,
+            options: opi_ai::api::contract::SimpleOptions,
             request: Request,
             auth: ResolvedAuth,
             attempt: opi_ai::provider::AttemptContext,
@@ -5941,7 +6199,7 @@ mod configured_output_ceiling_tests {
         Arc<ForwardingTrace>,
         Arc<dyn opi_ai::codex_resources::SessionResourceOwner>,
     ) {
-        let codex = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+        let codex = opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider::new(
             Some("http://127.0.0.1:1".into()),
             Vec::new(),
             Arc::new(opi_ai::http::HttpClient::new()),
@@ -6009,7 +6267,7 @@ mod configured_output_ceiling_tests {
         assert_eq!(
             provider.validate_simple_options(
                 &changed,
-                &opi_ai::models::SimpleOptions {
+                &opi_ai::api::contract::SimpleOptions {
                     temperature: Some(-1.0),
                     ..Default::default()
                 }
@@ -6132,8 +6390,8 @@ mod configured_output_ceiling_tests {
                 observed.fetch_add(1, Ordering::SeqCst);
                 Ok(None)
             }));
-        let options = opi_ai::models::SimpleOptions {
-            tool_choice: Some(opi_ai::models::SimpleToolChoice::None),
+        let options = opi_ai::api::contract::SimpleOptions {
+            tool_choice: Some(opi_ai::api::contract::SimpleToolChoice::None),
             temperature: Some(0.5),
             ..Default::default()
         };
@@ -6289,7 +6547,7 @@ mod configured_output_ceiling_tests {
                     r#"{"usage":{"inputTokens":3,"outputTokens":2}}"#,
                 ),
             ] {
-                bytes.extend(opi_ai::bedrock::event_stream::build_test_frame(
+                bytes.extend(opi_ai::api::bedrock::event_stream::build_test_frame(
                     event,
                     "application/json",
                     payload.as_bytes(),
@@ -6328,10 +6586,11 @@ mod configured_output_ceiling_tests {
         let client = Arc::new(opi_ai::http::HttpClient::new());
         if bedrock {
             Box::new(
-                opi_ai::bedrock::BedrockProvider::new(Some(base), client).with_models(vec![model]),
+                opi_ai::providers::bedrock::BedrockProvider::new(Some(base), client)
+                    .with_models(vec![model]),
             )
         } else {
-            Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+            Box::new(opi_ai::providers::anthropic::AnthropicProvider::for_route(
                 "anthropic".into(),
                 vec![model],
                 Some(base),

@@ -201,37 +201,37 @@ fn minimal_request(model: &str) -> Request {
 
 #[test]
 fn anthropic_provider_construction() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(None);
     assert_eq!(provider.id(), "anthropic");
 }
 
 #[test]
 fn openai_provider_construction() {
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(None);
+    let provider = opi_ai::providers::openai::OpenAiChatProvider::new(None);
     assert_eq!(provider.id(), "openai");
 }
 
 #[test]
 fn openrouter_provider_construction() {
-    let provider = opi_ai::openrouter::openrouter_provider(None);
+    let provider = opi_ai::providers::openrouter::openrouter_provider(None);
     assert_eq!(provider.id(), "openrouter");
 }
 
 #[test]
 fn mistral_provider_construction() {
-    let provider = opi_ai::mistral::mistral_provider(None);
+    let provider = opi_ai::providers::mistral::mistral_provider(None);
     assert_eq!(provider.id(), "mistral");
 }
 
 #[test]
 fn openai_responses_provider_construction() {
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);
+    let provider = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);
     assert_eq!(provider.id(), "openai-responses");
 }
 
 #[test]
 fn gemini_provider_construction() {
-    let provider = opi_ai::gemini::GeminiProvider::new(None);
+    let provider = opi_ai::providers::gemini::GeminiProvider::new(None);
     // The adapter keeps its historical id; host routes republish it as
     // `google` through the canonical wrapper.
     assert_eq!(provider.id(), "gemini");
@@ -254,57 +254,81 @@ fn assert_same_models(
 
 #[test]
 fn anthropic_model_catalog_matches_constructor() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
-    assert_same_models(provider.models(), &opi_ai::anthropic::model_catalog());
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(None);
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::anthropic::model_catalog(),
+    );
 }
 
 #[test]
 fn openai_chat_model_catalog_matches_constructor() {
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(None);
-    assert_same_models(provider.models(), &opi_ai::openai_chat::model_catalog());
+    let provider = opi_ai::providers::openai::OpenAiChatProvider::new(None);
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::openai::model_catalog(),
+    );
 }
 
 #[test]
 fn openai_responses_model_catalog_matches_constructor() {
-    let provider = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);
+    let provider = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);
     assert_same_models(
         provider.models(),
-        &opi_ai::openai_responses::model_catalog(),
+        &opi_ai::providers::openai_responses::model_catalog(),
     );
 }
 
 #[test]
 fn openrouter_model_catalog_matches_constructor() {
-    let provider = opi_ai::openrouter::openrouter_provider(None);
-    assert_same_models(provider.models(), &opi_ai::openrouter::model_catalog());
+    let provider = opi_ai::providers::openrouter::openrouter_provider(None);
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::openrouter::model_catalog(),
+    );
 }
 
 #[test]
 fn mistral_model_catalog_matches_constructor() {
-    let provider = opi_ai::mistral::mistral_provider(None);
-    assert_same_models(provider.models(), &opi_ai::mistral::model_catalog());
+    let provider = opi_ai::providers::mistral::mistral_provider(None);
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::mistral::model_catalog(),
+    );
 }
 
 #[test]
 fn gemini_model_catalog_matches_constructor() {
-    let provider = opi_ai::gemini::GeminiProvider::new(None);
-    assert_same_models(provider.models(), &opi_ai::gemini::model_catalog());
+    let provider = opi_ai::providers::gemini::GeminiProvider::new(None);
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::gemini::model_catalog(),
+    );
 }
 
 #[test]
 fn bedrock_model_catalog_matches_constructor() {
-    let provider = opi_ai::bedrock::BedrockProvider::new(
+    let provider = opi_ai::providers::bedrock::BedrockProvider::new(
         None,
         std::sync::Arc::new(opi_ai::http::HttpClient::new()),
     );
-    assert_same_models(provider.models(), &opi_ai::bedrock::model_catalog());
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::bedrock::model_catalog(),
+    );
 }
 
 #[test]
 fn vertex_model_catalog_matches_constructor() {
-    let provider =
-        opi_ai::vertex::VertexProvider::new("test-project".into(), "us-central1".into(), None);
-    assert_same_models(provider.models(), &opi_ai::vertex::model_catalog());
+    let provider = opi_ai::providers::vertex::VertexProvider::new(
+        "test-project".into(),
+        "us-central1".into(),
+        None,
+    );
+    assert_same_models(
+        provider.models(),
+        &opi_ai::providers::vertex::model_catalog(),
+    );
 }
 
 #[tokio::test]
@@ -611,7 +635,7 @@ async fn openai_codex_factory_uses_dedicated_provider() {
         "Codex factory must not use the standard Responses provider"
     );
 
-    let standard_source = include_str!("../../opi-ai/src/openai_responses.rs");
+    let standard_source = include_str!("../../opi-ai/src/api/openai_responses.rs");
     for forbidden in [
         "derive_codex_account_id",
         "codex/responses",
@@ -707,11 +731,11 @@ async fn anthropic_stored_api_key_routes_to_api_key_wire_auth() {
 
 #[test]
 fn openrouter_with_custom_referer() {
-    let compat = opi_ai::openai_chat::CompatConfig::default();
+    let compat = opi_ai::providers::openai::CompatConfig::default();
     // Get the default model list from the convenience function.
-    let temp = opi_ai::openrouter::openrouter_provider(None);
+    let temp = opi_ai::providers::openrouter::openrouter_provider(None);
     let models = temp.models().to_vec();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+    let provider = opi_ai::providers::openai::OpenAiChatProvider::new_for_profile(
         "https://openrouter.ai/api".into(),
         "openrouter".into(),
         compat,
@@ -1794,7 +1818,7 @@ fn azure_default_factory_catalog_uses_selected_deployment_wire() {
 #[test]
 fn azure_constructor_rejects_empty_selected_deployment() {
     assert!(matches!(
-        opi_ai::azure_openai::AzureOpenAIProvider::new(
+        opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
             Some("https://test.openai.azure.com".into()),
             " \t".into(),
             None,
@@ -1807,7 +1831,7 @@ fn azure_constructor_rejects_empty_selected_deployment() {
 #[test]
 fn azure_config_constructor_rejects_empty_deployment_catalog() {
     assert!(matches!(
-        opi_ai::azure_openai::AzureOpenAIProvider::from_config(
+        opi_ai::providers::azure_openai::AzureOpenAIProvider::from_config(
             Some("https://test.openai.azure.com".into()),
             vec![],
             None,
@@ -2208,6 +2232,43 @@ async fn build_harness_collection_uses_from_registry_seam() {
         .resolve("mock-active:mock-model")
         .expect("active provider model resolves through the from_registry collection");
     assert_eq!(model.id, "mock-model");
+}
+
+#[test]
+fn build_harness_collection_registers_provider_owned_deferred_route() {
+    use opi_ai::auth::{AuthScheme, StaticAuthResolver};
+    use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+    use opi_ai::types::deferred::DeferredHandle;
+    use opi_coding_agent::provider_factory::build_harness_collection;
+
+    let collection = build_harness_collection(
+        vec![(
+            Box::new(OpenAiResponsesProvider::new(Some(
+                "http://127.0.0.1:1/v1".into(),
+            ))) as Box<dyn Provider>,
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::Bearer,
+                secrecy::SecretString::from("test-key"),
+            )),
+        )],
+        Vec::new(),
+        Vec::new(),
+        "openai-responses",
+        None,
+    );
+
+    let handle = DeferredHandle {
+        provider: "openai-responses".into(),
+        model_id: "o3".into(),
+        api: "openai-responses".into(),
+        id: "resp_test".into(),
+        expires_at_ms: None,
+        poll_after_ms: None,
+        data: None,
+    };
+    collection
+        .validate_deferred_handle(&handle, None)
+        .expect("provider factory registers the OpenAI deferred route");
 }
 
 /// Strip Rust line and nested block comments while preserving string/char

@@ -56,8 +56,10 @@ implicit global initialization.
 
 ## Feature profiles
 
-`catalog-bundled`, `http-transport`, `tls-backend`, `cloud-auth`, `websocket-compression`, `protocol-adapters`, `oauth-store` and
-`telemetry-tracing` are independently selectable. `builtins` includes the
+`catalog-bundled`, `http-transport` and `telemetry-tracing` are independently
+selectable. `tls-backend`, `cloud-auth`, `websocket-compression`,
+`protocol-adapters` and `oauth-store` are independently selectable too.
+`builtins` includes the
 catalog, shared HTTP transport, provider protocol adapters and provider OAuth
 flows for compatibility, so the default profile keeps the complete existing
 surface.
@@ -189,7 +191,7 @@ use opi_ai::CallFailure;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript;
 use opi_ai::{AmbientAuthContext, AuthContext, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;
@@ -328,7 +330,7 @@ use futures_util::StreamExt;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::transcript;
 use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
@@ -452,7 +454,7 @@ use opi_ai::message::{
     ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript::{self, TranscriptContext};
 use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;

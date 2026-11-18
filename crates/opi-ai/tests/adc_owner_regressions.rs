@@ -496,7 +496,7 @@ fn configuration_models(
     models.set_auth_context(context);
     models
         .register_route(
-            Box::new(opi_ai::vertex::VertexProvider::new(
+            Box::new(opi_ai::providers::vertex::VertexProvider::new(
                 "p1".into(),
                 "global".into(),
                 Some("http://127.0.0.1:1".into()),

@@ -46,8 +46,8 @@ use opi_ai::http::{
 };
 use opi_ai::message::AssistantMessage;
 use opi_ai::models::Models;
-use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::provider::{CacheRetention, EventStream, ProviderError};
+use opi_ai::providers::openai::OpenAiChatProvider;
 use opi_ai::stream::ChatStream;
 use opi_ai::transcript;
 use rustls::{

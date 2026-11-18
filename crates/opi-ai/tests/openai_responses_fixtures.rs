@@ -6,10 +6,10 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
-use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
+use opi_ai::providers::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -1184,8 +1184,9 @@ async fn responses_tool_call_multiple_arg_deltas() {
 
 #[test]
 fn responses_custom_base_url() {
-    let provider =
-        opi_ai::openai_responses::OpenAiResponsesProvider::new(Some("https://custom.proxy".into()));
+    let provider = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(
+        "https://custom.proxy".into(),
+    ));
     assert_eq!(provider.id(), "openai-responses");
 }
 
@@ -1585,7 +1586,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
 #[tokio::test]
 async fn stream_cancellation_drains_without_hang_after_cancel() {
     // The CancellationToken is threaded into the OpenAI Responses adapter's
-    // HTTP body-stream loop (openai_responses.rs `cancel.cancelled()` select
+    // HTTP body-stream loop (api/openai_responses.rs `cancel.cancelled()` select
     // arm). This wiremock fixture is fully buffered, so it only proves the
     // adapter drains promptly after cancellation; it does not prove
     // cancellation wins a race against delayed terminal SSE data.
@@ -1819,7 +1820,7 @@ async fn responses_async_response_and_raw_callbacks_follow_source_order() {
 mod responses_constrained_tests {
     use super::*;
     use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
-    use opi_ai::openai_responses::ResponsesConfig;
+    use opi_ai::providers::openai_responses::ResponsesConfig;
 
     fn grammar_tool(lark: Option<&str>, regex: Option<&str>) -> ToolDef {
         ToolDef {
@@ -2057,12 +2058,12 @@ mod responses_constrained_tests {
 
     #[tokio::test]
     async fn malformed_required_fails_before_native_authentication_and_dispatch() {
+        use opi_ai::api::openai_responses::OpenAiResponsesChatApi;
         use opi_ai::model_info::{
             ModelCapabilities, ModelInfo, OpenAiResponsesCompat, OpenAiResponsesSourceCompat,
             WireApi, WireCompat,
         };
         use opi_ai::models::{ChatModelRecord, Models};
-        use opi_ai::openai_responses::OpenAiResponsesChatApi;
         use std::sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
@@ -2473,11 +2474,11 @@ mod responses_constrained_tests {
 // stamps, duration, and the public Models entries.
 // ---------------------------------------------------------------------------
 
-use opi_ai::models::{ChatModelRecord, Models};
-use opi_ai::openai_responses::{
+use opi_ai::api::openai_responses::{
     OpenAiResponsesChatApi, OpenAiResponsesOptions, ResponsesReasoningSummary,
     ResponsesServiceTier, ResponsesToolChoice,
 };
+use opi_ai::models::{ChatModelRecord, Models};
 use opi_ai::{ModelCapabilities, ModelInfo, ThinkingLevel, WireApi};
 
 fn o3_responses_model() -> ModelInfo {
@@ -2511,7 +2512,7 @@ async fn registered_responses_models(
     model: ModelInfo,
 ) -> (
     Models,
-    opi_ai::models::ChatApiHandle<OpenAiResponsesOptions>,
+    opi_ai::api::contract::ChatApiHandle<OpenAiResponsesOptions>,
 ) {
     let provider = std::sync::Arc::new(OpenAiResponsesProvider::new(Some(server_uri)));
     let api = OpenAiResponsesChatApi::new(provider, model).expect("valid responses record");
@@ -3497,7 +3498,7 @@ mod source_compat_controls {
             vec![model],
             Arc::new(opi_ai::http::HttpClient::new()),
         )
-        .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+        .with_affinity_policy(opi_ai::providers::openai_responses::ResponsesAffinityPolicy::Direct)
     }
 
     fn request(provider_id: &str, retention: CacheRetention) -> Request {
@@ -4091,7 +4092,9 @@ mod source_compat_controls {
                         vec![("X-Session-Id".into(), "route-value".into())],
                         Arc::new(opi_ai::http::HttpClient::new()),
                     )
-                    .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+                    .with_affinity_policy(
+                        opi_ai::providers::openai_responses::ResponsesAffinityPolicy::Direct,
+                    )
                 } else {
                     let configured = if mode == "configured" {
                         vec![("X-Session-Id".into(), "configured-value".into())]
@@ -4101,11 +4104,13 @@ mod source_compat_controls {
                     OpenAiResponsesProvider::for_route(
                         Some(server.uri()),
                         "openai-responses".into(),
-                        opi_ai::provider_headers::ProviderHeaders::try_new(configured).unwrap(),
+                        opi_ai::api::shared::headers::ProviderHeaders::try_new(configured).unwrap(),
                         vec![model],
                         Arc::new(opi_ai::http::HttpClient::new()),
                     )
-                    .with_affinity_policy(opi_ai::openai_responses::ResponsesAffinityPolicy::Direct)
+                    .with_affinity_policy(
+                        opi_ai::providers::openai_responses::ResponsesAffinityPolicy::Direct,
+                    )
                 };
                 let seen = Arc::new(Mutex::new(Vec::new()));
                 let recorder = seen.clone();

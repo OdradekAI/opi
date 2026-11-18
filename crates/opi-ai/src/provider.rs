@@ -7,6 +7,7 @@ use futures_core::Stream;
 use http::header::{HeaderName, HeaderValue};
 use tokio_util::sync::CancellationToken;
 
+use crate::api::contract::DeferredApi;
 use crate::credential::BoxAuthFuture;
 use crate::message::{InputContent, Message, OutputContent};
 use crate::model_info::ThinkingLevel;
@@ -67,7 +68,7 @@ pub trait Provider: Send + Sync {
     fn validate_simple_options(
         &self,
         _model: &ModelInfo,
-        options: &crate::models::SimpleOptions,
+        options: &crate::api::contract::SimpleOptions,
     ) -> Result<(), ProviderError> {
         options.validate_default()
     }
@@ -76,6 +77,13 @@ pub trait Provider: Send + Sync {
 
     /// Models supported by this provider.
     fn models(&self) -> &[ModelInfo];
+
+    /// Optional explicit Deferred backend owned by this provider route.
+    /// Registration remains separate from the ordinary model catalog, while
+    /// the production collection can reuse the same route auth resolver.
+    fn deferred_api(&self) -> Option<std::sync::Arc<dyn DeferredApi<()>>> {
+        None
+    }
 
     /// Freeze source-derived routing after authentication and before attempts.
     ///
@@ -141,7 +149,7 @@ pub trait Provider: Send + Sync {
     fn stream_model_resource_attempt(
         &self,
         _model: ModelInfo,
-        _options: crate::models::SimpleOptions,
+        _options: crate::api::contract::SimpleOptions,
         request: Request,
         auth: crate::auth::ResolvedAuth,
         attempt: AttemptContext,
@@ -371,12 +379,13 @@ pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
 ///
 /// Rejects header names that are empty, contain control characters, or match
 /// the provider-managed auth header set. Reserved-name rejection reuses the
-/// single canonical `RESERVED_PROVIDER_HEADERS` list in `provider_headers`
+/// single canonical `RESERVED_PROVIDER_HEADERS` list in
+/// `api::shared::headers`
 /// shared with `ProviderHeaders`, so every wire enforces the same gate.
 ///
 /// Returns `Err(ProviderError::RequestFailed(...))` on the first invalid header.
 pub fn validate_extra_headers(headers: &[(String, String)]) -> Result<(), ProviderError> {
-    use crate::provider_headers::RESERVED_PROVIDER_HEADERS;
+    use crate::api::shared::headers::RESERVED_PROVIDER_HEADERS;
 
     for (name, value) in headers {
         if name.is_empty() {

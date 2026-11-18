@@ -17,7 +17,7 @@ requests. Pi 1.5 sends one SSE POST after those two rejections in each
 WebSocket mode and returns a successful answer. Pi 1.3.0
 `71023aec1546d6d677a65669c5665c0927ce0dd0` already had this branch.
 Opi's earlier terminal path dates to `5dc3bdbb1f975d858ce5645460bf32fb86304524`
-in `crates/opi-ai/src/openai_codex_responses/ws_transport.rs`. The prior
+in `crates/opi-ai/src/transport/codex.rs`. The prior
 behavior changed the final result even though both provider rejections
 identified the WebSocket connection limit.
 
@@ -41,8 +41,8 @@ prepared attempt would resend that logical call. Pi defaults its SSE
 retry budget to zero. In the controlled failed-POST case, explicitly
 setting Pi's SSE budget to one sends a second POST. Opi's advanced
 acquisition policy continues to observe `PostHandoff`.
-[WS decision](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L557) ·
-[SSE owner](../../../../crates/opi-ai/src/openai_codex_responses.rs#L794) ·
+[WS decision](../../../../crates/opi-ai/src/transport/codex.rs#L557) ·
+[SSE owner](../../../../crates/opi-ai/src/api/openai_codex_responses.rs#L854) ·
 [Acquisition test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L4706)
 
 ## Observed outcomes
@@ -76,8 +76,8 @@ attaches `provider_transport_failure` to the recovered call. Opi attaches
 the fixed `codex_websocket_fallback` diagnostic and reports
 `session_fallback` on a later sticky SSE call. The Rust messages exclude
 the raw error canary.
-[Start mapping](../../../../crates/opi-ai/src/openai_responses_shared.rs#L1108) ·
-[Text projection](../../../../crates/opi-ai/src/openai_responses_shared.rs#L1992) ·
+[Start mapping](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L1095) ·
+[Text projection](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L1990) ·
 [Send and result test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L2697) ·
 [Cleanup test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L3774) ·
 [Paired observations](../evidence/phase5-codex-connection-limit-observations.json)

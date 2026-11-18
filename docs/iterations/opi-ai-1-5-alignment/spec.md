@@ -1038,8 +1038,9 @@ denied Clippy、实际归档包外部 consumer、665 个 Rust 文件的调用方
 ADC、共享 SigV4 以及固定 query/XML/DPoP codec，并传递选择 `http-transport`/
 `tls-backend`，但不选择 provider wire、catalog、provider collection 或
 WebSocket compression。`protocol-adapters` 传递选择它，因此 Bedrock/Vertex
-调用方和默认/builtins surface 保持不变；历史 `bedrock::sigv4` 路径改为共享
-实现的 re-export，cloud-only 调用方可直接使用 `auth::aws::sigv4`。Windows
+调用方和默认/builtins surface 保持不变；#134 当时保留的历史
+`bedrock::sigv4` re-export 已由后续 #156 canonical-only 清理，当前调用方
+直接使用 `auth::aws::sigv4`。Windows
 native profile、auth 内部 59 个测试、warnings-denied Clippy、实际归档包外部
 consumer、667 个 Rust 文件的调用方 inventory，以及 protocol adapter native/
 Clippy/builtins HTTP 配对验证均通过；protocol 归档图已记录五项 feature 的精确
@@ -1106,6 +1107,90 @@ Pi 1.5.0、平台、provider matrix 与 #137 shared-owner 回执保持不变。�
 2026-11-16 [#141](issues/141-direct-package-consumers-and-models-runtime.md) 在 #140 的绑定审计之后直接执行当前的 `consumer-http`、`consumer-crypto` 和 `consumer-ws` 模板。HTTP 与 crypto 各自 ordinary/caller-union 两个 profile 均 6/6 通过；WS 的 ordinary、union-default、union-c-zlib 三个 profile 均 10/10 通过，覆盖实际 Models→Codex Upgrade 链、PMD/window8、尾部 Close 和主动/空闲清理。WS 通用 package runner 的私有/公开/clippy 层均通过，但在打包 rustdoc 的 `-D warnings` 阶段因公共 `tls` 文档引用私有 `node_trust` 而停止；该文档门槛作为独立缺口保留，未用改写候选源码掩盖。冻结 Pi 1.5.0 的 `models-runtime.test.ts` 中 CASE-REVIEW-09/10 通过精确名称过滤执行，2/2 通过，其余 41 项按计划跳过；两项从 related-only 提升为 `exact-upstream-dynamic`，但仍不宣称 Rust 实现等价。旧 #139/#140 哈希、contract-index 及历史回执保持不变；详见 `phase8-package-consumers-models-runtime-20261116-v1.json`。
 
 2026-11-16 [#142](issues/142-repair-packaged-rustdoc-and-rerun-consumers.md) 修复打包 rustdoc 中公开 `tls` 文档链接私有 `node_trust` 的门槛：保留打包 Node CA 语义，仅移除非法公开链接，运行时代码和 feature 闭包不变。当前 `consumer-http`、`consumer-crypto` 和 `consumer-ws` 模板均由实际 `opi-ai-0.8.3` 归档在 workspace 外消费；HTTP/crypto 的 ordinary 与 caller-union 各 6/6 通过，WS 的 ordinary、union-default、union-c-zlib 各 10/10 通过，WS 私有/公开/clippy、打包 rustdoc 和三档消费者全部通过。冻结 Pi 1.5.0 Chat 终结差分以 sealed snapshot 和当前探针重跑，8 组配对三轮稳定，finish/usage、`[DONE]`/EOF、尾部错误和连接释放一致，仅保留既定取消块结束差异；精确 `models-runtime` 两项也从 sealed Pi snapshot 重跑为 2/2 通过、41 项按名称过滤跳过。旧 #139/#140/#141 回执、contract-index 和全部失败证据保持不变；详见新回执及 #142。
+
+2026-11-16 针对 #94 真实 Deferred 阻断建立可执行的[#143 接入票](issues/143-connect-real-deferred-production-route.md)。该票把缺口拆成 provider adapter、生产注册/装配、一个可恢复的生产调用方、持久化/取消/重试策略和机器可验证证据五层；要求先冻结真实 provider/API/model 与认证环境，再以实际异步 job 的 submit/fetch/cancel 闭合 #94。Faux、`ScriptedDeferredBackend` 和现有差分夹具继续作为负例与回归，不计入真实接入；若没有可授权的真实 provider 或测试账户，保留 #94 的阻断，不降低验收标准。
+
+2026-11-16 #143 已开始第一条实现切片：冻结 OpenAI Responses Background / `o3`，加入 `OpenAiResponsesDeferredApi` 的 submit/fetch/cancel、生产 `Models` 注册和 coding-agent 显式 submit/poll/cancel 调用方，并用 wiremock 覆盖三条端点。随后把 pending handle 接入现有 assistant-message session 持久化/恢复，让 agent-loop 在 Deferred 终端停在显式 poll/cancel 边界，并补上 ready poll 的 session settlement：pending 结果更新持久化 handle，ready 结果写入最终 assistant 并在重开时清除旧 pending。当前本地调用方策略也已固定：不自动 retry/resubmit；网络、超时、限流的 poll/cancel 失败保留原 handle 供显式重试，终态 poll 失败写入 `Error`，远程确认 cancel 写入 `Aborted`，均只结算一次。真实探针因 `OPENAI_API_KEY` 缺失而未发出网络请求，授权账户上的 live receipt 仍是未完成验收项。
+
+2026-11-17 重新验证 #143 的本地生产边界：OpenAI Responses wire submit/fetch/cancel 1 项、coding-agent Deferred session 7 项、provider factory 注册 1 项、agent-loop pending 边界 1 项均通过。真实 OpenAI probe 以同一 `openai`/`openai-responses`/`o3` 配置重跑，`OPENAI_API_KEY` 仍不可用，submit/fetch/cancel 全部记录为 blocked，未发出网络请求；receipt 见
+[`phase9-deferred-openai-probe-20261117.json`](evidence/phase9-deferred-openai-probe-20261117.json)。#143 继续保持 open，当前阻断是授权凭据缺失，不是本地 wire/lifecycle 回归。
+
+2026-11-17 #157 继续执行 canonical-only 结构清理：`ApiMappedProvider` 被确认是
+provider composition，而不是 wire adapter，因此从 `src/api_mapped.rs` 移至
+`src/providers/mapped.rs`。`lib.rs` 不再声明旧根模块，也不再保留根级类型重导出；
+provider collection、coding-agent、测试与 provider-auth 文档统一使用
+`opi_ai::providers::mapped::{ApiMappedProvider, ApiMapError}`。mapped-provider
+的 route/catalog 校验和 dispatch 行为保持不变；实际 `.crate` 的
+protocol-adapters 外部 consumer 额外编译并运行该 canonical 路径。详见
+[#157](issues/157-migrate-api-mapped-provider-to-providers.md)。
+
+2026-11-17 #158 继续执行 canonical-only 结构清理：内置 provider 的注册、
+catalog 装配、auth resolver 与 route composition 被确认属于 provider 组合模块，
+因此将 `src/provider_collection.rs` 移至 `src/providers/collection.rs`。`lib.rs`
+不再声明旧根模块，也不保留兼容 shim；coding-agent、测试、examples、README、
+provider-auth 文档和 conformance 脚本统一使用 `opi_ai::providers::collection`。
+注册、路由、惰性认证、catalog 以及 classifier/image 行为保持不变；实际 `.crate`
+外部 consumer 从归档包解析 canonical collection 路径并运行三条受控 README 流程。
+详见 [#158](issues/158-migrate-provider-collection-to-providers.md)。
+
+2026-11-17 #159 继续执行 canonical-only 结构清理：`ProviderHeaders` 被确认是
+跨 wire 复用的 header 合同，不属于某个 provider profile 或单一协议 adapter，
+因此将 `src/provider_headers.rs` 移至 `src/api/shared/headers.rs`。`api::shared`
+对该公共合同开放，协议专属 mapper 仍保持 crate-private；内部调用方统一使用
+`api::shared::headers`，`lib.rs` 只保留精选的 `ProviderHeaders` facade，不保留
+`provider_headers` 模块 shim。header 校验、保留名保护、合并顺序与 callback 输出
+校验行为保持不变；实际 `.crate` 的 protocol-adapters 外部 consumer 直接编译并
+运行 canonical shared-header 路径。详见
+[#159](issues/159-migrate-provider-headers-to-api-shared.md)。
+
+2026-11-17 #160 继续执行 canonical-only 结构清理：`provider_env` 只负责
+解析调用方作用域与 ambient process environment，不拥有 provider profile、
+endpoint、鉴权、代理或 wire 规则，因此从 crate 根迁移到
+`api::shared::env`。`lib.rs` 删除旧根模块声明，Pi Messages adapter、公共
+utility tests、CHANGELOG 与 conformance 统一使用 canonical path；实际归档包
+external consumer 直接解析并运行该环境合同。详见
+[#160](issues/160-migrate-provider-env-to-api-shared.md)。
+
+2026-11-17 #161 继续执行 canonical-only 结构清理：`text_decode` 是多个
+API wire adapter 共用的增量 UTF-8 解码实现，不拥有 provider identity、endpoint、
+鉴权或 transport，因此从 crate 根迁移到 crate-private 的
+`api::shared::text_decode`。所有协议 adapter 统一使用该 canonical seam，旧根
+模块删除且不保留 shim；现有分片 UTF-8、非法序列和 EOF 行为测试随实现迁移，
+实际归档包 protocol-adapters consumer 重新验证。详见
+[#161](issues/161-migrate-text-decode-to-api-shared.md)。
+
+2026-11-17 #162 继续执行 canonical-only 结构清理：`endpoint` 只负责把已
+解析的 base URL 与 API path 进行确定性拼接，不拥有 provider identity、鉴权、
+catalog 或 transport，因此从 crate 根迁移到 crate-private 的
+`api::shared::endpoint`。OpenAI Chat、OpenAI Responses、Codex Responses 与
+Mistral adapter 统一使用该 canonical seam，旧根模块删除且不保留 shim；归档包
+protocol-adapters consumer 同时检查实际 canonical 文件布局并重新运行。
+详见 [#162](issues/162-migrate-endpoint-to-api-shared.md)。
+
+2026-11-17 [#163](issues/163-audit-root-module-ownership.md) 完成的是
+`lib.rs` 活跃根模块的保留审计：`time`、`codex_resources` 和私有
+`execution` 等根模块均有实际生产调用方依据，未发现仅因根目录位置就应迁入
+`providers`/`api::shared` 的根实现。这一结果不等于内部职责已经解耦。
+
+随后按第一次结构决策重新核查，`ChatApi` 与 `DeferredApi` 已归属
+`api::contract`，chat adapter 也已不再从 `models` 获取这些 contract；但 adapter
+仍导入具体 `crate::providers::*`，provider profile 仍保存 adapter-native options，
+且 230 KB 的 `models.rs` 仍混合 registry、
+auth/catalog、注册擦除、调用执行和 provider-specific thinking 规则。因此
+结构阶段不能收口；[#164](issues/164-audit-unresolved-ownership-boundaries.md)
+建立剩余 ownership/依赖清单，[#165](issues/165-extract-api-operation-contracts.md)
+与 [#166](issues/166-extract-deferred-api-contracts.md) 已完成 operation contract
+收口，[#167](issues/167-decouple-openai-chat-profile-options.md) 与
+[#168](issues/168-decouple-openai-responses-profile-options.md) 已完成两条
+profile/native-options 解耦，[#169](issues/169-decouple-openai-codex-profile-options.md)
+又完成 Codex profile 的 native-options 与 API 依赖解耦；[#170](issues/170-decouple-anthropic-profile-options.md)
+  完成 Anthropic profile 的 native-options 与 API 依赖解耦，并将纯
+  `ProviderHeaders` 值下沉到 `types::headers`；[#171](issues/171-decouple-azure-openai-profile-options.md)
+  完成 Azure profile 的 native-options、selected-record state 与 API 依赖解耦，
+  并将 per-call dual-wire dispatch 收拢到 canonical wire adapter；剩余 profiles、
+adapter/profile route context 和 Models 内部拆分仍需有证据地推进。2026-11-18 的结构复核又发现 lower provider contract 反向依赖 `api::contract`，并且 `stream` 与 `execution` 仍互相持有实现类型；这些边界在目录迁移中没有被解决，不能把 #163 的根模块保留审计当作结构收敛。新的 [#172 结构收敛票](issues/172-freeze-layer-graph-and-lower-provider-contract.md) 将工作顺序改为先冻结依赖图、抽取无环 lower contract、分离 stream/execution owner，再继续剩余 profiles 和 Models 内部拆分。进度按 G0–G6 结构门槛、契约回归和外部包消费证据衡量，而不是按新增目录或 issue 数量衡量。完成这些边界后再回到
+[#143](issues/143-connect-real-deferred-production-route.md)
+及平台、capability-V、资源、性能和 fuzz 验收。
 
 ## 规划交接记录（历史）
 

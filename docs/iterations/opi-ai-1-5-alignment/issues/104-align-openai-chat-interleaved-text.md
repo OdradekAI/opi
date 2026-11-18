@@ -6,9 +6,9 @@ text. Raw deltas still arrive in wire order. The change applies to the shared
 Chat Completions mapper, including the OpenRouter and legacy Mistral and Azure
 Chat routes. Native Mistral Conversations and Azure Responses have separate
 mappers.
-[Chat mapper](../../../../crates/opi-ai/src/openai_chat.rs#L800) ·
-[Azure Chat](../../../../crates/opi-ai/src/azure_openai.rs#L882) ·
-[Mistral routes](../../../../crates/opi-ai/src/mistral.rs#L22)
+[Chat mapper](../../../../crates/opi-ai/src/api/openai.rs#L800) ·
+[Azure Chat](../../../../crates/opi-ai/src/api/azure_openai.rs#L226) ·
+[Mistral routes](../../../../crates/opi-ai/src/api/mistral.rs#L22)
 
 ## Why change the mapper
 
@@ -21,8 +21,8 @@ The replay shows a lost whitespace suffix in the next model request and
 a different ordered transcript after a provider switch. Keeping the text
 block open fixes both at the point where the blocks are created.
 [Pinned Pi mapper](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/api/openai-completions.ts#L407-L471) ·
-[Opi Chat replay](../../../../crates/opi-ai/src/openai_chat.rs#L2631) ·
-[Opi Anthropic replay](../../../../crates/opi-ai/src/anthropic.rs#L2602)
+[Opi Chat replay](../../../../crates/opi-ai/src/api/openai.rs#L2631) ·
+[Opi Anthropic replay](../../../../crates/opi-ai/src/api/anthropic.rs#L2470)
 
 ## Frozen replay
 
@@ -62,7 +62,7 @@ when its OpenAI SDK iterator ends, which can occur at the `[DONE]`
 sentinel. The fixture releases the usage frame before comparing `Done`
 with `result()`. The finish-to-iterator-end timing remains open.
 [Pi termination](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/api/openai-completions.ts#L672-L693) ·
-[Opi finish handling](../../../../crates/opi-ai/src/openai_chat.rs#L950)
+[Opi finish handling](../../../../crates/opi-ai/src/api/openai.rs#L950)
 
 ## Caller impact
 
@@ -93,7 +93,7 @@ record with the full UTF-16 length.
 
 - The #102 original-lock snapshot, installed dependencies, catalog, and
   compiled Pi files are identical. The only source change between the two
-  material manifests is `openai_chat.rs`. Twelve selected Pi source files
+  material manifests is `api/openai.rs`. Twelve selected Pi source files
   match Git revision `f9a26365568127461c47a07a37dcb42c140a3ac5`. Each of
   the three builds produces three equal traces.
   [Before materials](../evidence/phase5-deferred-direct-drop-poll-materials.json) ·

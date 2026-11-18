@@ -54,7 +54,7 @@ resolving auth. `fetch_deferred` collects that existing failure into
 reading as monotonic and the deadline as epoch milliseconds. Both inputs
 to the comparison now explicitly use Unix epoch milliseconds in rustdoc
 and the transport guides. The check itself uses the existing code.
-[Time input](../../../../crates/opi-ai/src/deferred.rs#L43) ·
+[Time input](../../../../crates/opi-ai/src/api/contract.rs) ·
 [Expiry check](../../../../crates/opi-ai/src/types/deferred.rs#L61) ·
 [Dispatch order](../../../../crates/opi-ai/src/models.rs#L1058) ·
 [Transport contract](../../../../crates/opi-ai/docs/transport.md#deferred-transport-semantics)

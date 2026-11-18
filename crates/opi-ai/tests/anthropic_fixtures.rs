@@ -4,11 +4,10 @@
 //! All tests use fixture strings — no live provider calls (red flag #10).
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::{
-    AnthropicEvent, AnthropicMapper, AnthropicProvider, ParsedEvent, parse_sse_events,
-};
+use opi_ai::api::anthropic::{AnthropicEvent, AnthropicMapper, ParsedEvent, parse_sse_events};
 use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path};
@@ -660,13 +659,13 @@ fn stop_reason_tool_use_maps_correctly() {
 
 #[test]
 fn anthropic_provider_id() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(None);
     assert_eq!(provider.id(), "anthropic");
 }
 
 #[test]
 fn anthropic_provider_models_not_empty() {
-    let provider = opi_ai::anthropic::AnthropicProvider::new(None);
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(None);
     assert!(!provider.models().is_empty());
 }
 
@@ -1669,10 +1668,10 @@ mod request_compatibility {
     use std::sync::Arc;
 
     use futures_util::StreamExt;
-    use opi_ai::anthropic::AnthropicProvider;
     use opi_ai::http::HttpClient;
     use opi_ai::model_info::{AnthropicMessagesCompat, ThinkingLevel, WireCompat};
     use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::providers::anthropic::AnthropicProvider;
     use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
     use tokio_util::sync::CancellationToken;
 
@@ -2723,8 +2722,9 @@ mod anthropic_strict_wire_tests {
 
     #[tokio::test]
     async fn required_preauth_checks_native_history_but_excludes_collapsed_declarations() {
+        use opi_ai::api::contract::SimpleOptions;
         use opi_ai::auth::{AuthResolver, ResolvedAuth};
-        use opi_ai::models::{ChatModelRecord, Models, SimpleOptions};
+        use opi_ai::models::{ChatModelRecord, Models};
         use opi_ai::transcript::{SystemMessage, ToolReference};
         use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -3589,16 +3589,17 @@ mod anthropic_strict_variant_tests {
 // transform-messages.ts, compat-schema.ts (annex rows 37/50/165/176/244).
 // ---------------------------------------------------------------------------
 
-use opi_ai::anthropic::{
-    AnthropicMessagesChatApi, AnthropicMessagesOptions, AnthropicThinkingDisplay,
-    AnthropicToolChoice,
+use opi_ai::api::anthropic::{
+    AnthropicMessagesChatApi, AnthropicMessagesOptions, AnthropicMessagesWireAdapter,
+    AnthropicThinkingDisplay, AnthropicToolChoice,
 };
+use opi_ai::api::contract::SimpleOptions;
 use opi_ai::http::HttpClient;
 use opi_ai::message::ToolDef;
 use opi_ai::model_info::{
     AnthropicMessagesCompat, ModelCapabilities, ModelInfo, WireApi, WireCompat,
 };
-use opi_ai::models::{Models, SimpleOptions};
+use opi_ai::models::Models;
 #[cfg(feature = "telemetry-tracing")]
 use opi_ai::telemetry::TelemetryContext;
 
@@ -3631,7 +3632,7 @@ fn model_39(id: &str, compat: AnthropicMessagesCompat) -> ModelInfo {
         .expect("matching wire compat")
 }
 
-fn provider_39(model: &ModelInfo, options: AnthropicMessagesOptions) -> AnthropicProvider {
+fn profile_39(model: &ModelInfo) -> AnthropicProvider {
     AnthropicProvider::for_route(
         "anthropic".into(),
         vec![model.clone()],
@@ -3640,7 +3641,13 @@ fn provider_39(model: &ModelInfo, options: AnthropicMessagesOptions) -> Anthropi
         std::sync::Arc::new(HttpClient::new()),
         false,
     )
-    .with_native_options(options)
+}
+
+fn provider_39(
+    model: &ModelInfo,
+    options: AnthropicMessagesOptions,
+) -> AnthropicMessagesWireAdapter {
+    AnthropicMessagesWireAdapter::with_options(profile_39(model), options)
 }
 
 fn native_options_39() -> AnthropicMessagesOptions {
@@ -3683,8 +3690,24 @@ fn request_39_for(model: &str, thinking: ThinkingConfig) -> Request {
     }
 }
 
-fn body_39(provider: &AnthropicProvider, request: &Request) -> serde_json::Value {
-    provider.build_request_body(request).expect("body compiles")
+trait BodyBuilder39 {
+    fn build_body_39(&self, request: &Request) -> serde_json::Value;
+}
+
+impl BodyBuilder39 for AnthropicProvider {
+    fn build_body_39(&self, request: &Request) -> serde_json::Value {
+        self.build_request_body(request).expect("body compiles")
+    }
+}
+
+impl BodyBuilder39 for AnthropicMessagesWireAdapter {
+    fn build_body_39(&self, request: &Request) -> serde_json::Value {
+        self.build_request_body(request).expect("body compiles")
+    }
+}
+
+fn body_39(provider: &impl BodyBuilder39, request: &Request) -> serde_json::Value {
+    provider.build_body_39(request)
 }
 
 #[test]
@@ -4427,7 +4450,7 @@ async fn native_options_from_simple_map_neutral_tool_choice_only() {
             opi_ai::models::ChatModelRecord::new("anthropic", model),
             request,
             SimpleOptions {
-                tool_choice: Some(opi_ai::models::SimpleToolChoice::None),
+                tool_choice: Some(opi_ai::api::contract::SimpleToolChoice::None),
                 ..Default::default()
             },
         )
@@ -4891,11 +4914,7 @@ async fn oauth_key_projects_identity_inline_tools_and_capture_reload_replay() {
     let mut compat = compat_39(false, true, true);
     compat.supports_strict_tools = true;
     let model = model_39("claude-sonnet-4-5", compat).with_base_url(server.uri());
-    let api = AnthropicMessagesChatApi::new(
-        Arc::new(provider_39(&model, native_options_39())),
-        model.clone(),
-    )
-    .unwrap();
+    let api = AnthropicMessagesChatApi::new(Arc::new(profile_39(&model)), model.clone()).unwrap();
     let mut models = Models::new();
     let handle = models
         .register_chat_api(
@@ -5098,7 +5117,7 @@ mod federation_fixtures {
     fn setup(server: &MockServer, auth: ResolvedAuth) -> (Models, opi_ai::ChatModelRecord) {
         let model = model_39("claude-sonnet-4-5", compat_39(false, false, false))
             .with_base_url(server.uri());
-        let provider = Arc::new(provider_39(&model, native_options_39()));
+        let provider = Arc::new(profile_39(&model));
         let api = AnthropicMessagesChatApi::new(provider, model.clone()).unwrap();
         let mut models = Models::new();
         models
@@ -5542,9 +5561,9 @@ mod federation_fixtures {
             .unwrap();
         let mut models = Models::new();
         models.set_credential_store(store);
-        let mut overrides = opi_ai::provider_collection::BuiltinOverrides::default();
+        let mut overrides = opi_ai::providers::collection::BuiltinOverrides::default();
         overrides.base_urls.insert("anthropic".into(), server.uri());
-        opi_ai::provider_collection::register_builtin(
+        opi_ai::providers::collection::register_builtin(
             &mut models,
             Arc::new(EmptyContext),
             Arc::new(HttpClient::new()),
@@ -6496,7 +6515,7 @@ mod server_fallback_source_compat {
             parse_sse_events(&frame).next(),
             Some(ParsedEvent::Malformed { .. })
         ));
-        let (parsed, raw) = opi_ai::anthropic::parse_sse_events_with_raw(&frame)
+        let (parsed, raw) = opi_ai::api::anthropic::parse_sse_events_with_raw(&frame)
             .next()
             .unwrap();
         assert!(matches!(parsed, ParsedEvent::Malformed { .. }));
@@ -7338,7 +7357,7 @@ mod anthropic_affinity_source_compat {
                 self.record.provider.clone(),
                 vec![model.clone()],
                 None,
-                opi_ai::ProviderHeaders::try_new(self.configured).unwrap(),
+                opi_ai::api::shared::headers::ProviderHeaders::try_new(self.configured).unwrap(),
                 Arc::new(opi_ai::http::HttpClient::new()),
                 self.direct_oauth,
             );

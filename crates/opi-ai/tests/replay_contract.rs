@@ -15,15 +15,15 @@ mod object_wire;
 
 use std::sync::Arc;
 
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::bedrock::BedrockProvider;
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, MediaType, Message, OutputContent, ToolCall,
     ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::bedrock::BedrockProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use opi_ai::stream::StopReason;
 use opi_ai::test_support::resolved_auth;
 use serde_json::json;
@@ -1175,7 +1175,7 @@ mod grammar_replay_tests {
     use super::*;
     use opi_ai::constrained_sampling::ConstrainedSampling;
     use opi_ai::message::ToolDef;
-    use opi_ai::openai_responses::ResponsesConfig;
+    use opi_ai::providers::openai_responses::ResponsesConfig;
 
     fn grammar_tool() -> ToolDef {
         ToolDef {

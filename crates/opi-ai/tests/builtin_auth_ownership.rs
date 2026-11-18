@@ -7,7 +7,7 @@ use opi_ai::credential::{BoxAuthFuture, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
 use opi_ai::mutation::InMemoryCredentialStore;
 use opi_ai::provider::{ProviderError, Request};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::{ChatModelRecord, Models};
 use std::sync::{
     Arc,
@@ -471,8 +471,10 @@ async fn exercise(replace: &str) {
     });
     match &replaced {
         Record::Chat(record) => {
-            let api = opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
-                Arc::new(opi_ai::openrouter::openrouter_provider(Some(server.uri()))),
+            let api = opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+                Arc::new(opi_ai::providers::openrouter::openrouter_provider(Some(
+                    server.uri(),
+                ))),
                 record.info().clone(),
             )
             .unwrap();

@@ -93,7 +93,7 @@ The canonical transcript is caller-owned and is not rewritten by projection.
 
 ## Headers and Scoped Environment
 
-`provider_headers::merge_provider_header_sources` performs case-insensitive,
+`api::shared::headers::merge_provider_header_sources` performs case-insensitive,
 ordered set/remove merging. Later sources win and move the winning key to the
 end; `None` removes a key. Provider-managed authentication headers cannot be
 silently replaced by arbitrary request headers.

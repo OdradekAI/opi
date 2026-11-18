@@ -71,7 +71,7 @@ collapse route 投影出一个 replay header。规范 transcript 由调用方持
 
 ## Header 与 scoped environment
 
-`provider_headers::merge_provider_header_sources` 做大小写不敏感且有序的 set/remove 合并。
+`api::shared::headers::merge_provider_header_sources` 做大小写不敏感且有序的 set/remove 合并。
 后来源胜出并移至末尾；`None` 删除 key。Provider 管理的认证 header 不能被任意 request
 header 静默替换。
 

@@ -34,9 +34,9 @@ terminal control and existing SSE early-stop behavior remain unchanged.
 
 | Seam | Owner/caller | Evidence |
 | --- | --- | --- |
-| Shared Responses mapper | `ResponsesMapper::process` and `flush_pending_terminal` | `crates/opi-ai/src/openai_responses_shared.rs`, `tests/responses_repeated_terminal.rs` |
-| OpenAI Responses HTTP | `OpenAiResponsesProvider::stream_http` and `stream_from_sse` | `crates/opi-ai/src/openai_responses.rs`, `tests/openai_responses_lifecycle.rs` |
-| Azure Responses HTTP | `stream_azure_responses_http` | `crates/opi-ai/src/azure_openai.rs`, `tests/azure_openai_fixtures.rs` |
+| Shared Responses mapper | `ResponsesMapper::process` and `flush_pending_terminal` | `crates/opi-ai/src/api/shared/openai_responses.rs`, `tests/responses_repeated_terminal.rs` |
+| OpenAI Responses HTTP | `OpenAiResponsesProvider::stream_http` and `stream_from_sse` | `crates/opi-ai/src/api/openai_responses.rs`, `tests/openai_responses_lifecycle.rs` |
+| Azure Responses HTTP | `stream_azure_responses_http` | `crates/opi-ai/src/api/azure_openai.rs`, `tests/azure_openai_fixtures.rs` |
 | Public Chat and Agent/session | Models simple/direct and existing result/cost/transcript consumers | final message snapshot is published after the shared stream settles |
 
 ## Verification

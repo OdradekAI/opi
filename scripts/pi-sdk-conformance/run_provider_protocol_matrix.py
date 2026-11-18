@@ -20,17 +20,17 @@ REPO = Path(__file__).resolve().parents[2]
 PACKAGE_RUNNER = Path(__file__).with_name("run_provider_protocol_package.py")
 
 PROVIDERS = {
-    "provider-anthropic": 'let _ = opi_ai::anthropic::parse_sse_events("");',
-    "provider-azure-openai": 'let _ = opi_ai::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test"));',
-    "provider-bedrock": 'assert!(opi_ai::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com"));',
-    "provider-gemini": "let _ = opi_ai::gemini::GeminiProvider::new(None);",
-    "provider-mistral": "let _ = opi_ai::mistral::mistral_provider(None);",
-    "provider-openai-chat": 'let _ = opi_ai::openai_chat::parse_sse_events("");',
-    "provider-openai-codex-responses": "let _ = std::any::type_name::<opi_ai::openai_codex_responses::CodexOptions>();",
-    "provider-openai-responses": "let _ = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);",
-    "provider-openrouter": "let _ = opi_ai::openrouter::model_catalog();",
-    "provider-pi-messages": 'let _ = opi_ai::pi_messages::PiMessagesProvider::new(Some("http://127.0.0.1:1".into()));',
-    "provider-vertex": "let _ = opi_ai::vertex::VertexProvider::express(None);",
+    "provider-anthropic": 'let _ = opi_ai::api::anthropic::parse_sse_events(""); let _ = std::any::type_name::<opi_ai::providers::anthropic::AnthropicProvider>();',
+    "provider-azure-openai": 'let _ = opi_ai::providers::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test")); let _ = std::any::type_name::<opi_ai::api::azure_openai::AzureOpenAIOptions>();',
+    "provider-bedrock": 'assert!(opi_ai::providers::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com")); let _ = std::any::type_name::<opi_ai::providers::bedrock::BedrockProvider>(); let _ = std::any::type_name::<opi_ai::api::bedrock::BedrockOptions>();',
+    "provider-gemini": "let _ = std::any::type_name::<opi_ai::api::gemini::GoogleGenerativeAiOptions>(); let _ = std::any::type_name::<opi_ai::providers::gemini::GeminiProvider>();",
+    "provider-mistral": "let _ = opi_ai::providers::mistral::mistral_provider(None); let _ = std::any::type_name::<opi_ai::api::mistral::MistralOptions>(); let _ = std::any::type_name::<opi_ai::providers::mistral::MistralConversationsProvider>();",
+    "provider-openai-chat": 'let _ = opi_ai::api::openai::parse_sse_events(""); let _ = std::any::type_name::<opi_ai::api::openai::OpenAiCompletionsOptions>(); let _ = std::any::type_name::<opi_ai::providers::openai::OpenAiChatProvider>();',
+    "provider-openai-codex-responses": "let _ = std::any::type_name::<opi_ai::api::openai_codex_responses::CodexOptions>(); let _ = std::any::type_name::<opi_ai::api::openai_codex_responses::CodexChatApi>(); let _ = std::any::type_name::<opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider>();",
+    "provider-openai-responses": "let _ = std::any::type_name::<opi_ai::api::openai_responses::OpenAiResponsesOptions>(); let _ = std::any::type_name::<opi_ai::api::openai_responses::OpenAiResponsesChatApi>(); let _ = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);",
+    "provider-openrouter": "let _ = opi_ai::providers::openrouter::model_catalog();",
+    "provider-pi-messages": 'let _ = std::any::type_name::<opi_ai::api::pi_messages::PiMessagesOptions>(); let _ = std::any::type_name::<opi_ai::providers::pi_messages::PiMessagesProvider>();',
+    "provider-vertex": "let _ = opi_ai::providers::vertex::VertexProvider::express(None); let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexOptions>(); let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexChatApi>();",
 }
 
 HIGH_ORDER = {

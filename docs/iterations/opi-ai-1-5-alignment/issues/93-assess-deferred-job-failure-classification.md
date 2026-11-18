@@ -87,7 +87,7 @@ The two post-dispatch causes originate in
 for that cause is `provider_config_error`, so an application that displays
 it as a configuration problem would mislead the user in these cases.
 [Fetch dispatch](../../../../crates/opi-ai/src/models.rs#L1058) ·
-[Local validation error](../../../../crates/opi-ai/src/deferred.rs#L24) ·
+[Local validation error](../../../../crates/opi-ai/src/api/contract.rs) ·
 [Scripted backend](../../../../crates/opi-ai/src/test_support.rs#L855) ·
 [Diagnostic mapping](../../../../crates/opi-agent/src/diagnostic.rs#L761)
 

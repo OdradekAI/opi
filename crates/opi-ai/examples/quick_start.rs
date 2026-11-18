@@ -11,7 +11,7 @@ use opi_ai::CallFailure;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript;
 use opi_ai::{AmbientAuthContext, AuthContext, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;

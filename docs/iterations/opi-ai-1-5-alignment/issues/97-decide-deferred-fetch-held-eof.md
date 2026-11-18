@@ -57,7 +57,7 @@ readiness entry instead sends the first normalized outcome from the
 Tokio worker, which then uses the same collector to finish.
 [Fetch entries](../../../../crates/opi-ai/src/models.rs#L1143) ·
 [Collector and readiness notification](../../../../crates/opi-ai/src/stream.rs#L560) ·
-[Provider wait parameter](../../../../crates/opi-ai/src/deferred.rs#L45)
+[Provider wait parameter](../../../../crates/opi-ai/src/api/contract.rs)
 
 At the pinned Pi revision, Durable restores the model from its saved
 provider and model ID, then awaits a fetch with the saved handle, task

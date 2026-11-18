@@ -7,16 +7,16 @@
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::{
     HttpClient, HttpClientBuilder, ProxyConfig, proxy_from_env, redact_proxy_credentials,
     resolve_proxy,
 };
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::gemini::GeminiProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};

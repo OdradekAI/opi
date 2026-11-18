@@ -511,11 +511,13 @@ use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
 use opi_ai::Models;
+use opi_ai::api::contract::{ChatApi, SimpleOptions};
 use opi_ai::auth::{AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::message::AssistantContent;
-use opi_ai::models::{ApiId, ChatApi, ChatModelRecord, SimpleOptions};
+use opi_ai::models::ChatModelRecord;
 use opi_ai::provider::{Request, ThinkingConfig};
+use opi_ai::types::ApiId;
 use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
 

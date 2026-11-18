@@ -68,8 +68,9 @@ closed by this slice.
 
 Pure Smithy state moved to `retry::smithy`, login Store coordination to
 `auth::store_oauth`, and pure Bedrock model policy to the model owner. Default
-`bedrock::retry` and `auth::oauth` login paths re-export the same definitions.
-The default adapter behavior is retained. Existing no-default network consumers
+`auth::oauth` login paths re-export the same definitions. The canonical-only
+Bedrock migration in #156 removes the historical `bedrock::retry` path; callers
+use `retry::smithy` directly. The default adapter behavior is retained. Existing no-default network consumers
 must explicitly enable `builtins`; the bilingual README and Unreleased breaking
 entry describe this 0.x migration. Built-in integration targets and three
 onboarding examples declare their required features; mixed suites still run

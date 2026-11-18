@@ -1,10 +1,13 @@
-//! Pure HTTP header syntax and reserved-name rules. No client or I/O.
+//! Pure HTTP header syntax, reserved-name rules and provider header config.
+//! No client, provider wire or I/O dependency.
 
 use http::header::{HeaderName, HeaderValue};
+use std::collections::BTreeSet;
 use std::str::FromStr;
 
 /// Canonical reserved provider-managed header names shared by every wire.
-/// `ProviderHeaders::try_new` and `validate_extra_headers` both gate on this
+/// [`crate::api::shared::headers::ProviderHeaders::try_new`] and
+/// `validate_extra_headers` both gate on this
 /// single list so a future provider cannot accidentally inherit a narrower
 /// gate.
 pub(crate) const RESERVED_PROVIDER_HEADERS: &[&str] = &[
@@ -67,4 +70,39 @@ pub enum ProviderHeadersError {
     ReservedName(String),
     #[error("duplicate provider header '{0}'")]
     DuplicateName(String),
+}
+
+/// Validated provider-configured HTTP headers.
+///
+/// This value belongs to the profile/configuration side of the seam. Wire
+/// adapters add route-managed and per-request headers through their own merge
+/// policy in `api::shared::headers`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProviderHeaders {
+    configured: Vec<(String, String)>,
+}
+
+impl ProviderHeaders {
+    /// Validate provider-configured header values and names.
+    pub fn try_new(headers: Vec<(String, String)>) -> Result<Self, ProviderHeadersError> {
+        let mut names = BTreeSet::new();
+        for (name, value) in &headers {
+            validate_pair(name, value)?;
+            let normalized = name.to_ascii_lowercase();
+            if RESERVED_PROVIDER_HEADERS.contains(&normalized.as_str()) {
+                return Err(ProviderHeadersError::ReservedName(name.clone()));
+            }
+            if !names.insert(normalized) {
+                return Err(ProviderHeadersError::DuplicateName(name.clone()));
+            }
+        }
+        Ok(Self {
+            configured: headers,
+        })
+    }
+
+    /// Return the validated provider-configured header values.
+    pub fn configured(&self) -> &[(String, String)] {
+        &self.configured
+    }
 }

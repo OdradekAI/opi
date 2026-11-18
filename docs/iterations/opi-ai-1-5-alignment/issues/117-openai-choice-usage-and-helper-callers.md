@@ -32,7 +32,7 @@ keeps the existing terminal and cost behavior. The public caller chain is:
 
 | Public seam | Owner/caller | Contract evidence |
 | --- | --- | --- |
-| `parse_sse_events` / `OpenAiChatMapper` | `OpenAiChatProvider::stream_from_sse` and the OpenAI-compatible provider adapter | `crates/opi-ai/src/openai_chat.rs` |
+| `parse_sse_events` / `OpenAiChatMapper` | `providers::openai::OpenAiChatProvider::stream_from_sse` and the OpenAI-compatible provider adapter | `crates/opi-ai/src/api/openai.rs` (wire) + `crates/opi-ai/src/providers/openai.rs` (profile) |
 | `Models::stream_simple` / `complete_simple` | ordinary Models callers and the `opi-agent` prepared/ordinary Chat consumers | `crates/opi-ai/src/models.rs`, `crates/opi-agent/src/agent_loop.rs` |
 | `Models::stream_direct` / `complete_direct` | explicit-auth SDK callers | `crates/opi-ai/src/models.rs` |
 | `parse_streaming_json` / `finalize_tool_arguments` | direct SDK preview/finalization callers; unchanged legacy whole-prefix owner | `crates/opi-ai/tests/public_utilities.rs`, #110–#113 |

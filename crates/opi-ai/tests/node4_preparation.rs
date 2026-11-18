@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 mod catalog_fixture;
 
 use futures_util::future::BoxFuture;
+use opi_ai::api::contract::{ChatApi, ChatApiHandle};
 use opi_ai::auth::{AuthScheme, ResolvedAuth, StaticAuthResolver};
 use opi_ai::catalog::{DynamicCatalogSource, ModelsStore};
 use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
@@ -13,12 +14,12 @@ use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, ToolDef, UserMessage,
 };
 use opi_ai::model_info::{AnthropicMessagesCompat, WireCompat};
-use opi_ai::models::{ApiId, ChatApi, ChatApiHandle};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
 use opi_ai::stream::{ChatStream, StopReason, Usage};
 use opi_ai::transcript::{Context, SystemMessage, normalize_context};
+use opi_ai::types::ApiId;
 use opi_ai::{
     AuthProvenanceSource, ChatModelRecord, ModelCapabilities, ModelInfo, Models, WireApi,
 };
@@ -92,15 +93,17 @@ async fn real_wire(
     let server = MockServer::start().await;
     let (provider, sse): (Arc<dyn Provider>, _) = match wire {
         WireApi::OpenAiCompletions => (
-            Arc::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+            Arc::new(opi_ai::providers::openai::OpenAiChatProvider::new(Some(
                 server.uri(),
             ))),
             CHAT_OK,
         ),
         WireApi::OpenAiResponses => (
-            Arc::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
-                Some(server.uri()),
-            )),
+            Arc::new(
+                opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(
+                    server.uri(),
+                )),
+            ),
             RESPONSES_OK,
         ),
         _ => unreachable!("the fixture only exposes the two migrated OpenAI wires"),
@@ -307,7 +310,7 @@ async fn failed_explicit_source_retains_catalog_when_static_provider_returns_non
     let mut models = Models::new();
     models
         .register_route(
-            Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(None)),
+            Box::new(opi_ai::providers::openai::OpenAiChatProvider::new(None)),
             Arc::new(StaticAuthResolver::new(
                 AuthScheme::Bearer,
                 SecretString::from("fake-key"),
@@ -333,7 +336,7 @@ async fn failed_explicit_source_retains_catalog_when_static_provider_returns_non
 }
 
 struct AuthoritativeEmptyProvider {
-    inner: opi_ai::openai_chat::OpenAiChatProvider,
+    inner: opi_ai::providers::openai::OpenAiChatProvider,
     rounds: AtomicUsize,
 }
 
@@ -364,7 +367,7 @@ async fn explicit_source_failure_does_not_revoke_a_providers_authoritative_empty
     models
         .register_route(
             Box::new(AuthoritativeEmptyProvider {
-                inner: opi_ai::openai_chat::OpenAiChatProvider::new(None),
+                inner: opi_ai::providers::openai::OpenAiChatProvider::new(None),
                 rounds: AtomicUsize::new(0),
             }),
             Arc::new(StaticAuthResolver::new(
@@ -637,7 +640,7 @@ async fn legacy_catalog_has_unknown_publisher_and_malformed_publisher_fails_clos
     }
 }
 
-struct ForwardingAnthropic(opi_ai::anthropic::AnthropicProvider);
+struct ForwardingAnthropic(opi_ai::providers::anthropic::AnthropicProvider);
 
 impl Provider for ForwardingAnthropic {
     fn id(&self) -> &str {
@@ -686,7 +689,7 @@ async fn forwarding_adapter_preserves_one_advanced_strict_and_retry_budget_owner
         ..Default::default()
     }))
     .unwrap();
-    let provider = opi_ai::anthropic::AnthropicProvider::for_route(
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::for_route(
         "test".into(),
         vec![model],
         Some(server.uri()),
@@ -845,7 +848,7 @@ fn projection_request(changed: bool) -> Request {
     input
 }
 
-type ProjectionApi = ChatApiHandle<opi_ai::openai_chat::OpenAiCompletionsOptions>;
+type ProjectionApi = ChatApiHandle<opi_ai::api::openai::OpenAiCompletionsOptions>;
 async fn projection_wire(
     native: bool,
     fail_auth: bool,
@@ -855,7 +858,7 @@ async fn projection_wire(
     ProjectionApi,
     ChatModelRecord,
     Arc<ProjectionAuth>,
-    Arc<opi_ai::openai_chat::OpenAiChatProvider>,
+    Arc<opi_ai::providers::openai::OpenAiChatProvider>,
 ) {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -880,7 +883,7 @@ async fn projection_wire(
         },
     ))
     .unwrap();
-    let provider = Arc::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+    let provider = Arc::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
         Some(server.uri()),
         "projection".into(),
         Default::default(),
@@ -895,7 +898,7 @@ async fn projection_wire(
     let api = models
         .register_chat_api(
             Arc::new(
-                opi_ai::openai_chat::OpenAiCompletionsChatApi::new(provider.clone(), model.clone())
+                opi_ai::api::openai::OpenAiCompletionsChatApi::new(provider.clone(), model.clone())
                     .unwrap(),
             ),
             auth.clone(),
@@ -1326,13 +1329,15 @@ async fn effective_tool_noops_do_not_disable_native_additions_or_change_the_cano
 async fn unknown_direct_models_validate_strict_fidelity_on_the_actual_wire_before_callbacks() {
     let server = MockServer::start().await;
     let providers: Vec<Box<dyn Provider>> = vec![
-        Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+        Box::new(opi_ai::providers::openai::OpenAiChatProvider::new(Some(
             server.uri(),
         ))),
-        Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
-            Some(server.uri()),
-        )),
-        Box::new(opi_ai::gemini::GeminiProvider::new(Some(server.uri()))),
+        Box::new(
+            opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(server.uri())),
+        ),
+        Box::new(opi_ai::providers::gemini::GeminiProvider::new(Some(
+            server.uri(),
+        ))),
     ];
     let callbacks = Arc::new(AtomicUsize::new(0));
     for provider in providers {
@@ -1711,7 +1716,7 @@ async fn advanced_projection_auth_refusal_retains_formed_facts() {
 }
 
 struct FinalizationRefusal {
-    provider: Arc<opi_ai::openai_chat::OpenAiChatProvider>,
+    provider: Arc<opi_ai::providers::openai::OpenAiChatProvider>,
     calls: Arc<AtomicUsize>,
 }
 impl Provider for FinalizationRefusal {

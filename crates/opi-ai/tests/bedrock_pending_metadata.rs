@@ -7,9 +7,9 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use opi_ai::bedrock::BedrockProvider;
-use opi_ai::bedrock::event_stream::build_test_frame;
+use opi_ai::api::bedrock::event_stream::build_test_frame;
 use opi_ai::http::HttpClient;
+use opi_ai::providers::bedrock::BedrockProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
 

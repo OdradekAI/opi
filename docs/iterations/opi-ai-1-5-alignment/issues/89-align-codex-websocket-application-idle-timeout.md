@@ -49,7 +49,7 @@ application message, including the raw callback and public delivery,
 starts a new wait. The biased select gives cancellation and an
 expired deadline precedence over more IO. A discarded old terminal
 from #88 keeps the current deadline. Zero disables the timer.
-[Receive deadline](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L1074)
+[Receive deadline](../../../../crates/opi-ai/src/transport/codex.rs#L1074)
 
 Opi commits the session marker under the generation cutoff before
 waiting for Close. It uses the existing 250 ms confirmation budget
@@ -61,8 +61,8 @@ Close and lets its socket handle confirmation. Opi awaits confirmation
 within the fixed local budget and records unconfirmed release for
 resource cleanup. Cancellation during release still prevents a late
 SSE handoff.
-[Marker and cutoff](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L933) ·
-[Close confirmation](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L970)
+[Marker and cutoff](../../../../crates/opi-ai/src/transport/codex.rs#L933) ·
+[Close confirmation](../../../../crates/opi-ai/src/transport/codex.rs#L970)
 
 The post-event error keeps Opi's typed `StreamError` and gives it a
 fixed idle-timeout diagnostic. The provider attempt stays sealed.
@@ -89,7 +89,7 @@ The three Close deadline units pass, including masked payload and
 in-flight Pong, and the release bound for a partially written Pong.
 Affected-target Clippy, rustdoc, formatting and documentation checks
 pass.
-[Close controls](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L1303)
+[Close controls](../../../../crates/opi-ai/src/transport/codex.rs#L1303)
 
 The #88 manifest rejects the source change with exit 2 and zero
 cases. The fresh freeze uses the same original npm lock. The replay

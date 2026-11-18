@@ -26,7 +26,7 @@ baseline failures.
 - Pi 1.3.0 uses the corresponding paths at lines 723–729, 731–772
   and 342–372. Opi's frame-specific dispatch dates to
   `5dc3bdbb1f975d858ce5645460bf32fb86304524` in
-  `crates/opi-ai/src/openai_codex_responses/ws_transport.rs`.
+  `crates/opi-ai/src/transport/codex.rs`.
 
 Opi now takes the nested string code from a decoded `response.failed`
 error and uses the existing WebSocket budgets. A limit before the
@@ -35,8 +35,8 @@ limit enters the existing SSE fallback. A missing previous response
 before any public stream item admits one full-input retry. The
 terminal failure carries the final wire status and the fixed
 diagnostic produced from the selected message.
-[Code dispatch](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L1190) ·
-[Failure mapping](../../../../crates/opi-ai/src/openai_responses_shared.rs#L1074)
+[Code dispatch](../../../../crates/opi-ai/src/transport/codex.rs#L1190) ·
+[Failure mapping](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L728)
 
 | Shared case | Baseline Opi | Frozen Pi and updated Opi |
 | --- | --- | --- |

@@ -9,13 +9,14 @@
 
 use opi_ai::AuthProvenanceSource;
 use opi_ai::Models;
+use opi_ai::api::contract::DeferredFetchCall;
 use opi_ai::auth::ResolvedAuth;
 use opi_ai::auth::{AuthScheme, StaticAuthResolver};
-use opi_ai::deferred::{DeferredError, DeferredFetchCall, DeferredHandle};
 use opi_ai::retry::{WholeCallRetryClassification, classify_whole_call_retry};
 use opi_ai::stream::StopReason;
 use opi_ai::telemetry::TelemetryContext;
 use opi_ai::test_support::{self, ScriptedDeferredBackend};
+use opi_ai::types::deferred::{DeferredError, DeferredHandle};
 use secrecy::SecretString;
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -25,9 +26,9 @@ mod registration_pending_auth;
 
 #[test]
 fn deferred_registration_preserves_arbitrary_exact_api_ids_without_auth() {
-    use opi_ai::deferred::{DeferredApi, DeferredCancelCall};
-    use opi_ai::models::ApiId;
+    use opi_ai::api::contract::{DeferredApi, DeferredCancelCall};
     use opi_ai::provider::{EventStream, ProviderError};
+    use opi_ai::types::ApiId;
     use std::sync::Arc;
 
     struct RegistrationOnlyApi {
@@ -235,7 +236,7 @@ async fn normal_generation_returns_pending_handle_or_final() {
     models
         .register_deferred_api(
             std::sync::Arc::clone(&backend)
-                as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("test-key"),
@@ -285,7 +286,7 @@ async fn wait0_fetch_checks_once_and_may_stay_pending() {
     collection
         .register_deferred_api(
             std::sync::Arc::clone(&backend)
-                as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("test-key"),
@@ -353,7 +354,7 @@ async fn unsupported_provider_and_unknown_handle_fail_typed() {
     collection
         .register_deferred_api(
             std::sync::Arc::clone(&backend)
-                as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("test-key"),
@@ -457,7 +458,7 @@ async fn expired_handle_fails_typed_before_auth_or_dispatch() {
     collection
         .register_deferred_api(
             std::sync::Arc::clone(&backend)
-                as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("test-key"),
@@ -516,7 +517,7 @@ async fn missing_credential_fails_typed_with_remediation_message() {
     collection
         .register_deferred_api(
             std::sync::Arc::clone(&backend)
-                as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(MissingKey),
             AuthProvenanceSource::Static,
         )
@@ -576,7 +577,7 @@ async fn deferred_auth_failure_preserves_cause_and_message_retry_input() {
         let mut collection = Models::new();
         collection
             .register_deferred_api(
-                Arc::clone(&backend) as Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                Arc::clone(&backend) as Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
                 Arc::new(FailedAuth(detail)),
                 AuthProvenanceSource::Static,
             )
@@ -612,7 +613,8 @@ fn registered_collection(
     ));
     collection
         .register_deferred_api(
-            std::sync::Arc::clone(backend) as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+            std::sync::Arc::clone(backend)
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("test-key"),
@@ -665,7 +667,10 @@ async fn explicit_cancel_is_recorded_and_best_effort() {
 
     // A cancelled deferred response fails subsequent fetches typed.
     collection
-        .cancel_deferred(&handle, opi_ai::deferred::DeferredCancelCall::default())
+        .cancel_deferred(
+            &handle,
+            opi_ai::api::contract::DeferredCancelCall::default(),
+        )
         .await
         .expect("best-effort cancel succeeds");
     assert_eq!(backend.cancelled_handles(), vec![handle.clone()]);
@@ -700,7 +705,7 @@ async fn explicit_cancel_is_recorded_and_best_effort() {
     let other = backend.submit(test_support::text_response("late"), 3, None);
     backend.fail_cancels();
     let error = collection
-        .cancel_deferred(&other, opi_ai::deferred::DeferredCancelCall::default())
+        .cancel_deferred(&other, opi_ai::api::contract::DeferredCancelCall::default())
         .await
         .unwrap_err();
     assert!(error.to_string().contains("best-effort"));
@@ -709,7 +714,10 @@ async fn explicit_cancel_is_recorded_and_best_effort() {
     let mut stranger = handle.clone();
     stranger.provider = "other".into();
     let error = collection
-        .cancel_deferred(&stranger, opi_ai::deferred::DeferredCancelCall::default())
+        .cancel_deferred(
+            &stranger,
+            opi_ai::api::contract::DeferredCancelCall::default(),
+        )
         .await
         .unwrap_err();
     assert_eq!(
@@ -751,14 +759,14 @@ async fn remote_cancel_observes_caller_abort_before_and_during_auth() {
     let mut collection = Models::new();
     collection
         .register_deferred_api(
-            backend.clone() as Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+            backend.clone() as Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             auth.clone(),
             AuthProvenanceSource::Static,
         )
         .unwrap();
     let collection = Arc::new(collection);
 
-    let call = opi_ai::deferred::DeferredCancelCall::default();
+    let call = opi_ai::api::contract::DeferredCancelCall::default();
     call.cancel.cancel();
     let mut wrong_model = handle.clone();
     wrong_model.model_id = "wrong".into();
@@ -782,7 +790,7 @@ async fn remote_cancel_observes_caller_abort_before_and_during_auth() {
     assert_eq!(auth.calls.load(Ordering::SeqCst), 0);
     assert!(backend.cancelled_handles().is_empty());
 
-    let call = opi_ai::deferred::DeferredCancelCall::default();
+    let call = opi_ai::api::contract::DeferredCancelCall::default();
     let abort = call.cancel.clone();
     let pending = tokio::spawn({
         let collection = collection.clone();
@@ -982,7 +990,7 @@ async fn reopened_consumer_fetches_without_resubmit_and_never_polls() {
     first
         .register_deferred_api(
             std::sync::Arc::clone(&backend)
-                as std::sync::Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+                as std::sync::Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             std::sync::Arc::new(StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("test-key"),
@@ -1087,7 +1095,7 @@ async fn consumer_fallback_missing_model_and_cancel_failures_are_observable() {
     let cancel_error = models
         .cancel_deferred(
             &handle,
-            opi_ai::deferred::DeferredCancelCall {
+            opi_ai::api::contract::DeferredCancelCall {
                 timeout: Some(std::time::Duration::from_secs(1)),
                 cancel: CancellationToken::new(),
                 ..Default::default()
@@ -1143,7 +1151,7 @@ async fn fetch_and_cancel_carry_the_frozen_telemetry_carrier() {
         .expect("ready");
     assert_eq!(backend.fetch_telemetry_present(), vec![true, false]);
 
-    let cancel_call = opi_ai::deferred::DeferredCancelCall {
+    let cancel_call = opi_ai::api::contract::DeferredCancelCall {
         telemetry_context: Some(TelemetryContext::noop()),
         ..Default::default()
     };

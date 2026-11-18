@@ -1004,9 +1004,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use opi_ai::api::shared::env::provider_env_value;
+use opi_ai::api::shared::headers::merge_provider_header_sources;
 use opi_ai::cancel::{Cancelled, operation_token, race_with_cancel, sleep_cancel};
-use opi_ai::provider_env::provider_env_value;
-use opi_ai::provider_headers::merge_provider_header_sources;
 use tokio_util::sync::CancellationToken;
 
 /// Serializes tests that mutate the process environment.
@@ -1208,8 +1208,8 @@ mod grammar_property_names {
         resolve_grammar_constrained_sampling,
     };
     use opi_ai::message::ToolDef;
-    use opi_ai::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
     use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
+    use opi_ai::providers::openai_responses::{OpenAiResponsesProvider, ResponsesConfig};
     use opi_ai::transcript::{Context, get_current_tools, normalize_context};
     use serde_json::{Value, json};
     use tokio_util::sync::CancellationToken;

@@ -255,7 +255,7 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
             r#"{"usage":{"inputTokens":3,"outputTokens":2}}"#,
         ),
     ] {
-        body.extend_from_slice(&opi_ai::bedrock::event_stream::build_test_frame(
+        body.extend_from_slice(&opi_ai::api::bedrock::event_stream::build_test_frame(
             event_type,
             "application/json",
             payload.as_bytes(),

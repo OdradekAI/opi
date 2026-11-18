@@ -75,7 +75,6 @@ use common::{
     MockLoginPresenter, extract_callback_path, extract_query_param, extract_redirect_port,
 };
 use opi_agent::AgentError;
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{
     AuthResolver, AuthScheme, LoginPresenter, OAuthCredential, OAuthLoginMethod, OAuthProvider,
     ResolvedAuth,
@@ -86,6 +85,7 @@ use opi_ai::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError as AiProviderError,
     ProviderErrorSummary, Request, ThinkingConfig,
 };
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::{AuthProvenanceSource, CompatMetadata, Models};
 use opi_coding_agent::config::OpiConfig;

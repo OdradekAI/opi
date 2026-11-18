@@ -187,7 +187,7 @@ async fn provider_timeout_produces_timeout_error() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri()));
     let request = make_anthropic_request(cancel, Some(Duration::from_millis(100)));
 
     let mut stream =
@@ -217,7 +217,7 @@ async fn provider_no_timeout_completes_normally() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri()));
     let request = make_anthropic_request(cancel, None);
 
     let mut stream = provider.stream_prepared(request, opi_ai::test_support::resolved_auth());
@@ -252,7 +252,7 @@ async fn extra_headers_reach_anthropic_wire() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri()));
     let mut request = make_anthropic_request(cancel, None);
     request.extra_headers = vec![("X-Custom".to_string(), "my-value".to_string())];
 
@@ -282,7 +282,7 @@ async fn openai_chat_session_id_becomes_prompt_cache_key() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::openai::OpenAiChatProvider::new(Some(server.uri()));
     let request = make_openai_chat_request(cancel, Some("sess-abc123".into()));
 
     let mut stream =
@@ -317,7 +317,7 @@ async fn openai_chat_session_id_clamps_to_64_chars() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::openai::OpenAiChatProvider::new(Some(server.uri()));
     let request = make_openai_chat_request(cancel, Some(session_id));
 
     let mut stream =
@@ -346,7 +346,7 @@ async fn openai_chat_no_session_id_no_cache_key_header() {
         .await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::openai_chat::OpenAiChatProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::openai::OpenAiChatProvider::new(Some(server.uri()));
     let request = make_openai_chat_request(cancel, None);
 
     let mut stream =
@@ -381,16 +381,16 @@ async fn session_affinity_wire_mappings() {
         opi_ai::WireApi::OpenAiCompletions,
         ModelCapabilities::new(8_192, 1_024).with_streaming(true),
     )];
-    let direct = opi_ai::openai_chat::OpenAiChatProvider::new(Some(chat_server.uri()));
+    let direct = opi_ai::providers::openai::OpenAiChatProvider::new(Some(chat_server.uri()));
     drain(direct.stream_prepared(
         make_openai_chat_request(CancellationToken::new(), Some("session-direct".into())),
         opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
-    let compatible = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+    let compatible = opi_ai::providers::openai::OpenAiChatProvider::new_for_profile(
         chat_server.uri(),
         "compatible".into(),
-        opi_ai::openai_chat::CompatConfig {
+        opi_ai::providers::openai::CompatConfig {
             send_session_affinity_headers: Some(true),
             ..Default::default()
         },
@@ -402,7 +402,7 @@ async fn session_affinity_wire_mappings() {
         opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
-    let compatible_default = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+    let compatible_default = opi_ai::providers::openai::OpenAiChatProvider::new_for_profile(
         chat_server.uri(),
         "compatible-default".into(),
         Default::default(),
@@ -448,17 +448,18 @@ async fn session_affinity_wire_mappings() {
         .expect(5)
         .mount(&responses_server)
         .await;
-    let standard =
-        opi_ai::openai_responses::OpenAiResponsesProvider::new(Some(responses_server.uri()));
+    let standard = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(
+        responses_server.uri(),
+    ));
     drain(standard.stream_prepared(
         make_openai_responses_request("openai-responses:model", "session-standard"),
         opi_ai::test_support::resolved_bearer_auth(),
     ))
     .await;
     let direct_with_session_header =
-        opi_ai::openai_responses::OpenAiResponsesProvider::new_with_config(
+        opi_ai::providers::openai_responses::OpenAiResponsesProvider::new_with_config(
             Some(responses_server.uri()),
-            opi_ai::openai_responses::ResponsesConfig {
+            opi_ai::providers::openai_responses::ResponsesConfig {
                 send_session_id_header: false,
                 ..Default::default()
             },
@@ -477,10 +478,10 @@ async fn session_affinity_wire_mappings() {
         opi_ai::WireApi::OpenAiResponses,
         ModelCapabilities::new(128_000, 16_384).with_streaming(true),
     );
-    let custom_default = opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+    let custom_default = opi_ai::providers::openai_responses::OpenAiResponsesProvider::for_route(
         Some(responses_server.uri()),
         "custom-responses".into(),
-        opi_ai::ProviderHeaders::default(),
+        opi_ai::api::shared::headers::ProviderHeaders::default(),
         vec![custom_model.clone()],
         Arc::new(HttpClient::new()),
     );
@@ -497,10 +498,10 @@ async fn session_affinity_wire_mappings() {
             },
         ))
         .unwrap();
-    let custom_opt_in = opi_ai::openai_responses::OpenAiResponsesProvider::for_route(
+    let custom_opt_in = opi_ai::providers::openai_responses::OpenAiResponsesProvider::for_route(
         Some(responses_server.uri()),
         "custom-responses".into(),
-        opi_ai::ProviderHeaders::default(),
+        opi_ai::api::shared::headers::ProviderHeaders::default(),
         vec![custom_opt_in_model],
         Arc::new(HttpClient::new()),
     );
@@ -561,7 +562,8 @@ async fn session_affinity_wire_mappings() {
         .expect(1)
         .mount(&anthropic_server)
         .await;
-    let anthropic = opi_ai::anthropic::AnthropicProvider::new(Some(anthropic_server.uri()));
+    let anthropic =
+        opi_ai::providers::anthropic::AnthropicProvider::new(Some(anthropic_server.uri()));
     let mut request = make_anthropic_request(CancellationToken::new(), None);
     request.session_id = Some("session-anthropic".into());
     drain(anthropic.stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())).await;
@@ -742,7 +744,7 @@ async fn sdk_headers_omission_set_and_removal_reach_anthropic_wire() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri()));
     let mut request = make_anthropic_request(CancellationToken::new(), None);
     request.extra_headers = vec![
         ("X-Set".to_string(), "keep".to_string()),
@@ -781,7 +783,7 @@ async fn header_transform_touching_protected_header_fails_typed_before_http() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri()));
     let mut request = make_anthropic_request(CancellationToken::new(), None);
     request.callbacks = RequestCallbacks::new().with_header_transform(Arc::new(|merged| {
         let mut out = merged.to_vec();
@@ -835,7 +837,7 @@ async fn transform_runs_once_per_dispatch_on_the_merged_per_call_set() {
     type HeaderSets = Arc<Mutex<Vec<Vec<(String, String)>>>>;
     let seen_inputs: HeaderSets = Arc::new(Mutex::new(Vec::new()));
     let recorder = Arc::clone(&seen_inputs);
-    let provider = opi_ai::anthropic::AnthropicProvider::new(Some(server.uri()));
+    let provider = opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri()));
     let mut request = make_anthropic_request(CancellationToken::new(), None);
     request.extra_headers = vec![("X-Seed".to_string(), "1".to_string())];
     request.callbacks = RequestCallbacks::new().with_header_transform(Arc::new(move |merged| {
@@ -1145,11 +1147,11 @@ async fn payload_wire_fixture(
         .mount(&server)
         .await;
     let provider: Box<dyn Provider> = if responses {
-        Box::new(opi_ai::openai_responses::OpenAiResponsesProvider::new(
-            Some(server.uri()),
-        ))
+        Box::new(
+            opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(Some(server.uri())),
+        )
     } else {
-        Box::new(opi_ai::openai_chat::OpenAiChatProvider::new(Some(
+        Box::new(opi_ai::providers::openai::OpenAiChatProvider::new(Some(
             server.uri(),
         )))
     };
@@ -1286,7 +1288,7 @@ async fn payload_callback_codex_corrupt_input_fails_before_transport() {
         opi_ai::WireApi::OpenAiCodexResponses,
         ModelCapabilities::new(100_000, 10_000).with_streaming(true),
     );
-    let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+    let provider = opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider::new(
         Some(server.uri()),
         vec![model.clone()],
         Arc::new(HttpClient::new()),
@@ -1348,7 +1350,7 @@ async fn payload_callback_freezes_once_across_ordinary_acquisition_retry() {
     use opi_ai::auth::{AuthProvenanceSource, StaticAuthResolver};
     use opi_ai::http::HttpClientBuilder;
     use opi_ai::models::Models;
-    use opi_ai::openai_chat::OpenAiChatProvider;
+    use opi_ai::providers::openai::OpenAiChatProvider;
     use opi_ai::retry::AcquisitionPolicy;
     use opi_ai::stream::ChatStream;
     use secrecy::SecretString;
@@ -1477,7 +1479,7 @@ fn accepted_failure_cause<'a>(
 mod responses_generated_affinity {
     use super::*;
     use opi_ai::model_info::{OpenAiResponsesSourceCompat, SessionAffinityFormat};
-    use opi_ai::openai_responses::{
+    use opi_ai::providers::openai_responses::{
         OpenAiResponsesProvider, ResponsesAffinityPolicy, ResponsesConfig,
     };
 
@@ -1801,10 +1803,10 @@ mod responses_generated_affinity {
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(200).insert_header("content-type", "text/event-stream").set_body_string("data: {\"id\":\"chat_probe\",\"object\":\"chat.completion.chunk\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"))
             .expect(1).mount(&server).await;
-        let provider = opi_ai::openai_chat::OpenAiChatProvider::new_for_profile(
+        let provider = opi_ai::providers::openai::OpenAiChatProvider::new_for_profile(
             server.uri(),
             "compatible".into(),
-            opi_ai::openai_chat::CompatConfig {
+            opi_ai::providers::openai::CompatConfig {
                 send_session_affinity_headers: Some(true),
                 ..Default::default()
             },

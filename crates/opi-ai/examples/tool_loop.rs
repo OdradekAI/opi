@@ -13,7 +13,7 @@ use opi_ai::message::{
     ToolNotExecutedReason, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, Request, TransportPreference};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::transcript::{self, TranscriptContext};
 use opi_ai::{AmbientAuthContext, AuthContext, ChatCall, ChatModelRecord, Models, SimpleOptions};
 use tokio_util::sync::CancellationToken;

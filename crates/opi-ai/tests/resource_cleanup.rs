@@ -6,8 +6,8 @@ use std::sync::{
 use futures_util::{StreamExt, poll};
 use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::http::{HttpClientBuilder, RedirectPolicy};
-use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
 use opi_ai::transcript::{Context, normalize_context};
 use opi_ai::{ChatModelRecord, ModelCapabilities, ModelInfo, Models, WireApi};
 use tokio_util::sync::CancellationToken;
@@ -160,7 +160,7 @@ async fn cleanup_cancels_started_call_while_auth_is_pending() {
 
 #[tokio::test]
 async fn retained_native_api_keeps_its_namespace_after_provider_route_replacement() {
-    use opi_ai::openai_codex_responses::{CodexChatApi, CodexOptions};
+    use opi_ai::api::openai_codex_responses::{CodexChatApi, CodexOptions};
     use opi_ai::test_support::MockProvider;
 
     let server = peer(std::time::Duration::ZERO).await;

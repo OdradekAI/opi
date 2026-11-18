@@ -38,8 +38,8 @@ use opi_ai::auth::{AuthProvenanceSource, AuthScheme, StaticAuthResolver};
 use opi_ai::http::{HttpClient, HttpClientBuilder, ProxyConfig, RedirectPolicy, TlsOptions};
 use opi_ai::message::AssistantMessage;
 use opi_ai::models::Models;
-use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::provider::{CacheRetention, EventStream, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::openai::OpenAiChatProvider;
 use opi_ai::stream::ChatStream;
 use opi_ai::transcript;
 use rustls::{

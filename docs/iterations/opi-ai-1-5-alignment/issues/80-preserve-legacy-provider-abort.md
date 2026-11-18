@@ -17,7 +17,7 @@ The result stream returns the error message at
 event reason type.
 
 Opi's `7b834481f336d47b4f4e5dabb8a35d65c04b4e8d` returned both fields
-from `drain_to_completion` in `crates/opi-ai/src/provider_collection.rs:726–727`.
+from `drain_to_completion` in `crates/opi-ai/src/providers/collection.rs:726–727`.
 The unification in `b2ff2f398b8d2416f0284ac7a77731338cf0a436` rewrote
 legacy terminals to `Error`. The repair recognizes the matching abort
 pair. It keeps content, usage, provenance and the diagnostic's presence

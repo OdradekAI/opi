@@ -18,7 +18,7 @@ of input fields. Direct validation preserves
 `DeferredError::Unsupported { provider }` and describes the missing
 registration for the requested API.
 [Lookup](../../../../crates/opi-ai/src/models.rs#L1219) ·
-[Cause conversion](../../../../crates/opi-ai/src/deferred.rs#L26) ·
+[Cause conversion](../../../../crates/opi-ai/src/api/contract.rs) ·
 [Transport guide](../../../../crates/opi-ai/docs/transport.md#deferred-transport-semantics)
 
 The route check comes from Opi's AIR-043 implementation at

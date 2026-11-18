@@ -1507,10 +1507,10 @@ mod phase17 {
     use opi_ai::auth::{
         AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
     };
-    use opi_ai::azure_openai::AzureOpenAIProvider;
     use opi_ai::credential::BoxAuthFuture;
     use opi_ai::models::CompatMetadata;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
+    use opi_ai::providers::azure_openai::AzureOpenAIProvider;
     use opi_ai::test_support::{MockResponse, text_response};
     use secrecy::SecretString;
     use std::sync::Arc;
@@ -4171,7 +4171,7 @@ mod catalog_store_refresh_20_33 {
 // ---------------------------------------------------------------------------
 
 use opi_ai::catalog::{Catalog, CatalogOperation};
-use opi_ai::provider_collection::{BuiltinEnvAuthResolver, BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinEnvAuthResolver, BuiltinOverrides, register_builtin};
 use opi_ai::providers::{BuiltinEndpoint, builtin_profile, builtin_provider_profiles};
 
 /// The exact canonical builtin provider set, sorted (pi `builtinProviders`).
@@ -6257,7 +6257,7 @@ async fn builtin_profile_api_base_paths_reach_exact_endpoints() {
 mod helper_retry_hints {
     use super::*;
     use opi_ai::http::HttpClient;
-    use opi_ai::openai_chat::OpenAiChatProvider;
+    use opi_ai::providers::openai::OpenAiChatProvider;
     use opi_ai::retry::{AcquisitionPolicy, AcquisitionSeal, RetryAdmission};
     use std::sync::Arc;
     use wiremock::{
@@ -6743,8 +6743,10 @@ mod selected_owner_management {
         models
             .register(
                 Box::new(
-                    opi_ai::api_mapped::ApiMappedProvider::try_new("mapped", catalog, routes)
-                        .unwrap(),
+                    opi_ai::providers::mapped::ApiMappedProvider::try_new(
+                        "mapped", catalog, routes,
+                    )
+                    .unwrap(),
                 ),
                 AuthDescriptor::Resolved {
                     source: "unused".into(),

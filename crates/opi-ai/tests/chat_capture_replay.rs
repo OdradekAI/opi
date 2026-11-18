@@ -3,7 +3,7 @@ use opi_ai::auth::{AuthContext, AuthContextError};
 use opi_ai::message::{AssistantContent, AssistantMessage, InputContent, Message, UserMessage};
 use opi_ai::model_info::{OpenAiResponsesCompat, WireCompat};
 use opi_ai::provider::{Request, ThinkingConfig};
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::{
     ChatModelRecord, ModelCapabilities, ModelInfo, Models, ThinkingLevel, ThinkingLevelMap, WireApi,
 };
@@ -637,22 +637,18 @@ mod replay_boundaries {
 
 mod persisted_producers {
 
-    use opi_ai::anthropic::{
-        AnthropicMessagesChatApi, AnthropicMessagesOptions, AnthropicProvider,
-    };
+    use opi_ai::api::anthropic::{AnthropicMessagesChatApi, AnthropicMessagesOptions};
+    use opi_ai::api::openai::{OpenAiCompletionsChatApi, OpenAiCompletionsOptions};
+    use opi_ai::api::openai_codex_responses::{CodexChatApi, CodexOptions};
+    use opi_ai::api::openai_responses::{OpenAiResponsesChatApi, OpenAiResponsesOptions};
     use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
     use opi_ai::http::HttpClient;
     use opi_ai::message::{AssistantMessage, InputContent, Message, UserMessage};
-    use opi_ai::openai_chat::{
-        OpenAiChatProvider, OpenAiCompletionsChatApi, OpenAiCompletionsOptions,
-    };
-    use opi_ai::openai_codex_responses::{
-        CodexChatApi, CodexOptions, OpenAiCodexResponsesProvider,
-    };
-    use opi_ai::openai_responses::{
-        OpenAiResponsesChatApi, OpenAiResponsesOptions, OpenAiResponsesProvider,
-    };
     use opi_ai::provider::{Request, TransportPreference};
+    use opi_ai::providers::anthropic::AnthropicProvider;
+    use opi_ai::providers::openai::OpenAiChatProvider;
+    use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
+    use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
     use opi_ai::{
         AuthProvenanceSource, ChatModelRecord, ModelCapabilities, ModelInfo, Models, WireApi,
     };
@@ -1286,8 +1282,8 @@ async fn chat_source_grammar_custom_input_survives_capture_store_and_replay() {
     use futures_util::StreamExt;
     use opi_ai::constrained_sampling::ConstrainedSampling;
     use opi_ai::message::{OutputContent, ToolDef, ToolResultMessage};
-    use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
     use opi_ai::provider::Provider;
+    use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
     use opi_ai::stream::AssistantStreamEvent;
     let server = MockServer::start().await;
     let sse = format!(

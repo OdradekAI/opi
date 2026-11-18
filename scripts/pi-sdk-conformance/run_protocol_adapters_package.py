@@ -28,8 +28,17 @@ def check_graph(metadata: dict, package: Path) -> dict:
         raise ValueError("consumer must resolve the extracted opi-ai package")
     nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
     sdk_features = set(nodes[sdk[0]["id"]]["features"])
+    # `protocol-adapters` is the reviewed compatibility group and expands to
+    # every provider protocol owner. Keep this exact union aligned with the
+    # Cargo feature graph so the external package proof checks the real closure.
     expected_features = {
-        "cloud-auth", "http-transport", "protocol-adapters", "tls-backend",
+        "cloud-auth", "http-transport", "protocol-adapters",
+        "provider-anthropic", "provider-azure-openai", "provider-bedrock",
+        "provider-gemini", "provider-mistral", "provider-openai-chat",
+        "provider-openai-codex-responses", "provider-openai-responses",
+        "provider-openai-responses-shared", "provider-openrouter",
+        "provider-openrouter-usage", "provider-pi-messages",
+        "provider-protocol-common", "provider-vertex", "tls-backend",
         "websocket-compression",
     }
     if sdk_features != expected_features:
@@ -59,6 +68,96 @@ def check_graph(metadata: dict, package: Path) -> dict:
         "catalog_absent": True,
         "protocol_present": sorted(present),
         "packages": sorted(entry["name"] + "@" + entry["version"] for entry in packages),
+    }
+
+
+def check_canonical_shared_layout(package: Path) -> dict:
+    """Ensure the archive carries the shared decoder only at its canonical path."""
+    root = package / "src" / "text_decode.rs"
+    canonical = package / "src" / "api" / "shared" / "text_decode.rs"
+    if root.exists():
+        raise ValueError("archive still contains the deleted root text_decode module")
+    if not canonical.exists():
+        raise ValueError("archive is missing api/shared/text_decode.rs")
+    return {
+        "root_text_decode_absent": True,
+        "canonical_text_decode_present": True,
+    }
+
+
+def check_canonical_endpoint_layout(package: Path) -> dict:
+    """Ensure the archive carries URL joining only at its canonical path."""
+    root = package / "src" / "endpoint.rs"
+    canonical = package / "src" / "api" / "shared" / "endpoint.rs"
+    if root.exists():
+        raise ValueError("archive still contains the deleted root endpoint module")
+    if not canonical.exists():
+        raise ValueError("archive is missing api/shared/endpoint.rs")
+    return {
+        "root_endpoint_absent": True,
+        "canonical_endpoint_present": True,
+    }
+
+
+def check_canonical_operation_contract_layout(package: Path) -> dict:
+    """Ensure operation contracts are not retained in legacy owner modules."""
+    deferred_root = package / "src" / "deferred.rs"
+    contract = package / "src" / "api" / "contract.rs"
+    models = package / "src" / "models.rs"
+    if deferred_root.exists():
+        raise ValueError("archive still contains the deleted root deferred module")
+    if not contract.exists():
+        raise ValueError("archive is missing api/contract.rs")
+    if "pub trait ChatApi" in models.read_text(encoding="utf-8"):
+        raise ValueError("archive still owns ChatApi in models.rs")
+    return {
+        "root_deferred_absent": True,
+        "canonical_operation_contract_present": True,
+        "models_chat_contract_absent": True,
+    }
+
+
+def check_openai_profile_layout(package: Path) -> dict:
+    """Ensure OpenAI profiles do not retain API-native option state."""
+    profile = package / "src" / "providers" / "openai.rs"
+    source = profile.read_text(encoding="utf-8")
+    if "native_options" in source:
+        raise ValueError("OpenAI provider profile still stores native options")
+    if "api::openai::OpenAiCompletionsOptions" in source:
+        raise ValueError("OpenAI provider profile still imports wire options")
+    responses_profile = package / "src" / "providers" / "openai_responses.rs"
+    responses_source = responses_profile.read_text(encoding="utf-8")
+    if "native_options" in responses_source:
+        raise ValueError("OpenAI Responses provider profile still stores native options")
+    if "api::openai_responses::OpenAiResponsesOptions" in responses_source:
+        raise ValueError("OpenAI Responses provider profile still imports wire options")
+    codex_profile = package / "src" / "providers" / "openai_codex.rs"
+    codex_source = codex_profile.read_text(encoding="utf-8")
+    if "native_options" in codex_source:
+        raise ValueError("OpenAI Codex provider profile still stores native options")
+    if "crate::api" in codex_source or "api::" in codex_source:
+        raise ValueError("OpenAI Codex provider profile still depends on the API layer")
+    anthropic_profile = package / "src" / "providers" / "anthropic.rs"
+    anthropic_source = anthropic_profile.read_text(encoding="utf-8")
+    if "native_options" in anthropic_source:
+        raise ValueError("Anthropic provider profile still stores native options")
+    if "crate::api" in anthropic_source or "api::" in anthropic_source:
+        raise ValueError("Anthropic provider profile still depends on the API layer")
+    azure_profile = package / "src" / "providers" / "azure_openai.rs"
+    azure_source = azure_profile.read_text(encoding="utf-8")
+    if "native_options" in azure_source or "azure_native" in azure_source:
+        raise ValueError("Azure OpenAI provider profile still stores native options")
+    if "crate::api" in azure_source or "api::" in azure_source:
+        raise ValueError("Azure OpenAI provider profile still depends on the API layer")
+    return {
+        "openai_profile_has_no_native_options": True,
+        "openai_responses_profile_has_no_native_options": True,
+        "openai_codex_profile_has_no_native_options": True,
+        "openai_codex_profile_has_no_api_dependency": True,
+        "anthropic_profile_has_no_native_options": True,
+        "anthropic_profile_has_no_api_dependency": True,
+        "azure_openai_profile_has_no_native_options": True,
+        "azure_openai_profile_has_no_api_dependency": True,
     }
 
 
@@ -142,6 +241,10 @@ def main() -> int:
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
         package, evidence["package"], candidate = shared.package_sdk(run, scratch, target)
+        evidence["canonical_shared_layout"] = check_canonical_shared_layout(package)
+        evidence["canonical_endpoint_layout"] = check_canonical_endpoint_layout(package)
+        evidence["canonical_operation_contract_layout"] = check_canonical_operation_contract_layout(package)
+        evidence["openai_profile_layout"] = check_openai_profile_layout(package)
         consumer = scratch / "consumer"
         (consumer / "src").mkdir(parents=True)
         manifest = (
@@ -155,15 +258,26 @@ def main() -> int:
             """use std::any::type_name;
 
 fn main() {
-    let _ = opi_ai::anthropic::parse_sse_events("");
-    let _ = opi_ai::openai_chat::parse_sse_events("");
-    let _ = opi_ai::openai_responses::OpenAiResponsesProvider::new(None);
-    let _ = opi_ai::openrouter::model_catalog();
-    let _ = opi_ai::mistral::mistral_provider(None);
-    let _ = opi_ai::pi_messages::PiMessagesProvider::new(Some("http://127.0.0.1:1".into()));
-    let _ = opi_ai::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com");
-    let _ = opi_ai::vertex::VertexProvider::express(None);
-    let _ = opi_ai::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test"));
+    let _ = opi_ai::api::anthropic::parse_sse_events("");
+    let _ = opi_ai::api::openai::parse_sse_events("");
+    let _ = opi_ai::api::shared::headers::merge_provider_header_sources(&[]);
+    let _ = opi_ai::api::shared::env::provider_env_value("OPI_EXTERNAL_CONSUMER_ENV", None);
+    let _ = type_name::<dyn opi_ai::api::contract::ChatApi<()>>();
+    let _ = type_name::<dyn opi_ai::api::contract::DeferredApi<()>>();
+    let _ = type_name::<opi_ai::api::contract::DeferredFetchCall>();
+    let _ = type_name::<opi_ai::types::deferred::DeferredHandle>();
+    let _ = std::any::type_name::<opi_ai::api::openai_responses::OpenAiResponsesOptions>(); let _ = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);
+    let _ = type_name::<opi_ai::providers::mapped::ApiMappedProvider>();
+    let _ = opi_ai::providers::openrouter::model_catalog();
+    let _ = opi_ai::providers::mistral::mistral_provider(None);
+    let _ = opi_ai::providers::pi_messages::PiMessagesProvider::new(Some("http://127.0.0.1:1".into()));
+    let _ = opi_ai::providers::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com");
+    let _ = std::any::type_name::<opi_ai::providers::bedrock::BedrockProvider>();
+    let _ = std::any::type_name::<opi_ai::api::bedrock::BedrockOptions>();
+    let _ = opi_ai::providers::vertex::VertexProvider::express(None);
+    let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexOptions>();
+    let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexChatApi>();
+    let _ = opi_ai::providers::azure_openai::resolve_azure_base_url(None, None, Some("https://example.test"));
     assert!(type_name::<opi_ai::auth::OAuthCredential>().contains("OAuthCredential"));
     assert!(type_name::<opi_ai::auth::store_oauth::StoreOAuthResolver>().contains("StoreOAuthResolver"));
     let nonce = opi_ai::ws::fresh_nonce();

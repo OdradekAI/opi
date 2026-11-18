@@ -30,21 +30,21 @@
 
 use std::sync::Arc;
 
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::azure_openai::AzureOpenAIProvider;
-use opi_ai::bedrock::BedrockProvider;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolCall,
     ToolResultMessage, UserMessage,
 };
-use opi_ai::mistral::mistral_provider;
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
-use opi_ai::openrouter::openrouter_provider;
 use opi_ai::provider::{CacheRetention, Request, ThinkingConfig};
-use opi_ai::vertex::VertexProvider;
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+use opi_ai::providers::bedrock::BedrockProvider;
+use opi_ai::providers::gemini::GeminiProvider;
+use opi_ai::providers::mistral::mistral_provider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::openrouter::openrouter_provider;
+use opi_ai::providers::vertex::VertexProvider;
 use tokio_util::sync::CancellationToken;
 
 /// The deterministic failure marker the no-native-field providers prefix onto the
@@ -481,9 +481,11 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // (Phase 14.1 added the `credential` module; Phase 14.2 added the `auth`
     // module with scoped OAuth auth contracts; Phase 14.15 added the
     // `model_info` model-routing metadata contract; Phase 14.16 added
-    // `api_mapped` and `provider_headers` for custom mapped routing; Phase
-    // 14.18 added the dedicated public `openai_codex_responses` provider while
-    // its wire-neutral shared implementation remains private.)
+    // Shared API headers for custom mapped routing; mapped provider composition
+    // now lives under `providers::mapped`; Phase
+    // The provider migrations keep provider profiles and wire adapters under
+    // the canonical `providers`/`api` namespaces, so they do not add direct
+    // provider declarations to lib.rs.
     // This scans direct module declarations, not module re-exports. The
     // approved 1.5 alignment foundation moves credential/mutation under auth
     // and message/model_info under types while retaining their public paths.
@@ -491,14 +493,12 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
     // types/errors are the two new declaration owners, not new providers.
     // Context estimation is shared by request budgeting and product compaction.
     let baseline_modules = vec![
-        "anthropic",
         // DEL-11 (task 20.45): the fixed-O image operation API family and
         // the image contracts module are deliberate additions.
         "api",
-        "api_mapped",
         "auth",
-        "azure_openai",
-        "bedrock",
+        // Provider profiles now live under `providers`; provider wire adapters
+        // live under `api` instead of retaining provider-specific root modules.
         // Task 20.51: functional request callbacks (headers/payload/response/
         // raw observers) are a deliberate later-phase addition.
         "callbacks",
@@ -519,29 +519,18 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "constrained_sampling",
         "context",
         "deferred",
-        "gemini",
         "http",
         // Task 20.53.4: provider identity helpers are a deliberate addition.
         "identity",
         // DEL-11 (task 20.45): image-generation context/result/record types.
         "images",
-        "mistral",
         // DEL-13 (task 20.56): the shallow Model shell module was retired
         // with zero in-repo consumers.
         "models",
-        "openai_chat",
-        "openai_codex_responses",
-        "openai_responses",
-        "openrouter",
         // DEL-11 (task 20.44): the pi-messages direct adapter.
-        "pi_messages",
         "provider",
-        // Task 20.53.6: provider environment helpers are a deliberate addition.
         // Task 20.34: the builtin provider profile table and its
         // construction layer are deliberate later-phase additions.
-        "provider_collection",
-        "provider_env",
-        "provider_headers",
         "providers",
         "registry",
         "replay",
@@ -554,8 +543,9 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         "telemetry",
         "test_support",
         "time",
+        // Task 20.14: the TLS host wiring is a deliberate public boundary.
+        "tls",
         "transcript",
-        "vertex",
         // RDF-24 (task 20.15): the strict WebSocket Upgrade bridge is a
         // deliberate later-phase addition.
         "ws",

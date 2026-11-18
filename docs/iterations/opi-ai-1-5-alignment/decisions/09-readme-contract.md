@@ -100,7 +100,7 @@ Faux 紧邻 Quick Start 提供无凭据、确定输出的第二路径，用来�
 
 这些是文档需要覆盖的行为主题；每项对目标快照的精确判定依照契约索引，README 不重新定义规范。
 
-本轮有界核验的源码锚点包括：src/models.rs:632 的默认凭据 Store、:634 的目录来源配置；src/credential.rs:303、:334 的 mutation 生命周期；src/retry.rs:249、:537 的显式重试与交接；src/message.rs:290、:315、:426 的工具参数 final/preview；src/models.rs:4918 的 partial 描述；src/openai_chat.rs:3168 的 receiver-closed 行为；src/telemetry.rs:34、:73、:113 的当前 carrier。它们均相对 D:/Luiz/Odradek/opi/crates/opi-ai，绑定地图 HEAD，仅证明当前实现，不替代未来验收。
+本轮有界核验的源码锚点包括：src/models.rs:632 的默认凭据 Store、:634 的目录来源配置；src/credential.rs:303、:334 的 mutation 生命周期；src/retry.rs:249、:537 的显式重试与交接；src/message.rs:290、:315、:426 的工具参数 final/preview；src/models.rs:4918 的 partial 描述；src/api/openai.rs:3168 的 receiver-closed 行为；src/telemetry.rs:34、:73、:113 的当前 carrier。它们均相对 D:/Luiz/Odradek/opi/crates/opi-ai，绑定地图 HEAD，仅证明当前实现，不替代未来验收。
 
 #### 示例与发布包的验证方式
 

@@ -24,12 +24,12 @@ use wiremock::matchers::{body_partial_json, header, method, path, query_param};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 use opi_ai::WireApi;
-use opi_ai::model_info::{ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping};
-use opi_ai::pi_messages::{
-    PiMessagesChatApi, PiMessagesOptions, PiMessagesProvider, PiMessagesToolChoice,
-    resolve_wire_cache_retention,
+use opi_ai::api::pi_messages::{
+    PiMessagesChatApi, PiMessagesOptions, PiMessagesToolChoice, resolve_wire_cache_retention,
 };
+use opi_ai::model_info::{ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping};
 use opi_ai::provider::CacheRetention;
+use opi_ai::providers::pi_messages::{BASE_URL, PiMessagesProvider};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::StopReason;
 
@@ -186,7 +186,7 @@ mod gateway_baseline {
 
     #[test]
     fn radius_default_gateway_baseline_control() {
-        for endpoint in [None, Some(opi_ai::pi_messages::BASE_URL.into())] {
+        for endpoint in [None, Some(BASE_URL.into())] {
             let provider = PiMessagesProvider::new(endpoint);
             assert!(!provider.models().is_empty());
             assert_eq!(provider.id(), "radius");
@@ -1921,8 +1921,10 @@ async fn node5_pi_producer_capture_reload_preserves_authoritative_tools_and_effo
     let target = models
         .register_chat_api(
             std::sync::Arc::new(
-                opi_ai::mistral::MistralConversationsChatApi::new(
-                    opi_ai::mistral::MistralConversationsProvider::new(Some(destination.uri())),
+                opi_ai::api::mistral::MistralConversationsChatApi::new(
+                    opi_ai::providers::mistral::MistralConversationsProvider::new(Some(
+                        destination.uri(),
+                    )),
                     target_model.clone(),
                 )
                 .unwrap(),
@@ -1938,7 +1940,7 @@ async fn node5_pi_producer_capture_reload_preserves_authoritative_tools_and_effo
         .complete(
             opi_ai::ChatModelRecord::new("mistral", target_model),
             request,
-            target.options(opi_ai::mistral::MistralOptions::default()),
+            target.options(opi_ai::api::mistral::MistralOptions::default()),
         )
         .await
         .unwrap();

@@ -6,10 +6,10 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
-use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
+use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -18,7 +18,7 @@ use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Helper: create a Mistral-configured provider.
 fn mistral_provider() -> OpenAiChatProvider {
-    opi_ai::mistral::mistral_provider(None)
+    opi_ai::providers::mistral::mistral_provider(None)
 }
 
 /// Helper: collect stream events asynchronously.
@@ -337,7 +337,8 @@ fn mistral_has_model_list() {
 
 #[test]
 fn mistral_custom_base_url() {
-    let provider = opi_ai::mistral::mistral_provider(Some("https://custom.proxy".into()));
+    let provider =
+        opi_ai::providers::mistral::mistral_provider(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "mistral");
 }
 
@@ -413,7 +414,7 @@ async fn stream_sends_text_request_body_and_auth_through_http() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
+    let provider = opi_ai::providers::mistral::mistral_provider(Some(server.uri()));
     let request = Request {
         projection: Default::default(),
         transport: Default::default(),
@@ -582,13 +583,13 @@ fn mistral_profile_inherits_shared_compat_flags() {
 async fn stream_cancellation_aborts_before_completion() {
     // The CancellationToken is threaded into the Mistral adapter's HTTP
     // body-stream loop (inherited from the shared OpenAI-compat path; see
-    // openai_chat.rs `cancel.cancelled()` select arm). Cancelling while the
+    // api/openai.rs `cancel.cancelled()` select arm). Cancelling while the
     // stream is open must terminate it before the delayed terminal chunk
     // arrives, proving the inherited adapter path observes cancellation.
     let server = spawn_stalled_mistral_server().await;
 
     let cancel = CancellationToken::new();
-    let provider = opi_ai::mistral::mistral_provider(Some(server));
+    let provider = opi_ai::providers::mistral::mistral_provider(Some(server));
     let request = Request {
         projection: Default::default(),
         transport: Default::default(),
@@ -668,7 +669,7 @@ async fn mistral_profile_carries_callbacks_through_chat_adapter() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::mistral::mistral_provider(Some(server.uri()));
+    let provider = opi_ai::providers::mistral::mistral_provider(Some(server.uri()));
     let request = Request {
         projection: Default::default(),
         transport: Default::default(),
@@ -751,12 +752,13 @@ async fn mistral_profile_carries_callbacks_through_chat_adapter() {
 mod mistral_43 {
     use super::*;
     use opi_ai::WireApi;
-    use opi_ai::message::{AssistantContent, MediaType, OutputContent, ToolCall};
-    use opi_ai::mistral::{
-        MistralConversationsChatApi, MistralConversationsProvider, MistralOptions,
-        MistralPromptMode, MistralReasoningEffort, MistralToolChoice,
+    use opi_ai::api::mistral::{
+        MistralConversationsChatApi, MistralOptions, MistralPromptMode, MistralReasoningEffort,
+        MistralToolChoice,
     };
+    use opi_ai::message::{AssistantContent, MediaType, OutputContent, ToolCall};
     use opi_ai::model_info::{ThinkingLevel, ThinkingLevelMap, ThinkingLevelMapping};
+    use opi_ai::providers::mistral::MistralConversationsProvider;
     use opi_ai::registry::ModelCapabilities;
     use opi_ai::stream::StopReason;
     use secrecy::SecretString;

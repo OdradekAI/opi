@@ -5,11 +5,11 @@
 //! construction for the Google Gemini `streamGenerateContent` API.
 
 use futures_util::StreamExt;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{
     CacheRetention, EventStream, Provider, ProviderError, Request, ThinkingConfig,
 };
+use opi_ai::providers::gemini::GeminiProvider;
 use opi_ai::registry::ProviderRegistry;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
@@ -517,7 +517,8 @@ async fn gemini_multiple_text_deltas() {
 
 #[test]
 fn gemini_custom_base_url() {
-    let provider = opi_ai::gemini::GeminiProvider::new(Some("https://custom.proxy".into()));
+    let provider =
+        opi_ai::providers::gemini::GeminiProvider::new(Some("https://custom.proxy".into()));
     assert_eq!(provider.id(), "gemini");
 }
 
@@ -1358,12 +1359,13 @@ mod constrained_guard_tests {
 mod google_40 {
     use super::*;
     use opi_ai::WireApi;
-    use opi_ai::gemini::{
-        GeminiProvider, GoogleApiThinkingLevel, GoogleGenerativeAiChatApi,
-        GoogleGenerativeAiOptions, GoogleThinkingConfig, GoogleToolChoice,
+    use opi_ai::api::gemini::{
+        GoogleApiThinkingLevel, GoogleGenerativeAiChatApi, GoogleGenerativeAiOptions,
+        GoogleThinkingConfig, GoogleToolChoice,
     };
     use opi_ai::message::{AssistantContent, OutputContent, ToolCall, ToolDef, ToolResultMessage};
     use opi_ai::model_info::{ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMapping};
+    use opi_ai::providers::gemini::GeminiProvider;
     use opi_ai::stream::StopReason;
     use opi_ai::transcript::Context;
 
@@ -2245,8 +2247,8 @@ mod google_40 {
 
     #[test]
     fn google_from_simple_maps_tool_choice_only() {
-        let simple = opi_ai::models::SimpleOptions {
-            tool_choice: Some(opi_ai::models::SimpleToolChoice::Auto),
+        let simple = opi_ai::api::contract::SimpleOptions {
+            tool_choice: Some(opi_ai::api::contract::SimpleToolChoice::Auto),
             ..Default::default()
         };
         let options = GoogleGenerativeAiOptions::from_simple(&simple);

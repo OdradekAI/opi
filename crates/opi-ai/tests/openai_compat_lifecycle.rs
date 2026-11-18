@@ -8,8 +8,8 @@ mod openai_chat_profile {
 
     use futures_util::StreamExt;
     use opi_ai::message::{InputContent, Message, UserMessage};
-    use opi_ai::openai_chat::OpenAiChatProvider;
     use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::providers::openai::OpenAiChatProvider;
     use opi_ai::stream::AssistantStreamEvent;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};
@@ -256,7 +256,7 @@ mod openai_chat_profile {
 
     #[tokio::test]
     async fn stream_custom_chat_completions_path() {
-        use opi_ai::openai_chat::CompatConfig;
+        use opi_ai::providers::openai::CompatConfig;
 
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -333,8 +333,8 @@ mod mistral_profile {
 
     use futures_util::StreamExt;
     use opi_ai::message::{InputContent, Message, UserMessage};
-    use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
     use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
     use opi_ai::stream::AssistantStreamEvent;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};
@@ -589,8 +589,8 @@ mod openrouter_profile {
 
     use futures_util::StreamExt;
     use opi_ai::message::{InputContent, Message, UserMessage};
-    use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
     use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+    use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
     use opi_ai::stream::AssistantStreamEvent;
     use tokio_util::sync::CancellationToken;
     use wiremock::matchers::{header, method, path};

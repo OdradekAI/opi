@@ -19,9 +19,9 @@ use opi_ai::message::{
 use opi_ai::provider::{EventStream, Provider, ProviderError, Request};
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::AssistantStreamEvent;
-use opi_ai::test_support::{self, MockProvider};
+use opi_ai::test_support::{self, MockProvider, ScriptedDeferredBackend};
 use opi_coding_agent::config::OpiConfig;
-use opi_coding_agent::harness::CodingHarness;
+use opi_coding_agent::harness::{CodingHarness, ResumeInfo};
 use opi_coding_agent::session_coordinator::SessionCoordinator;
 
 // ---------------------------------------------------------------------------
@@ -114,6 +114,521 @@ fn session_coordinator_creates_jsonl_file() {
     assert_eq!(header.cwd, "/test/cwd");
     assert_eq!(header.id, coord.session_id());
     assert!(entries.is_empty(), "fresh session should have no entries");
+}
+
+#[test]
+fn deferred_handle_persists_and_reconstructs_from_session_messages() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut coordinator = SessionCoordinator::new_for_test(
+        dir.path(),
+        "/test/cwd",
+        opi_agent::compaction::CompactionConfig::default(),
+        "mock:mock-model",
+    )
+    .unwrap();
+    let mut assistant = test_support::base_assistant();
+    assistant.stop_reason = opi_ai::stream::StopReason::Deferred;
+    assistant.deferred = Some(Box::new(opi_ai::types::deferred::DeferredHandle {
+        provider: "mock".into(),
+        model_id: "mock-model".into(),
+        api: "mock".into(),
+        id: "resp_session_pending".into(),
+        expires_at_ms: Some(9876),
+        poll_after_ms: Some(25),
+        data: None,
+    }));
+    let messages = vec![
+        AgentMessage::Llm(Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "submit deferred".into(),
+            }],
+            timestamp_ms: 0,
+        })),
+        AgentMessage::Llm(Message::Assistant(assistant.clone())),
+    ];
+
+    coordinator
+        .on_turn_end(&messages, &opi_ai::stream::Usage::default(), 0)
+        .expect("pending turn persists");
+    let (_, entries) = SessionReader::read_all(coordinator.session_path()).unwrap();
+    let persisted = entries
+        .iter()
+        .find_map(|entry| match entry {
+            SessionEntry::Message(entry) => match &entry.message {
+                Message::Assistant(message) => Some(message.clone()),
+                _ => None,
+            },
+            _ => None,
+        })
+        .expect("deferred assistant message is durable");
+    assert_eq!(persisted.deferred, assistant.deferred);
+
+    let context = opi_agent::session_context::reconstruct_context(
+        &entries,
+        &opi_agent::session::CrashRecovery::default(),
+    );
+    let restored = context
+        .messages
+        .into_iter()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(message))
+                if message.stop_reason == opi_ai::stream::StopReason::Deferred =>
+            {
+                message.deferred.map(|handle| *handle)
+            }
+            _ => None,
+        })
+        .expect("resume reconstruction restores the pending handle");
+    assert_eq!(restored.id, "resp_session_pending");
+    assert_eq!(restored.provider, "mock");
+    assert_eq!(restored.api, "mock");
+}
+
+#[test]
+fn ready_deferred_settlement_is_not_restored_as_pending() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut coordinator = SessionCoordinator::new_for_test(
+        dir.path(),
+        "/test/cwd",
+        opi_agent::compaction::CompactionConfig::default(),
+        "mock:mock-model",
+    )
+    .unwrap();
+    let user = AgentMessage::Llm(Message::User(UserMessage {
+        content: vec![InputContent::Text {
+            text: "submit deferred".into(),
+        }],
+        timestamp_ms: 0,
+    }));
+    let mut pending = test_support::base_assistant();
+    pending.provider = "mock".into();
+    pending.model = "mock-model".into();
+    pending.stop_reason = opi_ai::stream::StopReason::Deferred;
+    pending.deferred = Some(Box::new(opi_ai::types::deferred::DeferredHandle {
+        provider: "mock".into(),
+        model_id: "mock-model".into(),
+        api: "mock".into(),
+        id: "resp_ready_settled".into(),
+        expires_at_ms: Some(9876),
+        poll_after_ms: Some(25),
+        data: None,
+    }));
+    let pending_message = AgentMessage::Llm(Message::Assistant(pending));
+    coordinator
+        .on_turn_end(
+            &[user, pending_message],
+            &opi_ai::stream::Usage::default(),
+            0,
+        )
+        .expect("pending turn persists");
+
+    let mut ready = test_support::base_assistant();
+    ready.provider = "mock".into();
+    ready.model = "mock-model".into();
+    ready.stop_reason = opi_ai::stream::StopReason::Stop;
+    ready.content.push(AssistantContent::Text {
+        text: "ready result".into(),
+        signature: None,
+    });
+    coordinator
+        .on_turn_end(
+            &[AgentMessage::Llm(Message::Assistant(ready))],
+            &opi_ai::stream::Usage::default(),
+            2,
+        )
+        .expect("ready poll settlement persists");
+    let session_path = coordinator.session_path().to_path_buf();
+    let session_id = coordinator.session_id().to_owned();
+    drop(coordinator);
+
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let provider = MockProvider::new("mock", vec![test_support::text_response("unused")]);
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .initial_messages(reconstructed.messages)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id,
+        entries,
+        original_cwd: dir.path().to_path_buf(),
+        diagnostics: reconstructed.diagnostics,
+        recorded_model: reconstructed.model,
+        recorded_thinking: reconstructed.thinking_level,
+    })
+    .build();
+
+    assert!(
+        harness.pending_deferred().is_none(),
+        "a durable ready assistant settles the previous pending handle"
+    );
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn ready_deferred_poll_settles_session_and_reopens_ready() {
+    let _lock = session_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    set_sessions_dir(&sessions_dir);
+    let backend = Arc::new(ScriptedDeferredBackend::new("mock", "mock-model"));
+    let provider = MockProvider::new("mock", vec![test_support::text_response("ready result")])
+        .with_deferred(Arc::clone(&backend), 1, Some(25));
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .build();
+
+    harness
+        .prompt("submit through the agent loop")
+        .await
+        .expect("deferred submission succeeds");
+    let handle = harness
+        .pending_deferred()
+        .cloned()
+        .expect("submission leaves a pending handle");
+
+    let pending = harness
+        .poll_deferred(&handle, Default::default())
+        .await
+        .expect("pending poll is durable");
+    assert_eq!(pending.stop_reason, opi_ai::stream::StopReason::Deferred);
+    assert_eq!(harness.pending_deferred(), Some(&handle));
+
+    let ready = harness
+        .poll_deferred(&handle, Default::default())
+        .await
+        .expect("ready poll is durable");
+    assert_eq!(ready.stop_reason, opi_ai::stream::StopReason::Stop);
+    assert!(harness.pending_deferred().is_none());
+    assert_eq!(backend.fetch_count(), 2);
+
+    let session = harness.session().expect("session is active");
+    let session_path = session.session_path().to_path_buf();
+    let session_id = session.session_id().to_owned();
+    drop(harness);
+
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let last_assistant = reconstructed
+        .messages
+        .iter()
+        .rev()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(message)) => Some(message),
+            _ => None,
+        })
+        .expect("ready poll assistant is persisted");
+    assert_eq!(last_assistant.stop_reason, opi_ai::stream::StopReason::Stop);
+    assert!(last_assistant.deferred.is_none());
+
+    let reopened = CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("unused")],
+        )),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config-reopen"))
+    .initial_messages(reconstructed.messages)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id,
+        entries,
+        original_cwd: dir.path().to_path_buf(),
+        diagnostics: reconstructed.diagnostics,
+        recorded_model: reconstructed.model,
+        recorded_thinking: reconstructed.thinking_level,
+    })
+    .build();
+    assert!(reopened.pending_deferred().is_none());
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn deferred_cancel_ack_persists_aborted_terminal_and_reopens_settled() {
+    let _lock = session_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    set_sessions_dir(&sessions_dir);
+    let backend = Arc::new(ScriptedDeferredBackend::new("mock", "mock-model"));
+    let provider = MockProvider::new("mock", vec![test_support::text_response("unused")])
+        .with_deferred(Arc::clone(&backend), 1, Some(25));
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .build();
+
+    harness.prompt("submit then cancel").await.unwrap();
+    let handle = harness.pending_deferred().cloned().unwrap();
+    harness
+        .cancel_deferred(&handle, Default::default())
+        .await
+        .expect("remote cancellation acknowledgement is durable");
+    assert!(harness.pending_deferred().is_none());
+    assert_eq!(backend.cancelled_handles().len(), 1);
+
+    let session = harness.session().expect("session is active");
+    let session_path = session.session_path().to_path_buf();
+    let session_id = session.session_id().to_owned();
+    drop(harness);
+
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let last_assistant = reconstructed
+        .messages
+        .iter()
+        .rev()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(message)) => Some(message),
+            _ => None,
+        })
+        .expect("cancel terminal is persisted");
+    assert_eq!(
+        last_assistant.stop_reason,
+        opi_ai::stream::StopReason::Aborted
+    );
+    assert!(last_assistant.deferred.is_none());
+    assert_eq!(
+        last_assistant.error_message.as_deref(),
+        Some("deferred remote cancellation acknowledged")
+    );
+
+    let reopened = CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("unused")],
+        )),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config-reopen"))
+    .initial_messages(reconstructed.messages)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id,
+        entries,
+        original_cwd: dir.path().to_path_buf(),
+        diagnostics: reconstructed.diagnostics,
+        recorded_model: reconstructed.model,
+        recorded_thinking: reconstructed.thinking_level,
+    })
+    .build();
+    assert!(reopened.pending_deferred().is_none());
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn deferred_cancel_failure_retains_pending_handle_for_explicit_retry() {
+    let _lock = session_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    set_sessions_dir(&sessions_dir);
+    let backend = Arc::new(ScriptedDeferredBackend::new("mock", "mock-model"));
+    backend.fail_cancels();
+    let provider = MockProvider::new("mock", vec![test_support::text_response("unused")])
+        .with_deferred(Arc::clone(&backend), 1, Some(25));
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .build();
+
+    harness.prompt("submit then retry cancel").await.unwrap();
+    let handle = harness.pending_deferred().cloned().unwrap();
+    assert!(
+        harness
+            .cancel_deferred(&handle, Default::default())
+            .await
+            .is_err()
+    );
+    assert_eq!(harness.pending_deferred(), Some(&handle));
+    assert_eq!(backend.cancelled_handles().len(), 1);
+
+    let session = harness.session().expect("session is active");
+    let session_path = session.session_path().to_path_buf();
+    let session_id = session.session_id().to_owned();
+    drop(harness);
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let reopened = CodingHarness::builder(
+        Box::new(MockProvider::new(
+            "mock",
+            vec![test_support::text_response("unused")],
+        )),
+        "mock:mock-model".into(),
+        OpiConfig::default(),
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config-reopen"))
+    .initial_messages(reconstructed.messages)
+    .resume(ResumeInfo {
+        path: session_path,
+        session_id,
+        entries,
+        original_cwd: dir.path().to_path_buf(),
+        diagnostics: reconstructed.diagnostics,
+        recorded_model: reconstructed.model,
+        recorded_thinking: reconstructed.thinking_level,
+    })
+    .build();
+    assert_eq!(reopened.pending_deferred(), Some(&handle));
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn deferred_terminal_poll_failure_settles_error_without_resubmission() {
+    let _lock = session_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    set_sessions_dir(&sessions_dir);
+    let backend = Arc::new(ScriptedDeferredBackend::new("mock", "mock-model"));
+    let provider = MockProvider::new("mock", vec![test_support::text_response("unused")])
+        .with_deferred(Arc::clone(&backend), 1, Some(25));
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .build();
+
+    harness
+        .prompt("submit then lose deferred job")
+        .await
+        .unwrap();
+    let mut unknown = harness.pending_deferred().cloned().unwrap();
+    unknown.id = "unknown-deferred-job".into();
+    assert!(
+        harness
+            .poll_deferred(&unknown, Default::default())
+            .await
+            .is_err()
+    );
+    assert!(harness.pending_deferred().is_none());
+    assert_eq!(backend.fetch_count(), 1);
+
+    let session = harness.session().expect("session is active");
+    let session_path = session.session_path().to_path_buf();
+    drop(harness);
+    let (_, entries, recovery) = SessionReader::read_with_recovery(&session_path).unwrap();
+    let reconstructed = opi_agent::session_context::reconstruct_context(&entries, &recovery);
+    let last_assistant = reconstructed
+        .messages
+        .iter()
+        .rev()
+        .find_map(|message| match message {
+            AgentMessage::Llm(Message::Assistant(message)) => Some(message),
+            _ => None,
+        })
+        .expect("terminal poll failure is persisted");
+    assert_eq!(
+        last_assistant.stop_reason,
+        opi_ai::stream::StopReason::Error
+    );
+    assert!(last_assistant.deferred.is_none());
+    assert!(last_assistant.error_message.is_some());
+    clear_sessions_dir();
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)]
+async fn deferred_transient_poll_failure_retains_handle_for_explicit_retry() {
+    let _lock = session_lock();
+    let dir = tempfile::tempdir().unwrap();
+    let sessions_dir = dir.path().join("sessions");
+    set_sessions_dir(&sessions_dir);
+    let backend = Arc::new(ScriptedDeferredBackend::new("mock", "mock-model"));
+    let provider = MockProvider::new("mock", vec![test_support::text_response("ready")])
+        .with_deferred(Arc::clone(&backend), 1, Some(25));
+    let mut config = OpiConfig::default();
+    config.compaction.enabled = false;
+    let mut harness = CodingHarness::builder(
+        Box::new(provider),
+        "mock:mock-model".into(),
+        config,
+        dir.path().to_path_buf(),
+        opi_coding_agent::project_trust::TrustDecision::Trusted,
+    )
+    .global_config_dir(dir.path().join("isolated-config"))
+    .build();
+
+    harness
+        .prompt("submit then retry transient poll")
+        .await
+        .unwrap();
+    let handle = harness.pending_deferred().cloned().unwrap();
+    let cancelled_call = opi_ai::api::contract::DeferredFetchCall::default();
+    cancelled_call.cancel.cancel();
+    assert!(
+        harness
+            .poll_deferred(&handle, cancelled_call)
+            .await
+            .is_err()
+    );
+    assert_eq!(harness.pending_deferred(), Some(&handle));
+    assert_eq!(backend.fetch_count(), 0);
+    backend.fail_next_fetches(
+        ProviderError::Network(opi_ai::provider::ProviderErrorSummary::sanitized(
+            "transient deferred poll failure",
+        )),
+        1,
+    );
+    assert!(
+        harness
+            .poll_deferred(&handle, Default::default())
+            .await
+            .is_err()
+    );
+    assert_eq!(harness.pending_deferred(), Some(&handle));
+    let pending = harness
+        .poll_deferred(&handle, Default::default())
+        .await
+        .expect("explicit retry reaches the scripted pending state");
+    assert_eq!(pending.stop_reason, opi_ai::stream::StopReason::Deferred);
+    assert_eq!(backend.fetch_count(), 2);
+    clear_sessions_dir();
 }
 
 #[test]
@@ -849,12 +1364,13 @@ async fn session_restore_preserves_non_execution_facts_through_harness_and_wire(
     let request = &calls[0];
     let canonical = serde_json::to_value(&request.context).unwrap();
     let anthropic_body =
-        opi_ai::anthropic::AnthropicProvider::new(Some("http://127.0.0.1:9".into()))
+        opi_ai::providers::anthropic::AnthropicProvider::new(Some("http://127.0.0.1:9".into()))
             .build_request_body(request)
             .expect("restored facts permit object-wire recovery");
-    let chat_body = opi_ai::openai_chat::OpenAiChatProvider::new(Some("http://127.0.0.1:9".into()))
-        .build_request_body(request)
-        .expect("restored facts permit string-wire recovery");
+    let chat_body =
+        opi_ai::providers::openai::OpenAiChatProvider::new(Some("http://127.0.0.1:9".into()))
+            .build_request_body(request)
+            .expect("restored facts permit string-wire recovery");
     let anthropic_text = anthropic_body.to_string();
     assert!(anthropic_text.contains("[opi:tool-call-not-executed:v1]"));
     assert!(anthropic_text.contains("invalid_json"));

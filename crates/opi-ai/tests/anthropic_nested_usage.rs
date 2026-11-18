@@ -1,4 +1,4 @@
-use opi_ai::anthropic::{AnthropicMapper, ParsedEvent, parse_sse_events};
+use opi_ai::api::anthropic::{AnthropicMapper, ParsedEvent, parse_sse_events};
 use opi_ai::provider::ProviderError;
 use opi_ai::stream::AssistantStreamEvent;
 use serde_json::{Value, json};

@@ -367,7 +367,7 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "Models::refresh",
             "OAuthProvider",
             "Catalog::builtin()",
-            "provider_collection::register_builtin",
+            "providers::collection::register_builtin",
         ):
             self.assertIn(fragment, english_topic, f"provider-auth.md omits detailed rule: {fragment}")
         for fragment in (
@@ -380,7 +380,7 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
             "Models::refresh",
             "OAuthProvider",
             "Catalog::builtin()",
-            "provider_collection::register_builtin",
+            "providers::collection::register_builtin",
         ):
             self.assertIn(fragment, chinese_topic, f"provider-auth.zh.md omits detailed rule: {fragment}")
 

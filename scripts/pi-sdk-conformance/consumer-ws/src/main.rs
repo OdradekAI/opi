@@ -10,7 +10,7 @@ use base64::Engine as _;
 use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::{HttpClient, HttpClientBuilder, ProxyConfig};
-use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
 use opi_ai::provider::{CacheRetention, ProviderError, Request, TransportPreference};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::ws::{self, PmdOffer, WsUpgradeError, WsUpgradeRequest};

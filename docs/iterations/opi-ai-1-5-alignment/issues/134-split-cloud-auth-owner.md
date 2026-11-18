@@ -16,6 +16,10 @@ callers retain their existing feature path and wire behavior. The historical
 `bedrock::sigv4` path re-exports the shared implementation; cloud-only callers
 can use `auth::aws::sigv4` without compiling the Bedrock adapter.
 
+The canonical-only Bedrock migration in #156 removes that historical path.
+Callers use `auth::aws::sigv4` directly, while Converse wire code is owned by
+`api::bedrock` and provider construction by `providers::bedrock`.
+
 ## Evidence
 
 - Windows native `cloud-auth` check passes, the standalone public profile passes,

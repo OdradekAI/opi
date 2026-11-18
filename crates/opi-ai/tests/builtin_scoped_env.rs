@@ -4,7 +4,7 @@ use opi_ai::credential::{ApiKeyCredential, Credential, CredentialStore};
 use opi_ai::http::HttpClient;
 use opi_ai::mutation::InMemoryCredentialStore;
 use opi_ai::provider::Request;
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::{ChatModelRecord, Models, WireApi, WireCompat};
 use secrecy::{ExposeSecret, SecretString};
 use std::collections::BTreeMap;

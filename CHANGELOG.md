@@ -66,6 +66,23 @@
 
 ### Breaking Changes
 
+- `opi-ai` (0.x): operation contracts now have canonical owners. Use
+  `api::contract` for `ChatApi`, `DeferredApi`, typed call options and
+  registration handles, and `types::deferred` for deferred handle/error
+  values. The old `models::ChatApi` and `deferred` module paths are removed;
+  `providers::openai::OpenAiChatProvider` no longer stores wire-native options.
+  `providers::openai_responses::OpenAiResponsesProvider` no longer stores
+  wire-native Responses options; the API adapter now carries them explicitly.
+  `providers::openai_codex::OpenAiCodexResponsesProvider` likewise no longer
+  stores Codex native options or depends on the API layer; its pooled WebSocket
+  state is owned by the canonical transport module. `providers::anthropic::AnthropicProvider`
+  likewise no longer stores Anthropic native options or depends on the API
+  layer; `api::anthropic::AnthropicMessagesWireAdapter` owns per-call wire
+  options and dispatch state. `providers::azure_openai::AzureOpenAIProvider`
+  likewise no longer stores Azure native options or selected-record dispatch
+  state, or depends on the API layer; `api::azure_openai::AzureOpenAIWireAdapter`
+  owns per-call dual-wire options and dispatch state.
+
 - `opi-ai` (0.x): `AnthropicEvent::MessageDelta.usage` now uses
   `AnthropicUsageDelta` instead of `Usage`. Custom mapper callers supply
   `Some(value)` for reported token fields, including zero, and `None` for
@@ -1685,14 +1702,14 @@
   `stream_prepared` queue-assertion are unchanged; deferred records and
   their scripts stay with 20.45-50.
 - `opi-ai`: public header merge, scoped provider env, and cancellable
-  waits (task 20.53.6, P20-S53-6/7). `provider_headers::
+  waits (task 20.53.6, P20-S53-6/7). `api::shared::headers::
   merge_provider_header_sources` (pinned `providerHeadersToRecord`)
   merges override sources case-insensitively - later sources win and
   re-insert at the end preserving the winner's original case, `None`
   deletes without inserting, an empty result is `None` - as unvalidated
   config normalization feeding `ProviderHeaders::try_new`, without
   touching `merge_request` fail-closed override rejection. New
-  `provider_env::provider_env_value` (pinned `getProviderEnvValue`)
+  `api::shared::env::provider_env_value` (pinned `getProviderEnvValue`)
   resolves a name from a scoped injected map first, then the ambient
   process environment, faithfully short-circuiting empty values to
   fallback/`None` like the pinned `||` chain; lazy per-name reads with

@@ -1,9 +1,10 @@
 use futures_util::StreamExt;
+use opi_ai::api::pi_messages::PiMessagesOptions;
 use opi_ai::callbacks::RequestCallbacks;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::model_info::WireApi;
-use opi_ai::pi_messages::{PiMessagesOptions, PiMessagesProvider};
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request};
+use opi_ai::providers::pi_messages::PiMessagesProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};

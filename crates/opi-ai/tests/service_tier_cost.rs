@@ -2,16 +2,17 @@
 
 use std::sync::Arc;
 
+use opi_ai::api::azure_openai::{AzureOpenAIOptions, AzureOpenAIResponsesChatApi};
+use opi_ai::api::openai_codex_responses::{CodexChatApi, CodexOptions, CodexServiceTier};
+use opi_ai::api::openai_responses::{
+    OpenAiResponsesChatApi, OpenAiResponsesOptions, ResponsesServiceTier,
+};
 use opi_ai::auth::{AuthResolver, AuthScheme, ResolvedAuth};
-use opi_ai::azure_openai::{AzureOpenAIOptions, AzureOpenAIProvider, AzureOpenAIResponsesChatApi};
 use opi_ai::http::HttpClient;
-use opi_ai::openai_codex_responses::{
-    CodexChatApi, CodexOptions, CodexServiceTier, OpenAiCodexResponsesProvider,
-};
-use opi_ai::openai_responses::{
-    OpenAiResponsesChatApi, OpenAiResponsesOptions, OpenAiResponsesProvider, ResponsesServiceTier,
-};
 use opi_ai::provider::{ProviderError, Request, TransportPreference};
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use opi_ai::types::usage::{Pricing, ServiceTier, StopReason};
 use opi_ai::{
     AuthProvenanceSource, ChatModelRecord, ModelCapabilities, ModelInfo, ModelPricing, Models,

@@ -1,8 +1,8 @@
 use futures_util::StreamExt;
 use opi_ai::callbacks::RequestCallbacks;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::gemini::GeminiProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use serde_json::Value;
 use std::sync::Arc;

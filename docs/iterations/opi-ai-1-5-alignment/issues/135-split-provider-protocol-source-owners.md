@@ -12,10 +12,17 @@ modules now have independent public feature owners: `provider-anthropic`,
 `provider-mistral`, `provider-openai-chat`, `provider-openai-codex-responses`,
 `provider-openai-responses`, `provider-openrouter`, `provider-pi-messages` and
 `provider-vertex`. `provider-protocol-common` contains shared protocol seams and
-`provider-openrouter-usage` contains shared usage accounting; neither is a
-consumer-facing provider route. Bedrock and Vertex retain transitive
+`provider-openrouter-usage` selects the crate-private
+`api::shared::openrouter_usage` accounting seam; neither is a consumer-facing
+provider route. The provider-facing accounting types remain intentionally
+re-exported from `providers::openrouter`. Bedrock and Vertex retain transitive
 `cloud-auth`; Codex Responses retains `websocket-compression`. Default and
 `builtins` continue to select the complete historical surface.
+
+The subsequent canonical-only Bedrock slice (#156) removes the remaining
+`src/bedrock` root module: `providers::bedrock` owns profile construction and
+`api::bedrock` owns Converse wire behavior, while SigV4 and Smithy retry stay
+under their shared `auth::aws::sigv4` and `retry::smithy` owners.
 
 ## Evidence
 

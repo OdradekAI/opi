@@ -6,18 +6,19 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
+use crate::api::contract::{DeferredApi, DeferredCancelCall, DeferredFetchCall};
 use crate::auth::{
     AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth,
     StaticAuthResolver,
 };
 use crate::credential::BoxAuthFuture;
-use crate::deferred::{DeferredApi, DeferredCancelCall, DeferredFetchCall, DeferredHandle};
 use crate::message::AssistantMessage;
 use crate::model_info::WireApi;
-use crate::models::ApiId;
 use crate::provider::{EventStream, ModelInfo, Provider, ProviderError, Request};
 use crate::registry::ModelCapabilities;
 use crate::stream::{AssistantStreamEvent, StopReason, Usage};
+use crate::types::ApiId;
+use crate::types::deferred::DeferredHandle;
 use crate::{CompatMetadata, Models};
 use secrecy::SecretString;
 
@@ -475,6 +476,12 @@ impl Provider for MockProvider {
         &self.models
     }
 
+    fn deferred_api(&self) -> Option<Arc<dyn DeferredApi<()>>> {
+        self.deferred_scripting
+            .as_ref()
+            .map(|scripting| Arc::clone(&scripting.backend) as Arc<dyn DeferredApi<()>>)
+    }
+
     /// Ignore the supplied resolved auth because the mock does not authenticate.
     /// This lets the Agent's
     /// `Models::prepare_call` path drive the mock in tests;
@@ -745,6 +752,7 @@ struct ScriptedDeferredState {
     fetch_count: usize,
     cancelled_handles: Vec<DeferredHandle>,
     fail_cancels: bool,
+    fetch_failures: Vec<ProviderError>,
     /// Whether each fetch carried an explicit telemetry carrier (AIR-054
     /// participation evidence for the deferred surface).
     fetch_telemetry_present: Vec<bool>,
@@ -781,6 +789,7 @@ impl ScriptedDeferredBackend {
                 fetch_count: 0,
                 cancelled_handles: Vec::new(),
                 fail_cancels: false,
+                fetch_failures: Vec::new(),
                 fetch_telemetry_present: Vec::new(),
                 cancel_telemetry_present: Vec::new(),
             }),
@@ -847,6 +856,17 @@ impl ScriptedDeferredBackend {
         self.state.lock().unwrap().fail_cancels = true;
     }
 
+    /// Make the next `count` fetches fail with the supplied typed provider
+    /// error. The failures are consumed in order and never mutate the
+    /// registered remote job, so a later explicit retry can observe its
+    /// scripted pending or ready state.
+    pub fn fail_next_fetches(&self, error: ProviderError, count: usize) {
+        let mut state = self.state.lock().unwrap();
+        state
+            .fetch_failures
+            .extend(std::iter::repeat_n(error, count));
+    }
+
     /// Whether each dispatched fetch/cancel carried an explicit telemetry
     /// carrier (AIR-054): `true` when the call supplied one.
     pub fn fetch_telemetry_present(&self) -> Vec<bool> {
@@ -890,6 +910,12 @@ impl DeferredApi<()> for ScriptedDeferredBackend {
         state
             .fetch_telemetry_present
             .push(call.telemetry_context.is_some());
+        if !state.fetch_failures.is_empty() {
+            let error = state.fetch_failures.remove(0);
+            return Box::pin(futures_util::stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(error)
+            }));
+        }
         let Some(entry) = state.entries.get_mut(&handle.id) else {
             let error =
                 Self::scripted_error(format!("Unknown scripted deferred response: {}", handle.id));

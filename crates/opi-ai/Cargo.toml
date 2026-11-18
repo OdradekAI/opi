@@ -39,8 +39,9 @@ protocol-adapters = [
 # protocol owners. This is an implementation feature; callers should select
 # one of the provider-* features below or the compatibility group above.
 provider-protocol-common = []
-# Protocol-neutral usage/accounting types shared by OpenAI-compatible and
-# Anthropic adapters. The public `openrouter::*` path remains provider-owned.
+# OpenRouter wire usage/accounting types shared by OpenAI-compatible and
+# Anthropic adapters. The implementation lives in `api::shared`; the public
+# `providers::openrouter::*` path remains provider-owned.
 provider-openrouter-usage = ["provider-protocol-common"]
 # Individual provider protocol/source owners. Each owner keeps its own wire
 # module selectable while reusing only the shared HTTP/auth/TLS seams it needs.

@@ -19,18 +19,18 @@
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::auth::{AuthProvenance, AuthResolver, AuthScheme, ResolvedAuth};
-use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::credential::BoxAuthFuture;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
-use opi_ai::vertex::VertexProvider;
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+use opi_ai::providers::gemini::GeminiProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::vertex::VertexProvider;
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;

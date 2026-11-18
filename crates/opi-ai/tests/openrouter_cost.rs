@@ -1,11 +1,11 @@
-use opi_ai::anthropic::{
+use opi_ai::api::anthropic::{
     AnthropicEvent, ParsedEvent as AnthropicParsedEvent,
     parse_sse_events as parse_anthropic_sse_events,
 };
-use opi_ai::openai_chat::{
+use opi_ai::api::openai::{
     OpenAiChatEvent, ParsedEvent, parse_sse_events, parse_sse_events_for_openrouter,
 };
-use opi_ai::openrouter::{
+use opi_ai::providers::openrouter::{
     OpenRouterCostDetails, OpenRouterUsageAccounting, apply_openrouter_reported_cost,
 };
 use opi_ai::stream::Usage;

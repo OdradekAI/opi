@@ -10,8 +10,8 @@ use opi_ai::message::{
     parse_streaming_json,
 };
 use opi_ai::models::{ChatCall, CompatMetadata};
-use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::provider::Request;
+use opi_ai::providers::openai::OpenAiChatProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::test_support::{MockProvider, base_assistant, single_route_collection};
 use opi_ai::{AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, StaticAuthResolver};

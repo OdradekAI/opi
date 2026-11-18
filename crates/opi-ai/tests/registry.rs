@@ -6,8 +6,8 @@
 mod catalog_fixture;
 
 use opi_ai::WireApi;
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::provider::{EventStream, ModelInfo, Provider, Request};
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::registry::{ProviderRegistry, RegistrationError, RegistryError};
 
@@ -280,16 +280,16 @@ fn get_provider_unknown() {
 fn registry_resolves_all_builtin_providers() {
     use std::sync::Arc;
 
-    use opi_ai::anthropic::AnthropicProvider;
-    use opi_ai::azure_openai::AzureOpenAIProvider;
-    use opi_ai::bedrock::BedrockProvider;
-    use opi_ai::gemini::GeminiProvider;
     use opi_ai::http::HttpClient;
-    use opi_ai::mistral::mistral_provider;
-    use opi_ai::openai_chat::OpenAiChatProvider;
-    use opi_ai::openai_responses::OpenAiResponsesProvider;
-    use opi_ai::openrouter::openrouter_provider;
-    use opi_ai::vertex::VertexProvider;
+    use opi_ai::providers::anthropic::AnthropicProvider;
+    use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+    use opi_ai::providers::bedrock::BedrockProvider;
+    use opi_ai::providers::gemini::GeminiProvider;
+    use opi_ai::providers::mistral::mistral_provider;
+    use opi_ai::providers::openai::OpenAiChatProvider;
+    use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+    use opi_ai::providers::openrouter::openrouter_provider;
+    use opi_ai::providers::vertex::VertexProvider;
 
     let azure = AzureOpenAIProvider::from_config(
         Some("https://example.openai.azure.com".into()),

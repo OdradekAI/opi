@@ -24,8 +24,8 @@ use crate::api::system_one::{SystemOneCoreOptions, SystemOneTransport, classify_
 use crate::auth::ResolvedAuth;
 use crate::classifier::{ClassifierCall, ClassifierContext, ClassifierModelRecord};
 use crate::http::HttpClient;
-use crate::models::ApiId;
 use crate::provider::{ProviderError, ProviderErrorSummary};
+use crate::types::ApiId;
 
 /// The exact pi classifier API identity this adapter serves.
 pub const CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API_ID: &str = "cloudflare-workers-ai-system-one";

@@ -1,0 +1,37 @@
+﻿{
+    "apiRevision":  "Responses API background mode",
+    "liveEvidence":  false,
+    "endpoint":  "https://api.openai.com/v1",
+    "observedAt":  "2026-11-16T08:55:54.7861209Z",
+    "issue":  "#143",
+    "operations":  {
+                       "submit":  {
+                                      "status":  "blocked",
+                                      "reason":  "credential unavailable"
+                                  },
+                       "fetch":  {
+                                     "status":  "blocked",
+                                     "reason":  "submit did not produce a response id"
+                                 },
+                       "cancel":  {
+                                      "status":  "blocked",
+                                      "reason":  "submit did not produce a response id"
+                                  }
+                   },
+    "provider":  "openai",
+    "schemaVersion":  1,
+    "auth":  {
+                 "source":  "env OPENAI_API_KEY",
+                 "available":  false
+             },
+    "contract":  {
+                     "submit":  "POST /responses with background=true and store=true",
+                     "fetch":  "GET /responses/{response_id}",
+                     "cancel":  "POST /responses/{response_id}/cancel"
+                 },
+    "api":  "openai-responses",
+    "model":  "o3",
+    "blockers":  [
+                     "OPENAI_API_KEY is not set; no live request was sent"
+                 ]
+}

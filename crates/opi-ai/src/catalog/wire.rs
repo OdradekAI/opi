@@ -2068,7 +2068,7 @@ mod projection_compat_tests {
         }
         #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
         assert_eq!(
-            crate::openai_responses::ResponsesConfig::default().source,
+            crate::providers::openai_responses::ResponsesConfig::default().source,
             crate::types::model::OpenAiResponsesSourceCompat::default()
         );
     }

@@ -982,7 +982,7 @@ impl opi_ai::auth::AuthResolver for PendingCleanupAuth {
 async fn accepted_projection_resource_cleanup_cancellation_keeps_agent_cancel_origin() {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
-    let provider = opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+    let provider = opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider::new(
         Some(format!("http://{}", listener.local_addr().unwrap())),
         vec![opi_ai::ModelInfo::new(
             "model",

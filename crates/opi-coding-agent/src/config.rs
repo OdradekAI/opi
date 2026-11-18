@@ -1804,7 +1804,7 @@ fn validate_custom_provider(
     }
 
     let headers: Vec<(String, String)> = raw.headers.unwrap_or_default().into_iter().collect();
-    opi_ai::ProviderHeaders::try_new(headers.clone())
+    opi_ai::api::shared::headers::ProviderHeaders::try_new(headers.clone())
         .map_err(|error| invalid_custom(id, None, "headers", &error.to_string()))?;
     let proxy = match raw.proxy {
         Some(proxy) => {

@@ -21,7 +21,7 @@ use opi_agent::tool::{ExecutionMode, Tool, ToolError, ToolResult, UpdateCallback
 use opi_ai::message::{
     AssistantContent, AssistantMessage, InputContent, Message, OutputContent, ToolDef, UserMessage,
 };
-use opi_ai::openai_chat::{CompatConfig, OpenAiChatProvider};
+use opi_ai::providers::openai::{CompatConfig, OpenAiChatProvider};
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::{
     AuthProvenanceSource, AuthScheme, CompatMetadata, ModelCapabilities, ModelInfo, Models,

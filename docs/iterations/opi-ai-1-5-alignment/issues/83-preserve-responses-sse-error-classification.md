@@ -46,8 +46,8 @@ the same 413 after the flat or Codex prefix is terminal. The existing
 whole-call and overflow classifiers run before the decoder emits a fixed
 summary. The typed stream cause, public message and telemetry receive
 only that summary.
-[SDK selection](../../../../crates/opi-ai/src/openai_responses_shared.rs#L675) ·
-[Codex selection](../../../../crates/opi-ai/src/openai_responses_shared.rs#L703)
+[SDK selection](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L680) ·
+[Codex selection](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L708)
 
 Two fixture decisions differ from Pi's whole-payload JSON fallback.
 A nested SDK metadata field and a Codex nested code shadowed by an

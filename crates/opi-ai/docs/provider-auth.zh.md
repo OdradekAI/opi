@@ -47,17 +47,17 @@ Bedrock 与 Vertex 传递保留 `cloud-auth`，Codex Responses 传递保留
 
 | 模块 | Provider id | 后端 |
 |------|-------------|------|
-| `anthropic` | `anthropic` | Anthropic Messages streaming |
-| `openai_chat` | `openai` | OpenAI Chat Completions streaming |
-| `openai_responses` | `openai-responses` | OpenAI Responses streaming |
-| `openai_codex_responses` | `openai-codex` | subscription-specific OpenAI Codex Responses streaming |
-| `api_mapped` | 调用方定义 | 把一个 Provider identity/catalog 路由到 checked 具体 wire |
-| `openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
-| `mistral` | `mistral` | OpenAI-compatible Mistral profile |
-| `gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
-| `bedrock` | `bedrock` | AWS Bedrock Converse streaming，支持 SigV4 或 Bearer 认证 |
-| `azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat **与** Responses 双 wire |
-| `vertex` | `vertex` | Google Vertex AI Gemini streaming |
+| `providers::anthropic` + `api::anthropic` | `anthropic` | Anthropic Messages streaming |
+| `providers::openai` + `api::openai` | `openai` | OpenAI Chat Completions streaming |
+| `providers::openai_responses` + `api::openai_responses` | `openai-responses` | OpenAI Responses streaming |
+| `providers::openai_codex` + `api::openai_codex_responses` | `openai-codex` | subscription-specific OpenAI Codex Responses streaming |
+| `providers::mapped` | 调用方定义 | 把一个 Provider identity/catalog 路由到 checked 具体 wire |
+| `providers::openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
+| `providers::mistral` + `api::mistral` | `mistral` | OpenAI-compatible Mistral profile |
+| `providers::gemini` + `api::gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
+| `providers::bedrock` + `api::bedrock` | `bedrock` | AWS Bedrock Converse streaming，支持 SigV4 或 Bearer 认证 |
+| `providers::azure_openai` + `api::azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat **与** Responses 双 wire |
+| `providers::vertex` + `api::vertex` | `vertex` | Google Vertex AI Gemini streaming |
 
 内置模型列表刻意保持有限，主要用于能力校验和模型列表输出。站点专用模型、
 fine-tuned 模型和 deployment 应通过 registry override 或配置的
@@ -79,7 +79,7 @@ Copilot、OpenRouter、Kimi Coding、Meta、xAI 与 Radius 流。`opi-coding-age
 提供 OS-keychain store 和终端 presenter；SDK 流调用注入的 presenter，不启动浏览器。
 
 `WireApi` 为每个 `ModelInfo` 指定一个精确请求 wire；公开
-`ApiMappedProvider` 暴露一个 provider identity 与 catalog，并在派发前校验其
+`providers::mapped::ApiMappedProvider` 暴露一个 provider identity 与 catalog，并在派发前校验其
 `WireApi -> Provider` route。一个 mapped provider 的所有 route 共享一个惰性
 `AuthResolver`；provider/model 元数据会在网络 IO 前选择 route。未知 model、缺少
 route 与 wire/compatibility 不匹配都会成为类型化、不可重试的失败。
@@ -524,7 +524,7 @@ Bedrock 区域、动态 radius）。旧的 opi id（`gemini`、`vertex`、
 `bedrock`、`openai-responses`）不是别名——表从不注册它们。
 provider 显示名包括 Amazon Bedrock、Anthropic 与 Google Vertex AI；凭证标签
 作为独立元数据保留。
-`provider_collection::register_builtin` 把该表与内置目录转成基于已完
+`providers::collection::register_builtin` 把该表与内置目录转成基于已完
 成 wire 适配器的注册 provider：每 profile 一个 mapped provider（Azure
 与 google-vertex 受配置门控并给出类型化跳过原因，bedrock 以 AWS 链
 描述符 lookup-only 注册），canonical-route 包装器把固定 id 适配器重发

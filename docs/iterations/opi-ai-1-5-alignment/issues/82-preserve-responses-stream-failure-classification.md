@@ -33,7 +33,7 @@ the frozen adapter. A code-only gateway failure is transient in Azure
 and terminal in Codex. The Codex SSE and WebSocket paths reuse the
 shared mapper. Its WebSocket control verifies zero fallback sends for a
 transient provider terminal.
-[Mapper](../../../../crates/opi-ai/src/openai_responses_shared.rs#L723) ·
+[Mapper](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L708) ·
 [Classifier](../../../../crates/opi-ai/src/retry.rs#L1063)
 
 The canonical `CallFailure` carries a typed `StreamError` with fixed

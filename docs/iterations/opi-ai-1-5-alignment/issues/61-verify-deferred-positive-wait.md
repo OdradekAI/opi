@@ -44,7 +44,7 @@ transport guides now state which party interprets the budget and which
 party initiates a later fetch. The fixture uses a gate for backend response
 availability. Actual elapsed provider wait and result delivery around
 source EOF are outside the observations in this probe.
-[Rust wait option](../../../../crates/opi-ai/src/deferred.rs#L34) ·
+[Rust wait option](../../../../crates/opi-ai/src/api/contract.rs) ·
 [Dispatch path](../../../../crates/opi-ai/src/models.rs#L1091) ·
 [Transport contract](../../../../crates/opi-ai/docs/transport.md#deferred-transport-semantics)
 

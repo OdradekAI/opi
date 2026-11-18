@@ -92,6 +92,7 @@ mod event_fanout_tests {
 pub struct AgentRunResult {
     messages: Vec<AgentMessage>,
     error: Option<AgentError>,
+    pending_deferred: Option<opi_ai::types::deferred::DeferredHandle>,
     terminal_outcome: crate::evidence::TerminalOutcome,
     evidence_health: crate::evidence::EvidenceHealth,
     evidence_cleanup_error: Option<crate::evidence::EvidenceError>,
@@ -106,6 +107,7 @@ impl std::fmt::Debug for AgentRunResult {
             .debug_struct("AgentRunResult")
             .field("messages", &self.messages)
             .field("error", &self.error)
+            .field("pending_deferred", &self.pending_deferred)
             .field("terminal_outcome", &self.terminal_outcome)
             .field("evidence_health", &self.evidence_health)
             .field("evidence_cleanup_error", &self.evidence_cleanup_error)
@@ -166,6 +168,12 @@ impl AgentRunResult {
     /// The owning execution error, if the run did not complete normally.
     pub fn error(&self) -> Option<&AgentError> {
         self.error.as_ref()
+    }
+
+    /// Handle retained when this operation submitted an asynchronous
+    /// Deferred response. The caller must explicitly fetch or cancel it.
+    pub fn pending_deferred(&self) -> Option<&opi_ai::types::deferred::DeferredHandle> {
+        self.pending_deferred.as_ref()
     }
 
     /// Exact terminal execution outcome used by the finalized manifest.
@@ -995,6 +1003,7 @@ impl Agent {
         AgentRunResult {
             messages,
             error: run.error,
+            pending_deferred: run.pending_deferred,
             terminal_outcome: run.terminal_outcome,
             evidence_health: run.evidence_health,
             evidence_cleanup_error: None,
@@ -1009,6 +1018,7 @@ impl Agent {
             messages: self.state.context.clone(),
             terminal_outcome: crate::agent_loop::terminal_outcome_for_error(&error),
             error: Some(error),
+            pending_deferred: None,
             evidence_health: crate::evidence::EvidenceHealth::healthy(),
             evidence_cleanup_error: None,
             identities: crate::evidence::IdentityAllocator::new(),

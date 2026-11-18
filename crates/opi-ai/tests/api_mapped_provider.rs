@@ -3,14 +3,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
+use opi_ai::api::shared::headers::ProviderHeaders;
 use opi_ai::auth::{AuthProvenanceSource, AuthResolver, AuthScheme, ResolvedAuth};
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::model_info::{ModelCapabilities, ModelInfoError, WireApi, WireCompat};
 use opi_ai::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, Request, ThinkingConfig,
 };
+use opi_ai::providers::mapped::ApiMappedProvider;
 use opi_ai::stream::AssistantStreamEvent;
-use opi_ai::{ApiMappedProvider, CompatMetadata, Models, ProviderHeaders};
+use opi_ai::{CompatMetadata, Models};
 use secrecy::{ExposeSecret, SecretString};
 use tokio_util::sync::CancellationToken;
 
@@ -397,7 +399,7 @@ fn wire_compat_mismatch_fails_at_construction() {
     let error = ApiMappedProvider::try_new("acme", vec![mismatched], BTreeMap::new()).unwrap_err();
     assert!(matches!(
         error,
-        opi_ai::ApiMapError::InvalidModel {
+        opi_ai::providers::mapped::ApiMapError::InvalidModel {
             provider_id,
             model_id,
             source: ModelInfoError::WireCompatMismatch { .. },
@@ -428,7 +430,7 @@ fn zero_model_token_limits_fail_at_construction() {
         let error = ApiMappedProvider::try_new("acme", vec![invalid], BTreeMap::new()).unwrap_err();
         assert!(matches!(
             error,
-            opi_ai::ApiMapError::InvalidModel {
+            opi_ai::providers::mapped::ApiMapError::InvalidModel {
                 provider_id,
                 model_id,
                 source: ModelInfoError::InvalidCapabilities {
@@ -494,7 +496,7 @@ fn mapped_provider_rejects_duplicate_models_routes_and_route_id_mismatch() {
     .unwrap_err();
     assert!(matches!(
         error,
-        opi_ai::ApiMapError::DuplicateRoute {
+        opi_ai::providers::mapped::ApiMapError::DuplicateRoute {
             provider_id,
             wire_api: WireApi::OpenAiCompletions,
         } if provider_id == "acme"
@@ -539,7 +541,7 @@ fn mapped_provider_rejects_route_model_with_different_capabilities() {
     let error = ApiMappedProvider::try_new("acme", vec![catalog_model], routes).unwrap_err();
     assert!(matches!(
         error,
-        opi_ai::ApiMapError::RouteCatalogMismatch {
+        opi_ai::providers::mapped::ApiMapError::RouteCatalogMismatch {
             provider_id,
             wire_api: WireApi::OpenAiCompletions,
         } if provider_id == "acme"
@@ -573,7 +575,7 @@ fn mapped_provider_rejects_route_catalog_subsets_and_supersets() {
         let error = ApiMappedProvider::try_new("acme", catalog.clone(), routes).unwrap_err();
         assert!(matches!(
             error,
-            opi_ai::ApiMapError::RouteCatalogMismatch {
+            opi_ai::providers::mapped::ApiMapError::RouteCatalogMismatch {
                 provider_id,
                 wire_api: WireApi::OpenAiCompletions,
             } if provider_id == "acme"
@@ -725,7 +727,7 @@ async fn concrete_custom_route_ignores_credential_base_url_and_uses_model_base_u
         .await;
     let routed_model =
         model("claude", WireApi::AnthropicMessages).with_base_url(model_server.uri());
-    let route = opi_ai::anthropic::AnthropicProvider::for_route(
+    let route = opi_ai::providers::anthropic::AnthropicProvider::for_route(
         "acme".into(),
         vec![routed_model.clone()],
         Some(default_server.uri()),
@@ -778,7 +780,8 @@ mod capability_and_catalog_dispatch {
     use futures_util::StreamExt;
     use opi_ai::model_info::ThinkingLevel;
     use opi_ai::provider::{EventStream, Provider, ProviderError, Request, ThinkingConfig};
-    use opi_ai::{ApiMappedProvider, ModelCapabilities, ModelInfo, WireApi};
+    use opi_ai::providers::mapped::ApiMappedProvider;
+    use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 
     struct CountingRoute {
         model: Vec<ModelInfo>,

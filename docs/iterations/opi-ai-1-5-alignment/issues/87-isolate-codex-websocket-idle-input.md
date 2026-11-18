@@ -60,7 +60,7 @@ create. The boundary is based on when the bytes are read. The fixture
 includes a late terminal without an ID, and serial clean tests exercise
 equal response IDs across turns.
 [Driver read](../../../../crates/opi-ai/src/ws/io.rs#L441) ·
-[Idle input handling](../../../../crates/opi-ai/src/openai_codex_responses/ws_transport.rs#L606)
+[Idle input handling](../../../../crates/opi-ai/src/transport/codex.rs#L606)
 
 Opi retires the old socket when it has incomplete input or reaches
 the bounded idle read allowance. A readable Close is acknowledged and

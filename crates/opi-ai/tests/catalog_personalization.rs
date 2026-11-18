@@ -290,7 +290,7 @@ async fn personalized_record_drives_the_next_real_models_request() {
     let mut models = Models::new();
     models
         .register_route(
-            Box::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+            Box::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                 Some(server.uri()),
                 "openrouter".into(),
                 Default::default(),

@@ -1,10 +1,11 @@
 //! Silent usage corrections must reach canonical results and their observers.
 use futures_util::StreamExt;
-use opi_ai::anthropic::{AnthropicMapper, AnthropicProvider, ParsedEvent, parse_sse_events};
+use opi_ai::api::anthropic::{AnthropicMapper, ParsedEvent, parse_sse_events};
 use opi_ai::message::{AssistantContent, AssistantMessage};
 use opi_ai::model_info::{ModelInfo, ModelPricing, WireApi};
 use opi_ai::models::CompatMetadata;
 use opi_ai::provider::{Provider, Request};
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{AssistantStreamEvent, ChatStream, Pricing};
 use opi_ai::{AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, StaticAuthResolver};
@@ -398,7 +399,7 @@ async fn anthropic_usage_contract() {
 
 #[test]
 fn merged_delta_validation_is_atomic_and_cost_zero_has_authority() {
-    use opi_ai::anthropic::{
+    use opi_ai::api::anthropic::{
         AnthropicEvent, AnthropicMapper, AnthropicUsageDelta, ParsedEvent, parse_sse_events,
         parse_sse_events_for_openrouter,
     };
@@ -470,7 +471,7 @@ fn merged_delta_validation_is_atomic_and_cost_zero_has_authority() {
 
 #[test]
 fn reasoning_delta_subset_validation_is_atomic() {
-    use opi_ai::anthropic::{AnthropicEvent, AnthropicMapper, AnthropicUsageDelta};
+    use opi_ai::api::anthropic::{AnthropicEvent, AnthropicMapper, AnthropicUsageDelta};
 
     let mut mapper = AnthropicMapper::new();
     mapper.process(AnthropicEvent::MessageStart {

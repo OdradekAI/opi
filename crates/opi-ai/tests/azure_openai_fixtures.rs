@@ -5,8 +5,9 @@
 //! fixture data — no live Azure calls.
 
 use futures_util::StreamExt;
-use opi_ai::azure_openai::AzureOpenAIProvider;
+use opi_ai::api::azure_openai::AzureOpenAIWireAdapter;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError};
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{body_partial_json, header, method, path, query_param};
@@ -23,6 +24,10 @@ fn make_provider() -> AzureOpenAIProvider {
         Some("2024-06-01".into()),
     )
     .unwrap()
+}
+
+fn wire_adapter(provider: &AzureOpenAIProvider) -> AzureOpenAIWireAdapter {
+    AzureOpenAIWireAdapter::new(provider.clone())
 }
 
 fn make_provider_with_deployments(deployments: Vec<&str>) -> AzureOpenAIProvider {
@@ -356,7 +361,7 @@ fn selected_deployment_is_advertised_when_catalog_not_configured() {
 async fn text_streaming_from_fixture() {
     let provider = make_provider();
     let request = text_request();
-    let stream = provider.stream_from_sse(text_sse_fixture(), request.cancel);
+    let stream = wire_adapter(&provider).stream_from_sse(text_sse_fixture(), request.cancel);
     let events = collect_events(stream).await;
 
     assert!(
@@ -390,7 +395,7 @@ async fn text_streaming_from_fixture() {
 async fn tool_call_from_fixture() {
     let provider = make_provider();
     let request = tool_request();
-    let stream = provider.stream_from_sse(&tool_call_sse_fixture(), request.cancel);
+    let stream = wire_adapter(&provider).stream_from_sse(&tool_call_sse_fixture(), request.cancel);
     let events = collect_events(stream).await;
 
     assert!(
@@ -422,7 +427,7 @@ async fn tool_call_from_fixture() {
 async fn usage_from_fixture() {
     let provider = make_provider();
     let request = text_request();
-    let stream = provider.stream_from_sse(text_sse_fixture(), request.cancel);
+    let stream = wire_adapter(&provider).stream_from_sse(text_sse_fixture(), request.cancel);
     let events = collect_events(stream).await;
 
     let done = events
@@ -439,7 +444,7 @@ async fn usage_from_fixture() {
 async fn error_from_fixture() {
     let provider = make_provider();
     let request = text_request();
-    let stream = provider.stream_from_sse(error_sse_fixture(), request.cancel);
+    let stream = wire_adapter(&provider).stream_from_sse(error_sse_fixture(), request.cancel);
     let events: Vec<Result<AssistantStreamEvent, ProviderError>> = collect_items(stream).await;
 
     // Current producers stop the dual terminal format: the in-band error
@@ -471,7 +476,8 @@ async fn error_from_fixture() {
 async fn malformed_frame_does_not_expose_upstream_content() {
     let canary = "azure-malformed-secret-canary";
     let sse = format!("data: {{not-json-{canary}}}\n\n");
-    let events = make_provider()
+    let provider = make_provider();
+    let events = wire_adapter(&provider)
         .stream_from_sse(&sse, CancellationToken::new())
         .collect::<Vec<_>>()
         .await;
@@ -498,7 +504,9 @@ fn secret_redaction_in_debug() {
 fn request_body_uses_deployment_name() {
     let provider = make_provider();
     let request = text_request();
-    let body = provider.build_request_body(&request).unwrap();
+    let body = wire_adapter(&provider)
+        .build_request_body(&request)
+        .unwrap();
     assert_eq!(body["model"], "my-gpt4o");
 }
 
@@ -782,7 +790,7 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
     // through the shared OpenAI Chat adapter. With a developer-role + strict-
     // tools compat applied via with_compat, its request body reflects both
     // flags through the shared serializer (DoD), not an Azure-specific one.
-    use opi_ai::openai_chat::CompatConfig;
+    use opi_ai::providers::openai::CompatConfig;
 
     let provider = make_provider().with_compat(CompatConfig {
         instruction_role: Some(opi_ai::model_info::ChatInstructionRole::Developer),
@@ -790,14 +798,18 @@ fn azure_inherits_shared_compat_flags_via_with_compat() {
         ..Default::default()
     });
     // text_request carries a system message -> developer role override applies.
-    let body_text = provider.build_request_body(&text_request()).unwrap();
+    let body_text = wire_adapter(&provider)
+        .build_request_body(&text_request())
+        .unwrap();
     let messages = body_text["messages"].as_array().unwrap();
     assert_eq!(
         messages[0]["role"], "developer",
         "Azure inherits developer-role override from the shared compat path"
     );
     // tool_request carries tools -> strict flag applies.
-    let body_tool = provider.build_request_body(&tool_request()).unwrap();
+    let body_tool = wire_adapter(&provider)
+        .build_request_body(&tool_request())
+        .unwrap();
     let tools = body_tool["tools"].as_array().expect("tools present");
     assert!(
         tools[0]["function"]["strict"] == false,
@@ -950,12 +962,12 @@ async fn azure_async_callbacks_flow_through_shared_responses_wire() {
 // apiVersion mapping and the Azure native option inventory (no service tier).
 // ---------------------------------------------------------------------------
 
-use opi_ai::azure_openai::{
-    AzureOpenAIOptions, AzureOpenAIResponsesChatApi, resolve_azure_api_version,
-    resolve_azure_base_url, resolve_deployment_name,
-};
+use opi_ai::api::azure_openai::{AzureOpenAIOptions, AzureOpenAIResponsesChatApi};
+use opi_ai::api::openai_responses::{ResponsesReasoningSummary, ResponsesToolChoice};
 use opi_ai::model_info::{ModelCapabilities, ModelInfo, ThinkingLevel, WireApi};
-use opi_ai::openai_responses::{ResponsesReasoningSummary, ResponsesToolChoice};
+use opi_ai::providers::azure_openai::{
+    resolve_azure_api_version, resolve_azure_base_url, resolve_deployment_name,
+};
 
 fn azure_responses_record(id: &str) -> ModelInfo {
     ModelInfo::new(
@@ -1362,7 +1374,7 @@ async fn registered_azure_responses_models(
     model: ModelInfo,
 ) -> (
     opi_ai::models::Models,
-    opi_ai::models::ChatApiHandle<AzureOpenAIOptions>,
+    opi_ai::api::contract::ChatApiHandle<AzureOpenAIOptions>,
 ) {
     let provider = azure_responses_provider(format!("{server_uri}/openai/v1"));
     let api = AzureOpenAIResponsesChatApi::new(provider, model).expect("valid azure record");
@@ -1499,7 +1511,7 @@ async fn azure_responses_simple_entry_maps_neutral_thinking_and_clamps() {
         .complete_simple(
             opi_ai::models::ChatModelRecord::new("azure", azure_responses_record("my-gpt4o")),
             azure_responses_request("my-gpt4o", Some(ThinkingLevel::High)),
-            opi_ai::models::SimpleOptions::default(),
+            opi_ai::api::contract::SimpleOptions::default(),
         )
         .await
         .expect("simple azure responses call completes");

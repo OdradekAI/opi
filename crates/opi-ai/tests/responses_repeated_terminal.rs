@@ -1,5 +1,5 @@
 use futures_util::StreamExt;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;

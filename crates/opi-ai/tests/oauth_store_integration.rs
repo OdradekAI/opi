@@ -3,8 +3,8 @@ use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
 use opi_ai::credential::{BoxAuthFuture, CredentialStore};
 use opi_ai::models::{AuthResolutionOverrides, CompatMetadata, Models, drain_to_completion};
 use opi_ai::mutation::InMemoryCredentialStore;
-use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::openai::OpenAiChatProvider;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},

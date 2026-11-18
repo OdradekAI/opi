@@ -36,9 +36,10 @@ use opi_ai::classifier::{
 };
 use opi_ai::http::HttpClient;
 use opi_ai::model_info::{ModelPricing, PricingTier};
-use opi_ai::models::{ApiId, Models, ModelsError};
+use opi_ai::models::{Models, ModelsError};
 use opi_ai::provider::ProviderError;
 use opi_ai::stream::Pricing;
+use opi_ai::types::ApiId;
 use opi_telemetry::memory::Recorder;
 use secrecy::SecretString;
 use tokio_util::sync::CancellationToken;

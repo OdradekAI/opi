@@ -20,6 +20,7 @@ use opi_agent::loop_types::{
 use opi_agent::message::AgentMessage;
 use opi_agent::tool::{Tool, ToolError, ToolResult};
 use opi_ai::message::{InputContent, Message, UserMessage};
+use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::test_support::{self, MockProvider, single_route_collection};
 use serde_json::json;
 use tokio_util::sync::CancellationToken;
@@ -197,6 +198,91 @@ async fn no_tool_turn_emits_lifecycle_events() {
         "missing TurnStart"
     );
     assert!(events.contains(&"TurnEnd".to_owned()), "missing TurnEnd");
+}
+
+#[tokio::test]
+async fn deferred_terminal_stops_the_loop_and_retains_handle() {
+    let mut pending = test_support::base_assistant();
+    pending.stop_reason = StopReason::Deferred;
+    pending.deferred = Some(Box::new(opi_ai::types::deferred::DeferredHandle {
+        provider: "mock".into(),
+        model_id: "mock-model".into(),
+        api: "mock".into(),
+        id: "resp_pending".into(),
+        expires_at_ms: Some(1234),
+        poll_after_ms: Some(10),
+        data: None,
+    }));
+    let provider = MockProvider::new(
+        "mock",
+        vec![vec![
+            AssistantStreamEvent::Start {
+                partial: test_support::base_assistant(),
+            },
+            AssistantStreamEvent::Done {
+                reason: StopReason::Deferred,
+                message: pending,
+            },
+        ]],
+    );
+    let calls = provider.call_log_handle();
+    let context = AgentLoopContext {
+        collection: Arc::new(single_route_collection(Box::new(provider))),
+        registry: common::test_registry(vec![]),
+        authorizer: Some(common::permissive_authorizer()),
+        evidence_health: opi_agent::evidence::EvidenceHealth::healthy(),
+        state: NextTurnState::new(
+            vec![AgentMessage::Llm(Message::User(UserMessage {
+                content: vec![InputContent::Text {
+                    text: "defer".into(),
+                }],
+                timestamp_ms: 0,
+            }))],
+            ModelSelection::parse_spec("mock:mock-model").unwrap(),
+            InferenceConfig::default(),
+        ),
+        system: None,
+        steering_queue: None,
+        follow_up_queue: None,
+        diagnostic_sink: None,
+        session_id: None,
+        evidence_sink: None,
+    };
+    let events: Arc<Mutex<Vec<&'static str>>> = Arc::new(Mutex::new(Vec::new()));
+    let observed = events.clone();
+    let sink: AgentEventSink = Box::new(move |event| {
+        let kind = match event {
+            AgentEvent::AgentEnd { .. } => "agent_end",
+            AgentEvent::TurnEnd { .. } => "turn_end",
+            _ => return,
+        };
+        observed.lock().unwrap().push(kind);
+    });
+
+    let result = opi_agent::agent_loop(
+        context,
+        AgentLoopConfig::default(),
+        &TestHooks,
+        sink,
+        CancellationToken::new(),
+    )
+    .await;
+
+    assert!(result.error().is_none());
+    assert_eq!(
+        result.pending_deferred().map(|handle| handle.id.as_str()),
+        Some("resp_pending")
+    );
+    assert_eq!(result.state().context.len(), 2);
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        1,
+        "pending must not trigger a second turn"
+    );
+    assert_eq!(
+        events.lock().unwrap().as_slice(),
+        &["turn_end", "agent_end"]
+    );
 }
 
 // ---------------------------------------------------------------------------

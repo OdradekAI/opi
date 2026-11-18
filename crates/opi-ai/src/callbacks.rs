@@ -505,7 +505,7 @@ fn validate_headers(
     merged: &[(String, String)],
     output: HeaderList,
 ) -> Result<HeaderList, ProviderError> {
-    crate::provider_headers::validate_transform_output(&output, merged).map_err(|error| {
+    crate::api::shared::headers::validate_transform_output(&output, merged).map_err(|error| {
         ProviderError::CallbackPhase(ProviderErrorSummary::sanitized(format!(
             "header transform output is invalid: {error}"
         )))
@@ -575,6 +575,7 @@ fn validate_payload_replacement(
 pub(crate) enum OpenAiPayloadShape {
     Chat,
     Responses,
+    ResponsesBackground,
 }
 
 /// Check the structural fields consumed by the streaming adapters after the
@@ -592,7 +593,11 @@ pub(crate) fn validate_openai_payload_shape(
             "payload callback output has invalid OpenAI {field} wire shape"
         )))
     };
-    if body.get("stream").and_then(Value::as_bool) != Some(true) {
+    let expected_stream = match shape {
+        OpenAiPayloadShape::ResponsesBackground => false,
+        OpenAiPayloadShape::Chat | OpenAiPayloadShape::Responses => true,
+    };
+    if body.get("stream").and_then(Value::as_bool) != Some(expected_stream) {
         return Err(fail("stream"));
     }
     match shape {
@@ -619,7 +624,7 @@ pub(crate) fn validate_openai_payload_shape(
                 }
             }
         }
-        OpenAiPayloadShape::Responses => {
+        OpenAiPayloadShape::Responses | OpenAiPayloadShape::ResponsesBackground => {
             if !body
                 .get("input")
                 .is_some_and(|input| input.is_string() || object_array(input))

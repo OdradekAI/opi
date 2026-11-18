@@ -118,9 +118,9 @@ neither result nor response release occurs at the sentinel.
 The causes are local and directly observable: the parser discards `[DONE]`,
 the mapper finalizes blocks on Finish, and usage flushes a pending successful
 terminal. Once `saw_done` is true, later provider events are ignored.
-[Sentinel parser](../../../../crates/opi-ai/src/openai_chat.rs#L76) 路
-[Finish mapper](../../../../crates/opi-ai/src/openai_chat.rs#L950) 路
-[Usage settlement](../../../../crates/opi-ai/src/openai_chat.rs#L1072)
+[Sentinel parser](../../../../crates/opi-ai/src/api/openai.rs#L76) 路
+[Finish mapper](../../../../crates/opi-ai/src/api/openai.rs#L950) 路
+[Usage settlement](../../../../crates/opi-ai/src/api/openai.rs#L1072)
 
 Next, repair this boundary as one scoped change:
 

@@ -830,7 +830,7 @@ async fn mixed_script_queue_consumes_in_order() {
 
 #[tokio::test]
 async fn deferred_mock_emits_pending_terminal_with_handle() {
-    use opi_ai::deferred::DeferredApi as _;
+    use opi_ai::api::contract::DeferredApi as _;
     use opi_ai::test_support::ScriptedDeferredBackend;
 
     let backend = std::sync::Arc::new(ScriptedDeferredBackend::new("test", "mock-model"));

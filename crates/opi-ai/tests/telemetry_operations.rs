@@ -27,7 +27,8 @@ use std::sync::{Arc, Mutex};
 use std::task::{Context as TaskContext, Poll};
 
 use futures_core::Stream;
-use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::api::contract::{ChatApi, SimpleOptions};
+use opi_ai::api::contract::{DeferredApi, DeferredCancelCall, DeferredFetchCall};
 use opi_ai::api::openrouter_images::OpenRouterImagesApi;
 use opi_ai::api::system_one::{TYPESAFE_SYSTEM_ONE_API_ID, TypesafeSystemOneApi};
 use opi_ai::auth::{
@@ -39,7 +40,6 @@ use opi_ai::classifier::{
     ClassifierStopReason,
 };
 use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
-use opi_ai::deferred::{DeferredApi, DeferredCancelCall, DeferredFetchCall};
 use opi_ai::http::{HttpClient, HttpClientBuilder};
 use opi_ai::images::{
     ImageModelRecord, ImageOutputModality, ImagesCall, ImagesContext, ImagesInput, ImagesOutput,
@@ -47,12 +47,14 @@ use opi_ai::images::{
 };
 use opi_ai::message::ToolDef;
 use opi_ai::model_info::{AnthropicMessagesCompat, WireCompat};
-use opi_ai::models::{ApiId, ChatApi, ChatModelRecord, Models, SimpleOptions};
+use opi_ai::models::{ChatModelRecord, Models};
 use opi_ai::provider::{EventStream, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::retry::AcquisitionPolicy;
 use opi_ai::stream::{AssistantStreamEvent, ChatStream};
 use opi_ai::telemetry::TelemetryContext;
 use opi_ai::transcript::{Context, normalize_context};
+use opi_ai::types::ApiId;
 use opi_ai::{ModelCapabilities, ModelInfo, WireApi};
 use tracing::Level;
 use tracing_core::field::{Field, Visit};
@@ -209,8 +211,8 @@ enum MarkerTerminal {
     Deferred,
 }
 
-fn deferred_handle() -> opi_ai::deferred::DeferredHandle {
-    opi_ai::deferred::DeferredHandle {
+fn deferred_handle() -> opi_ai::types::deferred::DeferredHandle {
+    opi_ai::types::deferred::DeferredHandle {
         provider: "telemetry".into(),
         model_id: "marker-model".into(),
         api: "tele-deferred".into(),
@@ -395,7 +397,7 @@ impl AuthResolver for StaticBearer {
 
 fn marker_models(
     observed: Arc<AdapterObservations>,
-) -> (Models, opi_ai::models::ChatApiHandle<()>) {
+) -> (Models, opi_ai::api::contract::ChatApiHandle<()>) {
     let mut models = Models::new();
     let handle = models
         .register_chat_api(
@@ -1649,7 +1651,7 @@ impl DeferredApi<()> for MarkerDeferredApi {
     fn default_options(&self) {}
     fn fetch_prepared(
         &self,
-        _handle: &opi_ai::deferred::DeferredHandle,
+        _handle: &opi_ai::types::deferred::DeferredHandle,
         _options: &(),
         _auth: ResolvedAuth,
         call: DeferredFetchCall,
@@ -1661,7 +1663,7 @@ impl DeferredApi<()> for MarkerDeferredApi {
     }
     fn cancel_prepared<'a>(
         &'a self,
-        _handle: &'a opi_ai::deferred::DeferredHandle,
+        _handle: &'a opi_ai::types::deferred::DeferredHandle,
         _options: &'a (),
         _auth: ResolvedAuth,
         call: DeferredCancelCall,

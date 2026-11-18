@@ -9,10 +9,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_core::Stream;
 use futures_util::{StreamExt, pin_mut};
-use opi_ai::bedrock::BedrockProvider;
-use opi_ai::bedrock::event_stream;
-use opi_ai::bedrock::map_bedrock_status;
-use opi_ai::bedrock::sigv4::AwsCredentials;
+use opi_ai::api::bedrock::event_stream;
+use opi_ai::api::bedrock::map_bedrock_status;
+use opi_ai::auth::aws::sigv4::AwsCredentials;
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{
@@ -20,6 +19,7 @@ use opi_ai::message::{
     OutputContent, ToolCall, ToolDef, ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, ProviderErrorCategory, Request};
+use opi_ai::providers::bedrock::BedrockProvider;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use opi_ai::{
     AuthFallback, AuthProvenance, AuthProvenanceSource, AuthResolver, AuthScheme,
@@ -43,7 +43,7 @@ mod builtin_routes {
     use opi_ai::auth::{AuthContext, AuthContextError};
     use opi_ai::catalog::{Catalog, CatalogOperation};
     use opi_ai::http::{HttpClientBuilder, TlsOptions};
-    use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
     use rustls::pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
     use secrecy::ExposeSecret;
     use std::collections::BTreeMap;
@@ -231,7 +231,8 @@ mod builtin_routes {
                     ))
                 }
             });
-        let auth = opi_ai::bedrock::proxy_placeholder_auth(&server.uri(), "us-east-1").unwrap();
+        let auth =
+            opi_ai::providers::bedrock::proxy_placeholder_auth(&server.uri(), "us-east-1").unwrap();
         let result = collect_outcome(
             provider
                 .with_models(vec![model])
@@ -590,7 +591,7 @@ mod builtin_routes {
                     region: "eu-west-1".into(),
                     expires_at: None,
                 };
-                let expected = opi_ai::bedrock::sigv4::sign_request(
+                let expected = opi_ai::auth::aws::sigv4::sign_request(
                     "POST",
                     parts.uri.path(),
                     "",
@@ -1326,7 +1327,8 @@ fn credentials_redacted_in_debug() {
 
 #[test]
 fn redact_credentials_hides_secrets() {
-    let redacted = opi_ai::bedrock::redact_credentials("AKIAIOSFODNN7EXAMPLE", "super-secret-key");
+    let redacted =
+        opi_ai::providers::bedrock::redact_credentials("AKIAIOSFODNN7EXAMPLE", "super-secret-key");
     assert!(!redacted.contains("AKIA"));
     assert!(!redacted.contains("super-secret-key"));
     assert!(redacted.contains("***"));
@@ -2533,7 +2535,7 @@ async fn bearer_without_any_endpoint_is_a_typed_config_error() {
 
 #[tokio::test]
 async fn standard_aws_endpoints_reject_proxy_placeholder_signing() {
-    let error = opi_ai::bedrock::proxy_placeholder_auth(
+    let error = opi_ai::providers::bedrock::proxy_placeholder_auth(
         "https://bedrock-runtime.us-east-1.amazonaws.com",
         "us-east-1",
     )
@@ -2546,8 +2548,9 @@ async fn standard_aws_endpoints_reject_proxy_placeholder_signing() {
         Arc::new(HttpClient::new()),
     )
     .with_placeholder_client(Arc::new(HttpClient::new()));
-    let auth = opi_ai::bedrock::proxy_placeholder_auth("http://127.0.0.1:9", "us-east-1")
-        .expect("nonstandard endpoint is accepted");
+    let auth =
+        opi_ai::providers::bedrock::proxy_placeholder_auth("http://127.0.0.1:9", "us-east-1")
+            .expect("nonstandard endpoint is accepted");
     let outcome = collect_outcome(provider.stream_prepared(lifecycle_text_request(), auth)).await;
     assert!(
         matches!(outcome, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Config(_))),
@@ -2561,8 +2564,9 @@ async fn proxy_placeholder_signing_without_placeholder_client_is_a_typed_error()
         Some("http://127.0.0.1:9".to_owned()),
         Arc::new(HttpClient::new()),
     );
-    let auth = opi_ai::bedrock::proxy_placeholder_auth("http://127.0.0.1:9", "us-east-1")
-        .expect("nonstandard endpoint is accepted");
+    let auth =
+        opi_ai::providers::bedrock::proxy_placeholder_auth("http://127.0.0.1:9", "us-east-1")
+            .expect("nonstandard endpoint is accepted");
     let outcome = collect_outcome(provider.stream_prepared(lifecycle_text_request(), auth)).await;
     assert!(
         matches!(outcome, Err(ref error) if matches!(direct_error_cause(error), ProviderError::Config(_))),
@@ -2614,7 +2618,7 @@ async fn proxy_placeholder_signing_uses_h1_and_fixed_identity_at_a_local_proxy()
     );
     let provider = BedrockProvider::new(Some(endpoint.clone()), http1_client.clone())
         .with_placeholder_client(http1_client);
-    let auth = opi_ai::bedrock::proxy_placeholder_auth(&endpoint, "us-east-1")
+    let auth = opi_ai::providers::bedrock::proxy_placeholder_auth(&endpoint, "us-east-1")
         .expect("local proxy endpoint is nonstandard");
 
     // Ordinary Models assembly: a static placeholder route reads zero real
@@ -7691,13 +7695,14 @@ mod smithy_retry {
     };
     use futures_util::StreamExt;
     use opi_ai::Models;
+    use opi_ai::api::bedrock::map_bedrock_status;
     use opi_ai::auth::{AuthResolver, ResolvedAuth};
-    use opi_ai::bedrock::retry::{
+    use opi_ai::provider::{ProviderError, ProviderErrorCategory};
+    use opi_ai::providers::bedrock::BedrockProvider;
+    use opi_ai::retry::smithy::{
         ScopedRetryInputs, SmithyClock, SmithyRetryConfig, SmithyRetryMode,
         resolve_smithy_retry_config,
     };
-    use opi_ai::bedrock::{BedrockProvider, map_bedrock_status};
-    use opi_ai::provider::{ProviderError, ProviderErrorCategory};
     use opi_ai::retry::{AcquisitionPolicy, AcquisitionSeal, RetrySourcePolicy};
     use secrecy::SecretString;
     use std::sync::Arc;
@@ -8318,16 +8323,16 @@ mod smithy_retry {
     #[test]
     fn smithy_2026_constants_branch_is_exact() {
         let draw = unit_draw(0);
-        let legacy = opi_ai::bedrock::retry::smithy_backoff_delay_ms(
+        let legacy = opi_ai::retry::smithy::smithy_backoff_delay_ms(
             0,
-            opi_ai::bedrock::retry::SmithyErrorClass::Transient,
+            opi_ai::retry::smithy::SmithyErrorClass::Transient,
             false,
             None,
             draw,
         );
-        let v2026 = opi_ai::bedrock::retry::smithy_backoff_delay_ms(
+        let v2026 = opi_ai::retry::smithy::smithy_backoff_delay_ms(
             0,
-            opi_ai::bedrock::retry::SmithyErrorClass::Transient,
+            opi_ai::retry::smithy::SmithyErrorClass::Transient,
             true,
             None,
             draw,
@@ -8339,8 +8344,8 @@ mod smithy_retry {
             "2026 transient base is 50ms"
         );
         assert_eq!(
-            opi_ai::bedrock::retry::smithy_capacity_cost(
-                opi_ai::bedrock::retry::SmithyErrorClass::Transient,
+            opi_ai::retry::smithy::smithy_capacity_cost(
+                opi_ai::retry::smithy::SmithyErrorClass::Transient,
                 true
             ),
             14
@@ -8367,7 +8372,7 @@ mod smithy_retry {
             Box::pin(async move {
                 self.source_sends.fetch_add(1, Ordering::SeqCst);
                 Ok(ResolvedAuth::aws_sigv4(
-                    opi_ai::bedrock::sigv4::AwsCredentials {
+                    opi_ai::auth::aws::sigv4::AwsCredentials {
                         access_key_id: SecretString::from("AKIACOUNTER"),
                         secret_access_key: SecretString::from("counter-secret"),
                         session_token: None,
@@ -8390,7 +8395,7 @@ mod smithy_retry {
         // The fixture above exercises the split through the real chain; this
         // unit keeps the counter types aligned (source exchanges never draw
         // from the generation quota).
-        let mut quota = opi_ai::bedrock::retry::SmithyRetryQuota::default();
+        let mut quota = opi_ai::retry::smithy::SmithyRetryQuota::default();
         quota.acquire(5);
         assert_eq!(quota.capacity(), 495);
         assert_eq!(source_sends.load(Ordering::SeqCst), 0);
@@ -8704,7 +8709,7 @@ mod constrained_guard_tests {
 
 mod bedrock_42 {
     use super::*;
-    use opi_ai::bedrock::{BedrockConverseStreamChatApi, BedrockOptions, BedrockProvider};
+    use opi_ai::api::bedrock::{BedrockConverseStreamChatApi, BedrockOptions};
     use opi_ai::message::{OutputContent, ToolNotExecutedReason};
     use opi_ai::model_info::{
         ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi,
@@ -8712,6 +8717,7 @@ mod bedrock_42 {
     #[cfg(feature = "telemetry-tracing")]
     use opi_ai::provider::Provider;
     use opi_ai::provider::{CacheRetention, ProviderError};
+    use opi_ai::providers::bedrock::BedrockProvider;
     use opi_ai::stream::AssistantStreamEvent;
     use opi_ai::{ChatModelRecord, Models};
     use std::collections::BTreeMap;
@@ -8795,10 +8801,16 @@ mod bedrock_42 {
     #[test]
     fn native_tool_choice_projects_converse_modes() {
         for (choice, wire) in [
-            (opi_ai::bedrock::BedrockToolChoice::Auto, r#"{"auto":{}}"#),
-            (opi_ai::bedrock::BedrockToolChoice::Any, r#"{"any":{}}"#),
             (
-                opi_ai::bedrock::BedrockToolChoice::Named("read".into()),
+                opi_ai::api::bedrock::BedrockToolChoice::Auto,
+                r#"{"auto":{}}"#,
+            ),
+            (
+                opi_ai::api::bedrock::BedrockToolChoice::Any,
+                r#"{"any":{}}"#,
+            ),
+            (
+                opi_ai::api::bedrock::BedrockToolChoice::Named("read".into()),
                 r#"{"tool":{"name":"read"}}"#,
             ),
         ] {
@@ -8821,7 +8833,7 @@ mod bedrock_42 {
 
         // Pi drops the whole toolConfig for `none` (tools are not sent).
         let mut options = native();
-        options.tool_choice = Some(opi_ai::bedrock::BedrockToolChoice::None_);
+        options.tool_choice = Some(opi_ai::api::bedrock::BedrockToolChoice::None_);
         let provider =
             BedrockProvider::new(None, Arc::new(HttpClient::new())).with_native_options(options);
         let body = body_42(&provider, &tool_call_request());
@@ -8864,7 +8876,7 @@ mod bedrock_42 {
     fn native_display_and_interleaved_options_shape_fields() {
         let mut options = native();
         options.reasoning = Some(ThinkingLevel::High);
-        options.thinking_display = Some(opi_ai::bedrock::BedrockThinkingDisplay::Omitted);
+        options.thinking_display = Some(opi_ai::api::bedrock::BedrockThinkingDisplay::Omitted);
         options.interleaved_thinking = Some(false);
         let provider = BedrockProvider::new(None, Arc::new(HttpClient::new()))
             .with_models(vec![model_42(SONNET4, "Claude (Bedrock)")])
@@ -10046,9 +10058,8 @@ mod bedrock_42 {
 
     #[tokio::test]
     async fn persisted_bedrock_capture_drops_opaque_on_an_actual_api_only_route_change() {
-        use opi_ai::openai_chat::{
-            OpenAiChatProvider, OpenAiCompletionsChatApi, OpenAiCompletionsOptions,
-        };
+        use opi_ai::api::openai::{OpenAiCompletionsChatApi, OpenAiCompletionsOptions};
+        use opi_ai::providers::openai::OpenAiChatProvider;
         let (_, mut models, _, model, captured) = persisted_capture_42().await;
         let canonical = serde_json::to_vec(&captured).unwrap();
         let remote = MockServer::start().await;
@@ -10147,7 +10158,7 @@ mod bedrock_42 {
         let mut models = Models::new();
         let mut options = native();
         options.reasoning = Some(ThinkingLevel::High);
-        options.tool_choice = Some(opi_ai::bedrock::BedrockToolChoice::Any);
+        options.tool_choice = Some(opi_ai::api::bedrock::BedrockToolChoice::Any);
         let handle = models
             .register_chat_api(
                 Arc::new(api),
@@ -10238,15 +10249,15 @@ mod bedrock_42 {
 
     #[test]
     fn from_simple_maps_only_tool_choice() {
-        let simple = opi_ai::models::SimpleOptions {
-            tool_choice: Some(opi_ai::models::SimpleToolChoice::None),
+        let simple = opi_ai::api::contract::SimpleOptions {
+            tool_choice: Some(opi_ai::api::contract::SimpleToolChoice::None),
             ..Default::default()
         };
         let options = BedrockOptions::from_simple(&simple);
         assert!(options.is_simple());
         assert!(matches!(
             options.tool_choice,
-            Some(opi_ai::bedrock::BedrockToolChoice::None_)
+            Some(opi_ai::api::bedrock::BedrockToolChoice::None_)
         ));
         assert_eq!(options.reasoning, None);
         assert!(options.thinking_budgets.is_empty());

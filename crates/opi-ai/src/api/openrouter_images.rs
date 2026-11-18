@@ -28,9 +28,9 @@ use crate::images::{
     ImageCostRates, ImageModelRecord, ImageOutputModality, ImagesCall, ImagesContext, ImagesCost,
     ImagesOutput, ImagesResult, ImagesStopReason,
 };
-use crate::models::ApiId;
 use crate::provider::{ProviderError, ProviderErrorSummary};
 use crate::stream::Usage;
+use crate::types::ApiId;
 
 /// The exact pi image API identity this adapter serves.
 pub const OPENROUTER_IMAGES_API_ID: &str = "openrouter-images";
@@ -253,7 +253,7 @@ async fn generate_openrouter_images(
         );
     }
     let timeout = call.timeout.unwrap_or(OPENROUTER_IMAGES_TIMEOUT);
-    let headers = match crate::ProviderHeaders::default().merge_model_request(
+    let headers = match crate::api::shared::headers::ProviderHeaders::default().merge_model_request(
         &record.headers,
         &[],
         &call.extra_headers,

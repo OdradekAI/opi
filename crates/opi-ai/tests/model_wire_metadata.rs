@@ -2,26 +2,29 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use futures_util::StreamExt;
-use opi_ai::ProviderHeaders;
-use opi_ai::anthropic;
-use opi_ai::azure_openai::AzureOpenAIProvider;
-use opi_ai::bedrock;
-use opi_ai::gemini;
+use opi_ai::api::anthropic;
+use opi_ai::api::openai;
+use opi_ai::api::openai_responses;
+use opi_ai::api::shared::headers::ProviderHeaders;
 use opi_ai::http::HttpClient;
-use opi_ai::mistral;
-use opi_ai::openai_chat;
-use opi_ai::openai_responses;
-use opi_ai::openrouter;
 use opi_ai::provider::{
     Provider, ProviderError, Request, ThinkingConfig, validate_request_capabilities,
 };
+use opi_ai::providers::anthropic as anthropic_provider;
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+use opi_ai::providers::bedrock;
+use opi_ai::providers::gemini as gemini_provider;
+use opi_ai::providers::mistral;
+use opi_ai::providers::openai as openai_profile;
+use opi_ai::providers::openai_responses as openai_responses_profile;
+use opi_ai::providers::openrouter;
+use opi_ai::providers::vertex;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::Pricing;
 use opi_ai::types::model::{
     AnthropicMessagesCompat, ModelInfo, ModelPricing, PricingTier, ThinkingLevel, ThinkingLevelMap,
     ThinkingLevelMapping, WireApi, WireCompat,
 };
-use opi_ai::vertex;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer};
@@ -249,7 +252,7 @@ async fn run_production_request(
 #[tokio::test]
 async fn chat_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
-    let provider = openai_chat::OpenAiChatProvider::for_route(
+    let provider = openai_profile::OpenAiChatProvider::for_route(
         Some(server.uri()),
         "chat".into(),
         ProviderHeaders::default(),
@@ -276,7 +279,7 @@ async fn chat_unsupported_thinking_level_is_rejected_before_http() {
 #[tokio::test]
 async fn responses_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
-    let provider = openai_responses::OpenAiResponsesProvider::for_route(
+    let provider = openai_responses_profile::OpenAiResponsesProvider::for_route(
         Some(server.uri()),
         "responses".into(),
         ProviderHeaders::default(),
@@ -306,7 +309,7 @@ async fn responses_unsupported_thinking_level_is_rejected_before_http() {
 #[tokio::test]
 async fn strict_wire_unsupported_thinking_level_is_rejected_before_http() {
     let server = MockServer::start().await;
-    let provider = anthropic::AnthropicProvider::for_route(
+    let provider = anthropic_provider::AnthropicProvider::for_route(
         "strict".into(),
         vec![unsupported_thinking_model(
             "model",
@@ -328,12 +331,21 @@ async fn strict_wire_unsupported_thinking_level_is_rejected_before_http() {
 #[test]
 fn every_builtin_model_declares_exact_wire() {
     let catalogs = [
-        (anthropic::model_catalog(), WireApi::AnthropicMessages),
-        (openai_chat::model_catalog(), WireApi::OpenAiCompletions),
-        (openai_responses::model_catalog(), WireApi::OpenAiResponses),
+        (
+            anthropic_provider::model_catalog(),
+            WireApi::AnthropicMessages,
+        ),
+        (openai_profile::model_catalog(), WireApi::OpenAiCompletions),
+        (
+            openai_responses_profile::model_catalog(),
+            WireApi::OpenAiResponses,
+        ),
         (openrouter::model_catalog(), WireApi::OpenAiCompletions),
         (mistral::model_catalog(), WireApi::OpenAiCompletions),
-        (gemini::model_catalog(), WireApi::GoogleGenerativeAi),
+        (
+            gemini_provider::model_catalog(),
+            WireApi::GoogleGenerativeAi,
+        ),
         (vertex::model_catalog(), WireApi::GoogleVertex),
         (bedrock::model_catalog(), WireApi::BedrockConverseStream),
     ];
@@ -383,7 +395,7 @@ async fn nonreasoning_metadata_preserves_map_without_enabling_thinking() {
             "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"model\":\"gpt-5.3-chat-latest\",\"output\":[]}}\n\n",
         )).expect(1).mount(&server).await;
     model.base_url = Some(server.uri());
-    let provider = openai_responses::OpenAiResponsesProvider::for_route(
+    let provider = openai_responses_profile::OpenAiResponsesProvider::for_route(
         Some(server.uri()),
         "openai".into(),
         ProviderHeaders::default(),
@@ -607,7 +619,7 @@ async fn chat_merges_sampling_metadata_over_named_fields() {
         .expect(1)
         .mount(&server)
         .await;
-    let provider = openai_chat::OpenAiChatProvider::for_route(
+    let provider = openai_profile::OpenAiChatProvider::for_route(
         Some(server.uri()),
         "chat".into(),
         ProviderHeaders::default(),
@@ -636,7 +648,7 @@ async fn responses_merges_sampling_after_named_fields() {
         .expect(1)
         .mount(&server)
         .await;
-    let provider = openai_responses::OpenAiResponsesProvider::for_route(
+    let provider = openai_responses_profile::OpenAiResponsesProvider::for_route(
         Some(server.uri()),
         "custom-responses".into(),
         ProviderHeaders::default(),
@@ -735,7 +747,7 @@ async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_met
             let mut models = opi_ai::Models::new();
             match wire {
                 WireApi::OpenAiCompletions => {
-                    let provider = Arc::new(openai_chat::OpenAiChatProvider::for_route(
+                    let provider = Arc::new(openai_profile::OpenAiChatProvider::for_route(
                         Some(server.uri()),
                         provider_id.into(),
                         ProviderHeaders::default(),
@@ -745,7 +757,7 @@ async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_met
                     models
                         .register_chat_api(
                             Arc::new(
-                                openai_chat::OpenAiCompletionsChatApi::new(provider, model.clone())
+                                openai::OpenAiCompletionsChatApi::new(provider, model.clone())
                                     .unwrap(),
                             ),
                             auth,
@@ -754,13 +766,15 @@ async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_met
                         .unwrap();
                 }
                 WireApi::OpenAiResponses => {
-                    let provider = Arc::new(openai_responses::OpenAiResponsesProvider::for_route(
-                        Some(server.uri()),
-                        provider_id.into(),
-                        ProviderHeaders::default(),
-                        vec![model.clone()],
-                        Arc::new(HttpClient::new()),
-                    ));
+                    let provider = Arc::new(
+                        openai_responses_profile::OpenAiResponsesProvider::for_route(
+                            Some(server.uri()),
+                            provider_id.into(),
+                            ProviderHeaders::default(),
+                            vec![model.clone()],
+                            Arc::new(HttpClient::new()),
+                        ),
+                    );
                     models
                         .register_chat_api(
                             Arc::new(
@@ -787,7 +801,7 @@ async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_met
                     models
                         .register_chat_api(
                             Arc::new(
-                                opi_ai::azure_openai::AzureOpenAIResponsesChatApi::new(
+                                opi_ai::api::azure_openai::AzureOpenAIResponsesChatApi::new(
                                     provider,
                                     model.clone(),
                                 )
@@ -799,7 +813,7 @@ async fn sampling_presence_reaches_supported_wires_once_and_other_wires_keep_met
                         .unwrap();
                 }
                 WireApi::AnthropicMessages => {
-                    let provider = Arc::new(anthropic::AnthropicProvider::for_route(
+                    let provider = Arc::new(anthropic_provider::AnthropicProvider::for_route(
                         provider_id.into(),
                         vec![model.clone()],
                         Some(server.uri()),

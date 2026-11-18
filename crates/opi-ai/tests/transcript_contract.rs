@@ -600,8 +600,8 @@ fn invalid_declarations_fail_before_installation() {
 /// head exactly as the pre-cutover fields did.
 #[test]
 fn adapters_consume_only_the_normalized_transcript() {
-    use opi_ai::anthropic::AnthropicProvider;
     use opi_ai::http::HttpClient;
+    use opi_ai::providers::anthropic::AnthropicProvider;
     use std::sync::Arc;
 
     let provider = AnthropicProvider::with_client(

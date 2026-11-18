@@ -6,9 +6,9 @@
 //! without live API calls.
 
 use futures_util::StreamExt;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::gemini::GeminiProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{header, method, path};
@@ -439,12 +439,12 @@ async fn google_public_request(
         opi_ai::ChatModelRecord::new(if vertex { "vertex" } else { "gemini" }, model.clone());
     let mut models = opi_ai::Models::new();
     let result = if vertex {
-        let provider = opi_ai::vertex::VertexProvider::new(
+        let provider = opi_ai::providers::vertex::VertexProvider::new(
             "p1".into(),
             "us-central1".into(),
             Some(server.uri()),
         );
-        let api = opi_ai::vertex::GoogleVertexChatApi::new(Arc::new(provider), model).unwrap();
+        let api = opi_ai::api::vertex::GoogleVertexChatApi::new(Arc::new(provider), model).unwrap();
         let handle = models
             .register_chat_api(
                 Arc::new(api),
@@ -464,14 +464,14 @@ async fn google_public_request(
                 .complete(
                     record,
                     request,
-                    handle.options(opi_ai::vertex::GoogleVertexOptions::default()),
+                    handle.options(opi_ai::api::vertex::GoogleVertexOptions::default()),
                 )
                 .await
         }
     } else {
         let provider = GeminiProvider::new(Some(server.uri()));
         let api =
-            opi_ai::gemini::GoogleGenerativeAiChatApi::new(Arc::new(provider), model).unwrap();
+            opi_ai::api::gemini::GoogleGenerativeAiChatApi::new(Arc::new(provider), model).unwrap();
         let handle = models
             .register_chat_api(
                 Arc::new(api),
@@ -491,7 +491,7 @@ async fn google_public_request(
                 .complete(
                     record,
                     request,
-                    handle.options(opi_ai::gemini::GoogleGenerativeAiOptions::default()),
+                    handle.options(opi_ai::api::gemini::GoogleGenerativeAiOptions::default()),
                 )
                 .await
         }
@@ -514,8 +514,12 @@ fn google_direct_stream(
     request: Request,
 ) -> opi_ai::provider::EventStream {
     if vertex {
-        opi_ai::vertex::VertexProvider::new("p1".into(), "us-central1".into(), Some(base))
-            .stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())
+        opi_ai::providers::vertex::VertexProvider::new(
+            "p1".into(),
+            "us-central1".into(),
+            Some(base),
+        )
+        .stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())
     } else {
         GeminiProvider::new(Some(base))
             .stream_prepared(request, opi_ai::test_support::resolved_auth())
@@ -687,7 +691,7 @@ async fn google_direct_duration_starts_at_activation_and_includes_payload_wait()
             }
         });
         let stream = if vertex {
-            opi_ai::vertex::VertexProvider::new(
+            opi_ai::providers::vertex::VertexProvider::new(
                 "p1".into(),
                 "us-central1".into(),
                 Some(server.uri()),
@@ -859,8 +863,8 @@ async fn google_models_duration_excludes_auth_wait() {
         let mut models = opi_ai::Models::new();
         let request = make_request(CancellationToken::new());
         let call = if vertex {
-            let api = opi_ai::vertex::GoogleVertexChatApi::new(
-                Arc::new(opi_ai::vertex::VertexProvider::new(
+            let api = opi_ai::api::vertex::GoogleVertexChatApi::new(
+                Arc::new(opi_ai::providers::vertex::VertexProvider::new(
                     "p1".into(),
                     "us-central1".into(),
                     Some(server.uri()),
@@ -874,10 +878,10 @@ async fn google_models_duration_excludes_auth_wait() {
             models.stream(
                 record,
                 request,
-                handle.options(opi_ai::vertex::GoogleVertexOptions::default()),
+                handle.options(opi_ai::api::vertex::GoogleVertexOptions::default()),
             )
         } else {
-            let api = opi_ai::gemini::GoogleGenerativeAiChatApi::new(
+            let api = opi_ai::api::gemini::GoogleGenerativeAiChatApi::new(
                 Arc::new(GeminiProvider::new(Some(server.uri()))),
                 model,
             )
@@ -888,7 +892,7 @@ async fn google_models_duration_excludes_auth_wait() {
             models.stream(
                 record,
                 request,
-                handle.options(opi_ai::gemini::GoogleGenerativeAiOptions::default()),
+                handle.options(opi_ai::api::gemini::GoogleGenerativeAiOptions::default()),
             )
         };
         tokio::time::advance(std::time::Duration::from_secs(60)).await;
@@ -919,7 +923,7 @@ async fn google_direct_terminal_absorbs_late_cancel() {
         let request = make_request(CancellationToken::new());
         let cancel = request.cancel.clone();
         let mut stream = if vertex {
-            opi_ai::vertex::VertexProvider::new(
+            opi_ai::providers::vertex::VertexProvider::new(
                 "p1".into(),
                 "us-central1".into(),
                 Some(server.uri()),

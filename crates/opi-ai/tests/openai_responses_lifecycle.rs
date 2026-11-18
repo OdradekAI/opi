@@ -6,11 +6,11 @@
 
 use futures_util::StreamExt;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderError, Request, ThinkingConfig};
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use tokio_util::sync::CancellationToken;
-use wiremock::matchers::{header, method, path};
+use wiremock::matchers::{body_partial_json, header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
 fn make_request(cancel: CancellationToken) -> Request {
@@ -747,4 +747,119 @@ async fn responses_duration_excludes_auth_setup_callback_and_unpolled_time() {
         elapsed.saturating_sub(measured) >= Duration::from_millis(500),
         "duration included setup: measured={measured:?}, elapsed={elapsed:?}"
     );
+}
+
+#[tokio::test]
+async fn background_deferred_registration_submits_fetches_and_cancels() {
+    let server = MockServer::start().await;
+    let pending = serde_json::json!({
+        "id": "resp_bg_1",
+        "object": "response",
+        "status": "queued",
+        "model": "o3",
+        "expires_at": 4_000_000_000u64,
+    });
+    let ready = serde_json::json!({
+        "id": "resp_bg_1",
+        "object": "response",
+        "status": "completed",
+        "model": "o3",
+        "output": [{
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "background result"}]
+        }],
+        "usage": {"input_tokens": 12, "output_tokens": 4}
+    });
+
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .and(header("authorization", "Bearer test-key"))
+        .and(body_partial_json(serde_json::json!({
+            "model": "o3",
+            "background": true,
+            "store": true,
+            "stream": false,
+        })))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&pending))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("GET"))
+        .and(path("/v1/responses/resp_bg_1"))
+        .and(header("authorization", "Bearer test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&ready))
+        .expect(1)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/v1/responses/resp_bg_1/cancel"))
+        .and(header("authorization", "Bearer test-key"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(&pending))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let provider = OpenAiResponsesProvider::new(Some(server.uri()));
+    let deferred = provider
+        .deferred_api()
+        .expect("o3 exposes the OpenAI Background adapter");
+    let mut models = opi_ai::Models::new();
+    let auth = std::sync::Arc::new(opi_ai::auth::StaticAuthResolver::new(
+        opi_ai::auth::AuthScheme::Bearer,
+        secrecy::SecretString::from("test-key"),
+    ));
+    models
+        .register_route(
+            Box::new(provider),
+            auth.clone(),
+            opi_ai::AuthProvenanceSource::Static,
+            Default::default(),
+        )
+        .expect("register ordinary OpenAI Responses route");
+    models
+        .register_deferred_api(deferred, auth, opi_ai::AuthProvenanceSource::Static)
+        .expect("register OpenAI Background route");
+
+    let mut request = make_request(CancellationToken::new());
+    request.model = "openai-responses:o3".into();
+    let submitted = models
+        .submit_deferred(&opi_ai::types::ApiId::new("openai-responses"), request)
+        .await
+        .expect("background submission succeeds");
+    assert_eq!(submitted.stop_reason, opi_ai::stream::StopReason::Deferred);
+    let handle = submitted
+        .deferred
+        .clone()
+        .expect("submission returns a handle");
+    assert_eq!(handle.provider, "openai-responses");
+    assert_eq!(handle.model_id, "o3");
+    assert_eq!(handle.api, "openai-responses");
+    assert_eq!(handle.id, "resp_bg_1");
+    assert_eq!(handle.expires_at_ms, Some(4_000_000_000_000));
+
+    let ready = models
+        .fetch_deferred_ready(&handle, opi_ai::api::contract::DeferredFetchCall::default())
+        .await
+        .expect("background fetch succeeds");
+    assert_eq!(ready.stop_reason, opi_ai::stream::StopReason::Stop);
+    let text: String = ready
+        .content
+        .iter()
+        .filter_map(|part| match part {
+            opi_ai::message::AssistantContent::Text { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "background result");
+    assert_eq!(ready.usage.input_tokens, 12);
+    assert_eq!(ready.usage.output_tokens, 4);
+
+    models
+        .cancel_deferred(
+            &handle,
+            opi_ai::api::contract::DeferredCancelCall::default(),
+        )
+        .await
+        .expect("background cancellation endpoint succeeds");
 }

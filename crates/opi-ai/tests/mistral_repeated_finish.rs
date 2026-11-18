@@ -1,9 +1,10 @@
 use futures_util::StreamExt;
+use opi_ai::api::mistral::MistralOptions;
 use opi_ai::callbacks::RequestCallbacks;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::mistral::{MistralConversationsProvider, MistralOptions};
 use opi_ai::model_info::WireApi;
 use opi_ai::provider::{CacheRetention, EventStream, Provider, ProviderError, Request};
+use opi_ai::providers::mistral::MistralConversationsProvider;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{AssistantStreamEvent, StopReason};
 use serde_json::Value;

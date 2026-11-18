@@ -4,14 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{FutureExt, StreamExt};
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{
     AssistantMessage, InputContent, Message, OutputContent, ToolDef, ToolResultMessage,
     UserMessage, parse_streaming_json,
 };
 use opi_ai::models::CompatMetadata;
-use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::provider::Request;
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::transcript::{Context, normalize_context};
 use opi_ai::{AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, StaticAuthResolver};

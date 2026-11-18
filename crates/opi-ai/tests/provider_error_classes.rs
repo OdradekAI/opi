@@ -15,12 +15,12 @@
 //! unit test plus its 403 stream test.
 
 use futures_util::StreamExt;
-use opi_ai::azure_openai::AzureOpenAIProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
 use opi_ai::provider::{CacheRetention, Provider, ProviderErrorCategory, Request, ThinkingConfig};
-use opi_ai::vertex::VertexProvider;
+use opi_ai::providers::azure_openai::AzureOpenAIProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::vertex::VertexProvider;
 use tokio_util::sync::CancellationToken;
 use wiremock::matchers::method;
 use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -102,9 +102,9 @@ async fn assert_provider_side_bodyless(provider: Box<dyn Provider>, model: &str,
 async fn anthropic_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> = Box::new(opi_ai::anthropic::AnthropicProvider::new(Some(
-        server.uri(),
-    )));
+    let provider: Box<dyn Provider> = Box::new(
+        opi_ai::providers::anthropic::AnthropicProvider::new(Some(server.uri())),
+    );
     assert_provider_side_bodyless(provider, "anthropic:claude-sonnet-4-5-20250514", false).await;
 }
 
@@ -128,8 +128,9 @@ async fn openai_responses_500_classifies_as_provider_with_bodyless_summary() {
 async fn openrouter_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> =
-        Box::new(opi_ai::openrouter::openrouter_provider(Some(server.uri())));
+    let provider: Box<dyn Provider> = Box::new(opi_ai::providers::openrouter::openrouter_provider(
+        Some(server.uri()),
+    ));
     assert_provider_side_bodyless(provider, "openrouter:openai/gpt-4o", true).await;
 }
 
@@ -137,8 +138,9 @@ async fn openrouter_500_classifies_as_provider_with_bodyless_summary() {
 async fn mistral_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> =
-        Box::new(opi_ai::mistral::mistral_provider(Some(server.uri())));
+    let provider: Box<dyn Provider> = Box::new(opi_ai::providers::mistral::mistral_provider(Some(
+        server.uri(),
+    )));
     assert_provider_side_bodyless(provider, "mistral:mistral-small-latest", true).await;
 }
 
@@ -146,8 +148,9 @@ async fn mistral_500_classifies_as_provider_with_bodyless_summary() {
 async fn gemini_500_classifies_as_provider_with_bodyless_summary() {
     let server = MockServer::start().await;
     mount_500_echoing_secret(&server).await;
-    let provider: Box<dyn Provider> =
-        Box::new(opi_ai::gemini::GeminiProvider::new(Some(server.uri())));
+    let provider: Box<dyn Provider> = Box::new(opi_ai::providers::gemini::GeminiProvider::new(
+        Some(server.uri()),
+    ));
     assert_provider_side_bodyless(provider, "gemini:gemini-2.5-flash", false).await;
 }
 

@@ -104,8 +104,11 @@ project = "my-project"
 
 #[test]
 fn vertex_provider_builds_with_token() {
-    let provider =
-        opi_ai::vertex::VertexProvider::new("my-project".into(), "us-central1".into(), None);
+    let provider = opi_ai::providers::vertex::VertexProvider::new(
+        "my-project".into(),
+        "us-central1".into(),
+        None,
+    );
     // The adapter keeps its historical id; host routes republish it as
     // `google-vertex` through the canonical wrapper.
     assert_eq!(provider.id(), "vertex");
@@ -113,7 +116,7 @@ fn vertex_provider_builds_with_token() {
 
 #[test]
 fn vertex_provider_from_config_with_models() {
-    let provider = opi_ai::vertex::VertexProvider::from_config(
+    let provider = opi_ai::providers::vertex::VertexProvider::from_config(
         "proj".into(),
         "europe-west4".into(),
         vec!["model-a".into(), "model-b".into()],
@@ -133,7 +136,8 @@ fn vertex_provider_from_config_with_models() {
 
 #[test]
 fn vertex_access_token_not_in_debug() {
-    let provider = opi_ai::vertex::VertexProvider::new("proj".into(), "us-central1".into(), None);
+    let provider =
+        opi_ai::providers::vertex::VertexProvider::new("proj".into(), "us-central1".into(), None);
     let debug = format!("{provider:?}");
     assert!(
         !debug.contains("super-secret-oauth-token-xyz"),
@@ -146,8 +150,11 @@ fn vertex_access_token_not_in_debug() {
 
 #[test]
 fn vertex_project_visible_in_debug() {
-    let provider =
-        opi_ai::vertex::VertexProvider::new("my-vertex-project".into(), "us-central1".into(), None);
+    let provider = opi_ai::providers::vertex::VertexProvider::new(
+        "my-vertex-project".into(),
+        "us-central1".into(),
+        None,
+    );
     let debug = format!("{provider:?}");
     assert!(debug.contains("my-vertex-project"));
     assert!(debug.contains("us-central1"));
@@ -155,7 +162,8 @@ fn vertex_project_visible_in_debug() {
 
 #[test]
 fn vertex_url_does_not_contain_access_token() {
-    let provider = opi_ai::vertex::VertexProvider::new("proj".into(), "us-central1".into(), None);
+    let provider =
+        opi_ai::providers::vertex::VertexProvider::new("proj".into(), "us-central1".into(), None);
     let url = provider.build_vertex_url("gemini-2.5-flash");
     assert!(!url.contains("super-secret-token"));
     assert!(url.contains("proj"));

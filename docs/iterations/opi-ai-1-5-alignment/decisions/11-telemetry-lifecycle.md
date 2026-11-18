@@ -30,7 +30,7 @@ Blocked by: [确定 telemetry 的归属与依赖方向](05-telemetry-boundary.md
 | 观察场景 | Pi 源码事实 | 当前 Rust 源码事实 |
 | --- | --- | --- |
 | 创建流但未迭代 | S/packages/ai/src/models.ts:907–917 建 observer；api/lazy.ts:74–85 立即启动 setup→forward promise 链 | crates/opi-ai/src/models.rs:4957–4966,5020–5038：ChatCall 首次 poll 才 materialize/auth；未 poll drop 不启动业务 |
-| 不读取或外层 iterator return/break | api/lazy.ts:44–52 独立消费 source 并结算；utils/event-stream.ts:43–57,72–84 的外层 iterator 没有 abort/finally，停止迭代不取消 producer | ChatCall/ChatStream 结构析构释放 inner；openai_chat.rs:3168–3185、anthropic.rs:2101–2114 监听 receiver closed 并释放 work；自定义 provider 依自身实现 |
+| 不读取或外层 iterator return/break | api/lazy.ts:44–52 独立消费 source 并结算；utils/event-stream.ts:43–57,72–84 的外层 iterator 没有 abort/finally，停止迭代不取消 producer | ChatCall/ChatStream 结构析构释放 inner；api/openai.rs:3168–3185、anthropic.rs:2101–2114 监听 receiver closed 并释放 work；自定义 provider 依自身实现 |
 | Drop 与显式取消 | 外层 iterator return 不等价于传入 AbortSignal 的取消；正在 await 的 return 也不保证立即完成 | stream.rs:967–1014 被 poll 到的显式取消关闭 rx 并形成 Cancelled partial；普通 receiver drop 不直接 cancel token。Codex 是特例：openai_codex_responses.rs:863–873 在未交付 terminal 的 receiver closed 时 owner_cancel.cancel 并 await work |
 | 未观察到请求结束 | 不合作 source 不保证最终结束；不能因外层不消费而提前制造成功终态 | models.rs:3604–3613 的 AttemptStream::Drop 将 dispatched 未闭合 outcome 标 unknown 并 release acquisition，不是统一 cancel |
 

@@ -12,11 +12,11 @@ use std::time::Duration;
 use http_body_util::{BodyExt, Full};
 use hyper::{Request, Response, body::Incoming, service::service_fn};
 use hyper_util::rt::TokioIo;
-use opi_ai::anthropic::AnthropicProvider;
-use opi_ai::gemini::GeminiProvider;
 use opi_ai::http::{HttpClient, HttpClientBuilder};
-use opi_ai::openai_chat::OpenAiChatProvider;
-use opi_ai::openai_responses::OpenAiResponsesProvider;
+use opi_ai::providers::anthropic::AnthropicProvider;
+use opi_ai::providers::gemini::GeminiProvider;
+use opi_ai::providers::openai::OpenAiChatProvider;
+use opi_ai::providers::openai_responses::OpenAiResponsesProvider;
 use tokio::{net::TcpListener, sync::oneshot, task::JoinSet, time::timeout};
 
 // ---------------------------------------------------------------------------

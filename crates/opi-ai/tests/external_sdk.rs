@@ -16,12 +16,13 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use opi_ai::api::bedrock::event_stream;
+use opi_ai::api::contract::{SimpleOptions, SimpleToolChoice};
 use opi_ai::auth::adc::native::{
     AdcAuthSelection, AdcNativeOwner, ReqwestAdcTransport, SystemAdcClock,
 };
 use opi_ai::auth::aws::local::AwsAuthSelection;
 use opi_ai::auth::{AuthContext, AuthContextError, AuthResolver, AuthScheme, ResolvedAuth};
-use opi_ai::bedrock::event_stream;
 use opi_ai::callbacks::RequestCallbacks;
 use opi_ai::classifier::{ClassifierCall, ClassifierContext, ClassifierQuestion};
 use opi_ai::http::HttpClient;
@@ -29,9 +30,9 @@ use opi_ai::images::{ImagesCall, ImagesContext, ImagesInput};
 use opi_ai::message::{
     AssistantContent, InputContent, Message, OutputContent, ToolDef, ToolResultMessage, UserMessage,
 };
-use opi_ai::models::{ChatModelRecord, Models, SimpleOptions, SimpleToolChoice};
+use opi_ai::models::{ChatModelRecord, Models};
 use opi_ai::provider::Request;
-use opi_ai::provider_collection::{BuiltinOverrides, register_builtin};
+use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
 use opi_ai::test_support::{MockProvider, ScriptedDeferredBackend, base_assistant, text_response};
 use opi_ai::transcript::{self, Context as ShorthandContext, TranscriptContext, normalize_context};
 use opi_ai::{AuthProvenanceSource, AwsSigV4Credentials, WireApi};
@@ -477,7 +478,7 @@ async fn assembled_matrix_drives_all_ten_published_chat_wires_through_one_instan
     let anthropic_info = anthropic_route_info("claude-sonnet-4-5-20250514");
     models
         .register_route(
-            Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+            Box::new(opi_ai::providers::anthropic::AnthropicProvider::for_route(
                 "anthropic".into(),
                 vec![anthropic_info.clone()],
                 Some(anthropic_peer.uri()),
@@ -502,7 +503,7 @@ async fn assembled_matrix_drives_all_ten_published_chat_wires_through_one_instan
     models
         .register_route(
             Box::new(
-                opi_ai::openai_codex_responses::OpenAiCodexResponsesProvider::new(
+                opi_ai::providers::openai_codex::OpenAiCodexResponsesProvider::new(
                     Some(codex_peer.uri()),
                     vec![codex_info.clone()],
                     client.clone(),
@@ -921,8 +922,8 @@ async fn simple_options_port_across_wires_and_mismatched_native_fails_typed_pref
     models
         .register_chat_api(
             Arc::new(
-                opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
-                    Arc::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+                    Arc::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                         Some(peer.uri()),
                         "openai-chat-port".into(),
                         Default::default(),
@@ -951,8 +952,10 @@ async fn simple_options_port_across_wires_and_mismatched_native_fails_typed_pref
     let pi_handle = models
         .register_chat_api(
             Arc::new(
-                opi_ai::pi_messages::PiMessagesChatApi::new(
-                    opi_ai::pi_messages::PiMessagesProvider::new(Some("http://127.0.0.1:1".into())),
+                opi_ai::api::pi_messages::PiMessagesChatApi::new(
+                    opi_ai::providers::pi_messages::PiMessagesProvider::new(Some(
+                        "http://127.0.0.1:1".into(),
+                    )),
                     pi_info.clone(),
                 )
                 .expect("pi api"),
@@ -981,7 +984,7 @@ async fn simple_options_port_across_wires_and_mismatched_native_fails_typed_pref
 
     // Native options typed for the pi wire can never bind to the registered
     // openai-completions record: typed preflight failure before auth/network.
-    let wrong = pi_handle.options(opi_ai::pi_messages::PiMessagesOptions::native(
+    let wrong = pi_handle.options(opi_ai::api::pi_messages::PiMessagesOptions::native(
         None, None, false,
     ));
     let result = models
@@ -1012,8 +1015,8 @@ async fn request_callbacks_observe_once_and_protected_headers_fail_typed() {
         models
             .register_chat_api(
                 Arc::new(
-                    opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
-                        Arc::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                    opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+                        Arc::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                             Some(base),
                             "cb-provider".into(),
                             Default::default(),
@@ -1138,8 +1141,8 @@ async fn duration_is_measured_once_drained_and_survives_serialization() {
     models
         .register_chat_api(
             Arc::new(
-                opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
-                    Arc::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+                    Arc::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                         Some(peer.uri()),
                         "dur-provider".into(),
                         Default::default(),
@@ -1217,7 +1220,7 @@ async fn manual_tool_loop_continues_after_serde_roundtrip() {
     let mut models = Models::new();
     models
         .register_route(
-            Box::new(opi_ai::anthropic::AnthropicProvider::for_route(
+            Box::new(opi_ai::providers::anthropic::AnthropicProvider::for_route(
                 "anthropic-loop".into(),
                 vec![info.clone()],
                 Some(peer.uri()),
@@ -1339,7 +1342,7 @@ async fn two_instances_share_a_store_but_keep_routes_isolated_and_clean_up() {
     let mut left = Models::new();
     left.set_credential_store(store.clone());
     left.register_route(
-        Box::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+        Box::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
             Some(left_peer.uri()),
             "openai-chat".into(),
             Default::default(),
@@ -1515,8 +1518,8 @@ async fn lawful_collection_over_sixty_four_messages_is_accepted() {
     models
         .register_chat_api(
             Arc::new(
-                opi_ai::openai_chat::OpenAiCompletionsChatApi::new(
-                    Arc::new(opi_ai::openai_chat::OpenAiChatProvider::for_route(
+                opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+                    Arc::new(opi_ai::providers::openai::OpenAiChatProvider::for_route(
                         Some(peer.uri()),
                         "bulk-provider".into(),
                         Default::default(),
@@ -1606,7 +1609,7 @@ async fn deferred_pending_then_explicit_fetch_serves_the_recorded_final() {
         .unwrap();
     models
         .register_deferred_api(
-            backend.clone() as Arc<dyn opi_ai::deferred::DeferredApi<()>>,
+            backend.clone() as Arc<dyn opi_ai::api::contract::DeferredApi<()>>,
             Arc::new(opi_ai::auth::StaticAuthResolver::new(
                 AuthScheme::ApiKey,
                 SecretString::from("sk-defer"),
@@ -1629,7 +1632,7 @@ async fn deferred_pending_then_explicit_fetch_serves_the_recorded_final() {
 
     let handle = backend.submit(text_response("deferred done"), 0, None);
     let resumed = models
-        .fetch_deferred(&handle, opi_ai::deferred::DeferredFetchCall::default())
+        .fetch_deferred(&handle, opi_ai::api::contract::DeferredFetchCall::default())
         .await
         .expect("explicit fetch serves the recorded final");
     assert_eq!(message_text(&resumed), "deferred done");

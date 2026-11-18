@@ -7,10 +7,10 @@ use opi_agent::loop_types::{
 };
 use opi_agent::message::AgentMessage;
 use opi_agent::session::SessionReader;
-use opi_ai::anthropic::AnthropicProvider;
 use opi_ai::message::{InputContent, Message, UserMessage};
 use opi_ai::model_info::{ModelInfo, ModelPricing, WireApi};
 use opi_ai::models::CompatMetadata;
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::registry::ModelCapabilities;
 use opi_ai::stream::{Pricing, Usage};
 use opi_ai::{AuthProvenanceSource, AuthScheme, Models, StaticAuthResolver};

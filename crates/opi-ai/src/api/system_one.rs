@@ -34,8 +34,8 @@ use crate::classifier::{
     ClassifierStopReason,
 };
 use crate::http::HttpClient;
-use crate::models::ApiId;
 use crate::provider::{ProviderError, ProviderErrorSummary};
+use crate::types::ApiId;
 
 /// The exact pi classifier API identity this adapter serves.
 pub const TYPESAFE_SYSTEM_ONE_API_ID: &str = "typesafe-system-one";
@@ -360,7 +360,7 @@ pub(crate) async fn classify_over_system_one(
         );
     }
 
-    let headers = match crate::ProviderHeaders::default().merge_model_request(
+    let headers = match crate::api::shared::headers::ProviderHeaders::default().merge_model_request(
         &record.headers,
         &[],
         &call.extra_headers,

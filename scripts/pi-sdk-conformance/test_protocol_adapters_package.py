@@ -32,7 +32,14 @@ class ProtocolAdaptersRunnerTests(unittest.TestCase):
             ],
             "resolve": {"root": "root", "nodes": [
                 {"id": "sdk", "features": [
-                    "cloud-auth", "http-transport", "protocol-adapters", "tls-backend", "websocket-compression",
+                    "cloud-auth", "http-transport", "protocol-adapters",
+                    "provider-anthropic", "provider-azure-openai", "provider-bedrock",
+                    "provider-gemini", "provider-mistral", "provider-openai-chat",
+                    "provider-openai-codex-responses", "provider-openai-responses",
+                    "provider-openai-responses-shared", "provider-openrouter",
+                    "provider-openrouter-usage", "provider-pi-messages",
+                    "provider-protocol-common", "provider-vertex", "tls-backend",
+                    "websocket-compression",
                 ]},
                 {"id": "telemetry", "features": []},
             ]},
@@ -42,7 +49,14 @@ class ProtocolAdaptersRunnerTests(unittest.TestCase):
         metadata, package = self.metadata()
         result = runner.check_graph(metadata, package)
         self.assertEqual(result["features"], [
-            "cloud-auth", "http-transport", "protocol-adapters", "tls-backend", "websocket-compression",
+            "cloud-auth", "http-transport", "protocol-adapters",
+            "provider-anthropic", "provider-azure-openai", "provider-bedrock",
+            "provider-gemini", "provider-mistral", "provider-openai-chat",
+            "provider-openai-codex-responses", "provider-openai-responses",
+            "provider-openai-responses-shared", "provider-openrouter",
+            "provider-openrouter-usage", "provider-pi-messages",
+            "provider-protocol-common", "provider-vertex", "tls-backend",
+            "websocket-compression",
         ])
         self.assertEqual(result["protocol_present"], ["aws-lc-rs", "aws-smithy-query", "aws-smithy-xml", "flate2", "hmac", "libz-rs-sys", "p256", "reqwest", "rustls", "rustls-native-certs", "sha1", "xmlparser"])
 
@@ -61,6 +75,39 @@ class ProtocolAdaptersRunnerTests(unittest.TestCase):
         metadata["packages"] = [entry for entry in metadata["packages"] if entry["name"] != "hmac"]
         with self.assertRaisesRegex(ValueError, "lost required adapter owner"):
             runner.check_graph(metadata, package)
+
+    def test_canonical_shared_layout_rejects_root_and_requires_moved_decoder(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "candidate" / "opi-ai"
+            (package / "src" / "api" / "shared").mkdir(parents=True)
+            (package / "src" / "api" / "shared" / "text_decode.rs").write_text("", encoding="utf-8")
+            self.assertEqual(
+                runner.check_canonical_shared_layout(package),
+                {"root_text_decode_absent": True, "canonical_text_decode_present": True},
+            )
+            (package / "src" / "text_decode.rs").write_text("", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "deleted root text_decode"):
+                runner.check_canonical_shared_layout(package)
+
+    def test_canonical_endpoint_layout_rejects_root_and_requires_moved_helper(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory) / "candidate" / "opi-ai"
+            (package / "src" / "api" / "shared").mkdir(parents=True)
+            (package / "src" / "api" / "shared" / "endpoint.rs").write_text("", encoding="utf-8")
+            self.assertEqual(
+                runner.check_canonical_endpoint_layout(package),
+                {"root_endpoint_absent": True, "canonical_endpoint_present": True},
+            )
+            (package / "src" / "endpoint.rs").write_text("", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "deleted root endpoint"):
+                runner.check_canonical_endpoint_layout(package)
+
+    def test_provider_profiles_do_not_retain_wire_options_or_api_dependency(self):
+        result = runner.check_openai_profile_layout(runner.REPO / "crates/opi-ai")
+        self.assertTrue(result["anthropic_profile_has_no_native_options"])
+        self.assertTrue(result["anthropic_profile_has_no_api_dependency"])
+        self.assertTrue(result["azure_openai_profile_has_no_native_options"])
+        self.assertTrue(result["azure_openai_profile_has_no_api_dependency"])
 
     def test_cli_refuses_existing_receipt_before_work(self):
         with tempfile.TemporaryDirectory() as directory:

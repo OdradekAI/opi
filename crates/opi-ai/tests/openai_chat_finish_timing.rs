@@ -4,8 +4,8 @@ use opi_ai::message::{
     AssistantMessage, InputContent, Message, ToolDef, UserMessage, parse_streaming_json,
 };
 use opi_ai::models::CompatMetadata;
-use opi_ai::openai_chat::OpenAiChatProvider;
 use opi_ai::provider::{Provider, Request};
+use opi_ai::providers::openai::OpenAiChatProvider;
 use opi_ai::stream::AssistantStreamEvent;
 use opi_ai::transcript::{Context, normalize_context};
 use opi_ai::{AuthProvenanceSource, AuthScheme, ChatModelRecord, Models, StaticAuthResolver};
@@ -262,23 +262,29 @@ async fn observe(fixture: &Value, case: &Value, route: &str) -> Value {
     let provider: Box<dyn Provider> = match route {
         "openai" => Box::new(OpenAiChatProvider::new_with_compat(
             Some(base),
-            opi_ai::openai_chat::CompatConfig {
+            opi_ai::providers::openai::CompatConfig {
                 strict_tool_schema: case["arguments"] == "strict",
                 supports_grammar_tools: (case["arguments"] == "grammar").then_some(true),
                 supports_finish_reason: case["supports_finish_reason"].as_bool(),
                 ..Default::default()
             },
         )),
-        "openrouter" => Box::new(opi_ai::openrouter::openrouter_provider(Some(base))),
-        "mistral" => Box::new(opi_ai::mistral::mistral_provider(Some(base))),
+        "openrouter" => Box::new(opi_ai::providers::openrouter::openrouter_provider(Some(
+            base,
+        ))),
+        "mistral" => Box::new(opi_ai::providers::mistral::mistral_provider(Some(base))),
         "azure" => Box::new(
-            opi_ai::azure_openai::AzureOpenAIProvider::new(Some(base), "gpt-4o".into(), None)
-                .unwrap()
-                .with_compat(opi_ai::openai_chat::CompatConfig {
-                    usage_in_stream: case["supports_finish_reason"].as_bool().map(|_| false),
-                    supports_finish_reason: case["supports_finish_reason"].as_bool(),
-                    ..Default::default()
-                }),
+            opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
+                Some(base),
+                "gpt-4o".into(),
+                None,
+            )
+            .unwrap()
+            .with_compat(opi_ai::providers::openai::CompatConfig {
+                usage_in_stream: case["supports_finish_reason"].as_bool().map(|_| false),
+                supports_finish_reason: case["supports_finish_reason"].as_bool(),
+                ..Default::default()
+            }),
         ),
         _ => unreachable!(),
     };
@@ -755,7 +761,7 @@ async fn fixture_entries_stop_on_sentinel_and_never_succeed_after_failure() {
         ] {
             let body = format!("{prefix}{tail}");
             let stream = if azure {
-                opi_ai::azure_openai::AzureOpenAIProvider::new(
+                opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
                     Some("https://fixture.invalid".into()),
                     "fixture".into(),
                     None,

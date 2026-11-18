@@ -2,7 +2,7 @@
 
 mod common;
 
-use opi_ai::anthropic::AnthropicProvider;
+use opi_ai::providers::anthropic::AnthropicProvider;
 use opi_ai::{AuthScheme, ModelCapabilities, ModelInfo, StaticAuthResolver};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::policy::ToolSelection;

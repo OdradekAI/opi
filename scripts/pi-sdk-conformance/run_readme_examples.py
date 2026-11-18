@@ -167,7 +167,7 @@ use std::time::Duration;
 use opi_ai::http::HttpClient;
 use opi_ai::message::{AssistantContent, AssistantMessage};
 use opi_ai::mutation::InMemoryCredentialStore;
-use opi_ai::provider_collection::BuiltinOverrides;
+use opi_ai::providers::collection::BuiltinOverrides;
 use opi_ai::stream::StopReason;
 use opi_ai::{AuthContext, AuthContextError};
 use serde_json::{Value, json};
