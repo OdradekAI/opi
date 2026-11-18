@@ -1360,8 +1360,8 @@ mod google_40 {
     use super::*;
     use opi_ai::WireApi;
     use opi_ai::api::gemini::{
-        GoogleApiThinkingLevel, GoogleGenerativeAiChatApi, GoogleGenerativeAiOptions,
-        GoogleThinkingConfig, GoogleToolChoice,
+        GeminiBodyBuilder, GoogleApiThinkingLevel, GoogleGenerativeAiChatApi,
+        GoogleGenerativeAiOptions, GoogleThinkingConfig, GoogleToolChoice,
     };
     use opi_ai::message::{AssistantContent, OutputContent, ToolCall, ToolDef, ToolResultMessage};
     use opi_ai::model_info::{ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMapping};
@@ -1418,7 +1418,7 @@ mod google_40 {
         GoogleGenerativeAiOptions::native(thinking, tool_choice)
     }
 
-    fn body_40(provider: &GeminiProvider, request: &Request) -> serde_json::Value {
+    fn body_40(provider: &impl GeminiBodyBuilder, request: &Request) -> serde_json::Value {
         provider
             .build_request_body(request)
             .expect("google body compiles")

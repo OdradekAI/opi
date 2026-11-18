@@ -50,7 +50,12 @@ impl VertexProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        self.inner.build_request_body(request)
+        let native_options = self
+            .native_options
+            .as_ref()
+            .map(GoogleVertexOptions::google);
+        self.inner
+            .build_request_body_with_options(request, native_options.as_ref())
     }
 
     /// Stream events from a raw SSE response body (for testing).
@@ -229,7 +234,7 @@ impl Provider for VertexProvider {
                 }
             };
             let requested_model = model_id;
-            let body = match self.inner.build_request_body(&request) {
+            let body = match self.build_request_body(&request) {
                 Ok(body) => body,
                 Err(error) => return Box::pin(stream::once(async move { Err(error) })),
             };

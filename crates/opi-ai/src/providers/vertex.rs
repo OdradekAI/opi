@@ -27,6 +27,9 @@ pub struct VertexProvider {
     pub(crate) models: Vec<ModelInfo>,
     pub(crate) inner: GeminiProvider,
     pub(crate) client: Arc<HttpClient>,
+    /// Temporary per-dispatch native options. This state moves to the Vertex
+    /// wire adapter in the dedicated Vertex profile slice.
+    pub(crate) native_options: Option<GoogleVertexOptions>,
     /// API-key Express mode: project/location-less wire routed to the global
     /// `aiplatform.googleapis.com` collection endpoint.
     pub(crate) express: bool,
@@ -57,6 +60,7 @@ impl VertexProvider {
             models,
             inner,
             client: Arc::new(HttpClient::new()),
+            native_options: None,
             express: false,
         }
     }
@@ -76,6 +80,7 @@ impl VertexProvider {
             models,
             inner,
             client: Arc::new(HttpClient::new()),
+            native_options: None,
             express: true,
         }
     }
@@ -115,6 +120,7 @@ impl VertexProvider {
             models: model_list,
             inner,
             client: Arc::new(HttpClient::new()),
+            native_options: None,
             express: false,
         }
     }
@@ -151,7 +157,7 @@ impl VertexProvider {
         if let Some(location) = options.location.as_ref() {
             self.location = location.clone();
         }
-        self.inner = self.inner.with_native_options(options.google());
+        self.native_options = Some(options);
         self
     }
 }

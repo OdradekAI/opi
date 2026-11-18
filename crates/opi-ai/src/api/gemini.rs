@@ -22,6 +22,61 @@ use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
 };
 
+/// Gemini wire state for one dispatch. The registered profile owns route,
+/// catalog, client and wire identity. Native options remain on this adapter
+/// so concurrent calls never mutate shared profile state.
+#[derive(Clone)]
+pub struct GeminiWireAdapter {
+    provider: GeminiProvider,
+    native_options: Option<GoogleGenerativeAiOptions>,
+}
+
+/// Body inspection surface shared by the profile and its per-dispatch wire
+/// adapter.
+pub trait GeminiBodyBuilder {
+    fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError>;
+}
+
+impl GeminiWireAdapter {
+    pub fn new(provider: GeminiProvider) -> Self {
+        Self {
+            provider,
+            native_options: None,
+        }
+    }
+
+    pub fn with_options(provider: GeminiProvider, options: GoogleGenerativeAiOptions) -> Self {
+        Self {
+            provider,
+            native_options: Some(options),
+        }
+    }
+
+    pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
+    }
+
+    pub fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.provider
+            .build_request_body_with_options(request, self.native_options.as_ref())
+    }
+}
+
+impl GeminiProvider {
+    /// Build a per-call wire adapter without storing native options on the
+    /// registered provider profile.
+    pub fn with_native_options(self, options: GoogleGenerativeAiOptions) -> GeminiWireAdapter {
+        GeminiWireAdapter::with_options(self, options)
+    }
+}
+
 const UPSTREAM_STREAM_ERROR: &str = "Gemini returned a streaming error";
 const MALFORMED_STREAM_FRAME: &str = "Gemini returned a malformed streaming frame";
 
@@ -290,6 +345,47 @@ impl ParsedEvent {
             events.push(ParsedEvent::Valid(GeminiEvent::Usage(usage)));
         }
         events
+    }
+}
+
+impl GeminiBodyBuilder for GeminiProvider {
+    fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        GeminiProvider::build_request_body(self, request)
+    }
+}
+
+impl GeminiBodyBuilder for GeminiWireAdapter {
+    fn build_request_body(
+        &self,
+        request: &Request,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        GeminiWireAdapter::build_request_body(self, request)
+    }
+}
+
+impl Provider for GeminiWireAdapter {
+    fn validate_simple_options(
+        &self,
+        model: &ModelInfo,
+        options: &crate::api::contract::SimpleOptions,
+    ) -> Result<(), ProviderError> {
+        self.provider.validate_simple_options(model, options)
+    }
+
+    fn id(&self) -> &str {
+        self.provider.id()
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        self.provider.models()
+    }
+
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.provider
+            .stream_prepared_with_options(request, auth, self.native_options.clone())
     }
 }
 
@@ -913,6 +1009,14 @@ impl GeminiProvider {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        self.build_request_body_with_options(request, None)
+    }
+
+    pub(crate) fn build_request_body_with_options(
+        &self,
+        request: &Request,
+        native_options: Option<&GoogleGenerativeAiOptions>,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let model_id = request
             .model
             .split_once(':')
@@ -1274,9 +1378,7 @@ impl GeminiProvider {
             // Pi `resolveGoogleFunctionCallingMode`: explicit none/any win,
             // then VALIDATED when any tool went strict, then an explicit
             // auto; absent intent emits no toolConfig.
-            let mode = self
-                .native_options
-                .as_ref()
+            let mode = native_options
                 .and_then(|options| options.tool_choice.as_ref())
                 .map(|choice| choice.wire_mode());
             let mode = match mode {
@@ -1300,14 +1402,9 @@ impl GeminiProvider {
         // Native binding owns the thinking intent entirely: a bound native
         // options value without `thinking` omits the config (pi native
         // `buildParams` only reacts when `options.thinking` exists).
-        let native_bound = self
-            .native_options
-            .as_ref()
-            .is_some_and(|options| !options.is_simple());
+        let native_bound = native_options.is_some_and(|options| !options.is_simple());
         let native_thinking = if native_bound {
-            self.native_options
-                .as_ref()
-                .and_then(|options| options.thinking.as_ref())
+            native_options.and_then(|options| options.thinking.as_ref())
         } else {
             None
         };
@@ -1741,16 +1838,32 @@ impl Provider for GeminiProvider {
         attempt: crate::provider::AttemptContext,
         resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
-        self.clone()
-            .with_models(vec![model])
-            .with_native_options(GoogleGenerativeAiOptions::from_simple(&options))
-            .stream_resource_attempt(request, auth, attempt, resources)
+        GeminiWireAdapter::with_options(
+            self.clone().with_models(vec![model]),
+            GoogleGenerativeAiOptions::from_simple(&options),
+        )
+        .stream_resource_attempt(request, auth, attempt, resources)
     }
 
-    fn stream_prepared(
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
+        self.stream_prepared_with_options(request, auth, None)
+    }
+
+    fn id(&self) -> &str {
+        "gemini"
+    }
+
+    fn models(&self) -> &[ModelInfo] {
+        &self.models
+    }
+}
+
+impl GeminiProvider {
+    fn stream_prepared_with_options(
         &self,
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
+        native_options: Option<GoogleGenerativeAiOptions>,
     ) -> EventStream {
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, self.wire) {
             Ok(facts) => facts,
@@ -1798,7 +1911,8 @@ impl Provider for GeminiProvider {
                         .and_then(|model| model.base_url.clone())
                 })
                 .unwrap_or_else(|| format!("{}/v1beta", self.base_url.trim_end_matches('/')));
-            let body = match self.build_request_body(&request) {
+            let body = match self.build_request_body_with_options(&request, native_options.as_ref())
+            {
                 Ok(body) => body,
                 Err(error) => return Box::pin(stream::once(async move { Err(error) })),
             };
@@ -1879,14 +1993,6 @@ impl Provider for GeminiProvider {
             google_response_stream(producer, rx, cancel, snapshot)
         })
     }
-
-    fn id(&self) -> &str {
-        "gemini"
-    }
-
-    fn models(&self) -> &[ModelInfo] {
-        &self.models
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1928,11 +2034,14 @@ impl GoogleGenerativeAiChatApi {
         })
     }
 
-    fn configured(&self, model: ModelInfo, options: GoogleGenerativeAiOptions) -> GeminiProvider {
+    fn configured(
+        &self,
+        model: ModelInfo,
+        options: GoogleGenerativeAiOptions,
+    ) -> GeminiWireAdapter {
         let mut provider = (*self.provider).clone();
         provider.models = vec![model];
-        provider.native_options = Some(options);
-        provider
+        GeminiWireAdapter::with_options(provider, options)
     }
 }
 

@@ -6,7 +6,6 @@
 
 use std::sync::Arc;
 
-use crate::api::gemini::GoogleGenerativeAiOptions;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
@@ -19,8 +18,6 @@ pub struct GeminiProvider {
     pub(crate) base_url: String,
     pub(crate) models: Vec<ModelInfo>,
     pub(crate) client: Arc<HttpClient>,
-    /// Typed native options for one direct/native dispatch.
-    pub(crate) native_options: Option<GoogleGenerativeAiOptions>,
     /// Owning Google wire; Vertex reuses the Gemini body engine with a
     /// different wire-specific policy.
     pub(crate) wire: WireApi,
@@ -72,7 +69,6 @@ impl GeminiProvider {
             base_url,
             models: model_catalog(),
             client,
-            native_options: None,
             wire: WireApi::GoogleGenerativeAi,
         }
     }
@@ -103,12 +99,6 @@ impl GeminiProvider {
     /// Override the API base URL.
     pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
-        self
-    }
-
-    /// Bind typed native options for one dispatch.
-    pub fn with_native_options(mut self, options: GoogleGenerativeAiOptions) -> Self {
-        self.native_options = Some(options);
         self
     }
 

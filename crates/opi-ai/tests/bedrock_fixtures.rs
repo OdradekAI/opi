@@ -8709,9 +8709,7 @@ mod constrained_guard_tests {
 
 mod bedrock_42 {
     use super::*;
-    use opi_ai::api::bedrock::{
-        BedrockBodyBuilder, BedrockConverseStreamChatApi, BedrockOptions,
-    };
+    use opi_ai::api::bedrock::{BedrockBodyBuilder, BedrockConverseStreamChatApi, BedrockOptions};
     use opi_ai::message::{OutputContent, ToolNotExecutedReason};
     use opi_ai::model_info::{
         ModelCapabilities, ModelInfo, ThinkingLevel, ThinkingLevelMap, WireApi,

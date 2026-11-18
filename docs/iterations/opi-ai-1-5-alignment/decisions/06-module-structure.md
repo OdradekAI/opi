@@ -251,3 +251,9 @@ profile 继续按 #172 推进。
 `api::bedrock::BedrockWireAdapter`，移除 Bedrock profile 的 API-native state。
 Bedrock fixture 的 179 项测试和 builtins check 均通过，剩余 Gemini、Vertex
 profile 继续按 #172 推进。
+
+2026-11-18 的 #176 将 Gemini native options 收拢到
+`api::gemini::GeminiWireAdapter`，并把 body engine 改为显式接收 per-call
+options，供 Vertex 复用。Gemini fixture 71 项与 Vertex fixture 73 项均通过。
+Vertex 暂时保留自己的 native option 值，下一条 #177 将其迁移到 Vertex
+wire adapter 并关闭最后的 G1 profile-state 引用。

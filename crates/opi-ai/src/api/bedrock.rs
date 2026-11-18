@@ -412,11 +412,7 @@ impl Provider for BedrockProvider {
         self.stream_prepared_with_options(request, auth, None)
     }
 
-    fn stream_prepared(
-        &self,
-        request: Request,
-        auth: crate::auth::ResolvedAuth,
-    ) -> EventStream {
+    fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
         self.stream_prepared_with_options(request, auth, None)
     }
 }
