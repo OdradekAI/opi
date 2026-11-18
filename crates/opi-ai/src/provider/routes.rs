@@ -121,3 +121,13 @@ pub struct OpenAiRouteContext {
     pub(crate) copilot_initiator: bool,
     pub(crate) client: Arc<crate::http::HttpClient>,
 }
+
+/// Route state shared by the native Mistral Conversations adapter.
+#[cfg(feature = "provider-mistral")]
+#[derive(Clone)]
+pub struct MistralRouteContext {
+    pub(crate) provider_identity: String,
+    pub(crate) base_url: String,
+    pub(crate) client: Arc<crate::http::HttpClient>,
+    pub(crate) models: Vec<ModelInfo>,
+}

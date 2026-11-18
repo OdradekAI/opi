@@ -312,3 +312,7 @@ Mistral、OpenRouter 与 Azure 的复用方向继续通过该 context 收口，�
 2026-11-18 的 #186 将 Mistral 与 OpenRouter 的 OpenAI-compatible factory
 改为直接构造 `OpenAiRouteContext`。Azure 仍保留一条 dual-wire profile
 复用边，等待 Responses route context 一并收口。
+
+2026-11-18 的 #187 将 native Mistral Conversations route state 抽取到
+`provider::routes::MistralRouteContext`。其 API adapter 与 OpenAI-compatible
+Mistral route 现在共享 lower route contract，但保留各自 wire owner。

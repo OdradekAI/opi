@@ -5,8 +5,8 @@
 //! streaming and the typed Chat adapter. Profile state lives in the canonical
 //! providers module; ordinary compatible traffic remains owned by openai_chat.
 
+use crate::provider::routes::MistralRouteContext;
 use crate::provider::{EventStream, ProviderError, Request};
-use crate::providers::mistral::MistralConversationsProvider;
 use crate::stream::{AssistantStreamEvent, StopReason};
 use base64::Engine as _;
 use futures_util::StreamExt as _;
@@ -135,19 +135,19 @@ impl MistralOptions {
 /// only route and catalog state.
 #[derive(Clone)]
 pub struct MistralConversationsWireAdapter {
-    provider: MistralConversationsProvider,
+    provider: MistralRouteContext,
     native_options: Option<MistralOptions>,
 }
 
 impl MistralConversationsWireAdapter {
-    pub fn new(provider: MistralConversationsProvider) -> Self {
+    pub fn new(provider: MistralRouteContext) -> Self {
         Self {
             provider,
             native_options: None,
         }
     }
 
-    pub fn with_options(provider: MistralConversationsProvider, options: MistralOptions) -> Self {
+    pub fn with_options(provider: MistralRouteContext, options: MistralOptions) -> Self {
         Self {
             provider,
             native_options: Some(options),
@@ -160,7 +160,7 @@ impl MistralConversationsWireAdapter {
     }
 }
 
-impl MistralConversationsProvider {
+impl MistralRouteContext {
     /// Build a per-call wire adapter without storing native options on the
     /// registered provider profile.
     pub fn with_native_options(self, options: MistralOptions) -> MistralConversationsWireAdapter {
@@ -225,7 +225,7 @@ impl MistralToolCallIdNormalizer {
             .collect()
     }
 }
-impl MistralConversationsProvider {
+impl MistralRouteContext {
     fn resolve_model(&self, requested: &str) -> Option<&crate::provider::ModelInfo> {
         let id = requested.strip_prefix("mistral:").unwrap_or(requested);
         self.models
@@ -669,7 +669,7 @@ fn map_mistral_status(
     }
 }
 
-impl MistralConversationsProvider {
+impl MistralRouteContext {
     fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -1041,7 +1041,7 @@ struct MistralSseMapper {
     stop_error: Option<String>,
 }
 
-impl crate::provider::Provider for MistralConversationsProvider {
+impl crate::provider::Provider for MistralRouteContext {
     fn validate_simple_options(
         &self,
         model: &crate::provider::ModelInfo,
@@ -1531,7 +1531,7 @@ fn arguments_text(function: &serde_json::Value) -> String {
 /// The public direct adapter registering through `Models::register_chat_api`
 /// with api id `mistral-conversations` and provider id `mistral`.
 pub struct MistralConversationsChatApi {
-    provider: MistralConversationsProvider,
+    provider: MistralRouteContext,
     model: crate::provider::ModelInfo,
     api_id: crate::types::ApiId,
 }
@@ -1548,7 +1548,7 @@ impl std::fmt::Debug for MistralConversationsChatApi {
 
 impl MistralConversationsChatApi {
     pub fn new(
-        provider: MistralConversationsProvider,
+        provider: MistralRouteContext,
         model: crate::provider::ModelInfo,
     ) -> Result<Self, ProviderError> {
         if model.wire_api != crate::model_info::WireApi::MistralConversations

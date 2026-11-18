@@ -10,7 +10,7 @@ use crate::http::HttpClient;
 use crate::model_info::OpenAiCompletionsCompat as CompatConfig;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
-use crate::provider::routes::OpenAiRouteContext;
+use crate::provider::routes::{MistralRouteContext, OpenAiRouteContext};
 use crate::registry::ModelCapabilities;
 
 /// Default Mistral API base URL (without the /v1 suffix, which the adapter adds).
@@ -62,20 +62,10 @@ pub fn model_catalog() -> Vec<ModelInfo> {
     ]
 }
 
-/// Native Mistral conversations provider profile.
-///
-/// This profile owns endpoint, model records, shared transport and the
-/// route identity. The API module owns native options, wire projection and
-/// Provider/ChatApi behavior.
-#[derive(Clone)]
-pub struct MistralConversationsProvider {
-    pub(crate) provider_identity: String,
-    pub(crate) base_url: String,
-    pub(crate) client: Arc<HttpClient>,
-    pub(crate) models: Vec<ModelInfo>,
-}
+/// Canonical provider-facing name for the neutral Mistral route context.
+pub type MistralConversationsProvider = MistralRouteContext;
 
-impl std::fmt::Debug for MistralConversationsProvider {
+impl std::fmt::Debug for MistralRouteContext {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("MistralConversationsProvider")
@@ -86,7 +76,7 @@ impl std::fmt::Debug for MistralConversationsProvider {
     }
 }
 
-impl MistralConversationsProvider {
+impl MistralRouteContext {
     #[cfg(feature = "builtins")]
     pub(crate) fn with_client(mut self, client: Arc<HttpClient>) -> Self {
         self.client = client;
