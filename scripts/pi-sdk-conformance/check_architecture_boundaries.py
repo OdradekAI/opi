@@ -119,6 +119,36 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
             )
         }
     )
+    registration_record_pattern = (
+        r"struct (?:ImageApiRegistration|ClassifierApiRegistration|"
+        r"DeferredApiRegistration|ChatApiRegistration|ChatApiEntry)\s*\{"
+    )
+    models_registration_records = matching_edges(
+        models_owner_paths, registration_record_pattern
+    )
+    models_registration_record_files = sorted(
+        {
+            match["file"]
+            for match in matching_edges(models_module_paths, registration_record_pattern)
+        }
+    )
+    models_registration_records_in_facade = matching_edges(
+        [src / "models.rs"], registration_record_pattern
+    )
+    chat_call_pattern = (
+        r"(?:struct (?:FrozenChatBinding|ChatCall|ChatCallDriver|ChatCallSetup|"
+        r"ResourceApiStream)|enum (?:FrozenRoute|AuthPlan|ChatCallState))\s*\{"
+    )
+    models_chat_call_orchestration = matching_edges(models_owner_paths, chat_call_pattern)
+    models_chat_call_files = sorted(
+        {
+            match["file"]
+            for match in matching_edges(models_module_paths, chat_call_pattern)
+        }
+    )
+    models_chat_call_orchestration_in_facade = matching_edges(
+        [src / "models.rs"], chat_call_pattern
+    )
 
     return {
         "api_provider_edges": api_provider,
@@ -132,6 +162,12 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         "models_owner_definitions_in_facade": models_owner_definitions_in_facade,
         "models_prepared_execution_owner": models_prepared_execution_owner,
         "models_prepared_execution_owner_files": models_prepared_execution_owner_files,
+        "models_registration_records": models_registration_records,
+        "models_registration_record_files": models_registration_record_files,
+        "models_registration_records_in_facade": models_registration_records_in_facade,
+        "models_chat_call_orchestration": models_chat_call_orchestration,
+        "models_chat_call_files": models_chat_call_files,
+        "models_chat_call_orchestration_in_facade": models_chat_call_orchestration_in_facade,
         "stream_execution_edges": stream_execution,
         "models_lines": models_lines,
         "counts": {
@@ -146,6 +182,14 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
             "models_owner_definitions_in_facade": len(models_owner_definitions_in_facade),
             "models_prepared_execution_owner": len(models_prepared_execution_owner),
             "models_prepared_execution_owner_files": len(models_prepared_execution_owner_files),
+            "models_registration_records": len(models_registration_records),
+            "models_registration_record_files": len(models_registration_record_files),
+            "models_registration_records_in_facade": len(models_registration_records_in_facade),
+            "models_chat_call_orchestration": len(models_chat_call_orchestration),
+            "models_chat_call_files": len(models_chat_call_files),
+            "models_chat_call_orchestration_in_facade": len(
+                models_chat_call_orchestration_in_facade
+            ),
         },
     }
 

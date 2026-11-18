@@ -308,6 +308,11 @@ map 完成物理迁移。`models.rs` 中 owner 定义数降至 0，registration 
 `models/prepared_call.rs`。prepared execution 通过 crate-private 构造 seam 进入，
 执行字段保持在模块内，Models facade 只保留 route preparation 与 orchestration。
 
+随后 #205 将五个 registration record、typed dispatch adapter、native option
+handle 和 catalog-invisible chat route 放入 `models/registration.rs`。结构报告新增
+registration record 文件数和 facade 剩余数，`FrozenChatBinding` 保留到 ChatCall
+orchestration 切片。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有

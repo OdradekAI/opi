@@ -218,6 +218,12 @@ owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 `models_owner_definitions_in_facade=0`、`models_prepared_execution_owner_files=1`，
 `models_lines=4895`，Models 五个 owner 已全部具备独立物理模块。
 
+随后 [#205 registration records](205-extract-models-registration-records.md) 将
+五个 registration record 与 typed dispatch adapter 迁移到
+`models/registration.rs`。当前结构指标为 `models_registration_record_files=1`、
+`models_registration_records_in_facade=0`、`models_chat_call_files=0`，ChatCall
+orchestration 仍保留 8 个 facade 定义，等待下一条独立提交。
+
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.

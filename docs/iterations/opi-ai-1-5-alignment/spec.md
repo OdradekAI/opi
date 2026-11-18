@@ -1311,6 +1311,12 @@ registration map 完成物理迁移，facade 中不再保留 owner 定义。
 进入，结构报告的 `models_prepared_execution_owner_files=1`，Models facade 降至
 4895 行。
 
+
+随后 [#205 registration records](issues/205-extract-models-registration-records.md)
+将五个 registration record、typed dispatch adapter、native option handle 与
+catalog-invisible chat route 从 `models.rs` 迁移到 `models/registration.rs`。结构报告
+新增 registration record 的物理位置指标，ChatCall orchestration 作为下一条独立切片。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。
