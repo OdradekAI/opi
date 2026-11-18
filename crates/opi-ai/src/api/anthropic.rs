@@ -3465,8 +3465,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Build a test AnthropicProvider whose models have cache capabilities.
-    fn cache_capable_provider() -> AnthropicProvider {
-        AnthropicProvider::with_client(
+    fn cache_capable_provider() -> AnthropicRouteContext {
+        AnthropicRouteContext::with_client(
             Some("https://api.anthropic.com".into()),
             Arc::new(crate::http::HttpClient::new()),
         )

@@ -30,6 +30,8 @@ violations are stream/execution mutual ownership and Models protocol branches.
 
 - `cargo check -p opi-ai --locked --offline --features provider-openai-codex-responses` passed.
 - `cargo test -p opi-ai --test openai_codex_responses --locked --offline --features provider-openai-codex-responses --quiet` passed, 87 tests.
+- `cargo check -p opi-ai --locked --offline --features builtins` passed.
+- `cargo test -p opi-ai --locked --offline --features builtins --lib --quiet` passed, 374 tests.
 - `cargo fmt --all -- --check` passed.
 - The architecture report exposes `api_provider_edges=0`, `api_route_context_edges=11` and `provider_to_provider_edges=0`.
 

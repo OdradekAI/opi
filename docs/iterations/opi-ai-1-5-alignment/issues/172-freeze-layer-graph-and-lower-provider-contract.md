@@ -17,7 +17,7 @@ The current graph still contains these structural violations:
 
 | Boundary | Current evidence | Required direction |
 | --- | --- | --- |
-| Provider contract ↔ API contract | `src/provider.rs:10,71,84,152` imports `api::contract`; `src/api/contract.rs:15` imports provider request/stream/error types | The lower provider contract may be consumed by API adapters, but it must not import API contracts |
+| Provider contract ↔ API contract | G3 moved neutral operation values to `provider::operation`; `provider.rs` has no `crate::api` dependency and `api::contract` keeps compatibility re-exports | The lower provider contract may be consumed by API adapters, but it must not import API contracts |
 | API adapter → provider profile | All migrated protocols plus Azure dual-wire and Codex Responses now use `provider::routes` contexts; no concrete `crate::providers::` edge remains under `src/api` | Adapters consume a provider-neutral route context and protocol inputs; composition binds concrete profiles to adapters |
 | Provider profile → provider profile | Mistral, OpenRouter and Azure now construct lower route contexts; no concrete profile-to-profile edge remains | Shared protocol configuration and route bindings are reused; one provider profile does not construct another provider profile |
 | Profile → native wire state | No remaining `providers` native-option state after #177 | Profiles own identity, route, auth policy and catalog; adapters own native options and wire state |
@@ -77,7 +77,7 @@ These gates are the progress ledger. Counts are observations from the
 | --- | ---: | --- |
 | G0 canonical root paths | #157–#162 complete | No deleted root provider/helper path is recreated; canonical archive consumer stays green |
 | G1 profile native state | 0 tracked references after #177 | `rg` finds no `native_options`, `with_native_options` or API-native option imports under `src/providers` |
-| G2 adapter/profile inversion | `api_provider_edges=0`; `api_route_context_edges=11`; `provider_to_provider_edges=0` | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
+| G2 adapter/profile inversion | **closed**: `api_provider_edges=0`; `api_route_context_edges=11`; `provider_to_provider_edges=0` | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
 | G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
 | G4 execution/stream ownership | mutual implementation references remain | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
 | G5 Models owners | `RegistryOwner`, `AuthOwner`, `CatalogOwner` and `OperationOwner` extracted, 5,424-line facade implementation remains; `PreparedProviderCall` is the execution owner | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
@@ -156,6 +156,9 @@ dual-wire route state 接到 lower contexts，Azure fixture 46 项通过，当�
 endpoint、catalog、HTTP client 与 WebSocket resource state 抽取到
 `OpenAiCodexRouteContext`。Codex fixture 87 项通过，G2 达到
 `api_provider_edges=0`、`provider_to_provider_edges=0`。
+
+G2 已关闭。全 builtins `cargo check` 通过，lib 回归 374 项通过，剩余
+结构工作集中在 G4 stream/execution owner 与 G5 Models protocol branches。
 
 ## Acceptance
 
