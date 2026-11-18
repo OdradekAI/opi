@@ -104,6 +104,58 @@ pub trait Provider: Send + Sync {
     fn skips_shared_request_preparation(&self, _model: &ModelInfo) -> bool {
         false
     }
+
+    /// Apply provider-owned thinking budget policy after shared ceilings are
+    /// resolved. The default preserves Anthropic and non-adaptive Bedrock
+    /// numeric budget compatibility used by the built-in routes.
+    fn prepare_thinking_request(
+        &self,
+        model: &ModelInfo,
+        request: &mut Request,
+        context_available: Option<u64>,
+    ) {
+        if !request.thinking.enabled {
+            return;
+        }
+        let numeric_anthropic = matches!(
+            &model.compat,
+            crate::WireCompat::AnthropicMessages(compat) if !compat.force_adaptive_thinking
+        );
+        let numeric_bedrock = model.wire_api == crate::WireApi::BedrockConverseStream
+            && !crate::model_info::supports_bedrock_adaptive_thinking(
+                &model.id,
+                &model.display_name,
+            );
+        if (numeric_anthropic || numeric_bedrock) && request.thinking.budget_tokens.is_none() {
+            request.thinking.budget_tokens = Some(match request.thinking.level {
+                crate::ThinkingLevel::Minimal => 1_024,
+                crate::ThinkingLevel::Low => 2_048,
+                crate::ThinkingLevel::Medium => 8_192,
+                crate::ThinkingLevel::High
+                | crate::ThinkingLevel::XHigh
+                | crate::ThinkingLevel::Max => 16_384,
+                crate::ThinkingLevel::None => 1_024,
+            });
+        }
+        let numeric_claude = numeric_anthropic
+            || (numeric_bedrock
+                && (model.id.to_lowercase().contains("anthropic.claude")
+                    || model.id.to_lowercase().contains("anthropic/claude")
+                    || model.display_name.to_lowercase().contains("claude")));
+        if numeric_claude
+            && let (Some(budget), Some(limit)) =
+                (request.thinking.budget_tokens, request.max_tokens)
+        {
+            let combined = limit
+                .saturating_add(budget)
+                .min(model.capabilities.max_output_tokens);
+            request.max_tokens =
+                Some(context_available.map_or(combined, |available| combined.min(available)));
+        }
+        if let (Some(budget), Some(limit)) = (request.thinking.budget_tokens, request.max_tokens) {
+            request.thinking.budget_tokens = Some(budget.min(limit.saturating_sub(1_024)));
+        }
+    }
     /// Unique identifier for this provider instance (e.g. "anthropic").
     fn id(&self) -> &str;
 
