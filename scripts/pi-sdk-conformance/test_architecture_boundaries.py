@@ -21,6 +21,7 @@ class ArchitectureBoundaryTests(unittest.TestCase):
         self.assertIn("violations", {"violations": checker.violations(report)})
         self.assertEqual(report["counts"]["api_provider_edges"], 0)
         self.assertGreaterEqual(report["counts"]["api_route_context_edges"], 1)
+        self.assertEqual(report["counts"]["api_contract_provider_edges"], 0)
         self.assertFalse(report["stream_execution_edges"]["stream_imports_execution"])
         self.assertTrue(report["stream_execution_edges"]["stream_reexports_execution"])
         self.assertTrue(report["stream_execution_edges"]["execution_imports_stream"])

@@ -61,6 +61,9 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
 
     api_provider = matching_edges(api_files, r"crate::providers::")
     api_route_context = matching_edges(api_files, r"crate::provider::routes::")
+    api_contract_provider = matching_edges(
+        [src / "api" / "contract.rs"], r"crate::provider(?!::operation\b)"
+    )
     provider_contract_api = matching_edges([src / "provider.rs"], r"crate::api(?:::|\b)")
     profile_native = matching_edges(
         profile_files,
@@ -153,6 +156,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
     return {
         "api_provider_edges": api_provider,
         "api_route_context_edges": api_route_context,
+        "api_contract_provider_edges": api_contract_provider,
         "provider_contract_api_edges": provider_contract_api,
         "profile_native_state": profile_native,
         "provider_to_provider_edges": provider_to_provider,
@@ -173,6 +177,7 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         "counts": {
             "api_provider_edges": len(api_provider),
             "api_route_context_edges": len(api_route_context),
+            "api_contract_provider_edges": len(api_contract_provider),
             "provider_contract_api_edges": len(provider_contract_api),
             "profile_native_state": len(profile_native),
             "provider_to_provider_edges": len(provider_to_provider),
@@ -199,6 +204,8 @@ def violations(report: dict[str, object]) -> list[str]:
     result = []
     if counts["api_provider_edges"]:
         result.append("api adapters import concrete provider profiles")
+    if counts["api_contract_provider_edges"]:
+        result.append("api contract imports provider implementation types directly")
     if counts["provider_contract_api_edges"]:
         result.append("provider.rs imports api contract code")
     if counts["profile_native_state"]:

@@ -7,7 +7,9 @@ use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 
 use crate::auth::ResolvedAuth;
-use crate::provider::{EventStream, ModelInfo, ProviderError, Request};
+use crate::provider::operation::{
+    EventStream, ModelInfo, ProviderError, Request, validate_request_for_model,
+};
 use crate::types::ApiId;
 
 pub use crate::provider::operation::{
@@ -61,7 +63,7 @@ pub trait ChatApi<O: Send + 'static>: Send + Sync {
         request: &Request,
         _options: &O,
     ) -> Result<(), ProviderError> {
-        crate::provider::validate_request_for_model(self.provider_id(), Some(model), request)
+        validate_request_for_model(self.provider_id(), Some(model), request)
     }
 
     /// Dispatch with the caller's frozen complete record. The default keeps

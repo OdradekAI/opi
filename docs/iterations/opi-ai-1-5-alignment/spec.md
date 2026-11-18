@@ -1323,6 +1323,12 @@ catalog-invisible chat route 从 `models.rs` 迁移到 `models/registration.rs`�
 `models.rs` 迁移到独立的 `models/chat_call.rs`。结构报告确认 ChatCall
 orchestration 的 8 个定义全部离开 facade，Models facade 降至 3897 行。
 
+
+随后 [#207 G3 API contract seam](issues/207-close-g3-api-contract-seam.md) 将
+`api::contract` 对 request、stream、error 和 validation 的直接 provider 依赖
+收拢到 `provider::operation`。`api_contract_provider_edges=0`，G3 收口，剩余
+`types/errors` bundle coupling 继续按 #172 的显式记录处理。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

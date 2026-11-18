@@ -78,7 +78,7 @@ These gates are the progress ledger. Counts are observations from the
 | G0 canonical root paths | #157–#162 complete | No deleted root provider/helper path is recreated; canonical archive consumer stays green |
 | G1 profile native state | 0 tracked references after #177 | `rg` finds no `native_options`, `with_native_options` or API-native option imports under `src/providers` |
 | G2 adapter/profile inversion | **closed**: `api_provider_edges=0`; `api_route_context_edges=11`; `provider_to_provider_edges=0` | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
-| G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
+| G3 lower contract direction | **closed**: `provider_contract_api_edges=0`; `api_contract_provider_edges=0`; `api::contract` consumes request/stream/error/validation values through `provider::operation` | `provider.rs` has no `crate::api` dependency, API contract has no direct provider implementation import, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
 | G4 execution/stream ownership | **closed**: `stream_imports_execution=false`, `stream_reexports_execution=true`, `execution_imports_stream=true` | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
 | G5 Models owners | **closed**: four private owners plus `PreparedProviderCall`; `models_protocol_branches=0` | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
 | G6 composition proof | **closed**: packaged all-provider-owners-plus-support consumer PASS | core/Faux, one-provider and full builtins profiles pass structural checks, focused behavior tests and an external archive consumer |
@@ -229,6 +229,10 @@ orchestration 仍保留 8 个 facade 定义，等待下一条独立提交。
 stream 迁移到 `models/chat_call.rs`。当前结构指标为
 `models_chat_call_files=1`、`models_chat_call_orchestration_in_facade=0`、
 `models_lines=3897`，registration 与 ChatCall 两条物理拆分均已完成。
+
+随后 [#207 G3 API contract seam](207-close-g3-api-contract-seam.md) 将 API
+contract 对 request、stream、error 和 validation 的直接 provider 依赖收拢到
+`provider::operation`。当前 `api_contract_provider_edges=0`，G3 收口。
 
 ## Acceptance
 

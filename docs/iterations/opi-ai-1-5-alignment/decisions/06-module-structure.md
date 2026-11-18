@@ -317,6 +317,11 @@ orchestration 切片。
 materialization 和 resource stream 放入 `models/chat_call.rs`。Models facade 只
 保留 binding assembly 与公开调用入口。
 
+随后 #207 完成 G3 的 API contract seam。`api::contract` 通过
+`provider::operation` 获取 lower request、stream、error 和 validation 合同，
+结构报告新增 `api_contract_provider_edges=0`，保留的 `types/errors` bundle
+coupling 继续由 #172 明确记录。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有

@@ -11,8 +11,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::auth::ResolvedAuth;
 use crate::callbacks::RequestCallbacks;
-use crate::errors::{ProviderError, ProviderErrorSummary};
-use crate::provider::{EventStream, Request};
+pub use crate::errors::{ProviderError, ProviderErrorSummary};
+pub use crate::model_info::ModelInfo;
+pub use crate::provider::{EventStream, Request, validate_request_for_model};
 use crate::telemetry::TelemetryContext;
 use crate::types::ApiId;
 use crate::types::deferred::{DeferredError, DeferredHandle};
