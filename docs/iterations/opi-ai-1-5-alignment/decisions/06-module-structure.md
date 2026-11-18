@@ -324,3 +324,7 @@ Mistral route 现在共享 lower route contract，但保留各自 wire owner。
 2026-11-18 的 #189 将 Anthropic Messages route state 与 federation cache
 抽取到 `provider::routes::AnthropicRouteContext`，OAuth/Copilot route policy
 继续属于 route context，native wire options 保持在 adapter 内。
+
+2026-11-18 的 #190 将 OpenAI Responses route state 与 affinity policy
+抽取到 `provider::routes::OpenAiResponsesRouteContext`，为 Azure dual-wire
+route 复用提供了中性上下文。

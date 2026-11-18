@@ -155,3 +155,52 @@ pub struct AnthropicRouteContext {
     pub(crate) client: Arc<crate::http::HttpClient>,
     pub(crate) federation: crate::auth::anthropic_federation::FederationCache,
 }
+
+/// Native OpenAI Responses route configuration.
+#[cfg(feature = "provider-openai-responses")]
+#[derive(Debug, Clone)]
+pub struct ResponsesConfig {
+    pub source: crate::model_info::OpenAiResponsesSourceCompat,
+    pub store: Option<bool>,
+    pub reasoning_effort: Option<String>,
+    pub send_session_id_header: bool,
+}
+
+#[cfg(feature = "provider-openai-responses")]
+impl Default for ResponsesConfig {
+    fn default() -> Self {
+        Self {
+            source: crate::model_info::OpenAiResponsesCompat::default().source,
+            store: None,
+            reasoning_effort: None,
+            send_session_id_header: true,
+        }
+    }
+}
+
+/// Construction-time affinity policy for the reusable Responses route.
+#[cfg(feature = "provider-openai-responses")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResponsesAffinityPolicy {
+    Direct,
+    CustomDisabled,
+    CustomOptIn,
+}
+
+/// Route state shared by OpenAI Responses-compatible adapters.
+#[cfg(feature = "provider-openai-responses")]
+#[derive(Clone)]
+pub struct OpenAiResponsesRouteContext {
+    pub(crate) base_url: String,
+    pub(crate) models: Vec<ModelInfo>,
+    pub(crate) config: ResponsesConfig,
+    pub(crate) provider_id: String,
+    pub(crate) headers: crate::types::headers::ProviderHeaders,
+    pub(crate) route_headers: Vec<(String, String)>,
+    pub(crate) catalog_compat: bool,
+    pub(crate) auth_invalid_policy: crate::auth::AuthInvalidPolicy,
+    pub(crate) affinity_policy: ResponsesAffinityPolicy,
+    pub(crate) copilot_headers: bool,
+    pub(crate) client: Arc<crate::http::HttpClient>,
+    pub(crate) chatgpt_signin: Option<bool>,
+}

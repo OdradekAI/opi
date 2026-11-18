@@ -12,58 +12,15 @@ use crate::auth::AuthInvalidPolicy;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
+use crate::provider::routes::OpenAiResponsesRouteContext;
 use crate::registry::ModelCapabilities;
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
 
-/// Native OpenAI Responses request flags.
-#[derive(Debug, Clone)]
-pub struct ResponsesConfig {
-    pub source: crate::model_info::OpenAiResponsesSourceCompat,
-    pub store: Option<bool>,
-    pub reasoning_effort: Option<String>,
-    pub send_session_id_header: bool,
-}
-impl Default for ResponsesConfig {
-    fn default() -> Self {
-        Self {
-            source: crate::model_info::OpenAiResponsesCompat::default().source,
-            store: None,
-            reasoning_effort: None,
-            send_session_id_header: true,
-        }
-    }
-}
+pub use crate::provider::routes::{ResponsesAffinityPolicy, ResponsesConfig};
 
-/// Construction-time session-affinity policy for the reusable Responses wire.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResponsesAffinityPolicy {
-    /// Built-in direct Responses: cache key and request id are automatic.
-    Direct,
-    /// Custom/proxy Responses without the reviewed affinity opt-in.
-    CustomDisabled,
-    /// Custom/proxy Responses with the reviewed full affinity mapping enabled.
-    CustomOptIn,
-}
-
-/// Standard OpenAI Responses provider, also used as a route by mapped
-/// providers whose model metadata declares the standard Responses wire.
-#[derive(Clone)]
-pub struct OpenAiResponsesProvider {
-    pub(crate) base_url: String,
-    pub(crate) models: Vec<ModelInfo>,
-    pub(crate) config: ResponsesConfig,
-    pub(crate) provider_id: String,
-    pub(crate) headers: ProviderHeaders,
-    pub(crate) route_headers: Vec<(String, String)>,
-    pub(crate) catalog_compat: bool,
-    pub(crate) auth_invalid_policy: AuthInvalidPolicy,
-    pub(crate) affinity_policy: ResponsesAffinityPolicy,
-    pub(crate) copilot_headers: bool,
-    pub(crate) client: Arc<HttpClient>,
-    /// Frozen secret-free classification for this prepared call.
-    pub(crate) chatgpt_signin: Option<bool>,
-}
+/// Canonical provider-facing name for the neutral Responses route context.
+pub type OpenAiResponsesProvider = OpenAiResponsesRouteContext;
 
 /// Built-in OpenAI Responses model metadata.
 pub fn model_catalog() -> Vec<ModelInfo> {
@@ -104,7 +61,7 @@ pub fn model_catalog() -> Vec<ModelInfo> {
         ),
     ]
 }
-impl OpenAiResponsesProvider {
+impl OpenAiResponsesRouteContext {
     pub fn new(base_url: Option<String>) -> Self {
         Self::with_client(base_url, Arc::new(HttpClient::new()))
     }
@@ -224,7 +181,7 @@ impl OpenAiResponsesProvider {
     }
 }
 
-impl OpenAiResponsesProvider {
+impl OpenAiResponsesRouteContext {
     /// Access the shared HTTP client.
     pub fn http_client(&self) -> &Arc<HttpClient> {
         &self.client

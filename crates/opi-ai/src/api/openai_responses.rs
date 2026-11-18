@@ -18,19 +18,19 @@ use crate::api::shared::openai_responses::{
 };
 use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::model_info::WireApi;
+use crate::provider::routes::{
+    OpenAiResponsesRouteContext, ResponsesAffinityPolicy, ResponsesConfig,
+};
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
     github_copilot_initiator, github_copilot_route_headers,
-};
-use crate::providers::openai_responses::{
-    OpenAiResponsesProvider, ResponsesAffinityPolicy, ResponsesConfig,
 };
 use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 use crate::types::deferred::DeferredHandle;
 
 const DEFAULT_RESPONSES_PATH: &str = "/v1/responses";
 
-impl OpenAiResponsesProvider {
+impl OpenAiResponsesRouteContext {
     /// The resolved record's exact wire (task 20.38): replay identity follows
     /// the record (azure responses records replay under their own wire).
     fn resolve_wire(&self, model_id: &str) -> crate::model_info::WireApi {
@@ -655,7 +655,7 @@ fn map_http_status(
 /// `cancel_deferred`.
 #[derive(Clone)]
 pub struct OpenAiResponsesDeferredApi {
-    provider: Arc<OpenAiResponsesProvider>,
+    provider: Arc<OpenAiResponsesRouteContext>,
     api_id: crate::types::ApiId,
     provider_id: String,
     model_id: String,
@@ -672,7 +672,7 @@ impl std::fmt::Debug for OpenAiResponsesDeferredApi {
 }
 
 impl OpenAiResponsesDeferredApi {
-    fn new(provider: Arc<OpenAiResponsesProvider>, model_id: String) -> Self {
+    fn new(provider: Arc<OpenAiResponsesRouteContext>, model_id: String) -> Self {
         Self {
             provider_id: provider.provider_id.clone(),
             provider,
@@ -1101,7 +1101,7 @@ impl DeferredApi<()> for OpenAiResponsesDeferredApi {
     }
 }
 
-impl OpenAiResponsesProvider {
+impl OpenAiResponsesRouteContext {
     pub(crate) fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -1350,7 +1350,7 @@ impl OpenAiResponsesProvider {
     }
 }
 
-impl Provider for OpenAiResponsesProvider {
+impl Provider for OpenAiResponsesRouteContext {
     fn prepare_model_call(
         &self,
         model: &mut ModelInfo,
@@ -1544,7 +1544,7 @@ impl OpenAiResponsesOptions {
 /// provider.
 pub struct OpenAiResponsesChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<OpenAiResponsesProvider>,
+    provider: Arc<OpenAiResponsesRouteContext>,
     model: ModelInfo,
 }
 
@@ -1560,7 +1560,7 @@ impl OpenAiResponsesChatApi {
     /// Bind a complete Responses record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<OpenAiResponsesProvider>,
+        provider: Arc<OpenAiResponsesRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         validate_complete_responses_record(&model)?;
@@ -1571,7 +1571,7 @@ impl OpenAiResponsesChatApi {
         })
     }
 
-    pub(crate) fn configured(&self, model: ModelInfo) -> OpenAiResponsesProvider {
+    pub(crate) fn configured(&self, model: ModelInfo) -> OpenAiResponsesRouteContext {
         self.provider.dispatch_configured(model)
     }
 }

@@ -1237,6 +1237,11 @@ OpenAI Chat fixture 116 项通过，当前 `api_provider_edges=8`，
 `api_provider_edges=5`，`api_route_context_edges=7`，
 `provider_to_provider_edges=1`。
 
+随后 [#190 OpenAI Responses route context](issues/190-invert-openai-responses-route-context.md)
+将 Responses route state 抽取到 `OpenAiResponsesRouteContext`。Responses
+fixture 84 项通过，当前 `api_provider_edges=4`，`api_route_context_edges=8`，
+`provider_to_provider_edges=1`。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。
