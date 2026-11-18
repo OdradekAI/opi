@@ -1294,6 +1294,11 @@ facade 中剩余定义数。行为回归保持 374 项 lib 测试通过，开始
 将 `AuthOwner` 从 `models.rs` 迁移到独立的 `models/auth_owner.rs`。374 项 lib
 测试与结构检查通过，物理 owner 文件数达到 2，facade 中剩余 owner 定义降至 2。
 
+
+随后 [#202 catalog owner module](issues/202-extract-models-catalog-owner-module.md)
+将 `CatalogOwner` 从 `models.rs` 迁移到独立的 `models/catalog_owner.rs`。catalog
+personalization 5 项回归通过，物理 owner 文件数达到 3，facade 中剩余 owner 定义降至 1。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

@@ -531,29 +531,8 @@ pub(crate) use registry_owner::RegistryOwner;
 mod auth_owner;
 pub(crate) use auth_owner::AuthOwner;
 
-/// Dynamic catalog and publication owner behind the [`Models`] facade.
-///
-/// Store restoration, source registration, publisher retention and
-/// publication generations form one consistency boundary for refresh rounds.
-struct CatalogOwner {
-    models_store: Option<crate::catalog::ModelsStore>,
-    catalog_sources: Vec<std::sync::Arc<dyn crate::catalog::DynamicCatalogSource>>,
-    catalog_publishers: HashMap<String, crate::catalog::CatalogPublisher>,
-    dynamic_catalogs: HashMap<String, crate::catalog::ModelsStoreEntry>,
-    publication_generation: Arc<()>,
-}
-
-impl CatalogOwner {
-    fn new() -> Self {
-        Self {
-            models_store: None,
-            catalog_sources: Vec::new(),
-            catalog_publishers: HashMap::new(),
-            dynamic_catalogs: HashMap::new(),
-            publication_generation: Arc::new(()),
-        }
-    }
-}
+mod catalog_owner;
+pub(crate) use catalog_owner::CatalogOwner;
 
 /// Operation registration owner behind the [`Models`] facade.
 ///

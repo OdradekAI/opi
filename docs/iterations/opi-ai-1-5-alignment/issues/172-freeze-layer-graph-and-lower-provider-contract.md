@@ -202,6 +202,11 @@ owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 `models_owner_module_files=2`、`models_owner_definitions_in_facade=2`，总 owner
 定义数仍为 4。catalog、operation 与 prepared execution 继续按独立提交迁移。
 
+随后 [#202 catalog owner module](202-extract-models-catalog-owner-module.md)
+将 `CatalogOwner` 迁移到 `models/catalog_owner.rs`。当前结构指标为
+`models_owner_module_files=3`、`models_owner_definitions_in_facade=1`，总 owner
+定义数仍为 4。operation 与 prepared execution 继续按独立提交迁移。
+
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.
