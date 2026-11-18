@@ -23,7 +23,7 @@ metric. This slice removes one concrete API/profile edge:
 
 | Metric | Before | After |
 | --- | ---: | ---: |
-| `api_provider_edges` | 13 | 12 |
+| `api_provider_edges` | 14 | 13 |
 | `api_route_context_edges` | 0 | 1 |
 | `profile_native_state` | 0 | 0 |
 

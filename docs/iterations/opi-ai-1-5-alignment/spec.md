@@ -1200,6 +1200,12 @@ canonical alias。Gemini fixture 71 项通过，`api_provider_edges` 从 13 降�
 12，`api_route_context_edges=1`。其余 API/profile route context 继续按
 [#172](issues/172-freeze-layer-graph-and-lower-provider-contract.md)推进。
 
+紧接着的 [#183 Vertex route context](issues/183-invert-vertex-route-context.md)
+将 Vertex project/location/endpoint/Express state 抽取到
+`provider::routes::VertexRouteContext`，并复用 neutral Gemini body context。
+Vertex fixture 73 项通过，`api_provider_edges=12`，
+`api_route_context_edges=2`，`provider_to_provider_edges=3`。
+
 ## 规划交接记录（历史）
 
 本轮已完成三项研究、八项人机决策及本方案，共十一项决策票；所有回答均保留在各自票中。研究主要为静态源码/文档核查，不能当作原版运行、包消费或性能结果。

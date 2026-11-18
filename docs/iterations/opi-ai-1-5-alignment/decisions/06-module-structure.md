@@ -293,3 +293,8 @@ prepared execution owner，catalog personalization 5 项回归与结构检查继
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有
 构造与 fixture 调用不变，API/profile 结构边界开始以正向
 `api_route_context_edges` 指标记录。
+
+2026-11-18 的 #183 将 Vertex route state 抽取到
+`provider::routes::VertexRouteContext`，并让其复用 neutral
+`GeminiRouteContext` body engine。Vertex adapter 不再导入具体 Gemini 或
+Vertex profile，`provider_to_provider_edges` 同步减少一条。

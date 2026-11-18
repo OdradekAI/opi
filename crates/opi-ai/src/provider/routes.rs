@@ -24,3 +24,17 @@ pub struct GeminiRouteContext {
     pub(crate) client: Arc<HttpClient>,
     pub(crate) wire: WireApi,
 }
+
+/// Route state owned by Google Vertex AI and consumed by its wire adapter.
+#[cfg(feature = "provider-vertex")]
+#[derive(Clone)]
+pub struct VertexRouteContext {
+    pub(crate) provider_identity: String,
+    pub(crate) project: String,
+    pub(crate) location: String,
+    pub(crate) base_url: String,
+    pub(crate) models: Vec<ModelInfo>,
+    pub(crate) inner: GeminiRouteContext,
+    pub(crate) client: Arc<HttpClient>,
+    pub(crate) express: bool,
+}

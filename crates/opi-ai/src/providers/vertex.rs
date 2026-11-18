@@ -9,29 +9,14 @@ use std::sync::Arc;
 
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
-use crate::provider::{ModelInfo, Provider};
-use crate::providers::gemini::GeminiProvider;
+use crate::provider::ModelInfo;
+use crate::provider::routes::{GeminiRouteContext, VertexRouteContext};
 use crate::registry::ModelCapabilities;
 
-/// Google Vertex AI provider profile.
-///
-/// The profile owns route identity and construction state; the canonical API
-/// adapter owns request projection, authentication headers and streaming.
-#[derive(Clone)]
-pub struct VertexProvider {
-    pub(crate) provider_identity: String,
-    pub(crate) project: String,
-    pub(crate) location: String,
-    pub(crate) base_url: String,
-    pub(crate) models: Vec<ModelInfo>,
-    pub(crate) inner: GeminiProvider,
-    pub(crate) client: Arc<HttpClient>,
-    /// API-key Express mode: project/location-less wire routed to the global
-    /// `aiplatform.googleapis.com` collection endpoint.
-    pub(crate) express: bool,
-}
+/// Canonical provider-facing name for the neutral Vertex route context.
+pub type VertexProvider = VertexRouteContext;
 
-impl fmt::Debug for VertexProvider {
+impl fmt::Debug for VertexRouteContext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("VertexProvider")
             .field("project", &self.project)
@@ -41,12 +26,12 @@ impl fmt::Debug for VertexProvider {
     }
 }
 
-impl VertexProvider {
+impl VertexRouteContext {
     /// Create a new Vertex AI provider (ADC/Bearer mode with project and
     /// location).
     pub fn new(project: String, location: String, base_url: Option<String>) -> Self {
         let base_url = base_url.unwrap_or_else(|| default_vertex_base_url(&location));
-        let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
+        let inner = GeminiRouteContext::new(None).with_wire(WireApi::GoogleVertex);
         let models = model_catalog();
         Self {
             provider_identity: "vertex".into(),
@@ -65,7 +50,7 @@ impl VertexProvider {
     /// with the `x-goog-api-key` header.
     pub fn express(base_url: Option<String>) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://aiplatform.googleapis.com".to_owned());
-        let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
+        let inner = GeminiRouteContext::new(None).with_wire(WireApi::GoogleVertex);
         let models = model_catalog();
         Self {
             provider_identity: "vertex".into(),
@@ -92,7 +77,7 @@ impl VertexProvider {
         base_url: Option<String>,
     ) -> Self {
         let base_url = base_url.unwrap_or_else(|| default_vertex_base_url(&location));
-        let inner = GeminiProvider::new(None).with_wire(WireApi::GoogleVertex);
+        let inner = GeminiRouteContext::new(None).with_wire(WireApi::GoogleVertex);
         let model_list = models
             .iter()
             .map(|id| {
@@ -135,7 +120,7 @@ impl VertexProvider {
     /// bind complete custom records; the builtin catalog stays untouched.
     pub fn with_models(mut self, models: Vec<ModelInfo>) -> Self {
         self.inner = self.inner.with_models(models);
-        self.models = self.inner.models().to_vec();
+        self.models = self.inner.models.to_vec();
         self
     }
 }

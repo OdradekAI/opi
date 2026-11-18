@@ -16,10 +16,10 @@ use crate::api::gemini::{
     drain_sse_payloads, parse_sse_data,
 };
 use crate::api::shared::headers::ProviderHeaders;
+use crate::provider::routes::VertexRouteContext;
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
-use crate::providers::vertex::VertexProvider;
 use crate::stream::{AssistantStreamEvent, send_or_cancel};
 
 /// Vertex wire state for one dispatch. The registered profile owns project,
@@ -27,7 +27,7 @@ use crate::stream::{AssistantStreamEvent, send_or_cancel};
 /// adapter and are applied to the cloned route snapshot for one call.
 #[derive(Clone)]
 pub struct VertexWireAdapter {
-    provider: VertexProvider,
+    provider: VertexRouteContext,
     native_options: Option<GoogleVertexOptions>,
 }
 
@@ -40,14 +40,14 @@ pub trait VertexBodyBuilder {
 }
 
 impl VertexWireAdapter {
-    pub fn new(provider: VertexProvider) -> Self {
+    pub fn new(provider: VertexRouteContext) -> Self {
         Self {
             provider,
             native_options: None,
         }
     }
 
-    pub fn with_options(mut provider: VertexProvider, options: GoogleVertexOptions) -> Self {
+    pub fn with_options(mut provider: VertexRouteContext, options: GoogleVertexOptions) -> Self {
         if let Some(project) = options.project.as_ref() {
             provider.project = project.clone();
         }
@@ -69,7 +69,7 @@ impl VertexWireAdapter {
     }
 }
 
-impl VertexProvider {
+impl VertexRouteContext {
     /// Build a per-call wire adapter without storing native options on the
     /// registered provider profile.
     pub fn with_native_options(self, options: GoogleVertexOptions) -> VertexWireAdapter {
@@ -77,7 +77,7 @@ impl VertexProvider {
     }
 }
 
-impl VertexProvider {
+impl VertexRouteContext {
     /// Build the Vertex AI streaming URL for a given model.
     ///
     /// Express (API-key) mode drops the project/location resource prefix and
@@ -152,7 +152,7 @@ impl VertexProvider {
     }
 }
 
-impl Provider for VertexProvider {
+impl Provider for VertexRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -190,7 +190,7 @@ impl Provider for VertexProvider {
     }
 }
 
-impl VertexProvider {
+impl VertexRouteContext {
     fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -625,12 +625,12 @@ fn map_vertex_status(
     }
 }
 
-impl VertexBodyBuilder for VertexProvider {
+impl VertexBodyBuilder for VertexRouteContext {
     fn build_request_body(
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        VertexProvider::build_request_body(self, request)
+        VertexRouteContext::build_request_body(self, request)
     }
 }
 
@@ -753,7 +753,7 @@ impl GoogleVertexOptions {
 /// project/location) through the shared Vertex transport.
 pub struct GoogleVertexChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<VertexProvider>,
+    provider: Arc<VertexRouteContext>,
     model: ModelInfo,
 }
 
@@ -769,7 +769,7 @@ impl GoogleVertexChatApi {
     /// Bind a complete Chat record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<VertexProvider>,
+        provider: Arc<VertexRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         validate_complete_vertex_record(&model)?;
