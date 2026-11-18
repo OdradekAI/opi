@@ -140,3 +140,18 @@ pub struct PiMessagesRouteContext {
     pub(crate) client: Arc<crate::http::HttpClient>,
     pub(crate) models: Vec<ModelInfo>,
 }
+
+/// Route state shared by the Anthropic Messages adapter.
+#[cfg(feature = "provider-anthropic")]
+#[derive(Clone)]
+pub struct AnthropicRouteContext {
+    pub(crate) provider_id: String,
+    pub(crate) default_base_url: String,
+    pub(crate) models: Vec<ModelInfo>,
+    pub(crate) headers: crate::types::headers::ProviderHeaders,
+    pub(crate) auth_invalid_policy: crate::auth::AuthInvalidPolicy,
+    pub(crate) direct_oauth_beta: bool,
+    pub(crate) copilot_headers: bool,
+    pub(crate) client: Arc<crate::http::HttpClient>,
+    pub(crate) federation: crate::auth::anthropic_federation::FederationCache,
+}

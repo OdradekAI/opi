@@ -10,6 +10,7 @@ use crate::auth::AuthInvalidPolicy;
 use crate::http::HttpClient;
 use crate::model_info::{AnthropicMessagesCompat, WireApi, WireCompat};
 use crate::provider::ModelInfo;
+use crate::provider::routes::AnthropicRouteContext;
 use crate::registry::ModelCapabilities;
 use crate::types::headers::ProviderHeaders;
 
@@ -67,21 +68,10 @@ pub fn model_catalog() -> Vec<ModelInfo> {
     .collect()
 }
 
-/// Anthropic Messages Provider profile.
-#[derive(Clone)]
-pub struct AnthropicProvider {
-    pub(crate) provider_id: String,
-    pub(crate) default_base_url: String,
-    pub(crate) models: Vec<ModelInfo>,
-    pub(crate) headers: ProviderHeaders,
-    pub(crate) auth_invalid_policy: AuthInvalidPolicy,
-    pub(crate) direct_oauth_beta: bool,
-    pub(crate) copilot_headers: bool,
-    pub(crate) client: Arc<HttpClient>,
-    pub(crate) federation: crate::auth::anthropic_federation::FederationCache,
-}
+/// Canonical provider-facing name for the neutral Anthropic route context.
+pub type AnthropicProvider = AnthropicRouteContext;
 
-impl AnthropicProvider {
+impl AnthropicRouteContext {
     pub fn new(base_url: Option<String>) -> Self {
         Self::with_client(base_url, Arc::new(HttpClient::new()))
     }

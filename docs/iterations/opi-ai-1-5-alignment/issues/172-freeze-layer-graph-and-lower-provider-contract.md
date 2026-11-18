@@ -18,7 +18,7 @@ The current graph still contains these structural violations:
 | Boundary | Current evidence | Required direction |
 | --- | --- | --- |
 | Provider contract ↔ API contract | `src/provider.rs:10,71,84,152` imports `api::contract`; `src/api/contract.rs:15` imports provider request/stream/error types | The lower provider contract may be consumed by API adapters, but it must not import API contracts |
-| API adapter → provider profile | Gemini, Vertex, Bedrock, OpenAI Chat, Mistral Conversations and Pi Messages now use `provider::routes` contexts; 6 concrete `crate::providers::` edges remain under `src/api` | Adapters consume a provider-neutral route context and protocol inputs; composition binds concrete profiles to adapters |
+| API adapter → provider profile | Gemini, Vertex, Bedrock, OpenAI Chat, Mistral Conversations, Pi Messages and Anthropic Messages now use `provider::routes` contexts; 5 concrete `crate::providers::` edges remain under `src/api` | Adapters consume a provider-neutral route context and protocol inputs; composition binds concrete profiles to adapters |
 | Provider profile → provider profile | Mistral and OpenRouter now construct `OpenAiRouteContext`; Azure is the remaining concrete OpenAI profile edge | Shared protocol configuration and route bindings are reused; one provider profile does not construct another provider profile |
 | Profile → native wire state | No remaining `providers` native-option state after #177 | Profiles own identity, route, auth policy and catalog; adapters own native options and wire state |
 | Stream ↔ execution | `stream.rs` re-exports `StartedChatStream` from `execution.rs`; `execution.rs` consumes private stream types | A stream contract owns event/result consumption; an execution driver owns producer/task state and depends on the lower contract |
@@ -77,7 +77,7 @@ These gates are the progress ledger. Counts are observations from the
 | --- | ---: | --- |
 | G0 canonical root paths | #157–#162 complete | No deleted root provider/helper path is recreated; canonical archive consumer stays green |
 | G1 profile native state | 0 tracked references after #177 | `rg` finds no `native_options`, `with_native_options` or API-native option imports under `src/providers` |
-| G2 adapter/profile inversion | 6 concrete API/profile edges remain; `api_route_context_edges=6`; 1 concrete profile-to-profile edge remains | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
+| G2 adapter/profile inversion | 5 concrete API/profile edges remain; `api_route_context_edges=7`; 1 concrete profile-to-profile edge remains | `src/api` has zero concrete `crate::providers` imports and profiles have zero concrete provider-to-provider imports; one protocol is exercised by two profiles through the same adapter |
 | G3 lower contract direction | The first slice moved `SimpleOptions` and Deferred backend contracts to `provider::operation`; neutral `Request` and stream/error values still live in the broader provider layer | `provider.rs` has no `crate::api` dependency, `api::contract` consumes the lower operation seam through re-exports, and the remaining `types`/`errors` bundle coupling is recorded explicitly rather than silently treated as a DAG |
 | G4 execution/stream ownership | mutual implementation references remain | consumer/event contract and execution driver have one-way ownership; cancellation, stop-consumption and source cleanup tests remain green |
 | G5 Models owners | `RegistryOwner`, `AuthOwner`, `CatalogOwner` and `OperationOwner` extracted, 5,424-line facade implementation remains; `PreparedProviderCall` is the execution owner | private owners cover registry, auth/catalog, operation registration and prepared execution; facade methods stay source-compatible and contain no protocol-specific branches |
@@ -138,6 +138,10 @@ edges 从 3 降至 1。Azure 的 dual-wire route context 继续按本票推进�
 随后 [#188 Pi Messages route context](188-invert-pi-messages-route-context.md)
 将 Radius route state 抽取到 `PiMessagesRouteContext`，Pi Messages chat
 回归 42 项通过，当前 `api_provider_edges=6`、`api_route_context_edges=6`。
+
+随后 [#189 Anthropic route context](189-invert-anthropic-route-context.md)
+将 Messages route state 抽取到 `AnthropicRouteContext`，Anthropic fixture
+155 项通过，当前 `api_provider_edges=5`、`api_route_context_edges=7`。
 
 ## Acceptance
 

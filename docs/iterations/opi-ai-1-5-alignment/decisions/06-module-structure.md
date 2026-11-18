@@ -320,3 +320,7 @@ Mistral route 现在共享 lower route contract，但保留各自 wire owner。
 2026-11-18 的 #188 将 Pi Messages Radius route state 抽取到
 `provider::routes::PiMessagesRouteContext`，保留默认 catalog 与 client
 配置在 profile 构造路径，wire/native options 继续归 API adapter。
+
+2026-11-18 的 #189 将 Anthropic Messages route state 与 federation cache
+抽取到 `provider::routes::AnthropicRouteContext`，OAuth/Copilot route policy
+继续属于 route context，native wire options 保持在 adapter 内。

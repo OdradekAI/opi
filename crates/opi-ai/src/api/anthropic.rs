@@ -14,11 +14,11 @@ use tokio_util::sync::CancellationToken;
 use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::{AnthropicMessagesCompat, ModelInfo, WireCompat};
+use crate::provider::routes::AnthropicRouteContext;
 use crate::provider::{
     CacheRetention, EventStream, Provider, ProviderError, ProviderErrorSummary, Request,
     github_copilot_initiator, github_copilot_route_headers,
 };
-use crate::providers::anthropic::AnthropicProvider;
 use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
 };
@@ -1342,17 +1342,20 @@ pub struct AnthropicMessagesWireAdapter {
 
 impl AnthropicMessagesWireAdapter {
     /// Construct a neutral adapter from an Anthropic provider profile.
-    pub fn new(provider: AnthropicProvider) -> Self {
+    pub fn new(provider: AnthropicRouteContext) -> Self {
         Self::from_profile(provider, None)
     }
 
     /// Construct a per-call adapter with explicit native options.
-    pub fn with_options(provider: AnthropicProvider, options: AnthropicMessagesOptions) -> Self {
+    pub fn with_options(
+        provider: AnthropicRouteContext,
+        options: AnthropicMessagesOptions,
+    ) -> Self {
         Self::from_profile(provider, Some(options))
     }
 
     fn from_profile(
-        provider: AnthropicProvider,
+        provider: AnthropicRouteContext,
         native_options: Option<AnthropicMessagesOptions>,
     ) -> Self {
         Self {
@@ -3022,7 +3025,7 @@ impl Provider for AnthropicMessagesWireAdapter {
     }
 }
 
-impl AnthropicProvider {
+impl AnthropicRouteContext {
     /// Compile a neutral Anthropic Messages request through the canonical wire
     /// adapter. This forwarding method keeps existing fixture-level helpers
     /// small while the profile itself stores no wire state.
@@ -3039,7 +3042,7 @@ impl AnthropicProvider {
     }
 }
 
-impl Provider for AnthropicProvider {
+impl Provider for AnthropicRouteContext {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
@@ -3103,7 +3106,7 @@ impl Provider for AnthropicProvider {
 /// registered provider.
 pub struct AnthropicMessagesChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<AnthropicProvider>,
+    provider: Arc<AnthropicRouteContext>,
     model: ModelInfo,
 }
 
@@ -3119,7 +3122,7 @@ impl AnthropicMessagesChatApi {
     /// Bind a complete Chat record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<AnthropicProvider>,
+        provider: Arc<AnthropicRouteContext>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         validate_complete_anthropic_record(&model)?;
