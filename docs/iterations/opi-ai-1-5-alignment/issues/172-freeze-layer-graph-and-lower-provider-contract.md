@@ -191,6 +191,12 @@ lib 374 项通过，`models_protocol_branches=0`，结构报告 violations 为�
 `.crate` 的 workspace-external provider protocol consumer，覆盖 11 个 provider
 owners 与 catalog/OAuth store/telemetry support union，G6 已关闭。
 
+随后 [#200 registry owner module](200-extract-models-registry-owner-module.md)
+开始 G5 的物理模块拆分。`RegistryOwner` 已迁移到
+`models/registry_owner.rs`，当前结构指标为
+`models_owner_module_files=1`、`models_owner_definitions_in_facade=3`，总 owner
+定义数仍为 4。其余 owner 与 prepared execution 将按独立提交继续迁移。
+
 ## Acceptance
 
 - A checked-in dependency matrix records the allowed edges and current counts.

@@ -94,11 +94,30 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         ),
     }
     models_lines = len((src / "models.rs").read_text(encoding="utf-8").splitlines())
+    models_module_paths = sorted((src / "models").glob("*.rs"))
+    models_owner_paths = [src / "models.rs", *models_module_paths]
     models_owner_modules = matching_edges(
+        models_owner_paths, r"struct [A-Za-z_]+Owner\s*\{"
+    )
+    models_owner_module_files = sorted(
+        {
+            match["file"]
+            for match in matching_edges(models_module_paths, r"struct [A-Za-z_]+Owner\s*\{")
+        }
+    )
+    models_owner_definitions_in_facade = matching_edges(
         [src / "models.rs"], r"struct [A-Za-z_]+Owner\s*\{"
     )
     models_prepared_execution_owner = matching_edges(
-        [src / "models.rs"], r"struct PreparedProviderCall\s*\{"
+        models_owner_paths, r"struct PreparedProviderCall\s*\{"
+    )
+    models_prepared_execution_owner_files = sorted(
+        {
+            match["file"]
+            for match in matching_edges(
+                models_module_paths, r"struct PreparedProviderCall\s*\{"
+            )
+        }
     )
 
     return {
@@ -109,7 +128,10 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         "provider_to_provider_edges": provider_to_provider,
         "models_protocol_branches": models_protocol,
         "models_owner_modules": models_owner_modules,
+        "models_owner_module_files": models_owner_module_files,
+        "models_owner_definitions_in_facade": models_owner_definitions_in_facade,
         "models_prepared_execution_owner": models_prepared_execution_owner,
+        "models_prepared_execution_owner_files": models_prepared_execution_owner_files,
         "stream_execution_edges": stream_execution,
         "models_lines": models_lines,
         "counts": {
@@ -120,7 +142,10 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
             "provider_to_provider_edges": len(provider_to_provider),
             "models_protocol_branches": len(models_protocol),
             "models_owner_modules": len(models_owner_modules),
+            "models_owner_module_files": len(models_owner_module_files),
+            "models_owner_definitions_in_facade": len(models_owner_definitions_in_facade),
             "models_prepared_execution_owner": len(models_prepared_execution_owner),
+            "models_prepared_execution_owner_files": len(models_prepared_execution_owner_files),
         },
     }
 

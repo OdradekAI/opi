@@ -288,6 +288,10 @@ prepared execution 继续拆分。
 prepared execution owner，catalog personalization 5 项回归与结构检查继续通过，
 `models_owner_modules` 达到 4，`models_prepared_execution_owner=1`。
 
+随后 #200 开始物理模块拆分，将 `RegistryOwner` 放入
+`models/registry_owner.rs`。结构报告同时保留 owner 定义总数，并新增独立 owner
+文件数和 facade 中的剩余定义数，避免把“已定义”误当作“已物理隔离”。
+
 2026-11-18 的 #182 将 Gemini route state 抽取到 lower
 `provider::routes::GeminiRouteContext`。API adapter 直接依赖该中性上下文，
 `providers::gemini::GeminiProvider` 保留为 canonical 类型别名，因此现有
