@@ -45,13 +45,9 @@ non-documentation tier.
 
 ### A.init.2a Registered Phase Delivery Sources
 
-Phase delivery sources come only from the reviewed registry in `SKILL.md`.
-
-Read the active source paths and counterpart rules from that registry rather
-than maintaining a second source list here. Completed Phase 17 and Phase 18
-delivery specifications are frozen under `docs/snapshots/phase17/` and
-`docs/snapshots/phase18/`; they are historical evidence and MUST NOT be admitted
-into the live `spec_files` set.
+Read the active source paths and counterpart rules from the
+[reviewed registry](../SKILL.md#reviewed-supplemental-sources). Only that
+registry supplies Phase delivery sources for `spec_files`.
 
 For each active phase:
 

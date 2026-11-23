@@ -1,10 +1,10 @@
 import json
 import unittest
-from pathlib import Path
+from common import FIXTURE_DIR
 
 
 class PiMessagesTerminalDifferentialTests(unittest.TestCase):
-    receipt = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-pi-messages-terminal-differential.json")
+    receipt = FIXTURE_DIR / "phase7-pi-messages-terminal-differential.json"
 
     def test_frozen_pair_passes(self):
         evidence = json.loads(self.receipt.read_text(encoding="utf-8"))

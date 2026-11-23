@@ -1,10 +1,10 @@
 import json
 import unittest
-from pathlib import Path
+from common import FIXTURE_DIR
 
 
 class MistralRepeatedFinishDifferentialTests(unittest.TestCase):
-    evidence = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-mistral-repeated-finish-differential.json")
+    evidence = FIXTURE_DIR / "phase7-mistral-repeated-finish-differential.json"
 
     def test_frozen_pi_and_rust_traces_pass(self):
         value = json.loads(self.evidence.read_text(encoding="utf-8"))

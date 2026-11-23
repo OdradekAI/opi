@@ -7,11 +7,11 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import REPO_ROOT, file_hash, run_json, runtime_environment
+from common import DIFFERENTIAL_PATH, REPO_ROOT, file_hash, run_json, runtime_environment
 from replay_chat_finish_timing import require
-from run_lifecycle_differential import ITERATION, material_tools
+from run_lifecycle_differential import material_tools
 
-PROBE = ITERATION / "tools/observe_chat_finish_consumers.mjs"
+PROBE = DIFFERENTIAL_PATH / "tools/observe_chat_finish_consumers.mjs"
 RUST_PROBE = Path("crates/opi-agent/tests/agent_chat_finish_timing.rs")
 PI_SOURCES = ("packages/durable/src/harness/generation.ts", "packages/durable/src/harness/partial-changes.ts",
               "packages/durable/src/harness/json.ts", "packages/durable/src/timers.ts",

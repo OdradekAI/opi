@@ -8,8 +8,10 @@ import json
 import subprocess
 from pathlib import Path
 
+from common import DIFFERENTIAL_PATH
+
 PI_REVISION = "f9a26365568127461c47a07a37dcb42c140a3ac5"
-PI_PROBE = Path("docs/iterations/opi-ai-1-5-alignment/tools/observe_openai_choice_usage.mjs")
+PI_PROBE = DIFFERENTIAL_PATH / "tools/observe_openai_choice_usage.mjs"
 PI_SOURCES = (
     "packages/ai/src/api/openai-completions.ts",
     "packages/ai/src/models.ts",

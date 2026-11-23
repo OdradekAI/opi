@@ -19,10 +19,15 @@ follow only the links needed for the decision. This index is not a product spec.
 
 ## Evidence — load on demand
 
-`docs/realign/` and `docs/research/` hold observations and proposals, not
-implicit approval. Select a report by question and actual source identity, not
-merely by latest filename. Read only the relevant report and verify its claims
-against current sources before adopting a recommendation.
+`docs/research/` holds research reports and snapshot comparisons. Select a
+report by question and source identity, and verify its claims against current
+sources before adopting a recommendation.
+
+List the archived 2026-11-06 comparison and its supporting evidence in Git.
+
+```text
+git ls-tree -r 8030700c207cb9dc181eb824a89cc4dc85050af9 -- docs/realign
+```
 
 ## Maintenance
 

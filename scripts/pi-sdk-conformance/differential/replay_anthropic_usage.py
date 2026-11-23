@@ -3,13 +3,12 @@ import argparse
 import json
 import subprocess
 from pathlib import Path
-from common import REPO_ROOT, file_hash, run_json, runtime_environment
+from common import DIFFERENTIAL_PATH, REPO_ROOT, file_hash, run_json, runtime_environment
 from run_lifecycle_differential import material_tools
 from compare_anthropic_usage import compare, projection, require
 
 REVISION = "f9a26365568127461c47a07a37dcb42c140a3ac5"
-ITERATION = Path("docs/iterations/opi-ai-1-5-alignment")
-DRIVER = ITERATION / "tools/observe_anthropic_usage.mjs"
+DRIVER = DIFFERENTIAL_PATH / "tools/observe_anthropic_usage.mjs"
 FIXTURE = Path("crates/opi-ai/tests/data/anthropic-usage-updates.json")
 SOURCES = ("packages/ai/src/models.ts", "packages/ai/src/api/anthropic-messages.ts",
            "packages/ai/src/api/lazy.ts", "packages/ai/src/telemetry.ts",

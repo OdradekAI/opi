@@ -29,7 +29,7 @@ retain separate authorization. Reconfirm material changes, not routine steps.
 | Skill | Outcome / owned artifact | Entry or stop boundary |
 |---|---|---|
 | `opi-workflow` | One next action | Read-only; does not invoke other skills |
-| `opi-realign` | Snapshot comparison, architecture advice and acceptance in `docs/realign/` | Actual supplied source identity; no automatic adoption |
+| `opi-realign` | Snapshot comparison, architecture advice and acceptance in `docs/research/` | Use the supplied source identity. Adoption requires a decision. |
 | `opi-research` | Primary-source research, current Opi comparison in `docs/research/` | Evidence, not implementation authority |
 | `opi-implement` | Legacy Phase graph, task delivery and ledger | Explicit legacy scope; registered inputs and existing review/commit gates |
 | `opi-audit` | Legacy Phase independent report group and historical appendix | Selected committed Phase contract; no production fixes |

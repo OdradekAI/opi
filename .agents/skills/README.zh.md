@@ -24,7 +24,7 @@
 | 技能 | 结果 / 归属产物 | 入口或停止边界 |
 |---|---|---|
 | `opi-workflow` | 一个下一步动作 | 只读，不调用其他技能 |
-| `opi-realign` | `docs/realign/` 中的快照比较、架构建议和验收 | 使用实际提供的来源身份，不自动采用 |
+| `opi-realign` | `docs/research/` 中的快照比较、架构建议和验收 | 使用实际提供的来源身份。是否采纳由用户决定。 |
 | `opi-research` | `docs/research/` 中的一手研究和当前 Opi 对照 | 证据不是实施授权 |
 | `opi-implement` | 旧 Phase 任务图、交付和台账 | 明确旧范围；登记输入及原有评审/提交关卡 |
 | `opi-audit` | 旧 Phase 独立报告组与历史附录 | 选定的已提交 Phase 契约；不修复生产代码 |

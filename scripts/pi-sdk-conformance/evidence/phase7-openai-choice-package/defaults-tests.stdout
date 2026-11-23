@@ -1,0 +1,9 @@
+
+running 3 tests
+{"case":"choice-usage","stop":"stop","raw_stop":"stop","usage":{"input":25,"output":20,"cache_read":75,"cache_write":0,"total":120},"cost":0.0,"requests":1}
+test chunk_level_usage_wins_over_choice_level_fallback ... ok
+test choice_level_usage_is_used_when_chunk_usage_is_absent ... ok
+test choice_level_usage_subset_is_validated ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

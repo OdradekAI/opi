@@ -53,23 +53,27 @@ def execution_environment(environment: dict[str, str]) -> tuple[dict[str, str], 
                         "loopback_bypass": {"NO_PROXY": bypass, "no_proxy": bypass}}
 
 
-def check_packaged_sources(repo: Path, package: Path) -> tuple[dict[str, str], dict[str, bool]]:
-    """Bind executed sources to the artifact and both exact README embeds."""
+def check_packaged_sources(repo: Path, package: Path) -> tuple[dict[str, str], str]:
+    """Read the runnable handbook and its linked examples from the archive."""
     examples = {}
     for name in EXAMPLES:
         source = (package / "examples" / name).read_bytes()
         if source != (repo / "crates/opi-ai/examples" / name).read_bytes():
             raise ValueError(f"packaged example {name} differs from the workspace source")
         examples[name] = hashlib.sha256(source).hexdigest()
-    manuals = {}
+    programs = []
     for manual in ("README.md", "README.zh.md"):
         text = (package / manual).read_text(encoding="utf-8")
-        embedded = all((package / "examples" / name).read_text(encoding="utf-8").rstrip("\n") in text
-                       for name in EXAMPLES)
-        manuals[manual] = embedded
-        if not embedded:
-            raise ValueError(f"{manual} does not embed the exact packaged example sources")
-    return examples, manuals
+        for name in EXAMPLES:
+            if f"](examples/{name})" not in text:
+                raise ValueError(f"{manual} does not link to examples/{name}")
+        blocks = re.findall(r"^```rust\n(.+?)\n```$", text, re.MULTILINE | re.DOTALL)
+        if not blocks:
+            raise ValueError(f"{manual} contains no Rust examples")
+        programs.append("\n\n".join(blocks) + "\n")
+    if programs[0] != programs[1]:
+        raise ValueError("Rust examples differ between the two packaged manuals")
+    return examples, programs[0]
 
 
 def check_opi_feature_profile(metadata: dict[str, Any], package: Path,
@@ -146,6 +150,9 @@ def parse_execution(stdout: str) -> dict[str, Any]:
 
 
 CONSUMER_SOURCE = r'''
+#[allow(dead_code)]
+#[path = "bin/handbook.rs"]
+mod handbook;
 #[allow(dead_code)]
 #[path = "bin/quick_start.rs"]
 mod quick_start;
@@ -516,6 +523,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut checks = Vec::new();
     {
         let peer = Peer::new(vec![response(false, "Hello world")]);
+        let (models, _) = quick_start::setup(
+            Arc::new(RecordingContext::default()),
+            Arc::new(HttpClient::new()),
+            &peer.overrides(),
+        )?;
+        let reply = handbook::ask(&models, "anthropic", "claude-sonnet-4-5", "Say hello.").await?;
+        assert_eq!(opi_ai::message::assistant_content_text(&reply.content), "Hello world");
+        assert_eq!(peer.requests().len(), 1);
+    }
+    {
+        let peer = Peer::new(vec![response(false, "Hello world")]);
         let context = Arc::new(RecordingContext::default());
         let store = Arc::new(InMemoryCredentialStore::new());
         let (mut models, record) = quick_start::setup(
@@ -684,9 +702,9 @@ def main() -> int:
         leased = True
         package, evidence["package"], candidate = shared.package_sdk(run, scratch, target)
 
-        examples, manuals = check_packaged_sources(REPO, package)
+        examples, handbook = check_packaged_sources(REPO, package)
         evidence["packaged_examples"] = examples
-        evidence["manuals_embed_exact_sources"] = manuals
+        evidence["handbook_rust_sha256"] = hashlib.sha256(handbook.encode()).hexdigest()
 
         consumer = scratch / "consumer"
         shutil.copytree(
@@ -704,6 +722,7 @@ def main() -> int:
         # Modules and runnable standalone bins use the exact packaged sources.
         # The harness calls their shared setup/start/finish functions.
         (consumer / "src" / "bin").mkdir(parents=True)
+        (consumer / "src" / "bin" / "handbook.rs").write_text(handbook, encoding="utf-8", newline="\n")
         for name in EXAMPLES:
             shutil.copyfile(package / "examples" / name, consumer / "src" / "bin" / name)
         (consumer / "src" / "main.rs").write_text(CONSUMER_SOURCE, encoding="utf-8", newline="\n")

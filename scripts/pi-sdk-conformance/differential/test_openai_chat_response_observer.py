@@ -1,10 +1,9 @@
 import json
 import unittest
-from pathlib import Path
+from common import FIXTURE_DIR
 
 
-ROOT = Path(__file__).resolve().parents[3]
-RECEIPT = ROOT / "docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-differential.json"
+RECEIPT = FIXTURE_DIR / "phase7-openai-chat-response-observer-differential.json"
 
 
 class OpenAiChatResponseObserverReceiptTests(unittest.TestCase):

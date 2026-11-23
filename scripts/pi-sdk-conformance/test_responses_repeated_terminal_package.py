@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 class ResponsesRepeatedTerminalPackageTests(unittest.TestCase):
-    receipt = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-responses-repeated-terminal-package.json")
-    root = Path("C:/Temp/opi-responses-repeated-terminal-package-20261115-v1")
+    receipt = Path(__file__).with_name("evidence") / "phase7-responses-repeated-terminal-package.json"
+    root = receipt.with_suffix("")
 
     def test_actual_archive_profiles_pass(self):
         evidence = json.loads(self.receipt.read_text(encoding="utf-8"))

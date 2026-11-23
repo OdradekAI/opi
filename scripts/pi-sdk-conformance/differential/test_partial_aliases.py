@@ -4,13 +4,14 @@ import copy
 import json
 import unittest
 
-from replay_partial_aliases import ITERATION, REPO_ROOT, compare
+from common import FIXTURE_DIR
+from replay_partial_aliases import compare
 
 
 class PartialAliasesComparison(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        path = REPO_ROOT / ITERATION / "evidence/phase5-partial-aliases.json"
+        path = FIXTURE_DIR / "phase5-partial-aliases.json"
         cls.record = json.loads(path.read_bytes())
 
     def setUp(self) -> None:

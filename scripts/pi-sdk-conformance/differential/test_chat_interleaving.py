@@ -4,13 +4,14 @@ import copy
 import json
 import unittest
 
-from replay_chat_interleaving import ITERATION, REPO_ROOT, compare
+from common import FIXTURE_DIR
+from replay_chat_interleaving import compare
 
 
 class ChatInterleavingComparison(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        path = REPO_ROOT / ITERATION / "evidence/phase5-chat-interleaving.json"
+        path = FIXTURE_DIR / "phase5-chat-interleaving.json"
         cls.record = json.loads(path.read_bytes())
 
     def setUp(self) -> None:

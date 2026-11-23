@@ -8,14 +8,14 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import REPO_ROOT, file_hash, run_json, runtime_environment
+from common import DIFFERENTIAL_PATH, REPO_ROOT, file_hash, run_json, runtime_environment
 from replay_partial_aliases import PI_REVISION
-from run_lifecycle_differential import ITERATION, material_tools
+from run_lifecycle_differential import material_tools
 
 
 FIXTURE = Path("crates/opi-ai/tests/data/openai-chat-output-limits.json")
 RUST_PROBE = Path("crates/opi-ai/tests/openai_chat_output_limits.rs")
-PI_PROBE = ITERATION / "tools/observe_chat_output_limits.mjs"
+PI_PROBE = DIFFERENTIAL_PATH / "tools/observe_chat_output_limits.mjs"
 PI_SOURCES = (
     "packages/ai/package.json",
     "packages/ai/src/models.ts",

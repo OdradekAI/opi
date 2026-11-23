@@ -95,7 +95,8 @@ judgments, [acceptance](references/acceptance.md) when defining checks, and
    *Verify:* advice is traceable to findings; unchanged evidence can be retained;
    safety improvements and intentional differences never count as strict parity.
 
-6. **Deliver the report.** Write a uniquely named report under `docs/realign/`.
+6. **Deliver the report.** Write the report and supporting evidence at the paths
+   defined by the report template.
    Include coverage, A/H/B, acceptance gates, refuted claims, unresolved questions,
    and execution/independence limitations using the template.
    *Verify:* coverage and conformance verdicts are separate; recommendations do

@@ -8,10 +8,12 @@ import json
 import subprocess
 from pathlib import Path
 
+from common import DIFFERENTIAL_PATH
+
 PI_REVISION = "f9a26365568127461c47a07a37dcb42c140a3ac5"
-PI_PROBE = Path("docs/iterations/opi-ai-1-5-alignment/tools/observe_bedrock_repeated_metadata.mjs")
-PI_LOADER = Path("docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_loader.mjs")
-PI_MOCK = Path("docs/iterations/opi-ai-1-5-alignment/tools/bedrock_mock_runtime.mjs")
+PI_PROBE = DIFFERENTIAL_PATH / "tools/observe_bedrock_repeated_metadata.mjs"
+PI_LOADER = DIFFERENTIAL_PATH / "tools/bedrock_mock_loader.mjs"
+PI_MOCK = DIFFERENTIAL_PATH / "tools/bedrock_mock_runtime.mjs"
 PI_SOURCES = (
     "packages/ai/src/api/bedrock-converse-stream.ts",
     "packages/ai/src/utils/event-stream.ts",

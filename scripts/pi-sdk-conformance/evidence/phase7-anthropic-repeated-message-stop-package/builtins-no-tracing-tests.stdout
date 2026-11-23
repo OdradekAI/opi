@@ -1,0 +1,8 @@
+
+running 2 tests
+{"case":"anthropic-repeated-message-stop","cases":[{"route":"simple","stop":"stop","raw_stop":"end_turn","usage":{"input":10,"output":7},"done_count":1,"event_types":["start","done"],"requests":1},{"route":"direct","stop":"stop","raw_stop":"end_turn","usage":{"input":10,"output":7},"done_count":1,"event_types":["start","done"],"requests":1}]}
+test repeated_message_stop_usage_is_deferred_until_eof ... ok
+test usage_error_after_message_stop_does_not_flush_a_deferred_done ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

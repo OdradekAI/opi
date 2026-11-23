@@ -5,8 +5,8 @@ from pathlib import Path
 
 
 class AnthropicRepeatedMessageStopPackageTests(unittest.TestCase):
-    receipt = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-anthropic-repeated-message-stop-package.json")
-    root = Path("C:/Temp/opi-anthropic-repeated-message-stop-package-20261115-v1")
+    receipt = Path(__file__).with_name("evidence") / "phase7-anthropic-repeated-message-stop-package.json"
+    root = receipt.with_suffix("")
 
     def test_actual_archive_profiles_pass(self):
         evidence = json.loads(self.receipt.read_text(encoding="utf-8"))

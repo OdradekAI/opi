@@ -1,6 +1,6 @@
 # Realign report template
 
-Write `docs/realign/YYYY-MM-DD-opi-<opi-id>-vs-pi-<pi-id>-<scope>.md`.
+Write `docs/research/YYYY-MM-DD-opi-<opi-id>-vs-pi-<pi-id>-<scope>.md`.
 Use short content identities tied to the recorded manifests, not a version name
 alone. Sanitize the scope token; append a run suffix on collision instead of
 overwriting an existing report. Keep supporting evidence beside the report in

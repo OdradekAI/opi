@@ -1,0 +1,7 @@
+
+running 1 test
+{"cases":[{"ending":"success","result":{"usage":[100,20,0,200,75,6],"stop":"stop","raw_stop":"end_turn","cost":0.0}},{"ending":"wire-error","result":{"usage":[100,20,0,200,75,6],"stop":"stop","raw_stop":"end_turn","cost":0.0}}]}
+test nested_usage_trace ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

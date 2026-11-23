@@ -9,13 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from common import REPO_ROOT, file_hash, run_json, runtime_environment
+from common import DIFFERENTIAL_PATH, REPO_ROOT, file_hash, run_json, runtime_environment
 from replay_partial_aliases import PI_REVISION
-from run_lifecycle_differential import ITERATION, material_tools
+from run_lifecycle_differential import material_tools
 
 FIXTURE = Path("crates/opi-ai/tests/data/openai-chat-finish-timing.json")
 RUST_PROBE = Path("crates/opi-ai/tests/openai_chat_finish_timing.rs")
-PI_PROBE = ITERATION / "tools/observe_chat_finish_timing.mjs"
+PI_PROBE = DIFFERENTIAL_PATH / "tools/observe_chat_finish_timing.mjs"
 PI_SOURCES = (
     "packages/ai/src/models.ts", "packages/ai/src/api/openai-completions.ts",
     "packages/ai/src/utils/event-stream.ts", "packages/durable/src/harness/generation.ts",

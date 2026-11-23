@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from common import REPO_ROOT
+from common import FIXTURE_DIR
 from compare_lifecycle import (
     DEFERRED_AUTH_SETUP_FAILURE, DEFERRED_HANDLE_EXPIRY, DEFERRED_HANDLE_ROUTE_MISMATCH,
     DEFERRED_LOCAL_CANCEL_AFTER_DONE, DEFERRED_LOCAL_CANCEL_BEFORE_DONE,
@@ -24,13 +24,12 @@ from compare_lifecycle import (
 )
 
 
-EVIDENCE = REPO_ROOT / "docs/iterations/opi-ai-1-5-alignment/evidence"
-HISTORICAL = json.loads((EVIDENCE / "phase5-lifecycle-differential.json").read_text(encoding="utf-8"))
+HISTORICAL = json.loads((FIXTURE_DIR / "phase5-lifecycle-differential.json").read_text(encoding="utf-8"))
 DEFERRED_FIRST_CHUNK_REPLAY = "phase5-deferred-auth-setup-failure-differential.json"
 
 
 def frozen_case(file: str, scenario: str) -> dict:
-    report = json.loads((EVIDENCE / file).read_bytes())
+    report = json.loads((FIXTURE_DIR / file).read_bytes())
     return next(case for case in report["cases"] if case["scenario"] == scenario)
 
 

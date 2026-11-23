@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 
 
-RECEIPT = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-chat-response-observer-package.json")
-ROOT = Path("C:/Temp/opi-openai-chat-response-observer-package-20261115-v2")
+RECEIPT = Path(__file__).with_name("evidence") / "phase7-openai-chat-response-observer-package.json"
+ROOT = RECEIPT.with_suffix("")
 
 
 class OpenAiChatResponseObserverPackageTests(unittest.TestCase):

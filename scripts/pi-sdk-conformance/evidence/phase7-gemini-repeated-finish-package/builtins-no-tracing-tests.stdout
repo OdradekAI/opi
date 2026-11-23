@@ -1,0 +1,9 @@
+
+running 3 tests
+{"case":"gemini-repeated-finish","cases":[{"route":"simple","stop":"stop","raw_stop":"STOP","usage":{"input":10,"output":7},"done_count":1,"event_types":["start","text_start","text_delta","text_end","done"],"requests":1},{"route":"direct","stop":"stop","raw_stop":"STOP","usage":{"input":10,"output":7},"done_count":1,"event_types":["start","text_start","text_delta","text_end","done"],"requests":1}]}
+test repeated_finish_usage_is_deferred_until_eof ... ok
+test malformed_tail_after_finish_suppresses_deferred_done ... ok
+test tail_raw_observer_failure_suppresses_deferred_done ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

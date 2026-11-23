@@ -1,20 +1,6 @@
-//! Phase 16 task 16.16.1 — migration contract guard.
-//!
-//! After 16.16.1 removes the built-in native sandbox from core, the legacy
-//! Phase 15 inputs are REJECTED (not aliased) with stable, actionable
-//! remediation pointing at the execution-backend surface and the package
-//! workflow, while default local execution retains policy-neutral L0
-//! supervision. This file inverts the deleted `sandbox_config.rs` acceptance
-//! suite into rejection + migration-target acceptance.
-//!
-//! Design references:
-//! - `docs/snapshots/phase16/2026-07-28-phase16-pluggable-extension-command-execution-design.md`
-//!   `## Migration from Phase 15`: "`[sandbox]`, `--sandbox`, and
-//!   `--sandbox-require` ... No compatibility aliases are added."; "Corrected
-//!   L0 supervision remains in core."; non-goal "Preserving unreleased Phase
-//!   15 sandbox configuration aliases."
-//! - `### Supervision`: L0 supervision "is reported only as `supervised`" and
-//!   applies to local target processes; it stays after native policy removal.
+//! The legacy `[sandbox]`, `--sandbox`, and `--sandbox-require` inputs fail with
+//! migration guidance for execution backends and the package workflow. Default
+//! local execution retains policy-neutral process supervision.
 
 #![forbid(unsafe_code)]
 

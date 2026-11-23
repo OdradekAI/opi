@@ -11,8 +11,8 @@ are not admission, review or repair prerequisites for new features.
   rather than a new ordinary iteration. Explain the historical source contract
   it will apply. Read-only status does not need a new mutation approval.
 - Check that all registered source files exist at the selected baseline.
-  `docs/CONTEXT.md` and `docs/opi-spec*` have been removed from the checkout;
-  committed versions remain in Git, as do earlier Phase research inputs.
+  The former `docs/CONTEXT.md`, `docs/opi-spec*`, and
+  [Phase snapshots](#archived-phase-files) are available in Git history.
   For read-only reconstruction, explicitly select the matching commit and use
   an isolated export. Do not restore retired sources into the current tree or
   substitute current guidance for sealed requirements. Missing inputs block
@@ -33,3 +33,16 @@ are not admission, review or repair prerequisites for new features.
 Current feature work instead uses the user-agreed request/brief, relevant ADRs,
 current source and focused acceptance checks. Do not copy new work into the old
 ledger or force it through a legacy registration list.
+
+## Archived Phase files
+
+List the complete Phase 16–20 snapshot tree, including designs, ledgers, and
+assurance artifacts, at its original paths.
+
+```text
+git ls-tree -r 9bb03b50191b258a359fbfd07d794bdf65603009 -- docs/snapshots
+```
+
+Use `git show <revision>:<path>` to read a file from this tree. To replay a
+legacy audit's scope, use the audit's recorded `audit_head` so the ledger,
+Phase snapshot, and registered sources come from that audit's baseline.

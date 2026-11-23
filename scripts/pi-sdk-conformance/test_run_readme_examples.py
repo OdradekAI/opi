@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import tomllib
 import unittest
 
 sys.dont_write_bytecode = True
@@ -87,97 +88,26 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
 
     def test_readmes_publish_standalone_consumer_manifest(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        expected = [
-            '[dependencies]\nopi-ai = "0.8.3"',
-            'tokio = { version = "1", features = ["macros", "rt-multi-thread"] }',
-            'tokio-util = "0.7"',
-            'futures-util = "0.3"',
-            'serde_json = "1"',
-            'opi-ai = { version = "0.8.3", default-features = false }',
-        ]
         for name in ("README.md", "README.zh.md"):
             source = (root / name).read_text(encoding="utf-8")
-            for fragment in expected:
-                self.assertIn(fragment, source, f"{name} omits consumer manifest fragment: {fragment}")
+            manifest = re.search(r"^```toml\n(\[dependencies\].*?)\n```$", source, re.M | re.S)
+            self.assertIsNotNone(manifest, name)
+            deps = tomllib.loads(manifest[1])["dependencies"]
+            self.assertEqual(deps["opi-ai"], {"path": "../opi/crates/opi-ai"})
+            self.assertEqual(set(deps), {"opi-ai", "tokio"})
+            self.assertIn("macros", deps["tokio"]["features"])
+            self.assertIn("rt-multi-thread", deps["tokio"]["features"])
+            for extra in ('futures-util = "0.3"', 'serde_json = "1"', 'tokio-util = "0.7"'):
+                self.assertIn(extra, source, name)
 
-    def test_readmes_expose_task_oriented_integration_guide(self):
+    def test_readmes_cover_runnable_sdk_workflows(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        english = (root / "README.md").read_text(encoding="utf-8")
-        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
-        for fragment in (
-            "## Guide",
-            "[Installation](#installation)",
-            "[Quick Start](#quick-start)",
-            "[Streaming and the Final Result](#streaming-and-the-final-result)",
-            "[Context, Tools, and Continuation](#context-tools-and-continuation)",
-            "[Providers](#providers)",
-            "[Telemetry: Explicit Context and Optional Tracing](#telemetry-explicit-context-and-optional-tracing)",
-            "[Testing and Package Consumption](docs/testing.md)",
-        ):
-            self.assertIn(fragment, english, f"README.md omits guide entry: {fragment}")
-        for fragment in (
-            "## 使用指南",
-            "[安装](#安装)",
-            "[快速开始](#快速开始)",
-            "[流式与最终结果](#流式与最终结果)",
-            "[Context、工具与续轮](#context工具与续轮)",
-            "[Provider](#provider)",
-            "[Telemetry：显式上下文与可选 tracing](#telemetry显式上下文与可选-tracing)",
-            "[测试与包消费](docs/testing.zh.md)",
-        ):
-            self.assertIn(fragment, chinese, f"README.zh.md omits guide entry: {fragment}")
-
-    def test_readmes_follow_pi_style_public_task_order(self):
-        root = Path(__file__).parents[2] / "crates" / "opi-ai"
-
-        def headings(source: str) -> list[str]:
-            return [line[3:].strip() for line in source.splitlines() if line.startswith("## ")]
-
-        expected = (
-            "Installation",
-            "Feature profiles",
-            "Quick Start",
-            "Streaming and the Final Result",
-            "Context, Tools, and Continuation",
-            "Providers",
-            "Image Support",
-            "Classification",
-            "Thinking/Reasoning",
-            "Error Handling",
-            "Telemetry: Explicit Context and Optional Tracing",
-            "Custom Providers",
-            "Faux Provider for Tests",
-            "Deferred Responses",
-            "Migration",
-            "Development",
-        )
-        expected_zh = (
-            "安装",
-            "Feature profile",
-            "快速开始",
-            "流式与最终结果",
-            "Context、工具与续轮",
-            "Provider",
-            "图片支持",
-            "分类器",
-            "思考与推理",
-            "错误处理",
-            "Telemetry：显式上下文与可选 tracing",
-            "自定义 Provider",
-            "Faux Provider 测试",
-            "Deferred 响应",
-            "迁移",
-            "开发",
-        )
-        for name, expected_headings in (("README.md", expected), ("README.zh.md", expected_zh)):
+        for name in ("README.md", "README.zh.md"):
             source = (root / name).read_text(encoding="utf-8")
-            actual = headings(source)
-            positions = []
-            for heading in expected_headings:
-                self.assertIn(heading, actual, f"{name} omits public task heading: {heading}")
-                positions.append(actual.index(heading))
-            self.assertEqual(positions, sorted(positions),
-                             f"{name} does not follow the Pi-style public task order")
+            rust = "\n".join(re.findall(r"^```rust\n(.+?)\n```$", source, re.M | re.S))
+            for call in ("register_builtin(", ".complete_simple(", ".stream_simple(",
+                         ".get_all_models(", "ToolDef {", ".generate_images(", ".classify("):
+                self.assertIn(call, rust, f"{name} omits a Rust example using {call}")
 
     def test_public_readmes_do_not_expose_private_implementation_sections(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
@@ -224,85 +154,21 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
     def test_readmes_put_installation_before_capability_context(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
         for name, installation, next_section in (
-            ("README.md", "## Installation", "## Quick Start"),
+            ("README.md", "## Installation", "## Quick start"),
             ("README.zh.md", "## 安装", "## 快速开始"),
         ):
             source = (root / name).read_text(encoding="utf-8")
             self.assertLess(source.index(installation), source.index(next_section),
                             f"{name} puts onboarding after the first capability")
 
-    def test_readmes_publish_public_api_at_a_glance(self):
+    def test_readmes_cover_consumer_feature_profiles(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        english = (root / "README.md").read_text(encoding="utf-8")
-        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
-        for fragment in (
-            "## API at a glance",
-            "`Models` / `ProviderRegistry`",
-            "`Request` / `ChatModelRecord`",
-            "`ChatCall` / `AssistantStreamEvent`",
-            "`normalize_context` / `ToolDef`",
-            "`TelemetryContext` / `telemetry-tracing`",
-        ):
-            self.assertIn(fragment, english, f"README.md omits API map entry: {fragment}")
-        for fragment in (
-            "## API 总览",
-            "`Models` / `ProviderRegistry`",
-            "`Request` / `ChatModelRecord`",
-            "`ChatCall` / `AssistantStreamEvent`",
-            "`normalize_context` / `ToolDef`",
-            "`TelemetryContext` / `telemetry-tracing`",
-        ):
-            self.assertIn(fragment, chinese, f"README.zh.md omits API map entry: {fragment}")
-
-    def test_readmes_index_advanced_capability_references(self):
-        root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        english = (root / "README.md").read_text(encoding="utf-8")
-        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
-        for fragment in (
-            "## Reference map",
-            "[Providers](#providers)",
-            "[Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md)",
-            "[Cost and pricing reference](docs/cost-pricing.md)",
-            "[Transport, Protocols and Resource Lifecycle](docs/transport.md)",
-            "[Public Utilities and Data Contracts](docs/utilities.md)",
-            "[Provider Wire and Operation Reference](docs/providers.md)",
-            "[Deferred Responses](#deferred-responses)",
-            "[Testing and Package Consumption](docs/testing.md)",
-        ):
-            self.assertIn(fragment, english, f"README.md omits reference-map entry: {fragment}")
-        for fragment in (
-            "## 参考索引",
-            "[Provider](#provider)",
-            "[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)",
-            "[费用与计价参考](docs/cost-pricing.zh.md)",
-            "[Transport、协议与资源生命周期](docs/transport.zh.md)",
-            "[公共工具与数据契约](docs/utilities.zh.md)",
-            "[Provider Wire 与操作参考](docs/providers.zh.md)",
-            "[Deferred 响应](#deferred-响应)",
-            "[测试与包消费](docs/testing.zh.md)",
-        ):
-            self.assertIn(fragment, chinese, f"README.zh.md omits reference-map entry: {fragment}")
-
-    def test_readmes_describe_feature_profiles_without_overclaiming_minimal_builds(self):
-        root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        english = (root / "README.md").read_text(encoding="utf-8")
-        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
-        for fragment in (
-            "## Feature profiles",
-            "`catalog-bundled`, `http-transport` and `telemetry-tracing` are independently",
-            "`default-features = false`",
-            "The minimum excludes reqwest, TLS",
-            "add `features = [\"builtins\"]`",
-        ):
-            self.assertIn(fragment, english, f"README.md omits feature-profile contract: {fragment}")
-        for fragment in (
-            "## Feature profile",
-            "`catalog-bundled`、`http-transport` 与 `telemetry-tracing` 可独立选择",
-            "`default-features = false`",
-            "最小配置的依赖图排除 reqwest、TLS",
-            "须增加 `features = [\"builtins\"]`",
-        ):
-            self.assertIn(fragment, chinese, f"README.zh.md omits feature-profile contract: {fragment}")
+        for name in ("README.md", "README.zh.md"):
+            source = (root / name).read_text(encoding="utf-8")
+            for features in ('default-features = false, features = ["builtins"]',
+                             'default-features = false, features = ["catalog-bundled"]',
+                             '`default-features = false`'):
+                self.assertIn(features, source, name)
 
     def test_readmes_split_cost_pricing_into_package_local_topic_references(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
@@ -310,79 +176,17 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         chinese = (root / "README.zh.md").read_text(encoding="utf-8")
         english_topic = (root / "docs" / "cost-pricing.md").read_text(encoding="utf-8")
         chinese_topic = (root / "docs" / "cost-pricing.zh.md").read_text(encoding="utf-8")
-        for fragment in (
-            "## Best-Effort Cost",
-            "[Cost and pricing reference](docs/cost-pricing.md)",
-            "The detailed estimator, sampling, tier selection",
-        ):
-            self.assertIn(fragment, english, f"README.md omits cost-pricing topic boundary: {fragment}")
-        for fragment in (
-            "## 尽力而为的费用",
-            "[费用与计价参考](docs/cost-pricing.zh.md)",
-            "完整的估算器、sampling、tier 选择",
-        ):
-            self.assertIn(fragment, chinese, f"README.zh.md omits cost-pricing topic boundary: {fragment}")
-        for fragment in (
-            "# Cost and pricing reference",
-            "## Estimator, Sampling and Pricing Metadata",
-            "pricing tiers",
-            "calculate_cost_tiered",
-            "PricingTier::input_tokens_above",
-        ):
-            self.assertIn(fragment, english_topic, f"cost-pricing.md omits detailed rule: {fragment}")
-        for fragment in (
-            "# 费用与计价参考",
-            "## 估算器、Sampling 与计价元数据",
-            "计价 tier",
-            "calculate_cost_tiered",
-            "PricingTier::input_tokens_above",
-        ):
-            self.assertIn(fragment, chinese_topic, f"cost-pricing.zh.md omits detailed rule: {fragment}")
+        self.assertIn("](docs/cost-pricing.md)", english)
+        self.assertIn("](docs/cost-pricing.zh.md)", chinese)
+        for fragment in ("calculate_cost_tiered", "total_from_provider", "PricingTier::input_tokens_above"):
+            self.assertIn(fragment, english_topic)
+            self.assertIn(fragment, chinese_topic)
 
-    def test_readmes_split_provider_catalog_auth_into_package_local_topic_references(self):
+    def test_readmes_link_provider_auth_reference(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
-        english = (root / "README.md").read_text(encoding="utf-8")
-        chinese = (root / "README.zh.md").read_text(encoding="utf-8")
-        english_topic = (root / "docs" / "provider-auth.md").read_text(encoding="utf-8")
-        chinese_topic = (root / "docs" / "provider-auth.zh.md").read_text(encoding="utf-8")
-        for fragment in (
-            "[Provider, Catalog, Auth and Refresh reference](docs/provider-auth.md)",
-            "The detailed Provider, Catalog, and authentication reference is in",
-            "The credential, OAuth, request-enrichment, and refresh lifecycle is maintained",
-        ):
-            self.assertIn(fragment, english, f"README.md omits provider/auth topic boundary: {fragment}")
-        for fragment in (
-            "[Provider、Catalog、认证与刷新参考](docs/provider-auth.zh.md)",
-            "完整的 Provider、Catalog、认证参考见",
-            "凭据、OAuth、Request 扩充和 Refresh 生命周期维护在",
-        ):
-            self.assertIn(fragment, chinese, f"README.zh.md omits provider/auth topic boundary: {fragment}")
-        for fragment in (
-            "# Provider, Catalog, Auth and Refresh reference",
-            "## Credentials, Request Enrichment, and Refresh",
-            "## Provider Behavior Matrix",
-            "## OpenAI-Compatible Profiles",
-            "## Offline Bundled Model Catalog",
-            "## Dynamic Catalog Store and Refresh",
-            "Models::refresh",
-            "OAuthProvider",
-            "Catalog::builtin()",
-            "providers::collection::register_builtin",
-        ):
-            self.assertIn(fragment, english_topic, f"provider-auth.md omits detailed rule: {fragment}")
-        for fragment in (
-            "# Provider、Catalog、认证与刷新参考",
-            "## 凭据、Request 扩充与 Refresh",
-            "## Provider 行为矩阵",
-            "## OpenAI-Compatible Profile",
-            "## 离线内置 Model Catalog",
-            "## 动态 Catalog Store 与 Refresh",
-            "Models::refresh",
-            "OAuthProvider",
-            "Catalog::builtin()",
-            "providers::collection::register_builtin",
-        ):
-            self.assertIn(fragment, chinese_topic, f"provider-auth.zh.md omits detailed rule: {fragment}")
+        for suffix in ("", ".zh"):
+            readme = (root / f"README{suffix}.md").read_text(encoding="utf-8")
+            self.assertIn(f"](docs/provider-auth{suffix}.md)", readme)
 
     def test_public_opi_ai_manuals_omit_internal_alignment_labels(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai"
@@ -423,71 +227,27 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
     def test_public_topic_references_expose_current_contracts(self):
         root = Path(__file__).parents[2] / "crates" / "opi-ai" / "docs"
         required = {
-            "transport.md": (
-                "# Transport, Protocols and Resource Lifecycle",
-                "## Proxy and Source-Scoped HTTP",
-                "## Source-Scoped TLS",
-                "## WebSocket Upgrade",
-                "## Resource Generation, Pool Cleanup and Awaited Release",
-                "## Deferred Transport Semantics",
+            "provider-auth": (
+                "check_auth", "LoginPresenter", "Catalog::builtin()", "Models::refresh", "allow_network",
             ),
-            "transport.zh.md": (
-                "# Transport、协议与资源生命周期",
-                "## Proxy 与源限定 HTTP",
-                "## 源限定 TLS",
-                "## WebSocket Upgrade",
-                "## Resource Generation、Pool 清理与 Await 释放",
-                "## Deferred Transport 语义",
+            "transport": (
+                "proxy_from_env", "TlsOptions", "cleanup_session_resources",
+                "fetch_deferred_ready", "cancel_deferred",
             ),
-            "utilities.md": (
-                "# Public Utilities and Data Contracts",
-                "## Tool-Argument Normalization and Validation",
-                "## Canonical Replay Projection",
-                "## Context and Transcript Chronology",
-                "## Whole-Call Retry and Request Callbacks",
+            "utilities": (
+                "validate_tool_call", "TranscriptContext", "ReplayProjection::Strict", "Request::callbacks",
             ),
-            "utilities.zh.md": (
-                "# 公共工具与数据契约",
-                "## Tool 参数归一化与校验",
-                "## 规范 Replay 投影",
-                "## Context 与 Transcript 时序",
-                "## Whole-Call Retry 与 Request Callback",
+            "providers": (
+                "Models::register_chat_api", "Models::classifier_model", "ClassifierAnswer", "Models::image_model",
             ),
-            "providers.md": (
-                "# Provider Wire and Operation Reference",
-                "## Native Chat Adapters",
-                "## Image Operation",
-                "## Classification Operation",
-                "## Reasoning and Native Options",
-                "## OpenAI-Compatible Provider Profiles",
-            ),
-            "providers.zh.md": (
-                "# Provider Wire 与操作参考",
-                "## Native Chat Adapter",
-                "## Image 操作",
-                "## Classification 操作",
-                "## Reasoning 与 Native Option",
-                "## OpenAI-Compatible Provider Profile",
-            ),
-            "testing.md": (
-                "# Testing and Package Consumption",
-                "## Faux Provider for External Tests",
-                "## Controlled Provider and Protocol Fixtures",
-                "## Test Layers and Replacement Rules",
-                "## Packaged Consumer Proof",
-            ),
-            "testing.zh.md": (
-                "# 测试与包消费",
-                "## Faux Provider 测试",
-                "## 受控 Provider 与协议 Fixture",
-                "## 测试分层与替代规则",
-                "## 实际包消费者证明",
-            ),
+            "testing": ("test_support::MockProvider", "single_route_collection", "](../tests/README"),
         }
-        for name, fragments in required.items():
-            source = (root / name).read_text(encoding="utf-8")
-            for fragment in fragments:
-                self.assertIn(fragment, source, f"{name} omits current contract: {fragment}")
+        for topic, fragments in required.items():
+            for suffix in ("", ".zh"):
+                path = root / f"{topic}{suffix}.md"
+                source = path.read_text(encoding="utf-8")
+                for fragment in fragments:
+                    self.assertIn(fragment, source, f"{path.name} omits public entry point: {fragment}")
 
     def test_telemetry_readmes_describe_current_ai_integration_boundary(self):
         root = Path(__file__).parents[2] / "crates" / "opi-telemetry"
@@ -593,17 +353,17 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         package = self.root / "package"
         (repo / "crates/opi-ai/examples").mkdir(parents=True)
         (package / "examples").mkdir(parents=True)
-        examples = []
+        links = []
         for name in ("quick_start.rs", "quick_start_stream.rs", "tool_loop.rs"):
             source = f"// exact packaged {name}\nfn main() {{}}\n"
-            examples.append(source)
+            links.append(f"[{name}](examples/{name})")
             (repo / "crates/opi-ai/examples" / name).write_text(source, encoding="utf-8")
             (package / "examples" / name).write_text(source, encoding="utf-8")
         for name in ("README.md", "README.zh.md"):
-            (package / name).write_text("\n".join(examples), encoding="utf-8")
+            (package / name).write_text("\n".join(links) + "\n```rust\nfn main() {}\n```\n", encoding="utf-8")
         return repo, package
 
-    def test_exact_sources_and_both_embeds_are_accepted(self):
+    def test_exact_sources_and_matching_handbooks_are_accepted(self):
         repo, package = self.source_fixture()
         result = self.probe("sources", repo, package)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -614,10 +374,17 @@ class ReadmeExecutionAdmissionTests(unittest.TestCase):
         self.assert_rejected(self.probe("sources", repo, package),
                              "packaged example tool_loop.rs differs from the workspace source")
 
-    def test_missing_localized_embed_is_rejected(self):
+    def test_missing_localized_example_link_is_rejected(self):
         repo, package = self.source_fixture()
         (package / "README.zh.md").write_text("missing examples\n", encoding="utf-8")
-        self.assert_rejected(self.probe("sources", repo, package), "README.zh.md does not embed")
+        self.assert_rejected(self.probe("sources", repo, package), "README.zh.md does not link")
+
+    def test_different_localized_rust_is_rejected(self):
+        repo, package = self.source_fixture()
+        path = package / "README.zh.md"
+        path.write_text(path.read_text(encoding="utf-8").replace("main()", "different()"),
+                        encoding="utf-8")
+        self.assert_rejected(self.probe("sources", repo, package), "Rust examples differ")
 
     def test_cli_requires_explicit_offline_marker(self):
         result = subprocess.run([sys.executable, str(SCRIPT), "--scratch", str(self.root / "scratch"),

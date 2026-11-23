@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+DIFFERENTIAL_PATH = Path("scripts/pi-sdk-conformance/differential")
+FIXTURE_DIR = Path(__file__).resolve().with_name("fixtures")
 
 
 def file_hash(path: Path) -> str:

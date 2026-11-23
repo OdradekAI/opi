@@ -8,16 +8,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from common import REPO_ROOT
-from replay_chat_finish_timing import FIXTURE, ITERATION, compare
+from common import FIXTURE_DIR, REPO_ROOT
+from replay_chat_finish_timing import FIXTURE, compare
 from replay_chat_finish_consumers import compare as compare_consumers
 
 
 class ChatFinishObservations(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.paired = json.loads((REPO_ROOT / ITERATION / "evidence/phase5-chat-terminal-repaired-verified.json").read_bytes())
-        cls.consumers = json.loads((REPO_ROOT / ITERATION / "evidence/phase5-chat-terminal-consumers-repaired.json").read_bytes())
+        cls.paired = json.loads((FIXTURE_DIR / "phase5-chat-terminal-repaired-verified.json").read_bytes())
+        cls.consumers = json.loads((FIXTURE_DIR / "phase5-chat-terminal-consumers-repaired.json").read_bytes())
         cls.fixture = json.loads((REPO_ROOT / FIXTURE).read_bytes())
 
     def setUp(self) -> None:
@@ -72,7 +72,7 @@ class ChatFinishObservations(unittest.TestCase):
             compare_consumers(self.durable,self.agent)
 
     def test_old_premature_success_evidence_fails_repaired_contract(self) -> None:
-        old = json.loads((REPO_ROOT / ITERATION / "evidence/phase5-chat-finish-timing.json").read_bytes())
+        old = json.loads((FIXTURE_DIR / "phase5-chat-finish-timing.json").read_bytes())
         with self.assertRaisesRegex(ValueError, "Opi ended before sentinel"):
             compare(old["pi_runs"][0]["trace"], old["opi_runs"][0]["trace"], self.fixture)
 
@@ -116,7 +116,7 @@ class ChatFinishObservations(unittest.TestCase):
             build = Path(directory) / "build.json"
             build.write_text(json.dumps({"exit_code":0,"inputs":{FIXTURE.as_posix():"0" * 64}}),encoding="utf-8")
             command = [sys.executable,str(Path(__file__).with_name("replay_chat_finish_consumers.py")),
-                "--paired",str(REPO_ROOT / ITERATION / "evidence/phase5-chat-terminal-repaired-verified.json"),
+                "--paired",str(FIXTURE_DIR / "phase5-chat-terminal-repaired-verified.json"),
                 "--materials","missing-input","--agent-build",str(build),"--pi-repo","missing-input",
                 "--output",str(Path(directory) / "unwritten.json")]
             result = subprocess.run(command,cwd=REPO_ROOT,capture_output=True,text=True,check=False)

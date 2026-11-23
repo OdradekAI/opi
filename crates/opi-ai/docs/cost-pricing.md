@@ -1,90 +1,65 @@
-# Cost and pricing reference
+# Read usage and estimate cost
 
-This topic reference contains the detailed usage estimator, sampling, pricing-tier,
-cache-pricing, service-tier, and compatibility rules for `opi-ai`. The main
-[README](../README.md) keeps the onboarding path and a short best-effort cost
-summary; this document is the source of truth for the full tables and
-precedence rules.
+[简体中文](cost-pricing.zh.md) · [SDK quick start](../README.md#quick-start)
 
-## Estimator, Sampling and Pricing Metadata
+## Read usage from a result
 
-The `context` estimator uses 3.5 UTF-16 code units per token
-(`ceil(chars * 2 / 7)`) and 4,800 equivalent chars per image, rounding up at
-message granularity: each user or tool-result message rounds once over its
-blocks, each assistant message rounds once over text/thinking/tool-call
-characters, and a system message rounds its body plus sections once with the
-serialized added/removed tool lists rounded separately. The last applicable
-positive successful usage anchors the estimate (any model identity,
-non-error, non-aborted, timestamp not older than its prefix); only messages
-after the anchor are estimated, and there is no same-model or full-text
-lower bound. An independently reported positive `Usage::total_tokens` wins
-even when it differs from the bucket sum; an explicit zero or absent total
-falls back to the bucket sum only when the parent buckets are reported.
-Unknown stays distinct from zero everywhere; child subsets are never added
-twice.
+Chat replies expose `AssistantMessage::usage`. Use `usage.total_tokens`
+when the provider reports a total, including `Some(0)`. Otherwise use
+`bucket_total_tokens()` only when `usage.is_reported()` is true.
+Reasoning tokens are part of output tokens. One-hour cache writes are part
+of cache-write tokens. Count each parent bucket once.
 
-| Parameter | Unit / formula | Omission → default | Zero / null / unknown | Precedence |
-|---|---|---|---|---|
-| text estimate | `ceil(utf16 / 3.5)` | empty → 0 | — | — |
-| image estimate | 4800 chars per image | — | — | — |
-| usage anchor | total or bucket sum | none → content estimate | total 0 → sum if reported; unknown → skip | total > sum |
-| simple max tokens | `clamp(M)`: `max(1,M)` if window ≤ 0, else `min(M, max(1, W−E−4096))` | `None` → model default output | explicit `M` is not re-capped at the model max | request < window arithmetic |
-| numeric-Claude thinking budget | level table 1024/2048/8192/16384 (xhigh/max → high), then clamped to leave answer room | omitted budget → level default | native enabled-without-budget uses 1024; simple budgets keep their wire-specific zero behavior | level default < explicit budget |
-| sampling params | optional per-key JSON map | `None` → absent | `Some({})` retains empty presence; absent keys retain lower-layer values | model base < effective level < request |
-| temperature | named field | `None` → omitted per adapter gating | NaN omitted | sampling map overrides the named field (merged last) |
-| pricing tiers | selection on input+cacheRead+cacheWrite, strict `>`, highest wins, first of equal duplicates | no tiers → base rates | finite negative/fractional thresholds retained; only thresholds `> -1` can match | tier rates apply to the whole request |
-| 1h cache write | subset at 2× input rate | `None` → all short-cache | explicit 0 valid, distinct from absent | subset, never double counted |
-| service tier | Responses: flex 0.5×, priority/fast 2× (`gpt-5.5`: 2.5×); Codex fast and all Azure tiers: 1× | effective request/response fallback follows the selected wire | unknown tier → unknown cost on tier-sensitive wires | applies to every cost component |
+For a conversation, `CumulativeUsage` sums the known buckets and
+`has_unknown_usage()` flags missing reports. A partial response can already
+contain usage from the provider. Image and classifier results expose optional
+`usage` and `cost` fields.
 
-`ModelInfo::sampling_params` and `Request::sampling_params` use
-`Option<SamplingParams>`: `None` is absent and `Some(Default::default())` is
-explicitly empty. `with_sampling_params(map)` preserves `Some(map)`, including
-an empty map, through owned catalog store/reopen. Pass
-`request.sampling_params.as_ref()` to `resolve_sampling_params`; it returns
-`None` only when the model map, effective-level entry and request map are all
-absent. A present empty map resolves to `Some` and does not clear lower keys;
-nested values replace the whole value rather than merging recursively.
+## Distinguish billed cost, estimates, and missing prices
 
-Only OpenAI-compatible adapters (Chat, Responses, Azure Responses) merge the resolved
-sampling map, as the last body step so model and request sampling override
-named request fields; other adapters ignore it. `Usage::service_tier` retains
-the observed response category; `effective_service_tier` retains the selected
-wire's request/response billing rule. `calculate_cost_tiered(usage, pricing,
-model_id, wire)` returns `None` for unknown usage, invalid pricing or an unknown
-tier on a tier-sensitive wire. OpenRouter images use base rates without tiers.
-`PricingTier::input_tokens_above` uses `serde_json::Number`: exact integers and
-finite fractional values. Integer Rust literals use `100_000_u64.into()`;
-fractions use `Number::from_f64`. Existing integer catalog snapshots remain
-readable without rounding. Thresholds and `u64` token comparisons stay exact
-above `2^53`.
-Native calls preserve their adapter budget semantics; Pi Messages simple calls
-forward their own whitelist. `ModelInfo::input_limits` is metadata, never an
-automatic rejection or resize policy. Retired static `reasoning_effort` compat
-keys fail with a migration error.
+When `usage.cost.total_from_provider` is true, `total_cost()` returns the
+provider's total, including a reported zero. The component amounts remain
+catalog estimates and can add up to a different amount. For example,
+OpenRouter can report the gateway charge plus upstream cost for BYOK calls.
+`catalog_total_cost()` sums the components.
 
-## Public entry points
+To display an optional chat cost, pass the same `ChatModelRecord` used for
+the call. A known free model produces `Some(0.0)`. Unreported usage, missing
+or invalid rates, or an unknown tier on a tier-sensitive wire can produce
+`None`. Store the original usage with the message if you need the
+response-time accounting snapshot.
 
-Anthropic `message_delta` updates each reported token field, including zero;
-missing/null fields retain their previous values. An omitted stop reason also
-retains the previous reason. Catalog cost is refreshed at message start and
-after each accepted usage update, before a canonical partial or failure can be
-published. A malformed merged cache-write subset rejects the update atomically.
-Provider-reported totals retain their authority, including an explicit zero.
-Earlier owned event snapshots remain unchanged. Automatic Models observers
-read the canonical outcome; raw prepared attempts still require explicit
-observation and do not acquire an AI span merely by carrying a context.
+```rust
+use opi_ai::message::AssistantMessage;
+use opi_ai::{ChatModelRecord, calculate_cost_tiered};
 
-`Usage.cost` is serialized with its message as a response-time accounting
-snapshot. It retains the catalog components and the independent `total`, with
-`total_from_provider` identifying a provider-reported total (including zero).
-Deserializing an older usage object without `cost` supplies the default
-breakdown and does not claim a provider total. A host's cumulative cost estimate
-is a separate policy; serializing a message does not recompute its cost from a
-current catalog or establish that all prices are known.
+pub fn chat_cost(reply: &AssistantMessage, model: &ChatModelRecord) -> Option<f64> {
+    let usage = &reply.usage;
+    if usage.cost.total_from_provider {
+        return Some(usage.cost.total_cost());
+    }
+    calculate_cost_tiered(
+        usage,
+        model.info().pricing.as_ref()?,
+        model.model_id(),
+        model.wire_api(),
+    )
+    .map(|cost| cost.total_cost())
+}
+```
 
-The primary public values are `Usage`, `CumulativeUsage`, `Pricing`,
-`PricingTier`, `SamplingParams`, `ModelInfo::sampling_params`, and
-`Request::sampling_params`. Cost calculation is exposed through
-`calculate_cost_tiered`; the estimator and sampling resolver are available from
-the corresponding `context` and request/model APIs described in the crate
-rustdoc.
+## How catalog pricing applies
+
+- Rates are per million tokens. The prompt count for selecting a pricing
+  tier is input + cache read + cache write. The highest
+  `PricingTier::input_tokens_above` strictly exceeded by that count applies
+  to the entire request. Equality alone keeps the previous tier, or base
+  rates if there is no lower tier.
+- One-hour cache writes are priced at twice the input rate. Short-cache
+  rates apply to the remaining writes.
+- `Usage::service_tier` records the provider's reported tier.
+  `effective_service_tier` records the tier selected for billing by the wire.
+  This matters for OpenAI Responses. Codex does not mark up Fast, and Azure
+  does not apply a service-tier multiplier.
+- OpenRouter image generation uses base rates. Read the estimate from
+  `ImagesResult::cost`.

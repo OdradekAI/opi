@@ -9,11 +9,12 @@ from pathlib import Path
 from unittest.mock import patch
 
 import compare_incremental_argument_preview as m
+from common import FIXTURE_DIR
 
 REPO = Path(__file__).resolve().parents[3]
 MODULE = Path(m.__file__).resolve()
 FIXTURE_PATH = REPO / "crates/opi-ai/tests/data/incremental-argument-preview.json"
-PAIR = m.load_trace(REPO / "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-final-numbers-differential.json")["replays"][0]
+PAIR = m.load_trace(FIXTURE_DIR / "phase5-final-numbers-differential.json")["replays"][0]
 F = m.load_trace(FIXTURE_PATH)
 P, R = PAIR["interface_pi"]["trace"], PAIR["interface_rust"]["trace"]
 CF = m.load_trace(REPO / "crates/opi-ai/tests/data/chat-argument-preview.json")
@@ -67,7 +68,7 @@ class Controls(unittest.TestCase):
         self.assertFalse(any(d["kind"] == "derived_final_value" for d in result["differences"]))
 
     def test_historical_final_rounding_is_now_rejected(self):
-        old = m.load_trace(REPO / "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-preview-boundaries-verified.json")["replays"][0]
+        old = m.load_trace(FIXTURE_DIR / "phase5-preview-boundaries-verified.json")["replays"][0]
         with self.assertRaisesRegex(ValueError, "final numeric/value decoding"):
             m.compare_interface(F, old["interface_pi"]["trace"], old["interface_rust"]["trace"])
 

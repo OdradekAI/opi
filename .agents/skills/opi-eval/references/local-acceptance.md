@@ -1,10 +1,12 @@
 # Six-trial local acceptance
 
 Read for task 19.11 / `mode=acceptance`, and when verifying an existing
-`opi-eval-local-acceptance/1` root. The archived
-[delivery specification, sections 7–8](../../../../docs/snapshots/phase19/2026-09-05-phase19-local-native-agent-evaluation-design.md)
-owns acceptance meaning; task 19.11 in `.opi-impl-state.json` owns the current
-handoff requirement. This reference produces evidence, not task completion.
+`opi-eval-local-acceptance/1` root. Use the
+[archived Phase files](../../_shared/references/legacy-phase-workflows.md#archived-phase-files)
+to read sections 7–8 of
+`docs/snapshots/phase19/2026-09-05-phase19-local-native-agent-evaluation-design.md`
+for the acceptance criteria and task 19.11 in
+`docs/snapshots/phase19/opi-impl-state.json` for handoff requirements.
 
 Real execution is a separately authorized operator activity outside the
 `opi-implement` harness. That harness may only consume redacted evidence offline;
@@ -88,10 +90,10 @@ report `blocked` with trial-level reasons and keep all live acceptance gaps open
 Keep the operator's bilingual report beside the external evidence under the
 [benchmark report](benchmark-report.md) deliverable shape; export a compact
 conclusion pair to `docs/eval/` only on an explicit caller request. Return the
-evidence root and its `manifest.json` SHA-256 so the user can separately resume
-`opi-implement 19.11`, together with the external evaluation record and report
-references under the [evidence-root
-contract](evidence-root.md#external-records-and-legacy-references). That workflow
+evidence root, its `manifest.json` SHA-256, and the external evaluation record
+and report references under the [evidence-root
+contract](evidence-root.md#external-records-and-legacy-references). A separate
+`opi-implement 19.11` run uses the matching historical baseline. That workflow
 owns the final workspace verification union and
 `docs/audits/phase19-local-native-acceptance.md` / `.zh.md`, verifies the
 supplied evidence offline, and retains its independent Phase archive gate.

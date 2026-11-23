@@ -8,15 +8,12 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import REPO_ROOT, build_rust_driver, file_hash, run_json, run_rust_trace
+from common import DIFFERENTIAL_PATH, REPO_ROOT, build_rust_driver, file_hash, run_json, run_rust_trace
 from compare_lifecycle import SCENARIOS, compare_traces
 
 
-ITERATION = Path("docs/iterations/opi-ai-1-5-alignment")
-
-
 def material_tools(repo: Path):
-    path = repo / ITERATION / "tools/freeze_acceptance_materials.py"
+    path = repo / DIFFERENTIAL_PATH / "tools/freeze_acceptance_materials.py"
     spec = importlib.util.spec_from_file_location("acceptance_materials", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -73,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         build = build_rust_driver(repo)
         evidence["rust_build"] = build
-        upstream_driver = repo / ITERATION / "tools/observe_upstream.mjs"
+        upstream_driver = repo / DIFFERENTIAL_PATH / "tools/observe_upstream.mjs"
         evidence["drivers"] = {str(path.relative_to(repo)): file_hash(path) for path in (
             upstream_driver, repo / "crates/opi-ai/examples/lifecycle_differential.rs",
             repo / "scripts/pi-sdk-conformance/differential/compare_lifecycle.py",

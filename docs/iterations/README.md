@@ -44,3 +44,19 @@ an explicitly accepted limitation. `superseded` links the replacement.
 On resume, reconcile changed assumptions with source. On completion, update
 owning current docs and mark this brief historical through its terminal status.
 Never copy its task list into the glossary, engineering guide or old Phase ledger.
+
+## Archived opi-ai 1.5 alignment
+
+Read the iteration spec at its original revision.
+
+```text
+git show 8d3597487f575eb4e8931b293f670780066cb93b:docs/iterations/opi-ai-1-5-alignment/spec.md
+```
+
+List the corresponding issues, evidence and tools.
+
+```text
+git ls-tree -r 8d3597487f575eb4e8931b293f670780066cb93b -- docs/iterations/opi-ai-1-5-alignment
+```
+
+Run new checks with the [SDK conformance tools](../../scripts/pi-sdk-conformance/README.md).

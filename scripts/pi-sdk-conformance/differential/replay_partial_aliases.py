@@ -8,12 +8,12 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import REPO_ROOT, file_hash, run_json, runtime_environment
-from run_lifecycle_differential import ITERATION, material_tools
+from common import DIFFERENTIAL_PATH, REPO_ROOT, file_hash, run_json, runtime_environment
+from run_lifecycle_differential import material_tools
 
 
 PI_REVISION = "f9a26365568127461c47a07a37dcb42c140a3ac5"
-PI_DRIVER = ITERATION / "tools/observe_partial_aliases.mjs"
+PI_DRIVER = DIFFERENTIAL_PATH / "tools/observe_partial_aliases.mjs"
 RUST_DRIVER = Path("crates/opi-ai/tests/partial_aliases.rs")
 FIXTURE = Path("crates/opi-ai/tests/data/partial-aliases.sse")
 PI_SOURCES = (

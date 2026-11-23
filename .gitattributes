@@ -13,5 +13,7 @@ crates/opi-eval/profiles/** -text
 crates/opi-eval/scripts/fixtures/** -text
 # Capture helpers and their tests are digest-bound evidence inputs.
 *.py -text
+# Captured package tests end with a blank line that is part of the receipt hash.
+scripts/pi-sdk-conformance/evidence/phase*-package*/*-tests.stdout whitespace=-blank-at-eof
 
 *.rs diff=rust

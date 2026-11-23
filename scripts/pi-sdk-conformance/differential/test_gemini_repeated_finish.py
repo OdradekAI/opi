@@ -1,10 +1,10 @@
 import json
 import unittest
-from pathlib import Path
+from common import FIXTURE_DIR
 
 
 class GeminiRepeatedFinishDifferentialTests(unittest.TestCase):
-    receipt = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-gemini-repeated-finish-differential.json")
+    receipt = FIXTURE_DIR / "phase7-gemini-repeated-finish-differential.json"
 
     def test_frozen_pi_and_rust_traces_match(self):
         evidence = json.loads(self.receipt.read_text(encoding="utf-8"))

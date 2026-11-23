@@ -38,9 +38,9 @@ existing explicit output before creating scratch or starting Cargo.
   local-registry results. Those describe the retired implementation, are not
   current passing proof and cannot be replayed with this harness alone: the
   vendor input archive, generation and local-registry tools have been retired.
-- `run_readme_examples.py` (task 20.57, ONB-02) packages `opi-ai`, proves the
-  three onboarding examples ship inside the `.crate` byte-exactly as both
-  manuals embed them, and compiles and executes them as the binaries of a
+- `run_readme_examples.py` packages `opi-ai`, checks the three linked example
+  files against the workspace, compiles the Rust blocks from both packaged
+  manuals, and executes the handbook chat call and linked examples from a
   fresh workspace-external consumer in both caller build profiles: Cargo's
   default dependency features and `default-features = false`. The
   consumer uses only `opi-ai` plus ordinary Tokio/Serde/stream dependencies,
@@ -51,7 +51,7 @@ existing explicit output before creating scratch or starting Cargo.
 - `consumer-readme/` is that consumer's template; its `src/bin/*.rs` are
   injected by the runner from the extracted package, never authored here.
 - `evidence/readme-examples-proof.json` records each executed run: package
-  hash, per-example hashes, manual containment, both `opi-ai` feature graphs,
+  hash, per-example hashes, handbook source identity, both `opi-ai` feature graphs,
   and the consumer's resolved dependency names.
 - `test_package_proof.py` covers scratch/cache safety, package extraction,
   metadata/feature validation, failure evidence, lease release and the CLI

@@ -1,10 +1,10 @@
 import json
 import unittest
-from pathlib import Path
+from common import FIXTURE_DIR
 
 
 class OpenAiChoiceUsageDifferentialTests(unittest.TestCase):
-    receipt = Path("docs/iterations/opi-ai-1-5-alignment/evidence/phase7-openai-choice-differential.json")
+    receipt = FIXTURE_DIR / "phase7-openai-choice-differential.json"
 
     def test_three_stable_paired_runs(self):
         evidence = json.loads(self.receipt.read_text(encoding="utf-8"))

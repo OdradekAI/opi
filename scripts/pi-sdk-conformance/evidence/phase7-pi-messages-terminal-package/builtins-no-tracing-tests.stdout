@@ -1,0 +1,8 @@
+
+running 2 tests
+{"case":"pi-messages-terminal","cases":[{"route":"simple","stop":"stop","response_model":"radius-final","usage":{"input":10,"output":5,"total":15},"done_count":1,"event_types":["start","text_start","text_delta","text_end","done"],"raw_events":["start","text_start","text_delta","text_end","done"],"requests":1},{"route":"direct","stop":"stop","response_model":"radius-final","usage":{"input":10,"output":5,"total":15},"done_count":1,"event_types":["start","text_start","text_delta","text_end","done"],"raw_events":["start","text_start","text_delta","text_end","done"],"requests":1}]}
+test terminal_metadata_and_repeated_done_trace ... ok
+test terminal_raw_observer_failure_releases_for_next_call ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

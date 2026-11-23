@@ -1,0 +1,10 @@
+
+running 4 tests
+test malformed_tail_after_finish_suppresses_done ... ok
+test pending_finish_without_reason_fails_without_done ... ok
+test tail_observer_failure_suppresses_done_and_releases_for_next_call ... ok
+{"case":"mistral-repeated-finish","cases":[{"route":"simple","stop":"stop","raw_stop":"stop","usage":{"input":10,"output":9,"total":19},"done_count":1,"event_types":["text_start","text_delta","text_end","done"],"provider_events":[{"finish":null,"output":null},{"finish":null,"output":null},{"finish":"error","output":5},{"finish":null,"output":7},{"finish":"stop","output":9}],"requests":1},{"route":"direct","stop":"stop","raw_stop":"stop","usage":{"input":10,"output":9,"total":19},"done_count":1,"event_types":["text_start","text_delta","text_end","done"],"provider_events":[{"finish":null,"output":null},{"finish":null,"output":null},{"finish":"error","output":5},{"finish":null,"output":7},{"finish":"stop","output":9}],"requests":1}]}
+test repeated_finish_usage_is_deferred_until_eof ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+

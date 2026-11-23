@@ -84,10 +84,9 @@ unresolved current-source conflict returns to source review. Other linked
 audits, trackers, reviews, baselines and raw probes are evidence only and do not
 enter `spec_files`. Never recursively admit linked files.
 
-Completed Phase 17, Phase 18, and Phase 19 delivery specifications are frozen
-under `docs/snapshots/phase17/`, `docs/snapshots/phase18/`, and
-`docs/snapshots/phase19/`; they are historical
-evidence and MUST NOT enter the live `spec_files` set.
+The completed Phase 17, 18, and 19 delivery specifications remain in the
+[Git archive](../_shared/references/legacy-phase-workflows.md#archived-phase-files).
+Keep the live `spec_files` set limited to the reviewed sources above.
 
 When a ledger is initialized or reconciled for a supplemental phase, the
 phase's registered source files MUST be included in `spec_files` and hashed in

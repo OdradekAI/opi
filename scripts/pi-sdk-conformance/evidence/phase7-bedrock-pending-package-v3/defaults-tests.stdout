@@ -1,0 +1,7 @@
+
+running 1 test
+{"case":"bedrock-repeated-metadata","stop":"stop","raw_stop":"end_turn","usage":{"input":12,"output":7,"cache_read":3},"done_count":1,"events":["start","text_start","text_delta","text_end","done"]}
+test repeated_metadata_updates_pending_done_before_eof ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

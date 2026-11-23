@@ -4,14 +4,15 @@ import copy
 import json
 import unittest
 
-from replay_chat_output_limits import FIXTURE, ITERATION, REPO_ROOT, compare
+from common import FIXTURE_DIR, REPO_ROOT
+from replay_chat_output_limits import FIXTURE, compare
 
 
 class ChatOutputLimitComparison(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.fixture = json.loads((REPO_ROOT / FIXTURE).read_bytes())
-        path = REPO_ROOT / ITERATION / "evidence/phase5-chat-output-limits.json"
+        path = FIXTURE_DIR / "phase5-chat-output-limits.json"
         cls.record = json.loads(path.read_bytes())
 
     def setUp(self) -> None:

@@ -8,13 +8,13 @@ import json
 import subprocess
 from pathlib import Path
 
+from common import DIFFERENTIAL_PATH, REPO_ROOT
+
 
 PI_REVISION = "f9a26365568127461c47a07a37dcb42c140a3ac5"
-ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_SNAPSHOT = ROOT / ".pi" / "pi-1.5.0"
-FIXTURE = ROOT / "crates" / "opi-ai" / "tests" / "data" / "openai-chat-response-observer.json"
-PROBE = ROOT / "docs" / "iterations" / "opi-ai-1-5-alignment" / "tools" / "observe_openai_chat_response_observer.mjs"
-RECEIPT = ROOT / "docs" / "iterations" / "opi-ai-1-5-alignment" / "evidence" / "phase7-openai-chat-response-observer-differential.json"
+DEFAULT_SNAPSHOT = REPO_ROOT / ".pi" / "pi-1.5.0"
+FIXTURE = REPO_ROOT / "crates/opi-ai/tests/data/openai-chat-response-observer.json"
+PROBE = REPO_ROOT / DIFFERENTIAL_PATH / "tools/observe_openai_chat_response_observer.mjs"
 
 
 def sha256(path: Path) -> str:
@@ -41,14 +41,16 @@ def main() -> int:
     parser.add_argument("--snapshot", type=Path, default=DEFAULT_SNAPSHOT)
     parser.add_argument("--rust-exe", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--output", type=Path, default=RECEIPT)
+    parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.output.exists():
+        parser.error(f"refusing to overwrite evidence: {args.output}")
     fixture = json.loads(FIXTURE.read_text(encoding="utf-8"))
     pi_runs = []
     rust_runs = []
     for _ in range(args.repetitions):
-        pi_runs.append(run_json(["node", str(PROBE), str(args.snapshot), str(FIXTURE)], ROOT))
-        rust_runs.append(run_json([str(args.rust_exe), "--nocapture"], ROOT))
+        pi_runs.append(run_json(["node", str(PROBE), str(args.snapshot), str(FIXTURE)], REPO_ROOT))
+        rust_runs.append(run_json([str(args.rust_exe), "--nocapture"], REPO_ROOT))
     pi_normalized = [normalize(row) for row in pi_runs]
     rust_normalized = [normalize(row) for row in rust_runs]
     assert all(row == pi_normalized[0] for row in pi_normalized), pi_normalized
@@ -66,7 +68,7 @@ def main() -> int:
         "status": "pass",
         "case": fixture["id"],
         "pi_revision": PI_REVISION,
-        "pi_source": str(source.relative_to(ROOT)),
+        "pi_source": str(source.relative_to(REPO_ROOT)),
         "pi_source_sha256": sha256(source),
         "fixture_sha256": sha256(FIXTURE),
         "probe_sha256": sha256(PROBE),
@@ -81,7 +83,8 @@ def main() -> int:
             "Pi's event stream includes no Rust-normalized partial message on the callback-failure path.",
         ],
     }
-    args.output.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
+    with args.output.open("x", encoding="utf-8") as output:
+        output.write(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({"status": "pass", "output": str(args.output), "repetitions": args.repetitions}))
     return 0
 

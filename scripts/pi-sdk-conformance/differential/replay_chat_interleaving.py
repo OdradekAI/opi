@@ -9,16 +9,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from common import REPO_ROOT, file_hash, run_json, runtime_environment
+from common import DIFFERENTIAL_PATH, REPO_ROOT, file_hash, run_json, runtime_environment
 from replay_partial_aliases import PI_REVISION
-from run_lifecycle_differential import ITERATION, material_tools
+from run_lifecycle_differential import material_tools
 
 
 FIXTURE = Path("crates/opi-ai/tests/data/openai-chat-interleaved.sse")
 RUST_PROBE = Path("crates/opi-ai/tests/openai_chat_interleaved.rs")
 MAPPER = Path("crates/opi-ai/src/api/openai.rs")
 RUST_TREE = MAPPER.parent.as_posix()
-PI_PROBE = ITERATION / "tools/observe_chat_interleaving.mjs"
+PI_PROBE = DIFFERENTIAL_PATH / "tools/observe_chat_interleaving.mjs"
 PI_SOURCES = (
     "packages/ai/src/models.ts",
     "packages/ai/src/api/openai-completions.ts",

@@ -1,8 +1,7 @@
 //! JavaScript value semantics shared by the private schema dialect engine.
 //!
-//! The pinned upstream (TypeBox 1.3.27, tree SHA `ebf39b14…`, see
-//! `contract-index.json`)
-//! evaluates over already-parsed JavaScript values. This module reproduces the
+//! TypeBox 1.3.27 (tree SHA `ebf39b14…`) evaluates over already-parsed
+//! JavaScript values. This module reproduces the
 //! exact JavaScript semantics the dialect depends on: property-key
 //! enumeration order, binary64 float semantics, and deep structural equality.
 //! Native Rust integers retain their exact value (RDF-09). It is deliberately
