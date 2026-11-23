@@ -28,6 +28,7 @@ seccompiler = { workspace = true }
 windows-sys = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 futures-util = { workspace = true }
 proc-macro2 = { workspace = true }
 serde_json = { workspace = true }

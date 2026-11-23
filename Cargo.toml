@@ -23,12 +23,11 @@ authors = ["OdradekAI"]
 opi-telemetry = { path = "crates/opi-telemetry", version = "0.8.3", default-features = false }
 opi-ai = { path = "crates/opi-ai", version = "0.8.3" }
 opi-agent = { path = "crates/opi-agent", version = "0.8.3" }
-opi-coding-agent = { path = "crates/opi-coding-agent", version = "0.8.3" }
 opi-protocol = { path = "crates/opi-protocol", version = "0.8.3" }
 opi-tui = { path = "crates/opi-tui", version = "0.8.3" }
 
 # async runtime
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "test-util", "signal", "process", "io-util", "io-std", "fs", "net"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "signal", "process", "io-util", "io-std", "fs", "net"] }
 tokio-util = "0.7"
 futures-core = "0.3"
 futures-util = "0.3"
@@ -41,8 +40,6 @@ base64 = "0.22"
 
 # errors
 thiserror = "2"
-
-# async traits
 
 # HTTP/SSE
 http = "1"
@@ -79,7 +76,7 @@ unicode-width = "0.2"
 # Pinned to a minor so the opi-protocol schema snapshot (the normative
 # command-execution-jsonl-v1 JSON Schema) cannot silently drift on a schemars
 # minor bump; bumping requires re-reviewing that snapshot.
-schemars = "1.2"
+schemars = "~1.2.0"
 jsonschema = "0.28"
 
 # IDs/time
@@ -95,9 +92,6 @@ regex = "1"
 # observability
 tracing = "0.1"
 tracing-core = "0.1"
-
-# markdown
-pulldown-cmark = "0.13"
 
 # testing
 tempfile = "3"
