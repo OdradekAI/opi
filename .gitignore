@@ -12,8 +12,6 @@
 .agents/skills/*
 !.agents/skills/opi-implement/
 !.agents/skills/opi-implement/**
-!.agents/skills/opi-calibrate/
-!.agents/skills/opi-calibrate/**
 !.agents/skills/opi-audit/
 !.agents/skills/opi-audit/**
 !.agents/skills/opi-remediate/
@@ -53,12 +51,21 @@ __pycache__
 credentials.toml
 # Exception: synthetic loopback test PKI (CN=opi-adc-external-test-*) for the
 # ADC external-account mTLS contract tests; a fresh checkout must have them.
-!crates/opi-ai/tests/fixtures/adc-external/*.pem
-!crates/opi-ai/tests/fixtures/adc-external/*.key
+!crates/opi-ai/tests/fixtures/adc-external/ca.pem
+!crates/opi-ai/tests/fixtures/adc-external/client-leaf.key
+!crates/opi-ai/tests/fixtures/adc-external/client-leaf.pem
+!crates/opi-ai/tests/fixtures/adc-external/other-leaf.pem
+!crates/opi-ai/tests/fixtures/adc-external/server.key
+!crates/opi-ai/tests/fixtures/adc-external/server.pem
 
 # Local project config (may contain provider base_url, model overrides)
 .opi/config.toml
 .opi/eval.toml
+
+# Machine-local package state and fallback session transcripts
+/.opi/package-cache/
+/.opi/package-lock.toml
+**/.opi/sessions/
 
 # Release skill resume state
 .opi-release-state.json
