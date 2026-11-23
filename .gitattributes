@@ -10,6 +10,8 @@ docs/snapshots/**/assurance/** text eol=lf
 # no CRLF normalization may touch them.
 crates/opi-eval/tests/fixtures/** -text
 crates/opi-eval/profiles/** -text
-scripts/fixtures/** -text
+crates/opi-eval/scripts/fixtures/** -text
 # Capture helpers and their tests are digest-bound evidence inputs.
 *.py -text
+
+*.rs diff=rust
