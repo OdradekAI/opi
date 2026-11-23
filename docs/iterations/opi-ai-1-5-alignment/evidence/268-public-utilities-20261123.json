@@ -1,0 +1,1172 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 45,
+  "date": "2026-11-23",
+  "scope": "Partition the public SDK utility integration target by the tested API boundary.",
+  "verdict": "PASS",
+  "owner": {
+    "target": "public_utilities",
+    "owner": "utilities",
+    "layer": "public-contract",
+    "cost": "local-io",
+    "cases": "Text and system rendering, tool arguments, overflow and typed diagnostics, identity, provider configuration, cancellation and grammar; the external protocol-adapters consumer exercises the canonical headers and environment APIs",
+    "runners": "archive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py",
+    "source": "tests/public_utilities.rs",
+    "required-features": "builtins"
+  },
+  "root_bytes": {
+    "before": 48734,
+    "after": 629
+  },
+  "test_impact": {
+    "retain": {
+      "rust": 53
+    },
+    "update": {
+      "namespace_guard": 2
+    },
+    "add": {
+      "selector": 1
+    }
+  },
+  "cases": {
+    "cases": {
+      "content_text_extracts_only_text_blocks_in_order": "rendering::content_text_extracts_only_text_blocks_in_order",
+      "assistant_content_text_never_exposes_thinking_or_tool_calls": "rendering::assistant_content_text_never_exposes_thinking_or_tool_calls",
+      "output_content_text_extracts_only_text_blocks": "rendering::output_content_text_extracts_only_text_blocks",
+      "system_message_text_renders_body_then_live_sections_in_insertion_order": "rendering::system_message_text_renders_body_then_live_sections_in_insertion_order",
+      "system_message_text_omits_empty_parts_entirely": "rendering::system_message_text_omits_empty_parts_entirely",
+      "render_system_message_update_uses_exact_framing": "rendering::render_system_message_update_uses_exact_framing",
+      "replay_renders_chronology_initial_and_current_distinctly": "rendering::replay_renders_chronology_initial_and_current_distinctly",
+      "replay_delete_then_readd_moves_the_section_to_the_end": "rendering::replay_delete_then_readd_moves_the_section_to_the_end",
+      "rendering_never_mutates_the_canonical_input": "rendering::rendering_never_mutates_the_canonical_input",
+      "repair_json_escapes_control_characters_inside_strings": "tool_arguments::repair_json_escapes_control_characters_inside_strings",
+      "repair_json_doubles_invalid_escapes_and_keeps_valid_ones": "tool_arguments::repair_json_doubles_invalid_escapes_and_keeps_valid_ones",
+      "parse_streaming_json_returns_empty_object_for_empty_input": "tool_arguments::parse_streaming_json_returns_empty_object_for_empty_input",
+      "parse_streaming_json_prefers_full_parse_with_repair": "tool_arguments::parse_streaming_json_prefers_full_parse_with_repair",
+      "parse_streaming_json_falls_through_partial_then_repaired_then_empty": "tool_arguments::parse_streaming_json_falls_through_partial_then_repaired_then_empty",
+      "partial_completion_fills_dangling_structures": "tool_arguments::partial_completion_fills_dangling_structures",
+      "streaming_preview_keeps_complete_trailing_literals": "tool_arguments::streaming_preview_keeps_complete_trailing_literals",
+      "finalize_tool_arguments_keeps_final_contract_public_and_authoritative": "tool_arguments::finalize_tool_arguments_keeps_final_contract_public_and_authoritative",
+      "final_tool_arguments_repairs_complete_objects_without_partial_completion": "tool_arguments::final_tool_arguments_repairs_complete_objects_without_partial_completion",
+      "string_enum_emits_portable_schema": "tool_arguments::string_enum_emits_portable_schema",
+      "context_overflow_matches_pinned_provider_error_messages": "context_overflow::context_overflow_matches_pinned_provider_error_messages",
+      "context_overflow_uses_the_leading_http_413_status": "context_overflow::context_overflow_uses_the_leading_http_413_status",
+      "context_overflow_excludes_non_overflow_patterns": "context_overflow::context_overflow_excludes_non_overflow_patterns",
+      "context_overflow_cerebras_bodyless_pattern_is_provider_gated": "context_overflow::context_overflow_cerebras_bodyless_pattern_is_provider_gated",
+      "context_overflow_silent_stop_branch_requires_known_usage_and_window": "context_overflow::context_overflow_silent_stop_branch_requires_known_usage_and_window",
+      "context_overflow_length_stop_branch_detects_filled_window": "context_overflow::context_overflow_length_stop_branch_detects_filled_window",
+      "is_recoverable_length_matches_source_comparison": "context_overflow::is_recoverable_length_matches_source_comparison",
+      "context_overflow_length_stop_handles_full_u64_window_range": "context_overflow::context_overflow_length_stop_handles_full_u64_window_range",
+      "extract_diagnostic_error_preserves_service_fault_typed_codes": "provider_diagnostics::extract_diagnostic_error_preserves_service_fault_typed_codes",
+      "extract_diagnostic_error_stays_secret_safe": "provider_diagnostics::extract_diagnostic_error_stays_secret_safe",
+      "extract_diagnostic_error_covers_untyped_variants": "provider_diagnostics::extract_diagnostic_error_covers_untyped_variants",
+      "short_hash_matches_pinned_source_fixtures": "identity::short_hash_matches_pinned_source_fixtures",
+      "short_hash_is_deterministic_and_distinct": "identity::short_hash_is_deterministic_and_distinct",
+      "uuidv7_preserves_explicit_timestamp_and_layout": "identity::uuidv7_preserves_explicit_timestamp_and_layout",
+      "uuidv7_rejects_out_of_range_timestamps": "identity::uuidv7_rejects_out_of_range_timestamps",
+      "uuidv7_ordinary_generation_never_regresses_on_rollback": "identity::uuidv7_ordinary_generation_never_regresses_on_rollback",
+      "uuidv7_explicit_path_does_not_advance_the_rollback_floor": "identity::uuidv7_explicit_path_does_not_advance_the_rollback_floor",
+      "uuidv7_sequence_increments_within_a_generator": "identity::uuidv7_sequence_increments_within_a_generator",
+      "uuidv7_generates_unique_well_formed_ids": "identity::uuidv7_generates_unique_well_formed_ids",
+      "merge_provider_header_sources_merges_case_insensitively_last_wins_in_reinsert_order": "provider_configuration::merge_provider_header_sources_merges_case_insensitively_last_wins_in_reinsert_order",
+      "merge_provider_header_sources_none_deletes_and_empty_yields_none": "provider_configuration::merge_provider_header_sources_none_deletes_and_empty_yields_none",
+      "merge_provider_header_sources_preserves_winner_within_and_across_sources": "provider_configuration::merge_provider_header_sources_preserves_winner_within_and_across_sources",
+      "provider_env_scoped_precedes_ambient": "provider_configuration::provider_env_scoped_precedes_ambient",
+      "provider_env_empty_scoped_falls_back_to_ambient": "provider_configuration::provider_env_empty_scoped_falls_back_to_ambient",
+      "sleep_cancel_resolves_after_the_requested_duration": "cancellation::sleep_cancel_resolves_after_the_requested_duration",
+      "sleep_cancel_fails_immediately_when_pre_cancelled": "cancellation::sleep_cancel_fails_immediately_when_pre_cancelled",
+      "sleep_cancel_fails_when_cancelled_mid_wait": "cancellation::sleep_cancel_fails_when_cancelled_mid_wait",
+      "race_with_cancel_returns_output_when_ready_before_cancel": "cancellation::race_with_cancel_returns_output_when_ready_before_cancel",
+      "race_with_cancel_releases_the_operation_future_on_cancel": "cancellation::race_with_cancel_releases_the_operation_future_on_cancel",
+      "operation_token_links_parent_to_child_one_way": "cancellation::operation_token_links_parent_to_child_one_way",
+      "grammar_property_names::helper_resolves_and_wraps_literal_property_names": "grammar_property_names::helper_resolves_and_wraps_literal_property_names",
+      "grammar_property_names::helper_rejects_missing_literal_property_despite_pointer_alias": "grammar_property_names::helper_rejects_missing_literal_property_despite_pointer_alias",
+      "grammar_property_names::responses_builder_accepts_literal_grammar_property_names": "grammar_property_names::responses_builder_accepts_literal_grammar_property_names",
+      "grammar_property_names::responses_builder_rejects_missing_literal_grammar_property": "grammar_property_names::responses_builder_rejects_missing_literal_grammar_property"
+    },
+    "original_sha256": "657678b6d9e04c5711cd88c377562c22ebc04038010a03e6c15edcb3695ce311",
+    "identical_test_bodies": 53,
+    "identical_fixture_functions": [
+      "diagnostic_message",
+      "grammar_tool",
+      "headers",
+      "image",
+      "known_usage",
+      "provider",
+      "request",
+      "system",
+      "text",
+      "uuid_v7_bytes",
+      "uuid_v7_sequence",
+      "uuid_v7_timestamp_ms"
+    ],
+    "identical_fixture_settings": [
+      "const KEYS: [&str; 4] = [\"input\", \"x/y\", \"x~1y\", \"x~y\"];",
+      "const LARK: &str = \"start: \\\"hello\\\"\";",
+      "static ENV_LOCK_536: Mutex<()> = Mutex::new(());"
+    ],
+    "unchanged_exact_names": [
+      "grammar_property_names::helper_rejects_missing_literal_property_despite_pointer_alias",
+      "grammar_property_names::helper_resolves_and_wraps_literal_property_names",
+      "grammar_property_names::responses_builder_accepts_literal_grammar_property_names",
+      "grammar_property_names::responses_builder_rejects_missing_literal_grammar_property"
+    ],
+    "shared_support_unchanged": true,
+    "namespace_guard_rebased": {
+      "test_provider_headers_callers_use_canonical_namespace": "provider_headers::",
+      "test_provider_env_callers_use_canonical_namespace": "provider_env::"
+    },
+    "in_memory_negative_checks": 2,
+    "only_inventory_change": [
+      "public_utilities\tutilities\tpublic-contract\tlocal-io\tVisible text, argument finalization, overflow diagnosis, UUIDv7, headers, cancellation and grammar\t-",
+      "public_utilities\tutilities\tpublic-contract\tlocal-io\tText and system rendering, tool arguments, overflow and typed diagnostics, identity, provider configuration, cancellation and grammar; the external protocol-adapters consumer exercises the canonical headers and environment APIs\tarchive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py"
+    ]
+  },
+  "workspace": {
+    "baseline_passed": 53,
+    "worktree_passed": 53,
+    "topics_passed": {
+      "rendering": 9,
+      "tool_arguments": 10,
+      "context_overflow": 8,
+      "provider_diagnostics": 3,
+      "identity": 8,
+      "provider_configuration": 5,
+      "cancellation": 6,
+      "grammar_property_names": 4
+    },
+    "existing_named_grammar_passed": "grammar_property_names::responses_builder_accepts_literal_grammar_property_names",
+    "preview_differential": {
+      "cases": 10,
+      "checkpoints": 65,
+      "frozen_pi_revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+      "fixture_sha256": "6002aacf02a4e6f733da8d0eae33aec53e7197362d5ace9155828279ddd0fc53",
+      "comparator_sha256": "73d98a357b2d5a0af92ceaaccadedaadac1a1b40bda0f106b67a084b4dcf181e",
+      "recorded_comparator_sha256": "f839a06a98cde60271071fd9924ee5331d1284ed315b0c9584c0ec99a132cbc1",
+      "reference": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-incremental-preview-differential.json",
+      "reference_sha256": "cef69223c8517d2f8d68582d26c31d60c7096328dd2191b0ce0535a239bbbbf4",
+      "trace_and_comparison_match": true,
+      "comparison": {
+        "status": "CHAT_INCREMENTAL_PREVIEW_VERIFIED",
+        "strict_alignment": true,
+        "checkpoints": 65,
+        "closed_checkpoints": 18,
+        "cases": [
+          {
+            "name": "missing-members",
+            "checkpoints": 8,
+            "closed": [
+              1,
+              2,
+              4
+            ]
+          },
+          {
+            "name": "split-key",
+            "checkpoints": 6,
+            "closed": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          {
+            "name": "empty-key",
+            "checkpoints": 4,
+            "closed": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "nested",
+            "checkpoints": 8,
+            "closed": [
+              1,
+              4
+            ]
+          },
+          {
+            "name": "fraction-exponent",
+            "checkpoints": 7,
+            "closed": [
+              0,
+              1
+            ]
+          },
+          {
+            "name": "escape",
+            "checkpoints": 9,
+            "closed": [
+              2,
+              3
+            ]
+          },
+          {
+            "name": "space-and-control",
+            "checkpoints": 5,
+            "closed": []
+          },
+          {
+            "name": "invalid-escape",
+            "checkpoints": 4,
+            "closed": []
+          },
+          {
+            "name": "duplicate-key",
+            "checkpoints": 5,
+            "closed": [
+              1,
+              2
+            ]
+          },
+          {
+            "name": "array-literals",
+            "checkpoints": 9,
+            "closed": []
+          }
+        ]
+      }
+    }
+  },
+  "focused_rust_test_logs": {
+    "rendering": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-rendering.stdout",
+      "bytes": 196753,
+      "sha256": "24d5488db37ce7a6d240145612d98b1cbe2cd27932713d7988c164bb10e00426"
+    },
+    "tool_arguments": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-tool_arguments.stdout",
+      "bytes": 196915,
+      "sha256": "17e3176ea8514f3aa24504769afae2b21cd1d04c3edfd516699081e166ddb907"
+    },
+    "context_overflow": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-context_overflow.stdout",
+      "bytes": 196759,
+      "sha256": "d0356c239f99540c82f25457a7d3f30884e0de5d4700e4598c08ed12663438f1"
+    },
+    "provider_diagnostics": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-provider_diagnostics.stdout",
+      "bytes": 196326,
+      "sha256": "d27c580b4446cefcad66456295a906bd84010eea3b209ecca9a617ee2765a750"
+    },
+    "identity": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-identity.stdout",
+      "bytes": 196614,
+      "sha256": "e62743f4a352f89635335baf1015eb8f4340dc0059d47b2fd47850650c610fec"
+    },
+    "provider_configuration": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-provider_configuration.stdout",
+      "bytes": 196558,
+      "sha256": "14d04ea92fbdf13ed54dd811fbbfb0fb7672b9c801eb35c1f461dac208b39f20"
+    },
+    "cancellation": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-cancellation.stdout",
+      "bytes": 196531,
+      "sha256": "3c04ed88eb4d215214da198d2824faa697ec81fbfee3e7d912ed4d4628ff27ee"
+    },
+    "grammar_property_names": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-grammar_property_names.stdout",
+      "bytes": 196442,
+      "sha256": "88c19b0bfccf16046ab9cdac6e8c21f3ea0d0e4aeae0e84d0ff097087ce37628"
+    }
+  },
+  "commands": {
+    "workspace": {
+      "workspace": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-all"
+        ],
+        "exit": 0
+      },
+      "focused-rendering": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-rendering",
+          "rendering::"
+        ],
+        "exit": 0
+      },
+      "focused-tool_arguments": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-tool_arguments",
+          "tool_arguments::"
+        ],
+        "exit": 0
+      },
+      "focused-context_overflow": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-context_overflow",
+          "context_overflow::"
+        ],
+        "exit": 0
+      },
+      "focused-provider_diagnostics": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-provider_diagnostics",
+          "provider_diagnostics::"
+        ],
+        "exit": 0
+      },
+      "focused-identity": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-identity",
+          "identity::"
+        ],
+        "exit": 0
+      },
+      "focused-provider_configuration": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-provider_configuration",
+          "provider_configuration::"
+        ],
+        "exit": 0
+      },
+      "focused-cancellation": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-cancellation",
+          "cancellation::"
+        ],
+        "exit": 0
+      },
+      "focused-grammar_property_names": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-grammar_property_names",
+          "grammar_property_names::"
+        ],
+        "exit": 0
+      },
+      "named-grammar": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\run-workspace.py",
+          "E:/opi/scratch/issue-268-public-utilities-20261123-162423",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-named-grammar",
+          "--exact",
+          "grammar_property_names::responses_builder_accepts_literal_grammar_property_names"
+        ],
+        "exit": 0
+      },
+      "chat-preview-probe": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_argument_preview",
+          "--",
+          "--exact",
+          "observe_chat_argument_preview",
+          "--nocapture"
+        ],
+        "exit": 0
+      },
+      "clippy-strict": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "public_utilities",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 101
+      },
+      "clippy-advisory": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "public_utilities"
+        ],
+        "exit": 0
+      }
+    },
+    "selector": {
+      "selector-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/",
+          "-p",
+          "test_select_tests.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "guards": {
+      "namespace-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/",
+          "-p",
+          "test_provider_protocol_package.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "structure": {
+      "scoped-fmt": {
+        "command": [
+          "rustfmt",
+          "--edition",
+          "2024",
+          "--check",
+          "crates/opi-ai/tests/public_utilities.rs"
+        ],
+        "exit": 0
+      },
+      "workspace-fmt": {
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ],
+        "exit": 1
+      },
+      "gate": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/public_utilities.rs",
+          "crates/opi-ai/tests/public_utilities/rendering.rs",
+          "crates/opi-ai/tests/public_utilities/tool_arguments.rs",
+          "crates/opi-ai/tests/public_utilities/context_overflow.rs",
+          "crates/opi-ai/tests/public_utilities/provider_diagnostics.rs",
+          "crates/opi-ai/tests/public_utilities/identity.rs",
+          "crates/opi-ai/tests/public_utilities/provider_configuration.rs",
+          "crates/opi-ai/tests/public_utilities/cancellation.rs",
+          "crates/opi-ai/tests/public_utilities/grammar_property_names.rs",
+          "crates/opi-ai/tests/targets.tsv"
+        ],
+        "exit": 0
+      },
+      "gate-missing": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/public_utilities/missing_topic.rs"
+        ],
+        "exit": 1
+      }
+    },
+    "archive": {
+      "package-protocol": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/run_protocol_adapters_package.py",
+          "--scratch",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol",
+          "--target-dir",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--evidence-output",
+          "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol-proof.json"
+        ],
+        "exit": 0
+      }
+    }
+  },
+  "selector": {
+    "targets": 124,
+    "rust_test_sources": 372,
+    "support_helpers": 16,
+    "support_edges": 60,
+    "tests_passed": 33,
+    "namespace_tests_passed": 36,
+    "gate": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\gate.stdout",
+      "bytes": 175113,
+      "sha256": "94984efbd66d4d4f1985d67547782f9e4ce9e5bbac776d644d66cc714cfe2e40"
+    },
+    "plan": {
+      "paths": [
+        "crates/opi-ai/tests/public_utilities.rs",
+        "crates/opi-ai/tests/public_utilities/rendering.rs",
+        "crates/opi-ai/tests/public_utilities/tool_arguments.rs",
+        "crates/opi-ai/tests/public_utilities/context_overflow.rs",
+        "crates/opi-ai/tests/public_utilities/provider_diagnostics.rs",
+        "crates/opi-ai/tests/public_utilities/identity.rs",
+        "crates/opi-ai/tests/public_utilities/provider_configuration.rs",
+        "crates/opi-ai/tests/public_utilities/cancellation.rs",
+        "crates/opi-ai/tests/public_utilities/grammar_property_names.rs",
+        "crates/opi-ai/tests/targets.tsv"
+      ],
+      "scope": "focused",
+      "tests": [
+        {
+          "target": "public_utilities",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "public_utilities"
+          ],
+          "reasons": [
+            "tests/public_utilities.rs",
+            "tests/public_utilities/cancellation.rs",
+            "tests/public_utilities/context_overflow.rs",
+            "tests/public_utilities/grammar_property_names.rs",
+            "tests/public_utilities/identity.rs",
+            "tests/public_utilities/provider_configuration.rs",
+            "tests/public_utilities/provider_diagnostics.rs",
+            "tests/public_utilities/rendering.rs",
+            "tests/public_utilities/tool_arguments.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py",
+        "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+      ],
+      "expansion": []
+    },
+    "missing_path": {
+      "paths": [
+        "crates/opi-ai/tests/public_utilities/missing_topic.rs"
+      ],
+      "scope": "broader checks required",
+      "tests": [],
+      "runners": [],
+      "expansion": [
+        "tests/public_utilities/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+        "tests/public_utilities/missing_topic.rs: no resolved Cargo test consumer"
+      ]
+    }
+  },
+  "package": {
+    "external_consumer": "opi-protocol-adapters-consumer",
+    "external_boundary": "Calls canonical header and scoped environment APIs in the protocol-adapters graph.",
+    "protocol_receipt": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol-proof.json",
+      "bytes": 15940,
+      "sha256": "f68bd32bfea58e2eda4762d842802b2f6b9d34bf2618f7b82a98a6224616bec1"
+    },
+    "extracted_target": {
+      "archive": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\opi-ai-0.8.3.crate",
+      "archive_sha256": "6e4562e1d66c90b6826c3482ee94213ded3bc37d28fb5fc2ad8dd26dcf250356",
+      "companion_archive": {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      },
+      "extracted_crate": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\package\\opi-ai-0.8.3",
+      "cargo_configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "files": {
+        "tests/public_utilities.rs": {
+          "bytes": 629,
+          "sha256": "f775bd91a33e41051f69b6f47548d6ab76485c099014d80cb37090e9e1b77511"
+        },
+        "tests/public_utilities/cancellation.rs": {
+          "bytes": 3449,
+          "sha256": "d0343bb72460f9aa04c7bea4230a760108ff3c1ab85c4859a3b3e1791b09b91b"
+        },
+        "tests/public_utilities/context_overflow.rs": {
+          "bytes": 11063,
+          "sha256": "ce175f7227c935bccf09c6407672cc1a7d9f1477d17df2d3138c9704f822647d"
+        },
+        "tests/public_utilities/grammar_property_names.rs": {
+          "bytes": 5352,
+          "sha256": "2ab3b3958eacd02d5fdc3bb21d243e77e66e9743f62efca98002197f4224f39c"
+        },
+        "tests/public_utilities/identity.rs": {
+          "bytes": 4811,
+          "sha256": "92c89e7a9394f8641e085bd22da9ebbd2be3a6451f2b87b269264f1d4bb96f08"
+        },
+        "tests/public_utilities/provider_configuration.rs": {
+          "bytes": 3982,
+          "sha256": "d88fd6c33798522dded851132db8c9c3d87f12d2f4d93edfb0fe6451762bc5b9"
+        },
+        "tests/public_utilities/provider_diagnostics.rs": {
+          "bytes": 1995,
+          "sha256": "c0e9d1bdf6b325f2fdc426560a97df29560ab9dfa50b161c52a1b6408b2b9ab3"
+        },
+        "tests/public_utilities/rendering.rs": {
+          "bytes": 8830,
+          "sha256": "1772525425a711f9295a0a19c6aa9140516b13c69aff1ef2f39cf880600a7954"
+        },
+        "tests/public_utilities/tool_arguments.rs": {
+          "bytes": 8407,
+          "sha256": "e3082dca4c2aec076e81fff63eeb9fb6451d1eb86b26f977acbf169d79c1a4a8"
+        }
+      },
+      "steps": [
+        {
+          "label": "archive-scratch-lock",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archive-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archived-test",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "public_utilities"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archived-named-grammar",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "public_utilities",
+            "--",
+            "--exact",
+            "grammar_property_names::responses_builder_accepts_literal_grammar_property_names"
+          ],
+          "exit": 0
+        }
+      ],
+      "archive_comparison": {
+        "prior_archive": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\opi-ai-0.8.3.crate",
+        "prior_archive_sha256": "120a5adbf93caeb722af2ee507539043b47bcc1f82002400b01d047a06896e90",
+        "added": [
+          "tests/public_utilities/cancellation.rs",
+          "tests/public_utilities/context_overflow.rs",
+          "tests/public_utilities/grammar_property_names.rs",
+          "tests/public_utilities/identity.rs",
+          "tests/public_utilities/provider_configuration.rs",
+          "tests/public_utilities/provider_diagnostics.rs",
+          "tests/public_utilities/rendering.rs",
+          "tests/public_utilities/tool_arguments.rs"
+        ],
+        "modified": [
+          "tests/README.md",
+          "tests/README.zh.md",
+          "tests/public_utilities.rs",
+          "tests/targets.tsv"
+        ],
+        "removed": [],
+        "unchanged_files": 670,
+        "same_build_inputs": 257,
+        "retained_input_sha256": {
+          "examples/lifecycle_differential.rs": "fd26724f71995fdb34da5554bbce678813473a4d45cfe10c2d6de858fad87927",
+          "src/api/openai_responses.rs": "23a7943f27601cfb024951642d0ef7ba5764ab32099724e84a010ba16248229d",
+          "src/api/shared/env.rs": "7d3fddadf6a03eda9eea47ce6ddf154eb92e72bae578dd53c884f49beb96c292",
+          "src/api/shared/headers.rs": "48cd650d8cee94daf088f96dbc6311141f364a9e7bd918878e7efd8d41dd86ea",
+          "src/streaming_json.rs": "4c50314b6ccb4581076c3669e84d6e7ba9513ff1a45c8ccd1e806a095ac49c67",
+          "src/types/message.rs": "44e4cc26c39e05df8eef281ea3df34eaad71947e18965461df6550df5c5ac2c8",
+          "tests/chat_argument_preview.rs": "af83b52c4e2cd744367d7d454294cec58877bae7614c92888b6fde43de07f17a",
+          "tests/data/chat-argument-preview.json": "6002aacf02a4e6f733da8d0eae33aec53e7197362d5ace9155828279ddd0fc53",
+          "tests/support/OWNERS.tsv": "ac46dab458f6c5a89f8e5e2cb0ad6e1edcdf5295ad67a4d1ed54824dfc4a97c2",
+          "tests/test_support_tests.rs": "afa9373dc194a6d76d2c9b7adfbc601445368495adaaef3d6922b5bc3799fd8e"
+        }
+      },
+      "scratch_lock": {
+        "archive": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "rebound": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "package": "opi-telemetry",
+        "version": "0.8.3"
+      },
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "public_utilities",
+        "src_path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\package\\opi-ai-0.8.3\\tests\\public_utilities.rs",
+        "edition": "2024",
+        "required-features": [
+          "builtins"
+        ],
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-public-utilities-20261123-162423/protocol/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "active_features": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-public-utilities-20261123-162423/protocol/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed_cases": [
+        "cancellation::operation_token_links_parent_to_child_one_way",
+        "cancellation::race_with_cancel_releases_the_operation_future_on_cancel",
+        "cancellation::race_with_cancel_returns_output_when_ready_before_cancel",
+        "cancellation::sleep_cancel_fails_immediately_when_pre_cancelled",
+        "cancellation::sleep_cancel_fails_when_cancelled_mid_wait",
+        "cancellation::sleep_cancel_resolves_after_the_requested_duration",
+        "context_overflow::context_overflow_cerebras_bodyless_pattern_is_provider_gated",
+        "context_overflow::context_overflow_excludes_non_overflow_patterns",
+        "context_overflow::context_overflow_length_stop_branch_detects_filled_window",
+        "context_overflow::context_overflow_length_stop_handles_full_u64_window_range",
+        "context_overflow::context_overflow_matches_pinned_provider_error_messages",
+        "context_overflow::context_overflow_silent_stop_branch_requires_known_usage_and_window",
+        "context_overflow::context_overflow_uses_the_leading_http_413_status",
+        "context_overflow::is_recoverable_length_matches_source_comparison",
+        "grammar_property_names::helper_rejects_missing_literal_property_despite_pointer_alias",
+        "grammar_property_names::helper_resolves_and_wraps_literal_property_names",
+        "grammar_property_names::responses_builder_accepts_literal_grammar_property_names",
+        "grammar_property_names::responses_builder_rejects_missing_literal_grammar_property",
+        "identity::short_hash_is_deterministic_and_distinct",
+        "identity::short_hash_matches_pinned_source_fixtures",
+        "identity::uuidv7_explicit_path_does_not_advance_the_rollback_floor",
+        "identity::uuidv7_generates_unique_well_formed_ids",
+        "identity::uuidv7_ordinary_generation_never_regresses_on_rollback",
+        "identity::uuidv7_preserves_explicit_timestamp_and_layout",
+        "identity::uuidv7_rejects_out_of_range_timestamps",
+        "identity::uuidv7_sequence_increments_within_a_generator",
+        "provider_configuration::merge_provider_header_sources_merges_case_insensitively_last_wins_in_reinsert_order",
+        "provider_configuration::merge_provider_header_sources_none_deletes_and_empty_yields_none",
+        "provider_configuration::merge_provider_header_sources_preserves_winner_within_and_across_sources",
+        "provider_configuration::provider_env_empty_scoped_falls_back_to_ambient",
+        "provider_configuration::provider_env_scoped_precedes_ambient",
+        "provider_diagnostics::extract_diagnostic_error_covers_untyped_variants",
+        "provider_diagnostics::extract_diagnostic_error_preserves_service_fault_typed_codes",
+        "provider_diagnostics::extract_diagnostic_error_stays_secret_safe",
+        "rendering::assistant_content_text_never_exposes_thinking_or_tool_calls",
+        "rendering::content_text_extracts_only_text_blocks_in_order",
+        "rendering::output_content_text_extracts_only_text_blocks",
+        "rendering::render_system_message_update_uses_exact_framing",
+        "rendering::rendering_never_mutates_the_canonical_input",
+        "rendering::replay_delete_then_readd_moves_the_section_to_the_end",
+        "rendering::replay_renders_chronology_initial_and_current_distinctly",
+        "rendering::system_message_text_omits_empty_parts_entirely",
+        "rendering::system_message_text_renders_body_then_live_sections_in_insertion_order",
+        "tool_arguments::final_tool_arguments_repairs_complete_objects_without_partial_completion",
+        "tool_arguments::finalize_tool_arguments_keeps_final_contract_public_and_authoritative",
+        "tool_arguments::parse_streaming_json_falls_through_partial_then_repaired_then_empty",
+        "tool_arguments::parse_streaming_json_prefers_full_parse_with_repair",
+        "tool_arguments::parse_streaming_json_returns_empty_object_for_empty_input",
+        "tool_arguments::partial_completion_fills_dangling_structures",
+        "tool_arguments::repair_json_doubles_invalid_escapes_and_keeps_valid_ones",
+        "tool_arguments::repair_json_escapes_control_characters_inside_strings",
+        "tool_arguments::streaming_preview_keeps_complete_trailing_literals",
+        "tool_arguments::string_enum_emits_portable_schema"
+      ],
+      "existing_named_grammar_passed": "grammar_property_names::responses_builder_accepts_literal_grammar_property_names"
+    }
+  },
+  "known_wider_checks": {
+    "strict_clippy": {
+      "exit": 101,
+      "existing_diagnostics": [
+        "src/api/openai_responses.rs:706 too_many_arguments",
+        "src/models/auth_owner.rs:479 needless_borrow",
+        "src/models/prepared_call.rs:196 too_many_arguments"
+      ]
+    },
+    "workspace_rustfmt": {
+      "exit": 1,
+      "existing_differences": "OpenAI Responses root, fixtures and wire"
+    }
+  },
+  "raw_logs": {
+    "cache-status.json": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\cache-status.json",
+      "bytes": 433,
+      "sha256": "3091e3ddacc49d8ca1e3711197b0e3728c21e693c474a7575edba2f475b30dea"
+    },
+    "baseline.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\baseline.stdout",
+      "bytes": 199656,
+      "sha256": "d6ed131657a6fef66b465efe1f2005ca8589be90d9230b99ae92020f129e1830"
+    },
+    "baseline.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\baseline.stderr",
+      "bytes": 496,
+      "sha256": "639c12ed54a8dfeedbb6cad8868bc5d72e754e29015ca0cdf606a2929f70052a"
+    },
+    "workspace-all.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-all.stdout",
+      "bytes": 200401,
+      "sha256": "e957d8625682715292a8c8a1f721b8d4eab615b2df2e13e7df88d34e4e70229f"
+    },
+    "workspace-named-grammar.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-named-grammar.stdout",
+      "bytes": 196163,
+      "sha256": "53ca8423909f39bc9eb4c2bbaf0f77344e67a9a5b281ea88468b8f0565300792"
+    },
+    "chat-preview-probe.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\chat-preview-probe.stdout",
+      "bytes": 205211,
+      "sha256": "393f7d56380e2c1f80005632d592e09e0595a3e358fde0be403c9458a5539c75"
+    },
+    "preview-current.json": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\preview-current.json",
+      "bytes": 22563,
+      "sha256": "9f53396468c9f3ed5d06b4760e027487d839cfd709073b03d3e5bab143db51d2"
+    },
+    "chat-comparator.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\chat-comparator.stderr",
+      "bytes": 287,
+      "sha256": "fb1c2846542d34c6fb236ed9b0d303e713d7c22075afc256fbead21025370021"
+    },
+    "archived-test.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\archived-test.stdout",
+      "bytes": 200930,
+      "sha256": "7780ad224b2cdc95aca66c9814280cb3631f131f05430113ee3f3a84a49c4b6d"
+    },
+    "archived-named-grammar.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\archived-named-grammar.stdout",
+      "bytes": 196683,
+      "sha256": "249b0ba42c588f3fc4a26202bb6cb55eca5ebef18dccc2229cd33330e5f18e8e"
+    },
+    "archive-metadata.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\archive-metadata.stdout",
+      "bytes": 1371626,
+      "sha256": "6fd09e17cfc388e6cdb02fb10060b723e32c1caf3e9f1d8985b6be13a6d448f7"
+    },
+    "selector-unit.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\selector-unit.stderr",
+      "bytes": 5469,
+      "sha256": "94f68377e55e31a924bfb77fe480e0e0aadc28c379adabbcebd642176a9cede8"
+    },
+    "namespace-unit.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\namespace-unit.stderr",
+      "bytes": 6098,
+      "sha256": "94a869c97d4e38787cb7f5e664c8785d82173275a017241f846d66d84df7d7d6"
+    },
+    "clippy-strict.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\clippy-strict.stderr",
+      "bytes": 2022,
+      "sha256": "33a0c51f306c30eafc83e203c5e23eadee347ce3d6c01defeb39ccafedce963c"
+    },
+    "clippy-advisory.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\clippy-advisory.stderr",
+      "bytes": 1980,
+      "sha256": "17444fb207fca6a8d3bdf0f18a784685fabfbb4f8f0279417077f7e663d0e0cc"
+    },
+    "workspace-fmt.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\workspace-fmt.stdout",
+      "bytes": 4160,
+      "sha256": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd"
+    },
+    "gate-missing.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\gate-missing.stdout",
+      "bytes": 173807,
+      "sha256": "44cfff5d81930b0773037edb8716d289ecee2d948b783bdec79eff8f2d36b0f1"
+    }
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "staged": [],
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/public_utilities.rs",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/79-align-context-overflow-diagnostics.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/test_provider_protocol_package.py",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only_tracked": [
+      "docs/iterations/opi-ai-1-5-alignment/issues/110-verify-chat-argument-previews-and-retain-literals.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/117-openai-choice-usage-and-helper-callers.md"
+    ],
+    "new_paths": [
+      "crates/opi-ai/tests/public_utilities/cancellation.rs",
+      "crates/opi-ai/tests/public_utilities/context_overflow.rs",
+      "crates/opi-ai/tests/public_utilities/grammar_property_names.rs",
+      "crates/opi-ai/tests/public_utilities/identity.rs",
+      "crates/opi-ai/tests/public_utilities/provider_configuration.rs",
+      "crates/opi-ai/tests/public_utilities/provider_diagnostics.rs",
+      "crates/opi-ai/tests/public_utilities/rendering.rs",
+      "crates/opi-ai/tests/public_utilities/tool_arguments.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-public-utilities-20261123.json"
+    ],
+    "before": {
+      "unstaged": 201,
+      "untracked": 521
+    },
+    "after": {
+      "unstaged": 203,
+      "untracked": 530
+    }
+  },
+  "files": [
+    {
+      "path": "crates\\opi-ai\\tests\\README.md",
+      "bytes": 48686,
+      "sha256": "c39536632fef6557163b348e591aeb3ae8b83f8b8b7f9f5b4976a65842916536"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\README.zh.md",
+      "bytes": 46394,
+      "sha256": "3743cd777c8904f32e834b18eaebb1eafdfb09d2dc89546fda661895bb7a1bfa"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities.rs",
+      "bytes": 629,
+      "sha256": "f775bd91a33e41051f69b6f47548d6ab76485c099014d80cb37090e9e1b77511"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\cancellation.rs",
+      "bytes": 3449,
+      "sha256": "d0343bb72460f9aa04c7bea4230a760108ff3c1ab85c4859a3b3e1791b09b91b"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\context_overflow.rs",
+      "bytes": 11063,
+      "sha256": "ce175f7227c935bccf09c6407672cc1a7d9f1477d17df2d3138c9704f822647d"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\grammar_property_names.rs",
+      "bytes": 5352,
+      "sha256": "2ab3b3958eacd02d5fdc3bb21d243e77e66e9743f62efca98002197f4224f39c"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\identity.rs",
+      "bytes": 4811,
+      "sha256": "92c89e7a9394f8641e085bd22da9ebbd2be3a6451f2b87b269264f1d4bb96f08"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\provider_configuration.rs",
+      "bytes": 3982,
+      "sha256": "d88fd6c33798522dded851132db8c9c3d87f12d2f4d93edfb0fe6451762bc5b9"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\provider_diagnostics.rs",
+      "bytes": 1995,
+      "sha256": "c0e9d1bdf6b325f2fdc426560a97df29560ab9dfa50b161c52a1b6408b2b9ab3"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\rendering.rs",
+      "bytes": 8830,
+      "sha256": "1772525425a711f9295a0a19c6aa9140516b13c69aff1ef2f39cf880600a7954"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\public_utilities\\tool_arguments.rs",
+      "bytes": 8407,
+      "sha256": "e3082dca4c2aec076e81fff63eeb9fb6451d1eb86b26f977acbf169d79c1a4a8"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\targets.tsv",
+      "bytes": 24027,
+      "sha256": "f491f76c8233be172d74f6e8b13fb755cd928abcdc4bc7ebc7337231f61f0bc9"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\110-verify-chat-argument-previews-and-retain-literals.md",
+      "bytes": 9954,
+      "sha256": "d821a04f416b32f56bcd048b6202a8e98da81e321f3cfdc952042168eaac82c0"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\117-openai-choice-usage-and-helper-callers.md",
+      "bytes": 3685,
+      "sha256": "06154aad7a1d60a6dfe56be015410f9c7cefa453a201bfed6671d93bf61666e1"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\268-partition-oversized-protocol-fixtures.md",
+      "bytes": 135847,
+      "sha256": "c763dca5dd0361650a237e344dd1bb0903ee940e921957eb8023ed02db487905"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\79-align-context-overflow-diagnostics.md",
+      "bytes": 4414,
+      "sha256": "42bd446166c16e9c563474c5b01e6c97752170e07b6d6de0f5c0cc459c2ec919"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\spec.md",
+      "bytes": 190119,
+      "sha256": "e091ce52884f5d5cbf5223e8ea213d4333b5c8b09070e09f89b208cfbd36cca8"
+    },
+    {
+      "path": "scripts\\pi-sdk-conformance\\test_provider_protocol_package.py",
+      "bytes": 21764,
+      "sha256": "4be283adbcc81ef1a2318a272d5c2d5234e5e6168e1cb96611cb3ea7e3024553"
+    },
+    {
+      "path": "scripts\\pi-sdk-conformance\\test_select_tests.py",
+      "bytes": 30087,
+      "sha256": "004e1a7de91a7bd8600e0b055e825bc2457d031775e2eb8bc5a98468fff8a187"
+    }
+  ]
+}

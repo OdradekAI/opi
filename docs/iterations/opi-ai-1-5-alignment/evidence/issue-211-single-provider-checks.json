@@ -1,0 +1,214 @@
+{
+  "date": "2026-11-20",
+  "base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "host": "x86_64-pc-windows-msvc",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "archive": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "26ec3aed887aa796d1d99a59af11828807cff4205109b46bedcce2d152296cb9",
+    "runner_sha256": "51bbe53a3c52371d44706944d182c456112b194e7a0d208c6f78fa5cc1a6f25b",
+    "verdict": "PASS"
+  },
+  "profiles": [
+    {
+      "selected": "provider-anthropic",
+      "resolved_features": [
+        "http-transport",
+        "provider-anthropic",
+        "provider-openrouter-usage",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-azure-openai",
+      "resolved_features": [
+        "http-transport",
+        "provider-azure-openai",
+        "provider-openai-chat",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter-usage",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-bedrock",
+      "resolved_features": [
+        "cloud-auth",
+        "http-transport",
+        "provider-bedrock",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-gemini",
+      "resolved_features": [
+        "http-transport",
+        "provider-gemini",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-mistral",
+      "resolved_features": [
+        "http-transport",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-responses-shared",
+        "provider-openrouter-usage",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-openai-chat",
+      "resolved_features": [
+        "http-transport",
+        "provider-openai-chat",
+        "provider-openai-responses-shared",
+        "provider-openrouter-usage",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-openai-codex-responses",
+      "resolved_features": [
+        "http-transport",
+        "provider-openai-codex-responses",
+        "provider-openai-responses-shared",
+        "provider-protocol-common",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-openai-responses",
+      "resolved_features": [
+        "http-transport",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-openrouter",
+      "resolved_features": [
+        "http-transport",
+        "provider-openai-chat",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-pi-messages",
+      "resolved_features": [
+        "http-transport",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    },
+    {
+      "selected": "provider-vertex",
+      "resolved_features": [
+        "cloud-auth",
+        "http-transport",
+        "provider-gemini",
+        "provider-protocol-common",
+        "provider-vertex",
+        "tls-backend"
+      ],
+      "lib_check_exit": 0,
+      "consumer_steps": {
+        "lock": 0,
+        "metadata": 0,
+        "build": 0,
+        "run": 0
+      }
+    }
+  ],
+  "lib_tests": {
+    "provider-openai-chat": 182,
+    "provider-anthropic/cancellation_retains_silent_producer_state_at_the_barrier": 1,
+    "provider-openai-responses/legacy_responses_optional_source_values_remain_absent": 1
+  }
+}

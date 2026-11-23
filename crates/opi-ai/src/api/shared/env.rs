@@ -1,14 +1,11 @@
-//! Scoped provider environment lookup (pinned source:
-//! `.repo/pi-1.3.0/packages/ai/src/utils/provider-env.ts`; task 20.53.6).
+//! Scoped provider environment lookup.
 //!
 //! Resolution is lazy and side-effect free: no environment is read at
 //! construction time and nothing is cached or mutated globally. Proxy and
 //! header-identity policy stay with their owning modules (`crate::http` (with `builtins`)
 //! proxy resolution, [`crate::auth`] identities) — this helper only answers
-//! "which value does this name resolve to right now". The pinned Bun
-//! `/proc/self/environ` fallback has no Rust counterpart and is not
-//! reproduced. The helper is shared by API adapters; provider profiles do not
-//! own ambient lookup policy.
+//! "which value does this name resolve to right now" through the supplied
+//! auth context. API adapters share the lookup when building routes.
 
 use std::collections::HashMap;
 

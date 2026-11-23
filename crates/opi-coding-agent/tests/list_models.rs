@@ -21,6 +21,292 @@ use opi_coding_agent::model_listing::model_entries_from_registry;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Listing observes each isolated environment in order.
+async fn vertex_listing_uses_one_catalog_for_express_and_bearer() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing,
+        build_collection_for_listing_with_store,
+    };
+
+    const MODES: [&str; 3] = [
+        "GOOGLE_CLOUD_API_KEY",
+        "OPI_TEST_VERTEX_LIST_TOKEN",
+        "GOOGLE_APPLICATION_CREDENTIALS",
+    ];
+    let env = ScopedEnv::new(&MODES);
+    let adc_file = tempfile::NamedTempFile::new().unwrap();
+    let store = ProbeOnlyCredentialStore::default();
+    let expected: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("google-vertex", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(expected.len(), 13);
+    for selected in MODES {
+        for name in MODES {
+            env.remove(name);
+        }
+        let mut config = OpiConfig::default();
+        let vertex = &mut config.providers.google_vertex;
+        vertex.access_token_env = "OPI_TEST_VERTEX_LIST_TOKEN".into();
+        if selected != "GOOGLE_CLOUD_API_KEY" {
+            vertex.project = Some("test-project".into());
+            vertex.location = Some("europe-west1".into());
+        }
+        if selected == "GOOGLE_APPLICATION_CREDENTIALS" {
+            env.set(selected, adc_file.path().as_os_str());
+        } else {
+            env.set(selected, "fixture-credential");
+        }
+        let listing = build_collection_for_listing_with_store(&config, &store)
+            .await
+            .unwrap();
+        assert_eq!(
+            listing.get_models(Some("google-vertex")),
+            expected,
+            "{selected}"
+        );
+        let rows: Vec<_> = available_model_entries(&listing)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|row| row.provider_id == "google-vertex")
+            .map(|row| (row.model_id, row.display_name))
+            .collect();
+        assert_eq!(
+            rows,
+            expected
+                .iter()
+                .map(|model| (model.id.clone(), model.display_name.clone()))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            listing
+                .get_model("google-vertex", "gemini-3.1-flash-lite-image")
+                .is_none()
+        );
+        if selected == "GOOGLE_APPLICATION_CREDENTIALS" {
+            let probes = std::collections::HashMap::from([(
+                "google-vertex".into(),
+                CredentialSource::BackendUnavailable {
+                    reason: "offline keychain".into(),
+                },
+            )]);
+            let fallback = build_collection_for_listing(&config, &probes).unwrap();
+            assert_eq!(fallback.get_models(Some("google-vertex")), expected);
+        }
+    }
+    env.remove("GOOGLE_APPLICATION_CREDENTIALS");
+    env.set("OPI_TEST_VERTEX_LIST_TOKEN", "projectless-token");
+    let mut projectless = OpiConfig::default();
+    projectless.providers.google_vertex.access_token_env = "OPI_TEST_VERTEX_LIST_TOKEN".into();
+    let listing = build_collection_for_listing_with_store(&projectless, &store)
+        .await
+        .unwrap();
+    assert!(listing.get_models(Some("google-vertex")).is_empty());
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn google_listing_uses_the_released_catalog_without_reading_credentials() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_coding_agent::config::{CredentialBackendSource, OpiConfig};
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing_with_store,
+    };
+
+    let mut config = OpiConfig::default();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+    let store = ProbeOnlyCredentialStore::default();
+    store
+        .write(
+            "google",
+            &Credential::ApiKey("unused-google-list-key".into()),
+        )
+        .await
+        .unwrap();
+    let listing = build_collection_for_listing_with_store(&config, &store)
+        .await
+        .unwrap();
+    let expected: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("google", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(expected.len(), 23);
+    assert_eq!(listing.get_models(Some("google")), expected);
+    assert_eq!(
+        available_model_entries(&listing)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|entry| entry.provider_id == "google")
+            .map(|entry| (entry.model_id, entry.display_name))
+            .collect::<Vec<_>>(),
+        expected
+            .into_iter()
+            .map(|model| (model.id, model.display_name))
+            .collect::<Vec<_>>()
+    );
+    for retired in [
+        "gemini-2.0-flash",
+        "gemini-3.1-flash-lite-image",
+        "gemini-3.1-flash-live-preview",
+    ] {
+        assert!(listing.get_model("google", retired).is_none());
+    }
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn azure_listing_uses_the_released_catalog_without_deployments() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_coding_agent::config::{CredentialBackendSource, OpiConfig};
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing_with_store,
+    };
+
+    let mut config = OpiConfig::default();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+    let store = ProbeOnlyCredentialStore::default();
+    store
+        .write("azure", &Credential::ApiKey("sk-azure-list-fixture".into()))
+        .await
+        .unwrap();
+    let listing = build_collection_for_listing_with_store(&config, &store)
+        .await
+        .unwrap();
+    let expected: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("azure", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(expected.len(), 45);
+    assert_eq!(listing.get_models(Some("azure")), expected);
+    assert_eq!(
+        available_model_entries(&listing)
+            .await
+            .unwrap()
+            .into_iter()
+            .filter(|entry| entry.provider_id == "azure")
+            .map(|entry| (entry.model_id, entry.display_name))
+            .collect::<Vec<_>>(),
+        expected
+            .into_iter()
+            .map(|model| (model.id, model.display_name))
+            .collect::<Vec<_>>()
+    );
+    for retired in [
+        "gpt-5.2-chat-latest",
+        "gpt-5.3-chat-latest",
+        "gpt-realtime-2.1",
+    ] {
+        assert!(listing.get_model("azure", retired).is_none());
+    }
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn openai_listing_uses_the_released_responses_catalog() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_coding_agent::config::{CredentialBackendSource, OpiConfig};
+    use opi_coding_agent::provider_factory::{
+        available_model_entries, build_collection_for_listing_with_store,
+    };
+
+    let mut config = OpiConfig::default();
+    config.defaults.credential_backend = Some(CredentialBackendSource::Keychain);
+    let store = ProbeOnlyCredentialStore::default();
+    let provider_ids = ["openai", "openai-responses"];
+    for provider in provider_ids {
+        store
+            .write(provider, &Credential::ApiKey("sk-list-fixture".into()))
+            .await
+            .unwrap();
+    }
+    let listing = build_collection_for_listing_with_store(&config, &store)
+        .await
+        .unwrap();
+    let entries = available_model_entries(&listing).await.unwrap();
+    let catalog = Catalog::builtin().unwrap();
+    let expected: Vec<_> = catalog
+        .models("openai", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(expected.len(), 44);
+    for provider in provider_ids {
+        assert_eq!(listing.get_models(Some(provider)).len(), 44, "{provider}");
+        assert_eq!(
+            entries
+                .iter()
+                .filter(|entry| entry.provider_id == provider)
+                .count(),
+            expected.len(),
+            "{provider}"
+        );
+        for model in &expected {
+            assert_eq!(listing.get_model(provider, &model.id).as_ref(), Some(model));
+            assert!(entries.iter().any(|entry| {
+                entry.provider_id == provider
+                    && entry.model_id == model.id
+                    && entry.display_name == model.display_name
+            }));
+        }
+        for retired in [
+            "gpt-5.2-chat-latest",
+            "gpt-5.3-chat-latest",
+            "gpt-realtime-2.1",
+        ] {
+            assert!(listing.get_model(provider, retired).is_none());
+        }
+    }
+    assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
+}
+
+#[test]
+fn openrouter_listing_and_direct_profile_share_bundled_model_facts() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_ai::providers::openrouter::openrouter_provider;
+    use opi_coding_agent::config::OpiConfig;
+    use opi_coding_agent::provider_factory::build_collection_for_listing;
+
+    let mut config = OpiConfig::default();
+    let key = "OPI_TEST_LIST_OPENROUTER_CATALOG";
+    config.providers.openrouter.api_key_env = key.into();
+    let _env = ScopedEnv::cleared_with_values(&[key], &[(key, "fixture")]);
+    let listing = build_collection_for_listing(&config, &Default::default()).unwrap();
+    let direct = openrouter_provider(None);
+    let catalog = Catalog::builtin().unwrap();
+    assert_eq!(listing.get_models(Some("openrouter")), direct.models());
+    for retired in [
+        "deepseek/deepseek-r1",
+        "anthropic/claude-sonnet-4",
+        "anthropic/claude-haiku-4",
+    ] {
+        assert!(
+            catalog
+                .model("openrouter", CatalogOperation::Chat, retired)
+                .is_none()
+        );
+        assert!(listing.get_model("openrouter", retired).is_none());
+    }
+    assert!(!direct.models().is_empty());
+    for model in direct.models() {
+        let record = catalog.model("openrouter", CatalogOperation::Chat, &model.id);
+        let mut expected = record.unwrap().to_chat_model_info().unwrap();
+        // A direct factory supplies its endpoint, including caller-configured proxies.
+        expected.base_url = None;
+        assert_eq!(model, &expected);
+    }
+}
+
 const BEDROCK_ENV_NAMES: [&str; 5] = [
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
@@ -632,6 +918,7 @@ impl opi_coding_agent::credential_store::CredentialMetadataStore for ProbeOnlyCr
 
 #[tokio::test]
 async fn github_copilot_static_catalog_lists_without_store_reads() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
     use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
 
     let store = ProbeOnlyCredentialStore::default();
@@ -642,11 +929,28 @@ async fn github_copilot_static_catalog_lists_without_store_reads() {
     .await
     .expect("static GitHub Copilot listing");
 
+    let catalog = Catalog::builtin().unwrap();
+    let published: Vec<_> = catalog
+        .models("github-copilot", CatalogOperation::Chat)
+        .unwrap()
+        .map(|model| model.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(published.len(), 27);
+    assert_eq!(collection.get_models(Some("github-copilot")), published);
     let entries = model_entries_from_registry(collection.registry())
         .into_iter()
         .filter(|entry| entry.provider_id == "github-copilot")
         .collect::<Vec<_>>();
-    assert_eq!(entries.len(), 25);
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| (entry.model_id.as_str(), entry.display_name.as_str()))
+            .collect::<Vec<_>>(),
+        published
+            .iter()
+            .map(|model| (model.id.as_str(), model.display_name.as_str()))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
     assert!(
         !store
@@ -661,6 +965,7 @@ async fn github_copilot_static_catalog_lists_without_store_reads() {
 
 #[tokio::test]
 async fn openai_codex_static_catalog_lists_without_store_reads() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
     use opi_coding_agent::provider_factory::build_collection_for_listing_with_store;
 
     let store = ProbeOnlyCredentialStore::default();
@@ -671,25 +976,27 @@ async fn openai_codex_static_catalog_lists_without_store_reads() {
     .await
     .expect("static OpenAI Codex listing");
 
+    let published: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("openai-codex", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(published.len(), 8);
+    assert_eq!(collection.get_models(Some("openai-codex")), published);
     let entries = model_entries_from_registry(collection.registry())
         .into_iter()
         .filter(|entry| entry.provider_id == "openai-codex")
         .collect::<Vec<_>>();
-    assert_eq!(entries.len(), 7);
     assert_eq!(
         entries
             .iter()
-            .map(|entry| entry.model_id.as_str())
+            .map(|entry| (entry.model_id.as_str(), entry.display_name.as_str()))
             .collect::<Vec<_>>(),
-        vec![
-            "gpt-5.3-codex-spark",
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.5",
-            "gpt-5.6-luna",
-            "gpt-5.6-sol",
-            "gpt-5.6-terra",
-        ]
+        published
+            .iter()
+            .map(|model| (model.id.as_str(), model.display_name.as_str()))
+            .collect::<Vec<_>>()
     );
     assert_eq!(store.read_calls.load(Ordering::SeqCst), 0);
     assert!(
@@ -1094,6 +1401,33 @@ async fn bedrock_listing_matches_secret_free_runtime_auth_presence() {
             case.name
         );
         if case.expected_present {
+            let expected = opi_ai::providers::bedrock::model_catalog();
+            assert_eq!(expected.len(), 197);
+            assert_eq!(collection.get_models(Some("amazon-bedrock")), expected);
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| entry.provider_id == "amazon-bedrock")
+                    .count(),
+                expected.len()
+            );
+            for old_id in [
+                "anthropic.claude-sonnet-4-20250514-v2:0",
+                "anthropic.claude-opus-4-20250514-v1:0",
+                "anthropic.claude-haiku-4-5-20250514-v1:0",
+            ] {
+                assert!(collection.get_model("amazon-bedrock", old_id).is_none());
+            }
+            assert_eq!(
+                collection
+                    .get_model("amazon-bedrock", "global.openai.gpt-6.1-terra")
+                    .unwrap(),
+                expected
+                    .iter()
+                    .find(|model| model.id == "global.openai.gpt-6.1-terra")
+                    .unwrap()
+                    .clone()
+            );
             assert!(
                 matches!(
                     collection.auth_descriptor("amazon-bedrock"),

@@ -30,25 +30,29 @@ pub struct PreparedRoute {
     pub wire_api: crate::model_info::WireApi,
 }
 
-/// An opaque prepared provider call.
-///
-/// Privately freezes the resolved provider, the request, and the secret-bearing
-/// resolved authentication. `start_attempt` reuses the
-/// An admitted strict-downgrade variant (task 20.11): exactly one rebuilt
-/// payload variant after a source-qualified Anthropic strict-limit
-/// rejection, with its machine-readable reason.
+/// An admitted strict-downgrade variant after a source-qualified strict-tool
+/// limit rejection, with its machine-readable reason.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StrictVariantAdmission {
     /// The recorded downgrade reason (e.g. `strict_tool_limits_exceeded`).
     pub reason: &'static str,
 }
 
-/// frozen route, request, and authentication for each permitted sequential
-/// retry without repeating route/auth preparation. The secret never enters
-/// [`PreparedRoute`], Agent-visible state, evidence, diagnostics, or
-/// model-visible state.
+/// The adapter and model-specific options frozen for each dispatch attempt.
+pub(super) struct PreparedDispatch {
+    pub(super) provider: Arc<dyn Provider>,
+    // Keep the complete record out of the prepared call's inline state.
+    pub(super) selected_model: Option<Box<ModelInfo>>,
+    pub(super) simple_options: SimpleOptions,
+}
+
+/// An opaque prepared provider call.
+///
+/// `start_attempt` reuses the frozen route, request, and authentication for
+/// each permitted sequential retry without repeating preparation. The secret
+/// never enters [`PreparedRoute`], diagnostics, or model-visible state.
 pub struct PreparedProviderCall {
-    provider: Arc<dyn Provider>,
+    dispatch: PreparedDispatch,
     request: Box<Request>,
     auth: ResolvedAuth,
     route: PreparedRoute,
@@ -63,9 +67,6 @@ pub struct PreparedProviderCall {
     invocation_id: String,
     resources: Option<crate::codex_resources::CallResourceLease>,
     resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
-    // Retain the complete record without inflating callers' inline async state.
-    selected_model: Option<Box<ModelInfo>>,
-    simple_options: SimpleOptions,
 }
 
 struct AttemptStream {
@@ -198,18 +199,16 @@ impl std::fmt::Debug for PreparedProviderCall {
 
 impl PreparedProviderCall {
     pub(super) fn new(
-        provider: Arc<dyn Provider>,
+        dispatch: PreparedDispatch,
         request: Request,
         auth: ResolvedAuth,
         route: PreparedRoute,
         policy: crate::retry::AcquisitionPolicy,
         resources: Option<crate::codex_resources::CallResourceLease>,
         resource_owner: Option<Arc<dyn crate::codex_resources::SessionResourceOwner>>,
-        selected_model: Option<ModelInfo>,
-        simple_options: SimpleOptions,
     ) -> Self {
         Self {
-            provider,
+            dispatch,
             request: Box::new(request),
             auth,
             route,
@@ -218,8 +217,6 @@ impl PreparedProviderCall {
             invocation_id: uuid::Uuid::new_v4().to_string(),
             resources,
             resource_owner,
-            selected_model: selected_model.map(Box::new),
-            simple_options,
         }
     }
 
@@ -265,8 +262,8 @@ impl PreparedProviderCall {
     }
 
     /// The pending strict-downgrade variant admission, if the last observed
-    /// failure was a source-qualified Anthropic strict-limit rejection on
-    /// the first variant (task 20.11, V-34/V-36).
+    /// failure was a source-qualified Anthropic or Bedrock strict-tool limit
+    /// rejection on the first variant.
     ///
     /// The caller dispatches it immediately through
     /// [`start_attempt`](Self::start_attempt) — no readiness wait: the
@@ -339,14 +336,16 @@ impl PreparedProviderCall {
         }
         // Adapters may eagerly spawn their producer in `stream_prepared`.
         // Defer that invocation too, so an unpolled lease has no effects.
-        let provider = self.provider.clone();
+        let provider = self.dispatch.provider.clone();
         let mut request = (*self.request).clone();
         let auth = self.auth.clone();
-        let attempt = self.acquisition.attempt_context(&self.invocation_id);
+        let attempt = self
+            .acquisition
+            .attempt_context(&self.invocation_id, self.route.wire_api);
         request.callbacks = request.callbacks.with_attempt(attempt.clone());
         let resources = self.resources.clone();
-        let selected_model = self.selected_model.clone();
-        let simple_options = self.simple_options.clone();
+        let selected_model = self.dispatch.selected_model.clone();
+        let simple_options = self.dispatch.simple_options.clone();
         let stream = Box::pin(
             stream::once(async move {
                 match selected_model {
@@ -378,7 +377,7 @@ impl PreparedProviderCall {
         ))
     }
 
-    /// Start one prepared attempt behind the standard [`ChatStream`] result
+    /// Start one prepared attempt behind the standard [`ChatStream`](crate::ChatStream) result
     /// contract.
     ///
     /// This is the observed convenience entry for independent consumers. It
@@ -411,6 +410,7 @@ impl PreparedProviderCall {
             attributes = attributes.with_reasoning(reasoning);
         }
         if let Some(pricing) = self
+            .dispatch
             .selected_model
             .as_deref()
             .and_then(|model| model.pricing.as_ref())

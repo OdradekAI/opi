@@ -12,29 +12,29 @@ use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
 use crate::api::contract::{DeferredApi, DeferredCancelCall, DeferredFetchCall};
+use crate::api::shared::copilot_headers::github_copilot_route_headers;
 use crate::api::shared::headers::ProviderHeaders;
 use crate::api::shared::openai_responses::{
     ParsedEvent, ResponsesMapper, drain_sse_frames, parse_sse_frames,
 };
 use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::model_info::WireApi;
-use crate::provider::routes::{
-    OpenAiResponsesRouteContext, ResponsesAffinityPolicy, ResponsesConfig,
-};
+use crate::provider::policies::{ResponsesAffinityPolicy, ResponsesConfig};
+use crate::provider::routes::OpenAiResponsesConfiguredRoute;
 use crate::provider::{
     CacheRetention, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
-    github_copilot_initiator, github_copilot_route_headers,
 };
 use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
 use crate::types::deferred::DeferredHandle;
 
 const DEFAULT_RESPONSES_PATH: &str = "/v1/responses";
 
-impl OpenAiResponsesRouteContext {
+impl OpenAiResponsesConfiguredRoute {
     /// The resolved record's exact wire (task 20.38): replay identity follows
     /// the record (azure responses records replay under their own wire).
     fn resolve_wire(&self, model_id: &str) -> crate::model_info::WireApi {
-        self.models
+        self.route
+            .models
             .iter()
             .find(|model| model.id == model_id)
             .map(|model| model.wire_api)
@@ -42,13 +42,13 @@ impl OpenAiResponsesRouteContext {
     }
 
     fn resolve_config(&self, model_id: &str) -> ResponsesConfig {
-        if self.catalog_compat
+        if self.policy.catalog_compat
             && let Some(ModelInfo {
                 compat:
                     crate::model_info::WireCompat::OpenAiResponses(compat)
                     | crate::model_info::WireCompat::AzureOpenAiResponses(compat),
                 ..
-            }) = self.models.iter().find(|model| model.id == model_id)
+            }) = self.route.models.iter().find(|model| model.id == model_id)
         {
             return ResponsesConfig {
                 source: compat.source.clone(),
@@ -57,11 +57,11 @@ impl OpenAiResponsesRouteContext {
                 send_session_id_header: compat.send_session_id_header,
             };
         }
-        self.config.clone()
+        self.route.config.clone()
     }
 
     fn prepared_signin(&self, final_base_url: &str, auth: &ResolvedAuth) -> bool {
-        self.provider_id == "openai"
+        self.route.provider_id == "openai"
             && final_base_url == "https://api.openai.com/v1"
             && !auth.secret.expose_secret().starts_with("sk-")
     }
@@ -73,12 +73,14 @@ impl OpenAiResponsesRouteContext {
     ) -> crate::model_info::SessionAffinityFormat {
         config.source.session_affinity_format.unwrap_or_else(|| {
             let base = self
+                .route
                 .models
                 .iter()
                 .find(|model| model.id == model_id)
                 .and_then(|model| model.base_url.as_deref())
-                .unwrap_or(&self.base_url);
-            let openrouter = self.provider_id == "openrouter" || base.contains("openrouter.ai");
+                .unwrap_or(&self.route.base_url);
+            let openrouter =
+                self.route.provider_id == "openrouter" || base.contains("openrouter.ai");
             if openrouter {
                 crate::model_info::SessionAffinityFormat::OpenRouter
             } else {
@@ -88,9 +90,11 @@ impl OpenAiResponsesRouteContext {
     }
 
     fn resolve_route_path(&self, model_id: &str) -> String {
-        let model = self.models.iter().find(|model| model.id == model_id);
+        let model = self.route.models.iter().find(|model| model.id == model_id);
         let selected_path = match model.map(|model| &model.compat) {
-            Some(crate::model_info::WireCompat::OpenAiResponses(compat)) if self.catalog_compat => {
+            Some(crate::model_info::WireCompat::OpenAiResponses(compat))
+                if self.policy.catalog_compat =>
+            {
                 compat.responses_path.as_str()
             }
             _ => DEFAULT_RESPONSES_PATH,
@@ -141,15 +145,15 @@ impl OpenAiResponsesRouteContext {
         let config = self.resolve_config(model_id);
         let wire = self.resolve_wire(model_id);
         let ordinary = wire == crate::model_info::WireApi::OpenAiResponses;
-        let signin = ordinary && self.chatgpt_signin.unwrap_or(false);
+        let signin = ordinary && self.policy.chatgpt_signin.unwrap_or(false);
         let strict = config
             .source
             .supports_strict_mode
             .unwrap_or(wire == crate::model_info::WireApi::AzureOpenAiResponses);
-        let selected_model = self.models.iter().find(|model| model.id == model_id);
+        let selected_model = self.route.models.iter().find(|model| model.id == model_id);
         let projection = crate::transcript::compile_request_projection(
             request,
-            &self.provider_id,
+            &self.route.provider_id,
             selected_model,
             self.resolve_wire(model_id),
         )?;
@@ -174,9 +178,12 @@ impl OpenAiResponsesRouteContext {
         // Canonical replay projection (task 20.7) before body building.
         let replay_route = crate::replay::ReplayRoute {
             wire: self.resolve_wire(model_id),
-            provider: self.provider_id.clone(),
+            provider: self.route.provider_id.clone(),
             model: model_id.to_owned(),
-            supports_images: crate::replay::supports_images_in_catalog(&self.models, model_id),
+            supports_images: crate::replay::supports_images_in_catalog(
+                &self.route.models,
+                model_id,
+            ),
         };
         let replay = &projection.replay;
         // Task 20.37: native options own effort/summary/service tier/tool
@@ -206,7 +213,7 @@ impl OpenAiResponsesRouteContext {
             )
             .then_some(crate::model_info::ThinkingLevel::Medium)
         });
-        let model_record = self.models.iter().find(|model| model.id == model_id);
+        let model_record = self.route.models.iter().find(|model| model.id == model_id);
         let model_reasons = model_record
             .map(|model| model.capabilities.supports_thinking)
             .unwrap_or(false);
@@ -222,7 +229,7 @@ impl OpenAiResponsesRouteContext {
                         wire_effort = Some(effort);
                     }
                 }
-                None if self.provider_id != "github-copilot" => {
+                None if self.route.provider_id != "github-copilot" => {
                     // Off branch (source `off ?? "none"`): reasoning models
                     // explicitly select the off mapping; copilot-style
                     // routes skip it.
@@ -299,7 +306,7 @@ impl OpenAiResponsesRouteContext {
         // The cache key and retention policy are independent of transport
         // affinity headers and of one another.
         let cache_key_enabled = request.cache_retention != CacheRetention::Disabled
-            && match self.affinity_policy {
+            && match self.policy.affinity_policy {
                 ResponsesAffinityPolicy::Direct => true,
                 ResponsesAffinityPolicy::CustomDisabled => false,
                 ResponsesAffinityPolicy::CustomOptIn => config.send_session_id_header,
@@ -350,7 +357,7 @@ impl OpenAiResponsesRouteContext {
             body["reasoning"] = reasoning;
             if !off_branch {
                 body["include"] = serde_json::json!(["reasoning.encrypted_content"]);
-            } else if self.provider_id == "xai" {
+            } else if self.route.provider_id == "xai" {
                 // xai reasoning models always request encrypted reasoning
                 // (source), including on the off branch.
                 body["include"] = serde_json::json!(["reasoning.encrypted_content"]);
@@ -359,7 +366,7 @@ impl OpenAiResponsesRouteContext {
         // Last so model and request sampling parameters override named
         // request fields (model base < effective level < request, per key).
         let effective_level = requested_level.unwrap_or(crate::model_info::ThinkingLevel::None);
-        if let Some(model) = self.models.iter().find(|model| model.id == model_id)
+        if let Some(model) = self.route.models.iter().find(|model| model.id == model_id)
             && let Some(sampling) = crate::model_info::resolve_sampling_params(
                 model,
                 effective_level,
@@ -376,7 +383,7 @@ impl OpenAiResponsesRouteContext {
     /// Map a complete in-memory SSE body without HTTP.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
         let mut mapper = ResponsesMapper::new(
-            &self.provider_id,
+            &self.route.provider_id,
             crate::model_info::WireApi::OpenAiResponses,
             "",
         )
@@ -655,10 +662,16 @@ fn map_http_status(
 /// `cancel_deferred`.
 #[derive(Clone)]
 pub struct OpenAiResponsesDeferredApi {
-    provider: Arc<OpenAiResponsesRouteContext>,
+    provider: Arc<OpenAiResponsesConfiguredRoute>,
     api_id: crate::types::ApiId,
     provider_id: String,
     model_id: String,
+}
+
+struct BackgroundRequest {
+    method: reqwest::Method,
+    path: String,
+    body: Option<serde_json::Value>,
 }
 
 impl std::fmt::Debug for OpenAiResponsesDeferredApi {
@@ -672,9 +685,9 @@ impl std::fmt::Debug for OpenAiResponsesDeferredApi {
 }
 
 impl OpenAiResponsesDeferredApi {
-    fn new(provider: Arc<OpenAiResponsesRouteContext>, model_id: String) -> Self {
+    fn new(provider: Arc<OpenAiResponsesConfiguredRoute>, model_id: String) -> Self {
         Self {
-            provider_id: provider.provider_id.clone(),
+            provider_id: provider.route.provider_id.clone(),
             provider,
             api_id: crate::types::ApiId::new("openai-responses"),
             model_id,
@@ -698,28 +711,29 @@ impl OpenAiResponsesDeferredApi {
 
     async fn json_request(
         &self,
-        method: reqwest::Method,
-        path: String,
+        request: BackgroundRequest,
         auth: ResolvedAuth,
-        body: Option<serde_json::Value>,
         timeout: Option<std::time::Duration>,
         cancel: CancellationToken,
         extra_headers: Vec<(String, String)>,
         callbacks: crate::callbacks::RequestCallbacks,
     ) -> Result<serde_json::Value, ProviderError> {
+        let BackgroundRequest { method, path, body } = request;
         let (header_name, header_value) = self.auth_header(&auth)?;
         let model_base = self
             .provider
+            .route
             .models
             .iter()
             .find(|model| model.id == self.model_id)
             .and_then(|model| model.base_url.as_deref())
-            .unwrap_or(&self.provider.base_url);
+            .unwrap_or(&self.provider.route.base_url);
         let base_url =
             crate::auth::builtin::effective_base_url(&self.provider_id, model_base, &auth);
         let url = crate::api::shared::endpoint::join_endpoint(&base_url, &path);
         let mut request = self
             .provider
+            .route
             .client
             .client()
             .request(method, url)
@@ -730,14 +744,15 @@ impl OpenAiResponsesDeferredApi {
         }
         let model_headers = self
             .provider
+            .route
             .models
             .iter()
             .find(|model| model.id == self.model_id)
             .map(|model| model.headers.as_slice())
             .unwrap_or_default();
-        let headers = self.provider.headers.merge_model_request(
+        let headers = self.provider.route.headers.merge_model_request(
             model_headers,
-            &self.provider.route_headers,
+            &self.provider.route.route_headers,
             &extra_headers,
         )?;
         let headers = callbacks.apply_header_transform_async(&headers).await?;
@@ -783,7 +798,7 @@ impl OpenAiResponsesDeferredApi {
             return Err(map_http_status(
                 status,
                 &headers,
-                self.provider.auth_invalid_policy,
+                self.provider.policy.auth_invalid_policy,
                 &self.provider_id,
             ));
         }
@@ -1018,10 +1033,12 @@ impl DeferredApi<()> for OpenAiResponsesDeferredApi {
                 };
                 match this
                     .json_request(
-                        reqwest::Method::POST,
-                        this.provider.resolve_route_path(&this.model_id),
+                        BackgroundRequest {
+                            method: reqwest::Method::POST,
+                            path: this.provider.resolve_route_path(&this.model_id),
+                            body: Some(body),
+                        },
                         auth,
-                        Some(body),
                         request.timeout,
                         request.cancel,
                         request.extra_headers,
@@ -1050,14 +1067,16 @@ impl DeferredApi<()> for OpenAiResponsesDeferredApi {
             stream::once(async move {
                 match this
                     .json_request(
-                        reqwest::Method::GET,
-                        format!(
-                            "{}/{}",
-                            this.provider.resolve_route_path(&this.model_id),
-                            id
-                        ),
+                        BackgroundRequest {
+                            method: reqwest::Method::GET,
+                            path: format!(
+                                "{}/{}",
+                                this.provider.resolve_route_path(&this.model_id),
+                                id
+                            ),
+                            body: None,
+                        },
                         auth,
-                        None,
                         call.timeout,
                         call.cancel,
                         call.extra_headers,
@@ -1082,14 +1101,16 @@ impl DeferredApi<()> for OpenAiResponsesDeferredApi {
     ) -> futures_util::future::BoxFuture<'a, Result<(), ProviderError>> {
         Box::pin(async move {
             self.json_request(
-                reqwest::Method::POST,
-                format!(
-                    "{}/{}/cancel",
-                    self.provider.resolve_route_path(&self.model_id),
-                    handle.id
-                ),
+                BackgroundRequest {
+                    method: reqwest::Method::POST,
+                    path: format!(
+                        "{}/{}/cancel",
+                        self.provider.resolve_route_path(&self.model_id),
+                        handle.id
+                    ),
+                    body: Some(serde_json::json!({})),
+                },
                 auth,
-                Some(serde_json::json!({})),
                 call.timeout,
                 call.cancel,
                 call.extra_headers,
@@ -1101,7 +1122,7 @@ impl DeferredApi<()> for OpenAiResponsesDeferredApi {
     }
 }
 
-impl OpenAiResponsesRouteContext {
+impl OpenAiResponsesConfiguredRoute {
     pub(crate) fn stream_prepared_with_options(
         &self,
         mut request: Request,
@@ -1120,32 +1141,35 @@ impl OpenAiResponsesRouteContext {
                 .map(|(_, id)| id)
                 .unwrap_or(&request.model);
             let selected_base = self
+                .route
                 .models
                 .iter()
                 .find(|model| model.id == model_id)
                 .and_then(|model| model.base_url.as_deref())
-                .unwrap_or(&self.base_url);
+                .unwrap_or(&self.route.base_url);
             let effective_base = crate::auth::builtin::effective_base_url(
-                &self.provider_id,
+                &self.route.provider_id,
                 selected_base,
                 &resolved,
             );
             if effective_base != selected_base {
                 let mut configured = self.clone();
                 if let Some(model) = configured
+                    .route
                     .models
                     .iter_mut()
                     .find(|model| model.id == model_id)
                 {
                     model.base_url = Some(effective_base);
                 } else {
-                    configured.base_url = effective_base;
+                    configured.route.base_url = effective_base;
                 }
                 return configured.stream_prepared_with_options(request, resolved, native_options);
             }
-            if self.chatgpt_signin.is_none() {
+            if self.policy.chatgpt_signin.is_none() {
                 let mut configured = self.clone();
-                configured.chatgpt_signin = Some(self.prepared_signin(&effective_base, &resolved));
+                configured.policy.chatgpt_signin =
+                    Some(self.prepared_signin(&effective_base, &resolved));
                 return configured.stream_prepared_with_options(request, resolved, native_options);
             }
             request.callbacks = request.callbacks.ensure_call_scope();
@@ -1154,16 +1178,17 @@ impl OpenAiResponsesRouteContext {
             if let Err(error) = crate::provider::validate_request_capabilities(self, &request) {
                 return Box::pin(stream::once(async move { Err(error) }));
             }
-            let default_base_url = self.base_url.clone();
-            let provider_id = self.provider_id.clone();
-            let auth_invalid_policy = self.auth_invalid_policy;
-            let affinity_policy = self.affinity_policy;
+            let default_base_url = self.route.base_url.clone();
+            let provider_id = self.route.provider_id.clone();
+            let auth_invalid_policy = self.policy.auth_invalid_policy;
+            let affinity_policy = self.policy.affinity_policy;
             let model_id = request
                 .model
                 .split_once(':')
                 .map(|(_, id)| id)
                 .unwrap_or(&request.model);
             let model_base_url = self
+                .route
                 .models
                 .iter()
                 .find(|model| model.id == model_id)
@@ -1171,17 +1196,8 @@ impl OpenAiResponsesRouteContext {
             let config = self.resolve_config(model_id);
             let affinity_format = self.affinity_format(model_id, &config);
             let route_path = self.resolve_route_path(model_id);
-            let copilot_headers = if self.copilot_headers {
-                match github_copilot_route_headers(&request) {
-                    Ok(mut headers) => {
-                        headers.push((
-                            "X-Initiator".into(),
-                            github_copilot_initiator(&request).into(),
-                        ));
-                        Ok(headers)
-                    }
-                    Err(error) => Err(error),
-                }
+            let copilot_headers = if self.policy.copilot_headers {
+                github_copilot_route_headers(&request)
             } else {
                 Ok(Vec::new())
             };
@@ -1214,11 +1230,12 @@ impl OpenAiResponsesRouteContext {
                         }
                     }
                 }
-                route_headers.extend_from_slice(self.headers.configured());
-                route_headers.extend_from_slice(&self.route_headers);
+                route_headers.extend_from_slice(self.route.headers.configured());
+                route_headers.extend_from_slice(&self.route.route_headers);
                 route_headers.extend(copilot_headers);
                 ProviderHeaders::default().merge_model_request(
-                    self.models
+                    self.route
+                        .models
                         .iter()
                         .find(|model| model.id == model_id)
                         .map(|model| model.headers.as_slice())
@@ -1258,7 +1275,7 @@ impl OpenAiResponsesRouteContext {
                 });
             let telemetry = request.telemetry_context.clone();
             let timeout = request.timeout;
-            let client = self.client.client().clone();
+            let client = self.route.client.client().clone();
             let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
             let producer_snapshot = snapshot.clone();
             let (tx, rx) = tokio::sync::mpsc::channel(64);
@@ -1350,17 +1367,17 @@ impl OpenAiResponsesRouteContext {
     }
 }
 
-impl Provider for OpenAiResponsesRouteContext {
+impl Provider for OpenAiResponsesConfiguredRoute {
     fn prepare_model_call(
         &self,
         model: &mut ModelInfo,
         auth: &mut ResolvedAuth,
     ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
-        let selected_base = model.base_url.as_deref().unwrap_or(&self.base_url);
+        let selected_base = model.base_url.as_deref().unwrap_or(&self.route.base_url);
         let final_base =
-            crate::auth::builtin::effective_base_url(&self.provider_id, selected_base, auth);
+            crate::auth::builtin::effective_base_url(&self.route.provider_id, selected_base, auth);
         let mut prepared = self.clone();
-        prepared.chatgpt_signin = Some(self.prepared_signin(&final_base, auth));
+        prepared.policy.chatgpt_signin = Some(self.prepared_signin(&final_base, auth));
         if final_base != selected_base {
             model.base_url = Some(final_base);
         }
@@ -1385,8 +1402,8 @@ impl Provider for OpenAiResponsesRouteContext {
         _resources: Option<crate::codex_resources::CallResourceLease>,
     ) -> EventStream {
         let mut configured = self.clone();
-        configured.models = vec![model];
-        configured.catalog_compat = true;
+        configured.route.models = vec![model];
+        configured.policy.catalog_compat = true;
         configured.stream_prepared_with_options(
             request,
             auth,
@@ -1395,15 +1412,16 @@ impl Provider for OpenAiResponsesRouteContext {
     }
 
     fn id(&self) -> &str {
-        &self.provider_id
+        &self.route.provider_id
     }
 
     fn models(&self) -> &[ModelInfo] {
-        &self.models
+        &self.route.models
     }
 
     fn deferred_api(&self) -> Option<Arc<dyn DeferredApi<()>>> {
-        self.models
+        self.route
+            .models
             .iter()
             .find(|model| model.id == "o3")
             .map(|model| {
@@ -1423,7 +1441,7 @@ impl Provider for OpenAiResponsesRouteContext {
     }
 
     fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
-        self.models = models;
+        self.route.models = models;
         Ok(())
     }
 }
@@ -1544,7 +1562,7 @@ impl OpenAiResponsesOptions {
 /// provider.
 pub struct OpenAiResponsesChatApi {
     api_id: crate::types::ApiId,
-    provider: Arc<OpenAiResponsesRouteContext>,
+    provider: Arc<OpenAiResponsesConfiguredRoute>,
     model: ModelInfo,
 }
 
@@ -1560,7 +1578,7 @@ impl OpenAiResponsesChatApi {
     /// Bind a complete Responses record. Wrong-wire or invalid records fail
     /// before authentication or network activity.
     pub fn new(
-        provider: Arc<OpenAiResponsesRouteContext>,
+        provider: Arc<OpenAiResponsesConfiguredRoute>,
         model: ModelInfo,
     ) -> Result<Self, crate::provider::ProviderError> {
         validate_complete_responses_record(&model)?;
@@ -1571,7 +1589,7 @@ impl OpenAiResponsesChatApi {
         })
     }
 
-    pub(crate) fn configured(&self, model: ModelInfo) -> OpenAiResponsesRouteContext {
+    pub(crate) fn configured(&self, model: ModelInfo) -> OpenAiResponsesConfiguredRoute {
         self.provider.dispatch_configured(model)
     }
 }
@@ -1618,7 +1636,7 @@ impl crate::api::contract::ChatApi<OpenAiResponsesOptions> for OpenAiResponsesCh
     }
 
     fn provider_id(&self) -> &str {
-        &self.provider.provider_id
+        &self.provider.route.provider_id
     }
 
     fn complete_record(&self) -> ModelInfo {

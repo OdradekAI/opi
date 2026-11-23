@@ -1,0 +1,128 @@
+{
+  "date": "2026-11-20",
+  "base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "host": "x86_64-pc-windows-msvc",
+  "owner": "crates/opi-ai/src/api/shared/copilot_headers.rs",
+  "source_before_sha256": {
+    "provider.rs": "1757c0a42a2956ac80667c5ae3ee9265e027ed8fc1c11e5671617e8af729b427",
+    "api/shared.rs": "57ee00e699ec9173a403ee27e3793ee38aab7f42f0bf222b679605c8d021c141",
+    "api/anthropic.rs": "df3995f027558fb60d9bfff5eaf9b90f74b04b6c479135282fd8c07d400bec49",
+    "api/openai.rs": "8dda92c32cf8f7d1b8a7a4e8383e66458bb29f4aa888f12f3275d9545ed19657",
+    "api/openai_responses.rs": "c7a9202e6b7ad216940d689eea823d73251bf0e6d98a868c20b6924fec571245"
+  },
+  "lower_provider_policy": {
+    "before": [
+      {
+        "file": "crates/opi-ai/src/provider.rs",
+        "line": 423,
+        "kind": "const",
+        "symbol": "GITHUB_COPILOT_MANAGED_HEADERS"
+      },
+      {
+        "file": "crates/opi-ai/src/provider.rs",
+        "line": 439,
+        "kind": "fn",
+        "symbol": "github_copilot_route_headers"
+      },
+      {
+        "file": "crates/opi-ai/src/provider.rs",
+        "line": 461,
+        "kind": "fn",
+        "symbol": "github_copilot_initiator"
+      }
+    ],
+    "after_sites": 0,
+    "enforce_exit": 0,
+    "negative_control_exit": 1
+  },
+  "cli_factory": {
+    "target": "github_copilot_provider",
+    "original_cases_passed": 13,
+    "extended_before_passed": 14,
+    "after_passed": 14,
+    "case_names": [
+      "factory_built_copilot_anthropic_models_apply_catalog_compatibility",
+      "github_copilot_401_and_403_are_revoked_on_every_wire",
+      "github_copilot_anthropic_model_posts_v1_messages_with_bearer",
+      "github_copilot_catalog_has_25_models_and_three_wires",
+      "github_copilot_catalog_matches_pi_0806_fixture",
+      "github_copilot_chat_model_posts_chat_completions",
+      "github_copilot_headers_match_reviewed_static_contract",
+      "github_copilot_initiator_tracks_last_user_or_agent_message",
+      "github_copilot_managed_headers_are_rejected_before_callbacks_and_dispatch",
+      "github_copilot_model_listing_is_static_and_secret_free",
+      "github_copilot_next_stream_observes_changed_token_and_enterprise_base_url",
+      "github_copilot_responses_model_posts_responses",
+      "github_copilot_tests_do_not_reference_ignored_repo",
+      "github_copilot_vision_header_covers_user_and_tool_result_images"
+    ],
+    "managed_headers_per_wire": 7,
+    "wire_count": 3,
+    "rejected_before_header_transform_and_http": 21
+  },
+  "sdk_fixtures_passed": {
+    "anthropic_fixtures": [
+      "anthropic_affinity_source_compat::lawful_openrouter_header_overrides_and_tombstones_win_before_transform",
+      "anthropic_affinity_source_compat::oauth_and_copilot_omit_generated_affinity_but_header_owned_auth_retains_it"
+    ],
+    "oauth_flows": [
+      "copilot_models_login_acks_the_store_write"
+    ],
+    "openai_chat_fixtures": [
+      "profile_extra_headers_reach_the_http_wire",
+      "source_compat_chat_frozen_model_controls_reach_native_and_simple_http"
+    ],
+    "openai_responses_fixtures": [
+      "responses_copilot_route_skips_off_effort",
+      "source_compat_controls::responses_affinity_overrides_are_merged_before_transform_and_http"
+    ],
+    "provider_collection": [
+      "builtin_gateway_all_three_wires_use_only_source_auth_header",
+      "builtin_mapped_calls_use_owned_custom_records_and_header_precedence"
+    ]
+  },
+  "isolated_profiles": {
+    "provider-anthropic": {
+      "target": "provider_anthropic_profile",
+      "default_features": false,
+      "case": "selected_provider_protocol_sources_are_constructible",
+      "passed": 1
+    },
+    "provider-openai-chat": {
+      "target": "provider_openai_chat_profile",
+      "default_features": false,
+      "case": "selected_provider_protocol_sources_are_constructible",
+      "passed": 1
+    },
+    "provider-openai-responses": {
+      "target": "provider_openai_responses_profile",
+      "default_features": false,
+      "case": "selected_provider_protocol_sources_are_constructible",
+      "passed": 1
+    },
+    "provider-openai-codex-responses": {
+      "target": "provider_openai_codex_responses_profile",
+      "default_features": false,
+      "case": "selected_provider_protocol_sources_are_constructible",
+      "passed": 1
+    }
+  },
+  "minimum_library_check": "PASS",
+  "internal_shared_feature_probe": {
+    "feature": "provider-openai-responses-shared",
+    "before_exit": 101,
+    "after_exit": 101,
+    "root_diagnostics": [
+      "unresolved import `crate::http`",
+      "cannot find module or crate `reqwest` in this scope"
+    ],
+    "matching_coded_diagnostics": 72,
+    "matching_log_sha256": "4ce27f2351afba26b4a65bc519ea6997e88c26a5106b44b8154d01700aa1398d"
+  },
+  "clippy": {
+    "sdk_targets": "PASS",
+    "cli_target": "PASS",
+    "existing_sdk_library_warnings": 3
+  }
+}

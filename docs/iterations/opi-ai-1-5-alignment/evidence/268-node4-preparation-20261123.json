@@ -1,0 +1,1066 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 36,
+  "date": "2026-11-23",
+  "baseline_head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "test_impact": {
+    "retain": 26,
+    "update": 1
+  },
+  "target": {
+    "target": "node4_preparation",
+    "owner": "models",
+    "layer": "assembly",
+    "cost": "local-io",
+    "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+    "runners": "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py",
+    "source": "tests/node4_preparation.rs",
+    "required-features": "builtins"
+  },
+  "source_before": {
+    "path": "E:/opi/scratch/issue-268-node4-preparation-20261123-111539/original.rs",
+    "bytes": 66159,
+    "sha256": "12481bf9c23b614071b75d25e4d398dd2a0532a17cefe97021328c45df0641f1"
+  },
+  "index": {
+    "path": "crates/opi-ai/tests/node4_preparation.rs",
+    "bytes": 327,
+    "sha256": "d2d415950184197c9caa0ccc6490a7389ace364cb7bd7de709f6f934b979b70d"
+  },
+  "topics": {
+    "call_limits": {
+      "passed": 5,
+      "contract": "Native and simple limits over Chat and Responses",
+      "source": {
+        "path": "crates/opi-ai/tests/node4_preparation/call_limits.rs",
+        "bytes": 7277,
+        "sha256": "96a4b3d8631e52ac70008f39fb3e0553bdb6529ea916a6ecf04094d398f5bcba"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "node4_preparation",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "node4_preparation",
+              "--",
+              "call_limits::"
+            ],
+            "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+            "reasons": [
+              "tests/node4_preparation/call_limits.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "node4_preparation",
+          "--",
+          "call_limits::"
+        ],
+        "exit": 0,
+        "passed": 5,
+        "filtered_out": 7,
+        "cases": [
+          "call_limits::native_chat_explicit_limit_is_not_context_clamped",
+          "call_limits::native_chat_omits_absent_max_while_simple_resolves_the_default",
+          "call_limits::native_responses_truthy_small_limit_uses_the_wire_floor",
+          "call_limits::native_responses_zero_omits_max_output_tokens",
+          "call_limits::simple_preparation_counts_canonical_system_changes_after_the_usage_anchor"
+        ]
+      }
+    },
+    "catalog_restore": {
+      "passed": 6,
+      "contract": "Catalog publisher ownership, restore, refresh failures and removal",
+      "source": {
+        "path": "crates/opi-ai/tests/node4_preparation/catalog_restore.rs",
+        "bytes": 14253,
+        "sha256": "70303747872ac29e65f950dbbb85c1dafb7a7ea191ddff70ece7f1ccddbdcf12"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "node4_preparation",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "node4_preparation",
+              "--",
+              "catalog_restore::"
+            ],
+            "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+            "reasons": [
+              "tests/node4_preparation/catalog_restore.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "node4_preparation",
+          "--",
+          "catalog_restore::"
+        ],
+        "exit": 0,
+        "passed": 6,
+        "filtered_out": 6,
+        "cases": [
+          "catalog_restore::explicit_source_failure_does_not_revoke_a_providers_authoritative_empty",
+          "catalog_restore::failed_explicit_source_retains_catalog_when_static_provider_returns_none",
+          "catalog_restore::legacy_catalog_has_unknown_publisher_and_malformed_publisher_fails_closed",
+          "catalog_restore::restored_native_catalog_clears_despite_unrelated_source_failure",
+          "catalog_restore::restored_source_catalog_retains_on_same_provider_failure",
+          "catalog_restore::unrelated_explicit_source_does_not_block_native_none_clear"
+        ]
+      }
+    },
+    "projection": {
+      "passed": 15,
+      "contract": "Request projection, retry ownership and typed failure timing",
+      "source": {
+        "path": "crates/opi-ai/tests/node4_preparation/projection.rs",
+        "bytes": 44351,
+        "sha256": "bee3665a5b0933f8579c9698f2c3107efdee2313fe570ad73c0493150e758d05"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "node4_preparation",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "node4_preparation",
+              "--",
+              "projection::"
+            ],
+            "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+            "reasons": [
+              "tests/node4_preparation/projection.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "node4_preparation",
+          "--",
+          "projection::"
+        ],
+        "exit": 0,
+        "passed": 15,
+        "filtered_out": -3,
+        "cases": [
+          "projection::accepted_projection_survives_auth_callback_partial_eof_and_cancel_failures",
+          "projection::advanced_projection_auth_cancellation_retains_formed_facts_but_pre_cancel_remains_unformed",
+          "projection::advanced_projection_auth_refusal_retains_formed_facts",
+          "projection::advanced_projection_finalization_refusal_retains_formed_facts",
+          "projection::collapsed_projection_ranges_use_original_coordinates_after_an_earlier_noop",
+          "projection::custom_projection_eof_preserves_the_latest_delivered_partial",
+          "projection::custom_projection_raw_failure_preserves_the_latest_delivered_partial",
+          "projection::effective_tool_noops_do_not_disable_native_additions_or_change_the_canonical_prefix",
+          "projection::forwarding_adapter_preserves_one_advanced_strict_and_retry_budget_owner",
+          "projection::projection_policy_and_facts_follow_actual_native_simple_direct_and_prepared_calls",
+          "projection::replay_strict_is_independent_and_rejects_before_auth_without_copying_thinking_into_facts",
+          "projection::resolver_cancellation_and_login_refusal_do_not_fabricate_logical_call_cancellation",
+          "projection::strict_projection_rejects_before_auth_callbacks_and_network",
+          "projection::typed_temporal_cause_is_recoverable_from_every_real_entry",
+          "projection::unknown_direct_models_validate_strict_fidelity_on_the_actual_wire_before_callbacks"
+        ]
+      }
+    }
+  },
+  "fixture": {
+    "owner": "models",
+    "scope": "within node4_preparation",
+    "source": {
+      "path": "crates/opi-ai/tests/node4_preparation/fixtures.rs",
+      "bytes": 1839,
+      "sha256": "20777fc6ee9998fc0aa43ad792990d776c17e2f68ad88994e904ed148bd17d94"
+    },
+    "purpose": "Shared requests, Chat SSE, and captured body reader"
+  },
+  "full_selection_from": {
+    "index": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "node4_preparation",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "node4_preparation"
+          ],
+          "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+          "reasons": [
+            "tests/node4_preparation.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    },
+    "fixtures": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "node4_preparation",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "node4_preparation"
+          ],
+          "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+          "reasons": [
+            "tests/node4_preparation/fixtures.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    }
+  },
+  "missing_source": {
+    "scope": "broader checks required",
+    "expansion": [
+      "tests/node4_preparation/__missing_topic__.rs: missing or moved path; verify the replacement and remaining consumers",
+      "tests/node4_preparation/__missing_topic__.rs: no resolved Cargo test consumer"
+    ],
+    "tests": [],
+    "runners": [],
+    "broad_commands": [
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--all-targets"
+      ],
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--tests"
+      ]
+    ],
+    "additional_checks": [
+      "For feature changes also verify each affected owner in isolation and its package consumer."
+    ]
+  },
+  "catalog_store": {
+    "owner": "catalog shared test support",
+    "imported_by": "crates/opi-ai/tests/node4_preparation/catalog_restore.rs",
+    "sha256_matches_before": [
+      {
+        "path": "crates/opi-ai/tests/support/catalog_store.rs",
+        "bytes": 1192,
+        "sha256": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59"
+      },
+      {
+        "path": "crates/opi-ai/tests/support/OWNERS.tsv",
+        "bytes": 2427,
+        "sha256": "ac46dab458f6c5a89f8e5e2cb0ad6e1edcdf5295ad67a4d1ed54824dfc4a97c2"
+      }
+    ],
+    "before_selector": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "catalog_lifecycle",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "catalog_lifecycle"
+          ],
+          "cases": "Store publication, restore and persisted optional sampling and headers on subsequent requests",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "node4_preparation",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "node4_preparation"
+          ],
+          "cases": "Native versus simple limits, catalog restore and projection facts across auth, EOF and cancellation",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "provider_collection",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "provider_collection"
+          ],
+          "cases": "Builtin registration, auth, chat and non-chat routes; collection dispatch, registry refresh, catalog store publication, retry and selected-owner management",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "radius_builtin_catalog",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "radius_builtin_catalog"
+          ],
+          "cases": "Builtin gateway catalog authentication, publication, offline restore and Pi Messages dispatch",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "registry",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "registry"
+          ],
+          "cases": "Registration and resolution, capabilities, revisioned store commits and corrupt or legacy entries",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    },
+    "after_selector": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "catalog_lifecycle",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "catalog_lifecycle"
+          ],
+          "cases": "Store publication, restore and persisted optional sampling and headers on subsequent requests",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "node4_preparation",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "node4_preparation"
+          ],
+          "cases": "Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "provider_collection",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "provider_collection"
+          ],
+          "cases": "Builtin registration, auth, chat and non-chat routes; collection dispatch, registry refresh, catalog store publication, retry and selected-owner management",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "radius_builtin_catalog",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "radius_builtin_catalog"
+          ],
+          "cases": "Builtin gateway catalog authentication, publication, offline restore and Pi Messages dispatch",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "registry",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "registry"
+          ],
+          "cases": "Registration and resolution, capabilities, revisioned store commits and corrupt or legacy entries",
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py",
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    },
+    "unit_check": {
+      "passed": 1,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-node4-preparation-20261123-111539/selector-unit.stderr",
+        "bytes": 235,
+        "sha256": "d1090f8d426107a3633962dbce62834ad033bb511c78ddfe4631e3ae6110f81b"
+      }
+    }
+  },
+  "workspace_test": {
+    "command": [
+      "python",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "opi-ai",
+      "--no-default-features",
+      "--features",
+      "builtins",
+      "--test",
+      "node4_preparation"
+    ],
+    "before": {
+      "passed": 26,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-node4-preparation-20261123-111539/baseline.stdout",
+        "bytes": 198184,
+        "sha256": "2499701489c474054b2d32ee015656c98549fafc3814ca9296a81bad1b394e3b"
+      }
+    },
+    "after": {
+      "passed": 26,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-node4-preparation-20261123-111539/workspace.stdout",
+        "bytes": 198523,
+        "sha256": "1df0315520ebfb2cc65eb128d3774c06664b3ba6a897d51667a407379271d39c"
+      }
+    },
+    "test_bodies_identical": true,
+    "old_to_new_case": {
+      "accepted_projection_survives_auth_callback_partial_eof_and_cancel_failures": "projection::accepted_projection_survives_auth_callback_partial_eof_and_cancel_failures",
+      "advanced_projection_auth_cancellation_retains_formed_facts_but_pre_cancel_remains_unformed": "projection::advanced_projection_auth_cancellation_retains_formed_facts_but_pre_cancel_remains_unformed",
+      "advanced_projection_auth_refusal_retains_formed_facts": "projection::advanced_projection_auth_refusal_retains_formed_facts",
+      "advanced_projection_finalization_refusal_retains_formed_facts": "projection::advanced_projection_finalization_refusal_retains_formed_facts",
+      "collapsed_projection_ranges_use_original_coordinates_after_an_earlier_noop": "projection::collapsed_projection_ranges_use_original_coordinates_after_an_earlier_noop",
+      "custom_projection_eof_preserves_the_latest_delivered_partial": "projection::custom_projection_eof_preserves_the_latest_delivered_partial",
+      "custom_projection_raw_failure_preserves_the_latest_delivered_partial": "projection::custom_projection_raw_failure_preserves_the_latest_delivered_partial",
+      "effective_tool_noops_do_not_disable_native_additions_or_change_the_canonical_prefix": "projection::effective_tool_noops_do_not_disable_native_additions_or_change_the_canonical_prefix",
+      "explicit_source_failure_does_not_revoke_a_providers_authoritative_empty": "catalog_restore::explicit_source_failure_does_not_revoke_a_providers_authoritative_empty",
+      "failed_explicit_source_retains_catalog_when_static_provider_returns_none": "catalog_restore::failed_explicit_source_retains_catalog_when_static_provider_returns_none",
+      "forwarding_adapter_preserves_one_advanced_strict_and_retry_budget_owner": "projection::forwarding_adapter_preserves_one_advanced_strict_and_retry_budget_owner",
+      "legacy_catalog_has_unknown_publisher_and_malformed_publisher_fails_closed": "catalog_restore::legacy_catalog_has_unknown_publisher_and_malformed_publisher_fails_closed",
+      "native_chat_explicit_limit_is_not_context_clamped": "call_limits::native_chat_explicit_limit_is_not_context_clamped",
+      "native_chat_omits_absent_max_while_simple_resolves_the_default": "call_limits::native_chat_omits_absent_max_while_simple_resolves_the_default",
+      "native_responses_truthy_small_limit_uses_the_wire_floor": "call_limits::native_responses_truthy_small_limit_uses_the_wire_floor",
+      "native_responses_zero_omits_max_output_tokens": "call_limits::native_responses_zero_omits_max_output_tokens",
+      "projection_policy_and_facts_follow_actual_native_simple_direct_and_prepared_calls": "projection::projection_policy_and_facts_follow_actual_native_simple_direct_and_prepared_calls",
+      "replay_strict_is_independent_and_rejects_before_auth_without_copying_thinking_into_facts": "projection::replay_strict_is_independent_and_rejects_before_auth_without_copying_thinking_into_facts",
+      "resolver_cancellation_and_login_refusal_do_not_fabricate_logical_call_cancellation": "projection::resolver_cancellation_and_login_refusal_do_not_fabricate_logical_call_cancellation",
+      "restored_native_catalog_clears_despite_unrelated_source_failure": "catalog_restore::restored_native_catalog_clears_despite_unrelated_source_failure",
+      "restored_source_catalog_retains_on_same_provider_failure": "catalog_restore::restored_source_catalog_retains_on_same_provider_failure",
+      "simple_preparation_counts_canonical_system_changes_after_the_usage_anchor": "call_limits::simple_preparation_counts_canonical_system_changes_after_the_usage_anchor",
+      "strict_projection_rejects_before_auth_callbacks_and_network": "projection::strict_projection_rejects_before_auth_callbacks_and_network",
+      "typed_temporal_cause_is_recoverable_from_every_real_entry": "projection::typed_temporal_cause_is_recoverable_from_every_real_entry",
+      "unknown_direct_models_validate_strict_fidelity_on_the_actual_wire_before_callbacks": "projection::unknown_direct_models_validate_strict_fidelity_on_the_actual_wire_before_callbacks",
+      "unrelated_explicit_source_does_not_block_native_none_clear": "catalog_restore::unrelated_explicit_source_does_not_block_native_none_clear"
+    }
+  },
+  "archive": {
+    "consumer": "run_catalog_bundled_package.py; packaged embedded catalog and feature closure",
+    "consumer_receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/268-node4-preparation-catalog-package-20261123.json",
+    "consumer_receipt_sha256": "7ecf23a099ff78576857b1e9d73cb9070ede1e6aca04625867f71f837ad25702",
+    "external_features": [
+      "catalog-bundled"
+    ],
+    "test_from_extracted_package": {
+      "archive": "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\opi-ai-0.8.3.crate",
+      "package": "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\package\\opi-ai-0.8.3",
+      "configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "archive_sha256": "65d88e3cb8f91042c191c32828c8865306dddf89ab09c764bc93ad91b273eab7",
+      "files": {
+        "tests/node4_preparation.rs": {
+          "bytes": 327,
+          "sha256": "d2d415950184197c9caa0ccc6490a7389ace364cb7bd7de709f6f934b979b70d"
+        },
+        "tests/support/catalog_store.rs": {
+          "bytes": 1192,
+          "sha256": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59"
+        },
+        "tests/node4_preparation/call_limits.rs": {
+          "bytes": 7277,
+          "sha256": "96a4b3d8631e52ac70008f39fb3e0553bdb6529ea916a6ecf04094d398f5bcba"
+        },
+        "tests/node4_preparation/catalog_restore.rs": {
+          "bytes": 14253,
+          "sha256": "70303747872ac29e65f950dbbb85c1dafb7a7ea191ddff70ece7f1ccddbdcf12"
+        },
+        "tests/node4_preparation/projection.rs": {
+          "bytes": 44351,
+          "sha256": "bee3665a5b0933f8579c9698f2c3107efdee2313fe570ad73c0493150e758d05"
+        },
+        "tests/node4_preparation/fixtures.rs": {
+          "bytes": 1839,
+          "sha256": "20777fc6ee9998fc0aa43ad792990d776c17e2f68ad88994e904ed148bd17d94"
+        }
+      },
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0,
+          "label": "archive-scratch-lock"
+        },
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0,
+          "label": "archive-metadata"
+        },
+        {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "node4_preparation"
+          ],
+          "exit": 0,
+          "label": "archive-node4-preparation"
+        }
+      ],
+      "scratch_lock": {
+        "archived_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "updated_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "only_changed_package": "opi-telemetry"
+      },
+      "active_features": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "suite": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "node4_preparation",
+        "src_path": "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\package\\opi-ai-0.8.3\\tests\\node4_preparation.rs",
+        "edition": "2024",
+        "required-features": [
+          "builtins"
+        ],
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-node4-preparation-20261123-111539/catalog/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-node4-preparation-20261123-111539/catalog/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed": 26
+    }
+  },
+  "differential": {
+    "direct_test_source_inputs": [],
+    "openai_chat_output_limits_has_own_case_source": {
+      "path": "crates/opi-ai/tests/openai_chat_output_limits.rs",
+      "bytes": 9673,
+      "sha256": "4f187708b31cdd3bd92386058c907ffacd57725e3dab35469f96c65c4f090772"
+    },
+    "prior_package_for_production_comparison": "docs/iterations/opi-ai-1-5-alignment/evidence/268-request-enrichment-20261123.json",
+    "identical_package_production_and_driver_inputs": 249
+  },
+  "structure_gate": {
+    "targets": 124,
+    "rust_test_sources": 325,
+    "support_helpers": 16,
+    "support_consumer_edges": 60,
+    "summary_sha256": "1e3d730233632e794daf692311f14c8f61dd1dfbea2f1bb8e020581136b96985",
+    "violations": [],
+    "changed_selection": {
+      "paths": [
+        "crates/opi-ai/tests/node4_preparation.rs",
+        "crates/opi-ai/tests/node4_preparation/call_limits.rs",
+        "crates/opi-ai/tests/node4_preparation/catalog_restore.rs",
+        "crates/opi-ai/tests/node4_preparation/projection.rs",
+        "crates/opi-ai/tests/node4_preparation/fixtures.rs",
+        "crates/opi-ai/tests/targets.tsv",
+        "crates/opi-ai/tests/support/catalog_store.rs"
+      ],
+      "scope": "focused",
+      "tests": [
+        {
+          "target": "catalog_lifecycle",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "catalog_lifecycle"
+          ],
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "node4_preparation",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "node4_preparation"
+          ],
+          "reasons": [
+            "tests/node4_preparation.rs",
+            "tests/node4_preparation/call_limits.rs",
+            "tests/node4_preparation/catalog_restore.rs",
+            "tests/node4_preparation/fixtures.rs",
+            "tests/node4_preparation/projection.rs",
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "provider_collection",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "provider_collection"
+          ],
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "radius_builtin_catalog",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "radius_builtin_catalog"
+          ],
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        },
+        {
+          "target": "registry",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "registry"
+          ],
+          "reasons": [
+            "tests/support/catalog_store.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py",
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py",
+        "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+      ],
+      "expansion": []
+    }
+  },
+  "lint": {
+    "strict": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "node4_preparation",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 101
+    },
+    "advisory": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "node4_preparation"
+      ],
+      "exit": 0
+    },
+    "carried_in_diagnostics": [
+      "src/api/openai_responses.rs:706 clippy::too_many_arguments",
+      "src/models/auth_owner.rs:479 clippy::needless_borrow",
+      "src/models/prepared_call.rs:196 clippy::too_many_arguments"
+    ],
+    "workspace_format_files": [
+      "crates/opi-ai/tests/openai_responses_fixtures.rs",
+      "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+      "crates/opi-ai/tests/openai_responses_fixtures/wire.rs"
+    ],
+    "scoped_format_exit": 0,
+    "whitespace": {
+      "crlf_aware": 0,
+      "raw": 2
+    }
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "staged": {
+      "before": 0,
+      "after": 0
+    },
+    "unstaged": {
+      "before": 186,
+      "after": 186
+    },
+    "untracked": {
+      "before": 466,
+      "after": 472
+    },
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/node4_preparation.rs",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/issues/105-compare-chat-output-limits.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only": [
+      "crates/opi-ai/tests/node4_preparation/call_limits.rs",
+      "crates/opi-ai/tests/node4_preparation/catalog_restore.rs",
+      "crates/opi-ai/tests/node4_preparation/fixtures.rs",
+      "crates/opi-ai/tests/node4_preparation/projection.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-node4-preparation-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-node4-preparation-catalog-package-20261123.json"
+    ]
+  }
+}

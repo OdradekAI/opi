@@ -384,7 +384,7 @@ async fn distribution_metadata_survives_public_decode_store_and_reopen() {
 
 #[tokio::test]
 async fn ordered_model_headers_survive_store_reopen_and_next_real_request() {
-    use opi_ai::api::openai::OpenAiCompletionsChatApi;
+    use opi_ai::api::openai_completions::OpenAiCompletionsChatApi;
     use opi_ai::auth::{AuthScheme, StaticAuthResolver};
     use opi_ai::providers::openai::OpenAiChatProvider;
     use wiremock::matchers::method;

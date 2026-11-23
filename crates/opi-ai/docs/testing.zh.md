@@ -5,9 +5,13 @@
 ## Faux Provider 测试
 
 消费者需要在无凭据、无真实服务的情况下得到确定响应时，可使用
-`test_support::MockProvider` 和公开 Faux 注册 helper。显式脚本化最终消息、stream event、
+`test_support::MockProvider` 和 `test_support::single_route_collection`。显式脚本化最终消息、stream event、
 tool call、延迟或 pending result 以及 Provider failure。测试拥有 response script 和
 cancellation token；SDK 仍拥有请求构造、event 顺序和类型化终态结算。
+
+用 `test_support::ScriptedDeferredBackend` 把脚本提交与显式 fetch、cancel 绑定到同一个 backend。
+这些 Faux 接口可在 minimum 配置下使用。UUID 序列耗尽由 `identity` 的模块测试验证，AWS source
+transport 替身归 Bedrock fixture。
 
 Faux 适合 unit 和 integration 测试调用方行为，但不能证明真实 Provider 的认证、wire 序列化、
 rate limit 或服务可用性。需要验证这些边界时，再加入受控 peer 或 Provider 专属 fixture。
@@ -46,8 +50,8 @@ README 中的逐字示例。JSON verdict 写入
 
 最小配置使用 `scripts/pi-sdk-conformance/run_minimal_package.py`，指定新的
 `--scratch`、共享 `--target-dir` 和新的 `--evidence-output`。它核对实际归档在
-tracing 关闭/开启时的依赖图，执行核心 Faux 工具续轮、自定义登录 Store ACK 和
-参数/数字契约，并拒绝意外的后端依赖。这不代表完整 Pi Faux 行为或所有
+tracing 关闭/开启时的依赖图，执行 Faux 工具续轮、deferred 提交与 fetch、自定义登录 Store ACK
+和参数/数字契约，并检查后端依赖和 UUID 探针的缺失。这不代表完整 Pi Faux 行为或所有
 feature/platform 验收行已闭合。README runner 也应使用 `--evidence-output` 保留旧收据。
 
 共享 HTTP transport profile 使用

@@ -1,0 +1,70 @@
+{
+  "issue": 255,
+  "status": "done",
+  "provider": "kimi-coding",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 4,
+    "records_after": 6,
+    "added": 2,
+    "removed": 0,
+    "updated": 1,
+    "added_ids": [
+      "k3.1-pro",
+      "k3.1-pro-highspeed"
+    ],
+    "removed_ids": [],
+    "updated_ids": ["k3-256k"],
+    "updated_fields": [
+      "cost.cacheRead",
+      "cost.input",
+      "cost.output"
+    ],
+    "retired_ids": [],
+    "author_source_sha256": "a8a178276a8cbb1bda5f99062238e8f9961a18b86b7c2091da91cddcbb6e7910",
+    "bundle_sha256": "c46d9c076b306af44f8ae9ce8af0a7ed712e5c76f3960bfa3d1e8ef068d93719",
+    "manifest_sha256": "d539195310610bdc830f6a1a1e87efc83f21303196bcdd32b3c4380263c6b38b"
+  },
+  "global_after": {
+    "opi_records": 1716,
+    "reference_records": 1712,
+    "equal": 1705,
+    "only_opi": 9,
+    "only_reference": 5,
+    "changed": 2,
+    "providers_equal": 33,
+    "providers_with_differences": 9
+  },
+  "wire": {
+    "endpoint": "/coding/v1/chat/completions",
+    "auth": "Bearer KIMI_API_KEY",
+    "model": "k3.1-pro",
+    "max_tokens_field": "max_tokens",
+    "reasoning_effort": "high",
+    "requests": 1
+  },
+  "tests": {
+    "provider_collection_kimi_coding": 3,
+    "provider_collection_regression": 168,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "build_catalog_example": 9,
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "not run for this provider batch; known pre-existing ImageModelRecord.compat compile errors remain in unrelated targets",
+    "build_catalog_check": "PASS",
+    "catalog_bundled_external_consumer": "PASS (catalog=sha256-c46d9c076b306af44f8ae9ce8af0a7ed712e5c76f3960bfa3d1e8ef068d93719 providers=42 chat=1596 image=64 classifier=56)",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

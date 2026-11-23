@@ -473,31 +473,30 @@ fn provider_diagnostics(
     match provider {
         "azure" => {
             let azure = &config.providers.azure;
-            if azure.endpoint.is_none() {
+            if azure
+                .endpoint
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+                && ["AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_RESOURCE_NAME"]
+                    .into_iter()
+                    .all(|name| env_var(name).is_none_or(|value| value.trim().is_empty()))
+            {
                 out.push(Diagnostic::new(
                     Severity::Warning,
                     CODE_DOCTOR_PROVIDER_ENDPOINT,
                     SOURCE_PROVIDER,
-                    "azure provider has no endpoint configured",
-                ));
-            }
-            if azure.deployments.is_empty() {
-                out.push(Diagnostic::new(
-                    Severity::Warning,
-                    CODE_DOCTOR_PROVIDER_ENDPOINT,
-                    SOURCE_PROVIDER,
-                    "azure provider has no deployments configured",
+                    "azure provider needs an endpoint, AZURE_OPENAI_BASE_URL or AZURE_OPENAI_RESOURCE_NAME",
                 ));
             }
         }
         "google-vertex" => {
             let vertex = &config.providers.google_vertex;
-            if vertex.project.is_none() || vertex.location.is_none() {
+            if vertex.project.is_some() != vertex.location.is_some() {
                 out.push(Diagnostic::new(
                     Severity::Warning,
                     CODE_DOCTOR_PROVIDER_ENDPOINT,
                     SOURCE_PROVIDER,
-                    "vertex provider is missing project or location",
+                    "vertex provider requires project and location together",
                 ));
             }
         }

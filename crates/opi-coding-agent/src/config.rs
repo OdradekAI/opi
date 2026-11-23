@@ -402,16 +402,13 @@ pub struct AzureProviderConfig {
     pub api_key_env: String,
     /// Azure OpenAI endpoint (e.g. `https://myresource.openai.azure.com`).
     pub endpoint: Option<String>,
-    /// Azure API version; unset resolves to the pinned source default
-    /// `v1` (task 20.38).
+    /// Azure Responses API version. The environment and `v1` are fallbacks.
     pub api_version: Option<String>,
-    /// Deployment names to advertise in --list-models.
-    pub deployments: Vec<String>,
     /// Proxy configuration.
     pub proxy: Option<ProviderProxyConfig>,
 }
 
-/// `[providers.vertex]` section.
+/// `[providers.google-vertex]` section.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct VertexProviderConfig {
     /// Env var name for the OAuth2 access token (default: VERTEX_ACCESS_TOKEN).
@@ -420,8 +417,6 @@ pub struct VertexProviderConfig {
     pub project: Option<String>,
     /// GCP location/region (e.g. `us-central1`).
     pub location: Option<String>,
-    /// Model names to advertise in --list-models.
-    pub models: Vec<String>,
     /// Override base URL for Vertex AI API.
     pub base_url: Option<String>,
     /// Proxy configuration.
@@ -736,8 +731,15 @@ struct TomlAzureProvider {
     api_key_env: Option<String>,
     endpoint: Option<String>,
     api_version: Option<String>,
-    deployments: Option<Vec<String>>,
+    #[serde(rename = "deployments", deserialize_with = "reject_azure_deployments")]
+    _retired_deployments: (),
     proxy: Option<TomlProxy>,
+}
+
+fn reject_azure_deployments<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(serde::de::Error::custom(
+        "providers.azure.deployments has been removed. Select azure:<model-id> from the catalog and set AZURE_OPENAI_DEPLOYMENT_NAME_MAP to model-id=deployment pairs.",
+    ))
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -746,9 +748,16 @@ struct TomlVertexProvider {
     access_token_env: Option<String>,
     project: Option<String>,
     location: Option<String>,
-    models: Option<Vec<String>>,
+    #[serde(rename = "models", deserialize_with = "reject_vertex_models")]
+    _retired_models: (),
     base_url: Option<String>,
     proxy: Option<TomlProxy>,
+}
+
+fn reject_vertex_models<'de, D: serde::Deserializer<'de>>(_: D) -> Result<(), D::Error> {
+    Err(serde::de::Error::custom(
+        "the built-in Vertex models setting has been removed. Select google-vertex:<model-id> from the catalog.",
+    ))
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -1009,9 +1018,6 @@ impl TomlConfig {
         if let Some(v) = self.providers.vertex.location {
             config.providers.legacy.vertex.location = Some(v);
         }
-        if let Some(v) = self.providers.vertex.models {
-            config.providers.legacy.vertex.models = v;
-        }
         if let Some(v) = self.providers.vertex.base_url {
             config.providers.legacy.vertex.base_url = Some(v);
         }
@@ -1058,9 +1064,6 @@ impl TomlConfig {
         if let Some(v) = self.providers.azure.api_version {
             config.providers.azure.api_version = Some(v);
         }
-        if let Some(v) = self.providers.azure.deployments {
-            config.providers.azure.deployments = v;
-        }
         if let Some(p) = self.providers.azure.proxy
             && let Some(url) = p.url.filter(|s| !s.trim().is_empty())
         {
@@ -1077,9 +1080,6 @@ impl TomlConfig {
         }
         if let Some(v) = self.providers.google_vertex.location {
             config.providers.google_vertex.location = Some(v);
-        }
-        if let Some(v) = self.providers.google_vertex.models {
-            config.providers.google_vertex.models = v;
         }
         if let Some(v) = self.providers.google_vertex.base_url {
             config.providers.google_vertex.base_url = Some(v);
@@ -1451,7 +1451,6 @@ fn vertex_provider_explicit(config: &VertexProviderConfig) -> bool {
     !config.access_token_env.trim().is_empty()
         || config.project.is_some()
         || config.location.is_some()
-        || !config.models.is_empty()
         || config.base_url.is_some()
         || config.proxy.is_some()
 }

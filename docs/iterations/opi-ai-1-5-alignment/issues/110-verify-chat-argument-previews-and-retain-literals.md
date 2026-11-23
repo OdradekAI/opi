@@ -26,7 +26,7 @@ length exclusion retains both complete and incomplete literal tokens.
 This is the sole production source change. Final argument parsing and
 validation retain their authority; tolerant display never authorizes a tool.
 [Implementation](../../../../crates/opi-ai/src/types/message.rs) ·
-[Regression](../../../../crates/opi-ai/tests/public_utilities.rs)
+[Regression](../../../../crates/opi-ai/tests/public_utilities/tool_arguments.rs#L122)
 
 The new regression failed before the fix on `{"a":true` and passes afterward.
 It checks all three literals in object, array and nested-array prefixes,

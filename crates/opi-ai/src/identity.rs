@@ -1,5 +1,4 @@
-//! Compatibility identity utilities (pinned sources:
-//! `.repo/pi-1.3.0/packages/ai/src/utils/hash.ts` and `utils/uuid.ts`).
+//! Compatibility hashes and time-ordered UUIDs.
 //!
 //! [`short_hash`] is a fast deterministic hash used for short display and
 //! compat identifiers (session seeds, `fc_` item ids). It is a compatibility
@@ -8,8 +7,8 @@
 //! (PKCE, AWS signing) keep their exact required encodings in their owning
 //! modules and must never be replaced by this utility.
 //!
-//! [`UuidV7Generator`] reproduces the pinned time-ordered UUIDv7 generator:
-//! explicit follower timestamps are preserved exactly, ordinary generation
+//! [`UuidV7Generator`] owns time-ordered UUIDv7 state.
+//! Explicit follower timestamps are preserved exactly, ordinary generation
 //! never regresses on clock rollback, and sequence exhaustion fails with a
 //! typed error. A generator owns its monotonic state; there is no module
 //! global and no generic identity framework.
@@ -21,13 +20,12 @@ const MAX_UUID_V7_TIMESTAMP: u64 = 0xffff_ffff_ffff;
 /// [`UuidV7Error::SequenceExhausted`].
 const MAX_SEQUENCE: u64 = (1 << 41) - 1;
 
-/// Fast deterministic hash to shorten long strings (pinned `shortHash`).
+/// Fast deterministic hash to shorten long strings.
 ///
-/// Mirrors the pinned JavaScript algorithm exactly: UTF-16 code units
-/// (surrogate pairs contribute two units), 32-bit wrapping multiplies, the
-/// sequential final mix (the second half mixes the already-updated `h1`),
-/// and the unsigned base36 rendering of `h2` followed by `h1` without
-/// padding. Non-cryptographic and non-durable: see the module docs.
+/// Surrogate pairs contribute two UTF-16 code units. The algorithm uses
+/// 32-bit wrapping multiplication and a sequential final mix where the
+/// second half consumes the updated `h1`. The output concatenates unsigned
+/// base36 `h2` and `h1` without padding.
 pub fn short_hash(input: &str) -> String {
     const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     fn base36(mut value: u32) -> String {
@@ -57,20 +55,20 @@ pub fn short_hash(input: &str) -> String {
     format!("{}{}", base36(h2), base36(h1))
 }
 
-/// Typed UUIDv7 generation failure (pinned `RangeError` throws).
+/// Typed UUIDv7 generation failure.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum UuidV7Error {
     /// The requested timestamp is not an integer in `0..=2^48-1`.
     #[error("UUIDv7 timestamp must be an integer between 0 and {MAX_UUID_V7_TIMESTAMP}")]
     InvalidTimestamp,
     /// The generator's 41-bit sequence is exhausted; reuse requires a new
-    /// generator (the pinned source throws the same way).
+    /// generator.
     #[error("UUIDv7 generator sequence exhausted")]
     SequenceExhausted,
 }
 
 /// Time-ordered UUIDv7 generator owning its monotonic timestamp and sequence
-/// state (pinned `uuidv7`; task 20.53.4).
+/// state.
 ///
 /// `generate` takes the caller-supplied current time (injected for fake-clock
 /// determinism) and never regresses on clock rollback; `generate_at` preserves
@@ -125,12 +123,6 @@ impl UuidV7Generator {
         self.render(timestamp_ms)
     }
 
-    /// Test hook: pin the sequence state directly (production exhaustion
-    /// would otherwise need `2^41` calls).
-    pub(crate) fn set_sequence_for_tests(&mut self, sequence: u64) {
-        self.sequence = Some(sequence);
-    }
-
     fn render(&mut self, timestamp: u64) -> Result<String, UuidV7Error> {
         let mut bytes = rand::random::<[u8; 16]>();
         match self.sequence {
@@ -173,5 +165,24 @@ impl UuidV7Generator {
 impl Default for UuidV7Generator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_SEQUENCE, UuidV7Error, UuidV7Generator};
+
+    #[test]
+    fn uuidv7_sequence_exhaustion_is_a_typed_failure() {
+        let mut generator = UuidV7Generator::new();
+        generator.sequence = Some(MAX_SEQUENCE);
+        assert_eq!(
+            generator.generate(5_000).unwrap_err(),
+            UuidV7Error::SequenceExhausted
+        );
+        assert_eq!(
+            generator.generate_at(6_000).unwrap_err(),
+            UuidV7Error::SequenceExhausted
+        );
     }
 }

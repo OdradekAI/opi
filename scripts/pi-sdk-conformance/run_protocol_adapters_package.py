@@ -123,7 +123,7 @@ def check_openai_profile_layout(package: Path) -> dict:
     source = profile.read_text(encoding="utf-8")
     if "native_options" in source:
         raise ValueError("OpenAI provider profile still stores native options")
-    if "api::openai::OpenAiCompletionsOptions" in source:
+    if "api::openai_completions::OpenAiCompletionsOptions" in source:
         raise ValueError("OpenAI provider profile still imports wire options")
     responses_profile = package / "src" / "providers" / "openai_responses.rs"
     responses_source = responses_profile.read_text(encoding="utf-8")
@@ -257,9 +257,16 @@ def main() -> int:
         (consumer / "src/main.rs").write_text(
             """use std::any::type_name;
 
+use opi_ai::api::cloudflare_workers_ai_system_one::CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API_ID;
+use opi_ai::api::llama_cpp_classify::LLAMA_CPP_CLASSIFY_API_ID;
+use opi_ai::api::openai_decisions::OPENAI_DECISIONS_API_ID;
+
 fn main() {
+    assert_eq!(OPENAI_DECISIONS_API_ID, "openai-decisions");
+    assert_eq!(CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API_ID, "cloudflare-workers-ai-system-one");
+    assert_eq!(LLAMA_CPP_CLASSIFY_API_ID, "llama-cpp-classify");
     let _ = opi_ai::api::anthropic::parse_sse_events("");
-    let _ = opi_ai::api::openai::parse_sse_events("");
+    let _ = opi_ai::api::openai_completions::parse_sse_events("");
     let _ = opi_ai::api::shared::headers::merge_provider_header_sources(&[]);
     let _ = opi_ai::api::shared::env::provider_env_value("OPI_EXTERNAL_CONSUMER_ENV", None);
     let _ = type_name::<dyn opi_ai::api::contract::ChatApi<()>>();

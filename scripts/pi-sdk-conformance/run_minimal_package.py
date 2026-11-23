@@ -1,4 +1,4 @@
-"""Execute core + scripted Faux from actual archives and reject backend leakage."""
+"""Check core, scripted Faux and custom registration from actual SDK archives."""
 import argparse
 import hashlib
 import json
@@ -15,7 +15,8 @@ from package_slice import check_cargo_configs, controlled_environment
 
 HARNESS = Path(__file__).resolve().parent
 REPO = HARNESS.parents[1]
-TESTS = {"core_profile": 3, "streaming_json": 12,
+REGISTRATION_TEST = "custom_provider_registration"
+TESTS = {"core_profile": 4, REGISTRATION_TEST: 35, "streaming_json": 12,
          "incremental_argument_preview": 3, "final_numeric_decoding": 2}
 FORBIDDEN = {"reqwest", "rustls", "rustls-native-certs", "aws-lc-rs", "aws-lc-sys",
              "aws-smithy-query", "aws-smithy-xml", "p256", "hmac", "sha1", "xmlparser",
@@ -44,13 +45,13 @@ def check_graph(metadata, package, tracing=False):
             "packages": sorted(p["name"] + "@" + p["version"] for p in metadata["packages"])}
 
 
-def check_catalog_absence(stdout):
+def check_api_absence(stdout, code, *symbols):
     errors = [row["message"] for line in stdout.splitlines()
               if (row := json.loads(line)).get("reason") == "compiler-message"
               and row["message"]["level"] == "error"]
-    if (len(errors) != 1 or (errors[0].get("code") or {}).get("code") != "E0599"
-            or "`builtin`" not in errors[0]["message"] or "`Catalog`" not in errors[0]["message"]):
-        raise ValueError("negative catalog probe failed for a different reason")
+    if (len(errors) != 1 or (errors[0].get("code") or {}).get("code") != code
+            or any(f"`{symbol}`" not in errors[0]["message"] for symbol in symbols)):
+        raise ValueError(f"negative {'/'.join(symbols)} probe failed for a different reason")
 
 
 def main():
@@ -99,7 +100,8 @@ def main():
         manifest = ('[package]\nname="opi-minimum-consumer"\nversion="0.0.0"\nedition="2024"\n'
                     '[workspace]\n[dependencies]\nopi-ai={path=' + json.dumps(package.as_posix()) + ',default-features=false}\n'
                     'serde_json="=1.0.149"\ntokio={version="=1.52.3",features=["macros","rt-multi-thread","sync","time"]}\n'
-                    'futures-util="=0.3.32"\ntokio-util="=0.7.18"\ntracing={version="=0.1.44",optional=true}\n'
+                    'futures-util="=0.3.32"\ntokio-util="=0.7.18"\nsecrecy="=0.10.3"\n'
+                    'tracing={version="=0.1.44",optional=true}\n'
                     '[features]\ntelemetry-tracing=["opi-ai/telemetry-tracing","dep:tracing"]\n')
         (consumer / "Cargo.toml").write_text(manifest, encoding="utf-8", newline="\n")
         evidence["tests"] = {}
@@ -107,6 +109,12 @@ def main():
             source = package / "tests" / (name + ".rs")
             shutil.copyfile(source, consumer / "tests" / source.name)
             evidence["tests"][name] = {"sha256": hashlib.sha256(source.read_bytes()).hexdigest(), "expected_passed": count}
+        modules = consumer / "tests" / REGISTRATION_TEST
+        shutil.copytree(package / "tests" / REGISTRATION_TEST, modules)
+        evidence["tests"][REGISTRATION_TEST]["module_sha256"] = {
+            source.relative_to(consumer).as_posix(): hashlib.sha256(source.read_bytes()).hexdigest()
+            for source in sorted(modules.rglob("*.rs"))
+        }
         fixture = package / "tests/data/incremental-argument-preview.json"
         (consumer / "tests/data").mkdir()
         shutil.copyfile(fixture, consumer / "tests/data" / fixture.name)
@@ -127,11 +135,19 @@ def main():
                     raise ValueError(f"{name}/{test}: incomplete test execution")
         env["RUSTDOCFLAGS"] = "-D warnings"
         run("core-doc", ["cargo", "doc", "--offline", "--locked", "-p", "opi-ai", "--no-deps"], consumer)
-        # Compile-negative evidence pins the absence of embedded catalog APIs.
+        # Compile both probes independently so each must fail for its own missing item.
         (consumer / "src").mkdir()
-        (consumer / "src/main.rs").write_text('fn main() { let _ = opi_ai::catalog::Catalog::builtin(); }\n', encoding="utf-8")
-        stdout, _ = run("builtin-catalog-absent", ["cargo", "check", "--offline", "--locked", "--bin", "opi-minimum-consumer", "--message-format=json"], consumer, expected=101)
-        check_catalog_absence(stdout)
+        for name, source, code, symbols in (
+            ("builtin-catalog-absent",
+             "fn main() { let _ = opi_ai::catalog::Catalog::builtin(); }\n", "E0599", ("builtin", "Catalog")),
+            ("sequence-probe-absent",
+             "use opi_ai::test_support::force_sequence_exhausted;\nfn main() {}\n",
+             "E0432", ("opi_ai::test_support::force_sequence_exhausted",)),
+        ):
+            (consumer / "src/main.rs").write_text(source, encoding="utf-8")
+            stdout, _ = run(name, ["cargo", "check", "--offline", "--locked", "--bin",
+                                  "opi-minimum-consumer", "--message-format=json"], consumer, expected=101)
+            check_api_absence(stdout, code, *symbols)
         evidence["verdict"] = "PASS"
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         evidence["error"] = str(exc)

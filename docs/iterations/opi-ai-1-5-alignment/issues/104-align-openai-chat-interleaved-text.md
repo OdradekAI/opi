@@ -6,7 +6,7 @@ text. Raw deltas still arrive in wire order. The change applies to the shared
 Chat Completions mapper, including the OpenRouter and legacy Mistral and Azure
 Chat routes. Native Mistral Conversations and Azure Responses have separate
 mappers.
-[Chat mapper](../../../../crates/opi-ai/src/api/openai.rs#L800) ·
+[Chat mapper](../../../../crates/opi-ai/src/api/openai_completions.rs#L935) ·
 [Azure Chat](../../../../crates/opi-ai/src/api/azure_openai.rs#L226) ·
 [Mistral routes](../../../../crates/opi-ai/src/api/mistral.rs#L22)
 
@@ -21,7 +21,7 @@ The replay shows a lost whitespace suffix in the next model request and
 a different ordered transcript after a provider switch. Keeping the text
 block open fixes both at the point where the blocks are created.
 [Pinned Pi mapper](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/api/openai-completions.ts#L407-L471) ·
-[Opi Chat replay](../../../../crates/opi-ai/src/api/openai.rs#L2631) ·
+[Opi Chat replay](../../../../crates/opi-ai/src/api/openai_completions.rs#L2311) ·
 [Opi Anthropic replay](../../../../crates/opi-ai/src/api/anthropic.rs#L2470)
 
 ## Frozen replay
@@ -62,7 +62,7 @@ when its OpenAI SDK iterator ends, which can occur at the `[DONE]`
 sentinel. The fixture releases the usage frame before comparing `Done`
 with `result()`. The finish-to-iterator-end timing remains open.
 [Pi termination](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/api/openai-completions.ts#L672-L693) ·
-[Opi finish handling](../../../../crates/opi-ai/src/api/openai.rs#L950)
+[Opi source identity](../evidence/phase5-chat-interleaving-materials.json)
 
 ## Caller impact
 

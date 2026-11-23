@@ -1,0 +1,225 @@
+{
+  "date": "2026-11-20",
+  "base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "committed": "none-for-this-task",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "host": "x86_64-pc-windows-msvc",
+  "reference": {
+    "path": ".pi/pi-1.5.0/packages/ai",
+    "version": "1.5.0",
+    "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "sha256": {
+      "README.md": "53c48b087f55cd31902cc5988b081d87d99e7ec855335b4491ecf241f9779175",
+      "src/providers/radius.ts": "40acce75f4f5c99cbeb03247cbf0fbdde9e911b097af3c25132cdf1f75346c32",
+      "src/providers/radius-config.ts": "0e8c55d29039d760ba4cb8a763e61ea742ac13b3acdf42891c82486a610ab4f4",
+      "src/auth/oauth/radius.ts": "ee5d79f98e567883fbebb831c2e9acbe92a844d40d041eb275c9534428ef03b5",
+      "test/radius-provider.test.ts": "a4214deca29be57b8a5239ebae780dabb3a13f725d8992eb1cf87f32f1b6b322"
+    }
+  },
+  "baseline_reproduction": {
+    "test": "default_uses_opi_bundle_and_custom_registration_stays_empty_and_offline",
+    "exit": 101,
+    "expected_failure": "custom builtin catalog incorrectly inherited baseline",
+    "log_sha256": "a96753ff41be1027209ba8ab10d8d3dfef343e16b912fb1c2af219acdaa25627"
+  },
+  "native_checks": {
+    "reviewed_default": {
+      "command": [
+        "python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--locked",
+        "--offline",
+        "--test",
+        "radius_builtin_catalog",
+        "--test",
+        "catalog_lifecycle",
+        "--test",
+        "catalog_operations",
+        "--test",
+        "provider_collection",
+        "--test",
+        "external_sdk",
+        "--test",
+        "builtin_auth_ownership",
+        "--test",
+        "chat_pi_messages",
+        "--test",
+        "pi_messages_terminal",
+        "--test",
+        "registry"
+      ],
+      "targets": {
+        "builtin_auth_ownership": 9,
+        "catalog_lifecycle": 9,
+        "catalog_operations": 27,
+        "chat_pi_messages": 42,
+        "external_sdk": 11,
+        "pi_messages_terminal": 2,
+        "provider_collection": 111,
+        "radius_builtin_catalog": 8,
+        "registry": 28
+      },
+      "passed": 247,
+      "exit": 0,
+      "log_sha256": "854c9c08e139d2762f84bd8b3589d6195d384eaa396e71540ab90ceb06a5975f"
+    },
+    "radius_oauth": {
+      "command": [
+        "python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--locked",
+        "--offline",
+        "--test",
+        "oauth_flows",
+        "--",
+        "radius"
+      ],
+      "targets": {
+        "oauth_flows": 26
+      },
+      "passed": 26,
+      "exit": 0,
+      "log_sha256": "630e0619fd2ffc04acca29b62ca0ff6242187a140f015b3c64bc45b66b8edc32"
+    },
+    "single_provider_pi_messages": {
+      "command": [
+        "python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--locked",
+        "--offline",
+        "--no-default-features",
+        "--features",
+        "provider-pi-messages",
+        "--test",
+        "provider_pi_messages_profile"
+      ],
+      "targets": {
+        "provider_pi_messages_profile": 1
+      },
+      "passed": 1,
+      "exit": 0,
+      "log_sha256": "3577cd9af9e83f521c2bef429e2fff56abed45b0e4ad6da2740bf880d993c9f7"
+    },
+    "minimum_sdk": {
+      "command": [
+        "python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "-p",
+        "opi-ai",
+        "--locked",
+        "--offline",
+        "--no-default-features",
+        "--test",
+        "core_profile",
+        "--test",
+        "provider_trait"
+      ],
+      "targets": {
+        "core_profile": 4,
+        "provider_trait": 17
+      },
+      "passed": 21,
+      "exit": 0,
+      "log_sha256": "b3f3066f09365de05b055591286f8e1f772257e0c36f09f1b20a57def482ed5c"
+    },
+    "reviewed_clippy": {
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "opi-ai",
+        "--locked",
+        "--offline",
+        "--lib",
+        "--test",
+        "radius_builtin_catalog",
+        "--test",
+        "provider_collection",
+        "--test",
+        "external_sdk"
+      ],
+      "exit": 0,
+      "known_library_lints": 3,
+      "log_sha256": "7fe27281a916c1aaad24055d6a1ffd37ef1bd688ec65dbf196aa2e4512661413"
+    }
+  },
+  "observations": {
+    "default": "opi bundled model identities and zero auth/I/O during offline refresh",
+    "custom": "empty initial list, retained explicit record path and compatibility metadata",
+    "active_auth": "env, stored Bearer keys, expired OAuth refresh at configured origin",
+    "local_http": [
+      "GET /v1/config",
+      "POST /v1/oauth/token",
+      "POST /v1/messages",
+      "POST /custom-prefix/messages"
+    ],
+    "persistence": "same-origin reopen, authoritative empty, backward-read unscoped native publication",
+    "negative": "unconfigured, 503, malformed row, duplicate id and foreign advertised origin retain prior data",
+    "cancel": "request held at local peer; revision and file bytes stay identical",
+    "race": "shared store clone; later request commits first; earlier completion is Superseded"
+  },
+  "builtin_catalog_sha256": "ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678",
+  "architecture": {
+    "command": [
+      "python",
+      "scripts/pi-sdk-conformance/check_architecture_boundaries.py",
+      "--enforce",
+      "--json"
+    ],
+    "counts": {
+      "api_provider_edges": 0,
+      "profile_api_edges": 9,
+      "unapproved_profile_api_edges": 0,
+      "lower_layer_reviewed_contracts": 4,
+      "lower_layer_known_exceptions": 76,
+      "lower_layer_new_dependencies": 0,
+      "lower_layer_unused_baseline_sites": 0,
+      "lower_layer_excluded_test_sites": 15,
+      "provider_copilot_policy_sites": 0,
+      "api_route_context_edges": 11,
+      "api_contract_provider_edges": 0,
+      "provider_contract_api_edges": 0,
+      "profile_native_state": 0,
+      "provider_to_provider_edges": 0,
+      "models_protocol_branches": 0,
+      "models_owner_modules": 4,
+      "models_owner_module_files": 4,
+      "models_owner_definitions_in_facade": 0,
+      "models_prepared_execution_owner": 1,
+      "models_prepared_execution_owner_files": 1,
+      "models_registration_records": 5,
+      "models_registration_record_files": 1,
+      "models_registration_records_in_facade": 0,
+      "models_chat_call_orchestration": 8,
+      "models_chat_call_files": 1,
+      "models_chat_call_orchestration_in_facade": 0
+    },
+    "violations": []
+  }
+}

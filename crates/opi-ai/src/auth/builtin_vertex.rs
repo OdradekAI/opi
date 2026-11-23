@@ -17,6 +17,7 @@ use crate::models::{
     AuthCheck, AuthCheckKind, BuiltinAuthBindings, BuiltinAuthFactory, BuiltinAuthStatus,
 };
 use crate::provider::{ProviderError, ProviderErrorSummary};
+use crate::providers::vertex::vertex_collection_url;
 
 /// Source and routing inputs for the builtin Vertex profile.
 ///
@@ -149,23 +150,7 @@ impl Resolver {
     }
 
     fn endpoint(&self, project_location: Option<(&str, &str)>) -> String {
-        let host = self
-            .config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| match project_location {
-                Some((_, location)) if location != "global" => {
-                    format!("https://{location}-aiplatform.googleapis.com")
-                }
-                _ => "https://aiplatform.googleapis.com".into(),
-            });
-        let host = host.trim_end_matches('/');
-        match project_location {
-            Some((project, location)) => format!(
-                "{host}/v1/projects/{project}/locations/{location}/publishers/google/models"
-            ),
-            None => format!("{host}/v1/publishers/google/models"),
-        }
+        vertex_collection_url(self.config.base_url.as_deref(), project_location)
     }
 
     async fn status(&self) -> Result<Option<BuiltinAuthStatus>, ProviderError> {

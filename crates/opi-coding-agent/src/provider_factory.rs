@@ -282,8 +282,8 @@ fn skipped_route_diagnostic(provider_id: &str) -> Diagnostic {
 }
 
 /// Whether the user explicitly configured this provider's non-secret
-/// settings. Unconfigured optional providers (empty azure deployments, a
-/// vertex section without a project) fail construction by design and stay
+/// settings. Unconfigured optional providers such as Vertex without a project
+/// fail construction by design and stay
 /// silently absent; only a provider the user actually configured earns a
 /// skip diagnostic when its construction fails. Credential IO is lazy by
 /// contract, so credential-class construction failures never earn a
@@ -313,14 +313,13 @@ fn route_explicitly_configured(config: &OpiConfig, provider_id: &str) -> bool {
                 || providers.amazon_bedrock.proxy.is_some()
         }
         "azure" => {
-            !providers.azure.deployments.is_empty()
-                || providers.azure.endpoint.is_some()
+            providers.azure.endpoint.is_some()
+                || providers.azure.api_version.is_some()
                 || providers.azure.proxy.is_some()
         }
         "google-vertex" => {
             providers.google_vertex.project.is_some()
                 || providers.google_vertex.location.is_some()
-                || !providers.google_vertex.models.is_empty()
                 || providers.google_vertex.base_url.is_some()
                 || providers.google_vertex.proxy.is_some()
         }
@@ -920,6 +919,14 @@ pub(crate) fn provider_availability(
         return Some(ProviderAvailability::env_only(&env_name, env_var));
     }
 
+    if provider_id == "google-vertex" {
+        return Some(vertex_availability(
+            &config.providers.google_vertex,
+            env_var,
+            store_probe,
+        ));
+    }
+
     let env_name = api_key_env_name(config, provider_id)?;
     Some(ProviderAvailability::api_key_backed(
         provider_id,
@@ -1020,24 +1027,50 @@ fn env_value_present(env_var: &dyn Fn(&str) -> Option<String>, name: &str) -> bo
     env_var(name).is_some_and(|value| !value.trim().is_empty())
 }
 
-fn configured_models(
-    ids: &[String],
-    wire_api: WireApi,
-    context_window: u64,
-    max_output_tokens: u64,
-) -> Vec<ModelInfo> {
-    ids.iter()
-        .map(|id| {
-            ModelInfo::new(
-                id,
-                id,
-                wire_api,
-                ModelCapabilities::new(context_window, max_output_tokens)
-                    .with_images(true)
-                    .with_streaming(true),
-            )
+fn vertex_availability(
+    config: &crate::config::VertexProviderConfig,
+    env_var: &dyn Fn(&str) -> Option<String>,
+    store_probe: &std::collections::HashMap<
+        String,
+        crate::credential_store::CredentialMetadataProbe,
+    >,
+) -> ProviderAvailability {
+    use opi_ai::auth::adc::native::well_known_adc_file;
+
+    let token_env = resolve_env_name(&config.access_token_env, "VERTEX_ACCESS_TOKEN");
+    let env_name = if env_value_present(env_var, "GOOGLE_CLOUD_API_KEY") {
+        "GOOGLE_CLOUD_API_KEY"
+    } else {
+        &token_env
+    };
+    let availability =
+        ProviderAvailability::api_key_backed("google-vertex", env_name, env_var, store_probe);
+    let scope_configured = vertex_bearer_scope_configured(config);
+    if availability.state == AvailabilityState::Present
+        && !scope_configured
+        && vertex_project_location(config).is_ok()
+        && env_name != "GOOGLE_CLOUD_API_KEY"
+        && !availability.source_is_keychain()
+    {
+        return ProviderAvailability::absent("Vertex Bearer requires project and location", false);
+    }
+    if availability.state == AvailabilityState::Present
+        || !scope_configured
+        || store_probe.get("google-vertex").is_some_and(|probe| {
+            matches!(probe.source, opi_ai::CredentialSource::Present { .. })
+                || ProviderAvailability::fail_closed_probe("google-vertex", probe, false).is_some()
         })
-        .collect()
+    {
+        return availability;
+    }
+    let adc_path = match env_var("GOOGLE_APPLICATION_CREDENTIALS") {
+        Some(path) => Some(std::path::PathBuf::from(path)),
+        None => well_known_adc_file(env_var("APPDATA").as_deref(), env_var("HOME").as_deref()),
+    };
+    if adc_path.is_some_and(|path| path.is_file()) {
+        return ProviderAvailability::present("Application Default Credentials");
+    }
+    availability
 }
 
 fn build_list_models_metadata(
@@ -1051,7 +1084,7 @@ fn build_list_models_metadata(
         ),
         "openai" => (
             config.providers.openai.proxy.as_ref(),
-            opi_ai::providers::openai::model_catalog(),
+            opi_ai::providers::openai_responses::model_catalog(),
         ),
         "openrouter" => (
             config.providers.openrouter.proxy.as_ref(),
@@ -1075,49 +1108,18 @@ fn build_list_models_metadata(
             config.providers.amazon_bedrock.proxy.as_ref(),
             opi_ai::providers::bedrock::model_catalog(),
         ),
-        "azure" => {
-            let azure = &config.providers.azure;
-            if azure.deployments.is_empty() {
-                return Err(ListModelsError::Config(
-                    "azure provider has no deployments configured".into(),
-                ));
-            }
-            if azure.endpoint.is_none() {
-                return Err(ListModelsError::Config(
-                    "Azure OpenAI endpoint is required. Set it via config [providers.azure] endpoint or AZURE_OPENAI_ENDPOINT env var.".into(),
-                ));
-            }
-            (
-                azure.proxy.as_ref(),
-                configured_models(
-                    &azure.deployments,
-                    WireApi::AzureOpenAiCompletions,
-                    128000,
-                    16384,
-                ),
-            )
-        }
+        "azure" => (
+            config.providers.azure.proxy.as_ref(),
+            opi_ai::providers::azure_openai::model_catalog(),
+        ),
         "google-vertex" => {
             let vertex = &config.providers.google_vertex;
-            match (vertex.project.is_some(), vertex.location.is_some()) {
-                (true, true) | (false, false) => {}
-                (true, false) => {
-                    return Err(ListModelsError::Config(
-                        "vertex provider requires location when project is set".into(),
-                    ));
-                }
-                (false, true) => {
-                    return Err(ListModelsError::Config(
-                        "vertex provider requires project when location is set".into(),
-                    ));
-                }
-            }
-            let models = if vertex.models.is_empty() {
-                opi_ai::providers::vertex::model_catalog()
-            } else {
-                configured_models(&vertex.models, WireApi::GoogleVertex, 1_000_000, 65536)
-            };
-            (vertex.proxy.as_ref(), models)
+            vertex_project_location(vertex)
+                .map_err(|message| ListModelsError::Config(message.into()))?;
+            (
+                vertex.proxy.as_ref(),
+                opi_ai::providers::vertex::model_catalog(),
+            )
         }
         other => {
             return Err(ListModelsError::Config(format!(
@@ -1851,16 +1853,22 @@ fn build_runtime_adapter(
                 WireApi::AnthropicMessages,
             )
         }
-        "openai" => {
-            let client = build_proxied_client(config.providers.openai.proxy.as_ref())?;
+        "openai" | "openai-responses" => {
+            let profile = if provider_id == "openai" {
+                &config.providers.openai
+            } else {
+                &config.providers.openai_responses
+            };
+            let client = build_proxied_client(profile.proxy.as_ref())?;
             (
-                Box::new(opi_ai::providers::openai::OpenAiChatProvider::with_client(
-                    config.providers.openai.base_url.clone(),
-                    "openai".into(),
-                    vec![],
-                    client,
-                )) as Box<dyn Provider>,
-                WireApi::OpenAiCompletions,
+                Box::new(
+                    opi_ai::providers::openai_responses::OpenAiResponsesProvider::with_builtin_catalog(
+                        profile.base_url.clone(),
+                        provider_id.into(),
+                        client,
+                    ),
+                ) as Box<dyn Provider>,
+                WireApi::OpenAiResponses,
             )
         }
         "openrouter" => {
@@ -1909,33 +1917,14 @@ fn build_runtime_adapter(
                 WireApi::OpenAiCompletions,
             )
         }
-        "openai-responses" => {
-            let client = build_proxied_client(config.providers.openai_responses.proxy.as_ref())?;
-            (
-                Box::new(
-                    opi_ai::providers::openai_responses::OpenAiResponsesProvider::with_client(
-                        config.providers.openai_responses.base_url.clone(),
-                        client,
-                    ),
-                ) as Box<dyn Provider>,
-                WireApi::OpenAiResponses,
-            )
-        }
         "google" => {
             let client = build_proxied_client(config.providers.google.proxy.as_ref())?;
-            let provider = opi_ai::providers::gemini::GeminiProvider::with_client(
+            let provider = opi_ai::providers::gemini::google_provider(
                 config.providers.google.base_url.clone(),
                 client,
             );
-            let models = provider.models().to_vec();
-            // The adapter keeps its historical id; the route publishes the
-            // canonical one.
             (
-                opi_ai::providers::collection::canonical_route(
-                    "google",
-                    models,
-                    Box::new(provider),
-                ),
+                Box::new(provider) as Box<dyn Provider>,
                 WireApi::GoogleGenerativeAi,
             )
         }
@@ -1949,41 +1938,19 @@ fn build_runtime_adapter(
         }
         "azure" => {
             let azure_config = &config.providers.azure;
-            let deployment = parse_model_spec(&config.defaults.model)
-                .ok()
-                .and_then(|(provider, model)| (provider == "azure").then_some(model));
-            let provider = if azure_config.deployments.is_empty() {
-                let deployment = deployment.ok_or_else(|| {
-                    ProviderBuildError::Config(
-                        "azure provider has no configured deployment for this route".to_owned(),
-                    )
-                })?;
-                opi_ai::providers::azure_openai::AzureOpenAIProvider::new(
+            return Ok(Box::new(
+                opi_ai::providers::azure_openai::AzureCatalogProvider::new(
                     azure_config.endpoint.clone(),
-                    deployment.to_string(),
                     azure_config.api_version.clone(),
-                )?
-            } else {
-                opi_ai::providers::azure_openai::AzureOpenAIProvider::from_config(
-                    azure_config.endpoint.clone(),
-                    azure_config.deployments.clone(),
-                    azure_config.api_version.clone(),
-                )?
-            }
-            .with_client(build_proxied_client(azure_config.proxy.as_ref())?);
-            (
-                Box::new(provider) as Box<dyn Provider>,
-                WireApi::AzureOpenAiCompletions,
-            )
+                    Arc::new(opi_ai::auth::AmbientAuthContext),
+                    build_proxied_client(azure_config.proxy.as_ref())?,
+                )?,
+            ));
         }
-        "google-vertex" => {
-            let provider = vertex_adapter(&config.providers.google_vertex)?;
-            let models = provider.models().to_vec();
-            (
-                opi_ai::providers::collection::canonical_route("google-vertex", models, provider),
-                WireApi::GoogleVertex,
-            )
-        }
+        "google-vertex" => (
+            vertex_adapter(&config.providers.google_vertex)?,
+            WireApi::GoogleVertex,
+        ),
         "copilot" => {
             return Err(ProviderBuildError::Config(
                 "'copilot' has been renamed; use provider id 'github-copilot' (login: /login github-copilot)"
@@ -2064,6 +2031,7 @@ use opi_ai::auth::adc::native::{AdcNativeOwner, AdcResolutionError, ScopedAdcEnv
 struct VertexAuthResolver {
     resolver: CredentialResolver,
     access_token_env: String,
+    bearer_scope_configured: bool,
     /// Shared ADC owner: cross-call token cache (fixed 5-minute eager
     /// window) and in-place refresh-token rotation without rewriting the
     /// credentials file.
@@ -2085,8 +2053,13 @@ impl opi_ai::AuthResolver for VertexAuthResolver {
                     ))
                 })?
                 .is_some()
-                || self.resolver.env_value(&self.access_token_env).is_some()
             {
+                return Ok(true);
+            }
+            if !self.bearer_scope_configured {
+                return Ok(false);
+            }
+            if self.resolver.env_value(&self.access_token_env).is_some() {
                 return Ok(true);
             }
             self.adc.check_configured().map_err(map_vertex_adc_error)
@@ -2198,63 +2171,43 @@ fn build_vertex_route(
     let auth_resolver = Arc::new(VertexAuthResolver {
         resolver: resolver.clone(),
         access_token_env: resolve_env_name(&vertex_config.access_token_env, "VERTEX_ACCESS_TOKEN"),
+        bearer_scope_configured: vertex_bearer_scope_configured(vertex_config),
         adc,
     });
     Ok((provider, auth_resolver))
 }
 
-/// Construct the vertex adapter. Both project and location select the
-/// ADC/Bearer regional (or global) wire; neither selects the API-key Express
-/// wire; exactly one is a typed config error.
-fn vertex_adapter(
-    vertex_config: &crate::config::VertexProviderConfig,
-) -> Result<Box<dyn Provider>, ProviderBuildError> {
-    match (
-        vertex_config.project.as_deref(),
-        vertex_config.location.as_deref(),
-    ) {
-        (Some(project), Some(location)) => {
-            let provider = if vertex_config.models.is_empty() {
-                opi_ai::providers::vertex::VertexProvider::new(
-                    project.to_owned(),
-                    location.to_owned(),
-                    vertex_config.base_url.clone(),
-                )
-            } else {
-                opi_ai::providers::vertex::VertexProvider::from_config(
-                    project.to_owned(),
-                    location.to_owned(),
-                    vertex_config.models.clone(),
-                    vertex_config.base_url.clone(),
-                )
-            };
-            let provider =
-                provider.with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
-            let models = provider.models().to_vec();
-            Ok(opi_ai::providers::collection::canonical_route(
-                "google-vertex",
-                models,
-                Box::new(provider),
-            ))
-        }
-        (None, None) => {
-            let provider =
-                opi_ai::providers::vertex::VertexProvider::express(vertex_config.base_url.clone())
-                    .with_client(build_proxied_client(vertex_config.proxy.as_ref())?);
-            let models = provider.models().to_vec();
-            Ok(opi_ai::providers::collection::canonical_route(
-                "google-vertex",
-                models,
-                Box::new(provider),
-            ))
-        }
-        (Some(_), None) => Err(ProviderBuildError::Config(
-            "vertex provider requires location when project is set".into(),
-        )),
-        (None, Some(_)) => Err(ProviderBuildError::Config(
-            "vertex provider requires project when location is set".into(),
-        )),
+fn vertex_project_location(
+    config: &crate::config::VertexProviderConfig,
+) -> Result<Option<(&str, &str)>, &'static str> {
+    match (config.project.as_deref(), config.location.as_deref()) {
+        (Some(project), Some(location)) => Ok(Some((project, location))),
+        (None, None) => Ok(None),
+        (Some(_), None) => Err("vertex provider requires location when project is set"),
+        (None, Some(_)) => Err("vertex provider requires project when location is set"),
     }
+}
+
+fn vertex_bearer_scope_configured(config: &crate::config::VertexProviderConfig) -> bool {
+    vertex_project_location(config)
+        .ok()
+        .flatten()
+        .is_some_and(|(project, location)| {
+            !project.trim().is_empty() && !location.trim().is_empty()
+        })
+}
+
+fn vertex_adapter(
+    config: &crate::config::VertexProviderConfig,
+) -> Result<Box<dyn Provider>, ProviderBuildError> {
+    let project_location = vertex_project_location(config)
+        .map_err(|message| ProviderBuildError::Config(message.into()))?
+        .map(|(project, location)| (project.to_owned(), location.to_owned()));
+    Ok(Box::new(opi_ai::providers::vertex::google_vertex_provider(
+        project_location,
+        config.base_url.clone(),
+        build_proxied_client(config.proxy.as_ref())?,
+    )))
 }
 
 struct BedrockAuthResolver {
@@ -3400,6 +3353,7 @@ mod vertex_configuration_checks {
             let resolver = super::VertexAuthResolver {
                 resolver,
                 access_token_env: "CONTROLLED_VERTEX_TOKEN".into(),
+                bearer_scope_configured: true,
                 adc,
             };
             let configured = resolver.check_configuration().unwrap().await;

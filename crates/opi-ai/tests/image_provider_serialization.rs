@@ -356,6 +356,16 @@ async fn openai_responses_image_base64_as_data_uri() {
 
 // --- Gemini image serialization ---
 
+fn gemini_image_provider(server: &MockServer) -> opi_ai::providers::gemini::GeminiProvider {
+    let model = opi_ai::ModelInfo::new(
+        "test-model",
+        "Gemini image fixture",
+        opi_ai::WireApi::GoogleGenerativeAi,
+        opi_ai::registry::ModelCapabilities::new(32_768, 4096).with_images(true),
+    );
+    opi_ai::providers::gemini::GeminiProvider::new(Some(server.uri())).with_models(vec![model])
+}
+
 #[tokio::test]
 async fn gemini_image_url_in_request_body() {
     let server = MockServer::start().await;
@@ -369,7 +379,7 @@ async fn gemini_image_url_in_request_body() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::providers::gemini::GeminiProvider::new(Some(server.uri()));
+    let provider = gemini_image_provider(&server);
     drain_stream(provider.stream_prepared(
         make_request(vec![image_url_msg()]),
         opi_ai::test_support::resolved_auth(),
@@ -397,7 +407,7 @@ async fn gemini_image_base64_as_inline_data() {
         .mount(&server)
         .await;
 
-    let provider = opi_ai::providers::gemini::GeminiProvider::new(Some(server.uri()));
+    let provider = gemini_image_provider(&server);
     drain_stream(provider.stream_prepared(
         make_request(vec![image_base64_msg()]),
         opi_ai::test_support::resolved_auth(),

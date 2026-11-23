@@ -1,7 +1,7 @@
 //! Dedicated OpenAI Codex Responses wire.
 //!
 //! This subscription-specific provider is separate from standard
-//! [`crate::providers::openai_responses::OpenAiResponsesProvider`]. It owns the
+//! [`crate::providers::openai_codex::OpenAiCodexResponsesProvider`]. It owns the
 //! `/codex/responses` body, account-id and managed-header contract, session
 //! affinity, error classification, and SSE mapping.
 

@@ -845,8 +845,7 @@ pub(crate) fn compile_projected_response_tools(
     Ok(Some(wire))
 }
 
-/// Convert the current tool declarations onto the Responses wire (pinned
-/// pi 1.3.0 `convertResponsesTools` semantics).
+/// Project registered tool declarations onto the Responses wire.
 ///
 /// Grammar tools on a supporting wire project as `custom` tools with the
 /// lark-preferred grammar format; on an unsupported target they fall back to
@@ -1786,8 +1785,7 @@ impl ResponsesMapper {
             );
             arguments = serde_json::to_string(&normalized).unwrap_or(arguments);
         }
-        // Dual-ID packing (pinned pi 1.3.0 Responses mechanism): the
-        // canonical id carries `call_id|item_id` so same-identity replay
+        // The canonical id carries `call_id|item_id` so same-identity replay
         // can restore both fields. Item ids must start with `fc_`; a
         // foreign-shaped one is legalized through a stable digest instead
         // of being guessed (RP-02/RP-07).

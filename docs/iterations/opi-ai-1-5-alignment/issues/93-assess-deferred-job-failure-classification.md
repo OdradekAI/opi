@@ -103,7 +103,7 @@ reopening consumer is a test fixture and settles any `Err` by recording
 the error and stopping its scheduler.
 [Failure message and cause](../../../../crates/opi-ai/src/stream.rs#L159) ·
 [Whole-call classifier](../../../../crates/opi-ai/src/retry.rs#L1032) ·
-[Reopening fixture](../../../../crates/opi-ai/tests/deferred_contract.rs#L855)
+[Reopening fixture](../../../../crates/opi-ai/tests/deferred_contract/reopen.rs#L125)
 
 The result channel and diagnostics remain observable differences in the
 raw record. The application decision agrees for the four exact messages.

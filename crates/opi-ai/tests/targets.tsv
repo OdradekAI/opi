@@ -1,0 +1,125 @@
+target	owner	layer	cost	cases	runners
+adc_owner_regressions	auth/adc	public-contract	local-io	Redirect credential stripping, source-bound refresh rotation, cancellation and checked token expiry	-
+ai_telemetry	telemetry	public-contract	in-process	Request and poll spans, first chunk, terminal usage, pricing and cancellation	-
+anthropic_fixtures	api/anthropic	wire	local-io	SSE mapping and prepared requests (sse), strict schema/grammar projection and bounded downgrade (constrained_sampling), Models/direct adapter lifecycle and source compatibility (adapter)	-
+anthropic_nested_usage	api/anthropic	wire	in-process	Nested cache and reasoning token deltas, success and invalid subset traces	archive@scripts/pi-sdk-conformance/run_anthropic_nested_package.py
+anthropic_repeated_message_stop	api/anthropic	wire	in-process	Repeated message_stop, late usage and EOF-gated terminal delivery	archive@scripts/pi-sdk-conformance/run_anthropic_repeated_message_stop_package.py differential@scripts/pi-sdk-conformance/differential/compare_anthropic_repeated_message_stop.py
+anthropic_thinking_roundtrip	replay	wire	local-io	Signed and redacted thinking across storage and continuation, foreign identity and strict replay	-
+anthropic_usage_updates	api/anthropic	wire	local-io	Silent usage corrections, canonical results, observer updates and subset atomicity	archive@scripts/pi-sdk-conformance/run_anthropic_package.py archive@scripts/pi-sdk-conformance/run_anthropic_nested_package.py differential@scripts/pi-sdk-conformance/differential/replay_anthropic_usage.py
+api_mapped_provider	providers/mapped	assembly	local-io	One provider identity across mapped wires, catalog validation, auth and retries	-
+auth_contracts	auth	public-contract	local-io	Authentication errors, source selection, mutations, ADC families and scoped snapshots; shared API-key and service-account fixtures select the full target	archive@scripts/pi-sdk-conformance/run_oauth_store_package.py archive@scripts/pi-sdk-conformance/run_cloud_auth_package.py
+auth_process_lifecycle	auth	public-contract	extended	Native ADC and AWS process exit, cancellation, output drains and reaping	ci@.github/workflows/platform-verify.yml
+azure_openai_fixtures	api/azure_openai	wire	local-io	Azure OpenAI protocol target: shared fixtures, Chat wire/lifecycle/callbacks, native Responses wire/lifecycle/options; package consumer owns provider-azure-openai	-
+bedrock_fixtures	api/bedrock	wire	extended	Bedrock wire, HTTP lifecycle, AWS credential source (chain, role sources, metadata and credential lifecycle), SSO/login (discovery, expiry, login and chain) and shared fixture coverage, plus builtin routes and Converse adapter projection, stream, replay and lifecycle topics	-
+bedrock_retry	api/bedrock	wire	extended	Smithy retry policy, strict-tool admission, bounded rebuilds, retry headers and cancellation	-
+bedrock_pending_metadata	api/bedrock	wire	in-process	Repeated metadata before EOF updates the pending Done outcome	archive@scripts/pi-sdk-conformance/run_bedrock_pending_package.py differential@scripts/pi-sdk-conformance/differential/compare_bedrock_repeated_metadata.py
+builtin_auth_ownership	providers/collection	assembly	local-io	Builtin auth rebinding, explicit operation replacement and scoped candidate precedence	-
+builtin_native_scoped	auth/builtin	assembly	local-io	Per-account Vertex tokens and Bedrock credential files, source isolation and failure	-
+builtin_scoped_env	auth/builtin	assembly	local-io	Stored Cloudflare, Azure and Vertex settings reach actual dispatch and mask ambient values	-
+catalog_artifact	catalog	public-contract	in-process	Bundled artifact provenance and digest, operation-specific records and explicit custom fallback	matrix@scripts/pi-sdk-conformance/run_shared_owner_pairs.py
+catalog_lifecycle	catalog	assembly	local-io	Store publication, restore and persisted optional sampling and headers on subsequent requests	-
+catalog_operations	catalog	assembly	local-io	Operation-qualified publication, adapter selection and dispatch, and persisted pricing; the external catalog-bundled consumer verifies packaged catalog bytes	archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py
+catalog_personalization	catalog	assembly	local-io	OpenRouter account-local pricing and endpoint filters drive the next Models request	-
+chat_argument_preview	api/openai_completions	wire	local-io	Raw streamed arguments versus display snapshots at each Chat chunk boundary	-
+chat_capture_replay	replay	assembly	local-io	Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls	archive@scripts/pi-sdk-conformance/run_readme_examples.py
+chat_pi_messages	api/pi_messages	wire	local-io	Pi Messages protocol target: Radius gateway/catalog, endpoint/options/cache/context wire, SSE stream, HTTP/auth/Models lifecycle, callbacks and Node 5 replay; package consumer owns provider-pi-messages	-
+classifier_contract	classifier	assembly	local-io	Four classifier wire modules, Models lifecycle, declaration order and shared dispatch and acquisition	-
+cloud_auth_profile	auth	feature-profile	in-process	Independently selectable cloud credential source and signing surfaces	matrix@scripts/pi-sdk-conformance/run_shared_owner_pairs.py
+codex_native_options	api/openai_codex_responses	wire	extended	Native and simple options, continuation reuse/reset, deadlines and connection lifetimes	-
+codex_telemetry	telemetry	wire	local-io	Codex request and raw callbacks retain the source telemetry parent across polling	-
+connection_pooling	http	public-contract	local-io	Pool defaults and overrides, H1 connection reuse and provider client reuse	-
+context_budget	context	public-contract	in-process	Latest usable usage anchor plus transcript tail and prepared thinking budgets	-
+core_profile	lib	feature-profile	in-process	Minimum scripted Faux tool replay and deferred fetch, custom login store acknowledgement and optional tracing	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+custom_provider_registration	models	public-contract	in-process	Provider registry and model overrides, typed Chat registration, dispatch, call lifecycle and pre-auth rejection	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+deferred_contract	provider/operation	public-contract	in-process	Handle validation, submission and fetch, cancellation, reopening and telemetry; the external minimal consumer checks submission and explicit fetch	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+execution_lifecycle	execution	public-contract	in-process	Ordinary and started calls, Deferred readiness, and terminal source release; the external minimal consumer verifies core ordinary calls and Deferred fetch	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+external_sdk	models	assembly	local-io	Assembled Chat wire matrix, classifier and image dispatch, and public Models contracts	archive@scripts/pi-sdk-conformance/run_readme_examples.py
+final_numeric_decoding	streaming_json	public-contract	in-process	Final argument text retains numeric identity across downstream decoding and rejects invalid finals	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+gemini_fixtures	api/gemini	wire	local-io	Gemini protocol target: shared fixtures for wire, HTTP lifecycle, callbacks, constrained sampling and Google 4.0 adapter; wire owns provider/model/request/SSE, lifecycle owns HTTP/cancellation, callbacks owns observer behavior	-
+gemini_lifecycle	api/gemini	wire	local-io	HTTP acquisition and stream completion, cancellation and failed preflight across Google routes	-
+gemini_repeated_finish	api/gemini	wire	local-io	Repeated finish and late usage, malformed tails and observer failure before Done	archive@scripts/pi-sdk-conformance/run_gemini_repeated_finish_package.py differential@scripts/pi-sdk-conformance/differential/compare_gemini_repeated_finish.py
+http_acceptance	http	public-contract	local-io	H1 response parsing, redirect send budgets and disconnects, HTTPS proxy tunnels and bypass	archive@scripts/pi-sdk-conformance/package_slice.py
+http_transport_profile	http	feature-profile	in-process	HTTP client defaults, redirects and configured proxy precedence without builtin providers	-
+image_input	types	public-contract	in-process	Image input URL/base64 construction, accepted media types and serialization	-
+image_provider_serialization	images	wire	local-io	Image inputs on actual provider requests and OpenRouter generation, callbacks and auth	-
+incremental_argument_preview	streaming_json	public-contract	extended	Append, preview and final argument snapshots and display cadence measurements	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+mistral_fixtures	api/mistral	wire	local-io	Mistral protocol target: shared Chat wire/lifecycle/callbacks plus native Conversations adapter topics; chat_wire owns compatible request/SSE, chat_lifecycle owns cancellation, native topics own Mistral options, SSE, lifecycle, replay and callback contracts	-
+mistral_repeated_finish	api/mistral	wire	local-io	Pending finish and late usage, invalid stop reason, observer failure and resource release	archive@scripts/pi-sdk-conformance/run_mistral_repeated_finish_package.py differential@scripts/pi-sdk-conformance/differential/compare_mistral_repeated_finish.py
+model_capabilities_migration	types/model	public-contract	in-process	ModelCapabilities nested builder, defaults and builtin cache capability flags	-
+model_wire_metadata	types/model	public-contract	local-io	Model and wire declarations, thinking admission, sampling resolution and requests, pricing, and Anthropic compatibility and fallback costs; the catalog consumer verifies embedded source records	archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py
+node4_preparation	models	assembly	local-io	Native and simple limits, Models catalog restore, and projection facts and failure timing; the external catalog-bundled consumer verifies the packaged catalog and feature closure	archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py
+oauth_anthropic	auth/oauth/anthropic	assembly	extended	Anthropic browser and copy-code login, callback validation, token exchange, refresh and preferred-port lifecycle	-
+oauth_codex	auth/oauth/codex	assembly	extended	Codex browser/device login, fixed-loopback fallback, token exchange, account-id extraction, refresh and Models store ACK	-
+oauth_chatgpt	auth/oauth/chatgpt	assembly	extended	ChatGPT dynamic client registration, callback, manual paste, device identity, refresh and Models store ACK	-
+oauth_copilot	auth/oauth/copilot	assembly	extended	Copilot device login, token exchange, model discovery, enterprise URLs, policy activation, refresh, source timeout clamp and Models store ACK	-
+oauth_kimi	auth/oauth/kimi	assembly	extended	Kimi device authorization, polling, refresh, cancellation, typed errors and Models store ACK	-
+oauth_meta	auth/oauth/meta	assembly	extended	Meta device authorization, polling, model API key mint, refresh, cancellation, typed errors and Models store ACK	-
+oauth_xai	auth/oauth/xai	assembly	extended	xAI device authorization, polling, refresh, cancellation, typed errors and Models store ACK	-
+oauth_models_store	auth/oauth/store	assembly	extended	Models default and explicit credential stores, ACK outcomes, failure typing and concurrent mutation serialization	-
+oauth_regressions	auth/oauth/regressions	assembly	extended	Cross-provider registration, provider error boundaries, cancellation and OAuth metadata regression	-
+oauth_openrouter	auth/oauth/openrouter	assembly	extended	OpenRouter callback, manual-code, exchange and permanent-key lifecycle	-
+oauth_radius	auth/oauth/radius	assembly	extended	Radius discovery, browser/device login, token exchange, refresh and custom identity lifecycle	-
+oauth_store_integration	auth	assembly	local-io	Store-acknowledged token rotation shared by Models and consumed by an actual request	-
+oauth_store_profile	auth	feature-profile	in-process	OAuth and store construction without builtins and public PKCE primitives	matrix@scripts/pi-sdk-conformance/run_shared_owner_pairs.py
+oauth_wire_shape	auth	wire	local-io	Exact OAuth versus API-key headers, provider beta values and revoked-credential classification	-
+openai_chat_finish_timing	api/openai_completions	wire	local-io	Finish, late usage, sentinel, EOF and callback release on Chat-compatible routes	differential@scripts/pi-sdk-conformance/differential/replay_chat_finish_timing.py
+openai_chat_fixtures	api/openai_completions	wire	local-io	Chat Completions wire, Models lifecycle, source compatibility, callbacks and shared fixture consumers	-
+openai_chat_interleaved	api/openai_completions	wire	local-io	Interleaved Chat content and tool-call frames through public events and the next turn	differential@scripts/pi-sdk-conformance/differential/replay_chat_interleaving.py
+openai_chat_output_limits	api/openai_completions	wire	local-io	Output-token limits actually sent by native, simple and direct Chat entries	differential@scripts/pi-sdk-conformance/differential/replay_chat_output_limits.py
+openai_chat_response_observer	api/openai_completions	wire	local-io	Response observer failure releases the provider for the following request	archive@scripts/pi-sdk-conformance/run_openai_chat_response_observer_package.py differential@scripts/pi-sdk-conformance/differential/compare_openai_chat_response_observer.py
+openai_choice_usage	api/openai_completions	wire	in-process	Choice-level usage fallback, chunk-level precedence and invalid token subsets	archive@scripts/pi-sdk-conformance/run_openai_choice_usage_package.py differential@scripts/pi-sdk-conformance/differential/compare_openai_choice_usage.py
+openai_codex_responses	api/openai_codex_responses	wire	extended	Codex dedicated SSE/request wire and callbacks (wire), strict constrained sampling (constrained_sampling), WebSocket path/continuation/recovery/cancellation/resources/regressions (ws_*), replay/compression/terminal/idle fixtures	-
+openai_compat_lifecycle	api/openai_completions	wire	local-io	HTTP success, errors, EOF and extra headers on OpenAI, Mistral and OpenRouter Chat routes	-
+openai_responses_fixtures	api/openai_responses	wire	local-io	Responses protocol target: fixtures shared by wire, constrained_guard and lifecycle; wire owns payload/SSE/route cases, constrained_guard owns constrained sampling, lifecycle owns Models/callback/source compatibility	-
+openai_responses_lifecycle	api/openai_responses	wire	local-io	HTTP, data-only SSE, missing terminal and deferred submit/fetch/cancel lifecycle	-
+openrouter_cost	api/shared/openrouter_usage	wire	in-process	OpenRouter cost versus upstream BYOK components and non-OpenRouter parser isolation	-
+openrouter_fixtures	providers/openrouter	wire	local-io	OpenRouter protocol target: shared Chat wire/lifecycle plus Images wire/lifecycle/callbacks; fixtures own local peers and provider/image records; package consumer owns provider-openrouter	-
+output_content_image	types	public-contract	in-process	Output image URL/base64 serde and tool-result image content round trips	-
+partial_aliases	stream	wire	local-io	Previously delivered stream partials retained and inspected after subsequent chunks	differential@scripts/pi-sdk-conformance/differential/replay_partial_aliases.py
+per_request_auth	auth	wire	local-io	Prepared call credential selection and scheme-specific headers, missing or unsupported credentials	-
+pi_messages_terminal	api/pi_messages	wire	local-io	Repeated Done metadata, raw observer failure and release before the next call	archive@scripts/pi-sdk-conformance/run_pi_messages_terminal_package.py differential@scripts/pi-sdk-conformance/differential/compare_pi_messages_terminal.py
+platform_delivery	distribution	assembly	local-io	Workspace graph, lock, unsafe/build-script inventory, notices and native platform expectations	-
+protocol_adapter_profile	api	feature-profile	in-process	Protocol adapter, shared auth/store and WebSocket surfaces without bundled catalogs	-
+provider_anthropic_profile	provider-anthropic	feature-profile	in-process	Constructible public protocol surface with provider-anthropic selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_azure_openai_profile	provider-azure-openai	feature-profile	in-process	Constructible public protocol surface with provider-azure-openai selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_bedrock_profile	provider-bedrock	feature-profile	in-process	Constructible public protocol surface with provider-bedrock selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_collection	providers/collection	assembly	extended	Builtin registration, auth, chat and non-chat routes; collection dispatch, registry refresh, catalog store publication, retry and selected-owner management	archive@scripts/pi-sdk-conformance/run_readme_examples.py
+provider_diagnostics	errors	public-contract	in-process	Deterministic provider error categories, diagnostic summaries and sensitive-data redaction	-
+provider_error_classes	errors	wire	local-io	Provider HTTP failure categories and bodyless public summaries across adapters	-
+provider_gemini_profile	provider-gemini	feature-profile	in-process	Constructible public protocol surface with provider-gemini selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_lifecycle	provider	wire	local-io	Prepared Anthropic requests and typed HTTP failures, SSE decoding, cancellation and owned connection release	archive@scripts/pi-sdk-conformance/run_readme_examples.py
+provider_mistral_profile	provider-mistral	feature-profile	in-process	Constructible public protocol surface with provider-mistral selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_openai_chat_profile	provider-openai-chat	feature-profile	in-process	Constructible public protocol surface with provider-openai-chat selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_openai_codex_responses_profile	provider-openai-codex-responses	feature-profile	in-process	Constructible public protocol surface with provider-openai-codex-responses selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_openai_responses_profile	provider-openai-responses	feature-profile	in-process	Constructible public protocol surface with provider-openai-responses selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_openrouter_profile	provider-openrouter	feature-profile	in-process	Constructible public protocol surface with provider-openrouter selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_pi_messages_profile	provider-pi-messages	feature-profile	in-process	Constructible public protocol surface with provider-pi-messages selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+provider_trait	provider	public-contract	in-process	Provider requests, typed errors, Send stream, cancellation and default refresh behavior	-
+provider_vertex_profile	provider-vertex	feature-profile	in-process	Constructible public protocol surface with provider-vertex selected	matrix@scripts/pi-sdk-conformance/run_provider_protocol_matrix.py
+proxy_support	http	public-contract	local-io	Proxy configuration, no-proxy matching, credential redaction and actual provider routing	-
+public_utilities	utilities	public-contract	local-io	Text and system rendering, tool arguments, overflow and typed diagnostics, identity, provider configuration, cancellation and grammar; the external protocol-adapters consumer exercises the canonical headers and environment APIs	archive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py
+radius_builtin_catalog	providers/pi_messages	assembly	local-io	Builtin gateway catalog authentication, publication, offline restore and Pi Messages dispatch	-
+registry	registry	public-contract	local-io	Registration and resolution, capabilities, revisioned store commits and corrupt or legacy entries	-
+replay_contract	replay	wire	in-process	Tool association, execution effects, malformed arguments, wire IDs, content, object arguments and Responses grammar; the README consumer replays an admitted call and result	archive@scripts/pi-sdk-conformance/run_readme_examples.py
+request_enrichment	provider	wire	local-io	Request scalars and timeouts, protected headers, session affinity, and payload and response callbacks; the external protocol-adapters consumer verifies packaged public adapters and feature closure	archive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py
+resource_cleanup	codex_resources	assembly	local-io	Cleanup cutoff, pending auth, namespace isolation, replacement and settled cleanup barriers	-
+responses_repeated_terminal	api/openai_responses	wire	in-process	Repeated terminal usage updates the deferred Done result before EOF	archive@scripts/pi-sdk-conformance/run_responses_repeated_terminal_package.py differential@scripts/pi-sdk-conformance/differential/compare_responses_repeated_terminal.py
+retry_backoff	retry	public-contract	local-io	Retry response headers, backoff and disposition, prepared-call acquisition, and Smithy retry policy	archive@scripts/pi-sdk-conformance/package_slice.py
+schema_engine	schema	public-contract	extended	Frozen corpus, value and container keywords, applicators, reference resolution, admission and child-process stack checks	archive@scripts/pi-sdk-conformance/run_early_package_proof.py
+schema_public	schema	public-contract	extended	Tool schema admission, coercion, normalization, validation, deep input and sanitized diagnostics	-
+service_tier_cost	types/usage	wire	extended	Requested versus reported service tiers and actual Responses and Codex terminal cost	-
+stream_events	stream	public-contract	in-process	Terminal event classification, message and event serialization and diagnostics defaults	-
+streaming_json	streaming_json	public-contract	extended	Incremental snapshots, partial numbers, escapes, malformed finals and bounded deep inputs	archive@scripts/pi-sdk-conformance/run_minimal_package.py
+telemetry_carrier	telemetry	public-contract	in-process	Frozen dispatch and parent across polls, drops, tasks and threads, disabled/no-op behavior	-
+telemetry_operations	telemetry	assembly	local-io	Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing	archive@scripts/pi-sdk-conformance/run_readme_examples.py
+test_support_tests	test_support	public-contract	in-process	Scripted Faux text/tools/errors, call history, cancellation and deferred handles	-
+tls_backend_profile	tls	feature-profile	in-process	Source-scoped TLS options and independent trust, client identity and ALPN selection	-
+tls_contract	tls	public-contract	extended	Real TLS/ALPN negotiation and trust, mTLS, cancellation and transport cleanup, and process-global provider isolation	archive@scripts/pi-sdk-conformance/package_slice.py
+tool_result_no_leak	replay	wire	in-process	Chat, Responses, Anthropic and Gemini request bodies omit internal tool-result truncation	-
+tool_result_wire	replay	wire	in-process	Failed tool-result markers remain distinguishable on provider request payloads	-
+transcript_contract	transcript	public-contract	local-io	Canonical chronology, declaration admission, dynamic system/tool projection into requests	-
+usage_cost	types/usage	public-contract	in-process	Usage totals and subsets, cumulative saturation, reported charges and tiered catalog pricing	-
+vertex_fixtures	api/vertex	wire	local-io	Vertex protocol target: fixtures shared by builtin routes, wire, lifecycle, ADC sources, callbacks, constrained sampling and Google 4.1 adapter; wire owns endpoint/auth/model/request/SSE, lifecycle owns HTTP/cancellation, ADC modules own credential sources	-
+websocket_compression_profile	ws	feature-profile	in-process	WebSocket upgrade helpers and independent HTTP transport ownership	matrix@scripts/pi-sdk-conformance/run_shared_owner_pairs.py
+whole_call_retry	retry	public-contract	local-io	Canonical retry classification, logical call and callback order, wire sends, backoff and cancellation	archive@scripts/pi-sdk-conformance/package_slice.py
+ws_upgrade	ws	public-contract	extended	HTTP Upgrade validation and negotiation, source-scoped WSS trust, redirect and proxy routing	archive@scripts/pi-sdk-conformance/package_slice.py

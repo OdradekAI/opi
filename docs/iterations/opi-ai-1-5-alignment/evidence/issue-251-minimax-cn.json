@@ -1,0 +1,70 @@
+{
+  "issue": 251,
+  "status": "done",
+  "provider": "minimax-cn",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 3,
+    "records_after": 4,
+    "added": 1,
+    "removed": 0,
+    "updated": 3,
+    "added_ids": ["MiniMax-M3.1-Flash"],
+    "removed_ids": [],
+    "updated_ids": [
+      "MiniMax-M2.7",
+      "MiniMax-M2.7-highspeed",
+      "MiniMax-M3"
+    ],
+    "author_source_sha256": "33c15c71d4d98446e0d479650f6bc61f14a6da985807799d9bd1c57407a3b323",
+    "bundle_sha256": "2b8d2816f710a8c8d9f14239072463b0581906d58f3589e6f55aae15645e5bfc",
+    "manifest_sha256": "837da46ef441647e8286afebc59519a1fc17423b48da36ee74a8f13e0d3c31c2"
+  },
+  "global_after": {
+    "opi_records": 1712,
+    "reference_records": 1712,
+    "equal": 1696,
+    "only_opi": 9,
+    "only_reference": 9,
+    "changed": 7,
+    "providers_equal": 29,
+    "providers_with_differences": 13
+  },
+  "wire": {
+    "endpoint": "/anthropic/v1/messages",
+    "auth": "x-api-key",
+    "model": "MiniMax-M3.1-Flash",
+    "max_tokens": 12345,
+    "thinking_type": "adaptive",
+    "effort": "xhigh",
+    "authorization_header": false,
+    "reasoning_effort": false,
+    "anthropic_version": "2023-06-01",
+    "requests": 1
+  },
+  "tests": {
+    "provider_collection_minimax_cn": 3,
+    "provider_collection_regression": 156,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "anthropic_fixtures": 155,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "not run for this provider batch; known pre-existing ImageModelRecord.compat compile errors remain in unrelated targets",
+    "build_catalog_check": "PASS",
+    "catalog_bundled_external_consumer": "PASS",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

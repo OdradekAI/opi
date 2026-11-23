@@ -1,82 +1,120 @@
-//! Behavioral tests for the offline bundled model catalog (task 20.32 / DEL-10).
-//!
-//! Seam: the public `opi_ai::catalog` Interface — the builtin resource loader
-//! and operation-qualified model getters over the authentic, digest-pinned
-//! Pi published catalog packaged by `scripts/pi-catalog/pack.py`.
-//!
-//! Negative cases mutate copies of the real bundled bytes; no synthetic
-//! catalog data is ever constructed.
+//! Public catalog bundle loading, format compatibility and installation failures.
 
-use opi_ai::catalog::{Catalog, CatalogError, CatalogHandle, CatalogOperation};
+use std::collections::BTreeSet;
+
+use opi_ai::catalog::{
+    BUNDLE_SCHEMA_VERSION, Catalog, CatalogError, CatalogHandle, CatalogOperation, CatalogOrigin,
+    DATA_SCHEMA_VERSION,
+};
 use opi_ai::{ChatModelRecord, ModelCapabilities, ModelInfo, WireApi};
-use serde_json::Value;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-/// Revision pinned by `.repo/pi-1.3.0/nix/model-catalog.json` — the authentic
-/// artifact identity, byte-identical to the published pi.dev catalog.
-const PINNED_REVISION: &str =
-    "sha256-ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678";
-const PINNED_DIGEST: &str = "ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678";
-
 #[test]
-fn builtin_bundle_loads_with_authentic_provenance() {
+fn builtin_bundle_has_opi_origin_and_content_revision() {
     let catalog = Catalog::builtin().expect("builtin bundle must load");
-
+    let (raw, _) = Catalog::builtin_bundle_bytes();
+    let digest = sha256_hex(raw);
     let provenance = catalog.provenance();
-    assert_eq!(provenance.revision, PINNED_REVISION);
-    assert_eq!(provenance.artifact_sha256, PINNED_DIGEST);
-    assert_eq!(
-        provenance.source_url,
-        "https://pi.dev/api/models/revisions/sha256-ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678?types=chat,image,classifier"
-    );
-    assert_eq!(provenance.pi_package, "@earendil-works/pi-ai@1.3.0");
-    assert_eq!(provenance.local_origin, ".repo/pi-1.3.0");
-    assert_eq!(provenance.data_schema_version, 6);
-    assert_eq!(provenance.bundle_schema_version, 1);
-
-    // Provider and operation identities of the packaged artifact.
-    assert_eq!(provenance.providers.len(), 42);
-    assert!(provenance.providers.contains(&"anthropic".to_string()));
-    assert!(provenance.providers.contains(&"openrouter".to_string()));
-    assert_eq!(provenance.counts.chat, 1608);
-    assert_eq!(provenance.counts.image, 59);
-    assert_eq!(provenance.counts.classifier, 38);
-
-    // Generator identity: Pi's own validator/hydrator digests plus the packer.
-    for digest in [
-        &provenance.generator.pi_model_data_ts_sha256,
-        &provenance.generator.pi_hydrate_model_catalog_ts_sha256,
-        &provenance.generator.packer_sha256,
-    ] {
-        assert_eq!(digest.len(), 64, "digest must be sha-256 hex: {digest}");
-        assert!(digest.chars().all(|c| c.is_ascii_hexdigit()));
-    }
-
-    // The loader is deterministic: a second load observes the same revision.
-    let again = Catalog::builtin().expect("builtin bundle reloads");
-    assert_eq!(again.provenance().revision, PINNED_REVISION);
+    assert_eq!(provenance.revision, format!("sha256-{digest}"));
+    assert_eq!(provenance.artifact_sha256, digest);
+    assert_eq!(provenance.origin, CatalogOrigin::Opi);
+    assert_eq!(provenance.data_schema_version, DATA_SCHEMA_VERSION);
+    assert_eq!(provenance.bundle_schema_version, BUNDLE_SCHEMA_VERSION);
+    assert!(std::sync::Arc::ptr_eq(catalog, Catalog::builtin().unwrap()));
 }
 
 #[test]
-fn builtin_bundle_bytes_match_pinned_digest_identity() {
-    // The embedded artifact bytes carry the pinned identity: reparsing them
-    // through the public constructor yields the same provenance, and the
-    // manifest's declared digest equals the pinned revision.
+fn builtin_bundle_bytes_revalidate_through_public_constructor() {
     let (catalog_bytes, manifest_bytes) = Catalog::builtin_bundle_bytes();
     let reparsed = Catalog::from_bytes(catalog_bytes, manifest_bytes)
         .expect("embedded bytes must revalidate through the public constructor");
     assert_eq!(
-        reparsed.provenance().revision,
-        Catalog::builtin().unwrap().provenance().revision
+        reparsed.provenance(),
+        Catalog::builtin().unwrap().provenance()
     );
-    assert_eq!(reparsed.provenance().artifact_sha256, PINNED_DIGEST);
 
-    // Operation-qualified surface exists on the reparsed catalog as well.
     assert!(
         reparsed
             .model("anthropic", CatalogOperation::Chat, "claude-fable-5")
             .is_some()
     );
+}
+
+#[test]
+fn legacy_v1_bundle_retains_its_source_metadata_and_can_be_installed() {
+    let record = json!({
+        "provider": "example",
+        "type": "chat",
+        "id": "legacy-model",
+        "futureVendorField": {"preserved": [null, 0]},
+        "api": "openai-completions",
+        "name": "Legacy model",
+        "baseUrl": "https://example.invalid/v1",
+        "input": ["text"],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+        "reasoning": false,
+        "contextWindow": 8192,
+        "maxTokens": 1024,
+    });
+    let catalog_bytes = serde_json::to_vec(&json!({"example": [&record]})).unwrap();
+    let digest = sha256_hex(&catalog_bytes);
+    let manifest = json!({
+        "bundle_schema_version": 1,
+        "data_schema_version": 6,
+        "min_reader": {"bundle_schema_version": 1},
+        "artifact": {
+            "kind": "pi-published-model-catalog",
+            "revision": format!("sha256-{digest}"),
+            "sha256": digest,
+            "url": "https://example.invalid/revisions/fixture",
+        },
+        "source": {"pi_package": "@earendil-works/pi-ai@fixture", "local_origin": "fixture"},
+        "generator": {
+            "pi_model_data_ts_sha256": "a".repeat(64),
+            "pi_hydrate_model_catalog_ts_sha256": "b".repeat(64),
+            "packer": "scripts/pi-catalog/pack.py",
+            "packer_sha256": "c".repeat(64),
+        },
+        "structure_sha256": sha256_hex(br#"{"example":{"chat:legacy-model":"openai-completions"}}"#),
+        "providers": ["example"],
+        "counts": {"providers": 1, "chat": 1, "image": 0, "classifier": 0},
+    });
+
+    let (handle, held) = handle_with_builtin();
+    handle
+        .try_install(&catalog_bytes, &serde_json::to_vec(&manifest).unwrap())
+        .unwrap();
+    let legacy = handle.current();
+    let provenance = legacy.provenance();
+    assert_eq!(provenance.bundle_schema_version, 1);
+    assert_eq!(provenance.data_schema_version, 6);
+    assert_eq!(provenance.revision, format!("sha256-{digest}"));
+    assert_eq!(provenance.artifact_sha256, digest);
+    let CatalogOrigin::PiPublished {
+        source_url,
+        pi_package,
+        local_origin,
+        generator,
+    } = &provenance.origin
+    else {
+        panic!("expected legacy Pi source");
+    };
+    assert_eq!(source_url, "https://example.invalid/revisions/fixture");
+    assert_eq!(pi_package, "@earendil-works/pi-ai@fixture");
+    assert_eq!(local_origin, "fixture");
+    assert_eq!(generator.pi_model_data_ts_sha256, "a".repeat(64));
+    assert_eq!(generator.pi_hydrate_model_catalog_ts_sha256, "b".repeat(64));
+    assert_eq!(generator.packer_sha256, "c".repeat(64));
+    assert_eq!(provenance.counts.chat, 1);
+    assert_eq!(
+        legacy
+            .model("example", CatalogOperation::Chat, "legacy-model")
+            .unwrap()
+            .raw,
+        record
+    );
+    assert_eq!(held.provenance().origin, CatalogOrigin::Opi);
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +175,7 @@ fn tampered_artifact_rejected_last_known_retained() {
         handle.current().provenance().revision,
         held.provenance().revision
     );
-    assert_eq!(handle.current().provenance().artifact_sha256, PINNED_DIGEST);
+    assert!(std::sync::Arc::ptr_eq(&handle.current(), &held));
     assert!(
         handle
             .current()
@@ -151,16 +189,16 @@ fn wrong_bundle_schema_version_rejected_last_known_retained() {
     let (handle, held) = handle_with_builtin();
     let (catalog_bytes, manifest_bytes) = Catalog::builtin_bundle_bytes();
     let mut manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
-    manifest["bundle_schema_version"] = Value::from(2u32);
+    manifest["bundle_schema_version"] = Value::from(BUNDLE_SCHEMA_VERSION + 1);
     let manifest_bytes = serde_json::to_vec(&manifest).unwrap();
     let error = handle
         .try_install(catalog_bytes, &manifest_bytes)
         .expect_err("unsupported bundle schema must be rejected");
     match error {
         CatalogError::BundleSchemaVersion {
-            supported: 1,
-            found: 2,
-        } => {}
+            supported: BUNDLE_SCHEMA_VERSION,
+            found,
+        } => assert_eq!(found, BUNDLE_SCHEMA_VERSION + 1),
         other => panic!("expected BundleSchemaVersion, got {other:?}"),
     }
     assert_eq!(
@@ -173,9 +211,9 @@ fn wrong_bundle_schema_version_rejected_last_known_retained() {
 fn incompatible_data_or_minimum_reader_version_preserves_last_known() {
     let (catalog_bytes, manifest_bytes) = Catalog::builtin_bundle_bytes();
     for (field, version) in [
-        ("data_schema_version", 5),
-        ("data_schema_version", 7),
-        ("min_reader", 2),
+        ("data_schema_version", 6),
+        ("data_schema_version", DATA_SCHEMA_VERSION + 1),
+        ("min_reader", BUNDLE_SCHEMA_VERSION + 1),
     ] {
         let (handle, held) = handle_with_builtin();
         let mut manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
@@ -195,6 +233,16 @@ fn incompatible_data_or_minimum_reader_version_preserves_last_known() {
 }
 
 #[test]
+fn current_bundle_rejects_unknown_source() {
+    let (catalog_bytes, manifest_bytes) = Catalog::builtin_bundle_bytes();
+    let mut manifest: Value = serde_json::from_slice(manifest_bytes).unwrap();
+    manifest["source"] = json!("unrecognized");
+    let error =
+        Catalog::from_bytes(catalog_bytes, &serde_json::to_vec(&manifest).unwrap()).unwrap_err();
+    assert!(matches!(error, CatalogError::Json { detail } if detail.contains("unrecognized")));
+}
+
+#[test]
 fn missing_provider_rejected_last_known_retained() {
     let (handle, held) = handle_with_builtin();
     let mutated = mutated_catalog(|catalog| {
@@ -203,7 +251,7 @@ fn missing_provider_rejected_last_known_retained() {
             .expect("catalog object")
             .remove("anthropic");
     });
-    // Manifest keeps declaring all 42 providers; digest is resealed so the
+    // Manifest retains the original provider set. The digest is resealed so the
     // missing-provider gate is reached.
     let manifest_bytes = resealed_manifest(&mutated, None);
     let error = handle
@@ -217,6 +265,21 @@ fn missing_provider_rejected_last_known_retained() {
         handle.current().provenance().revision,
         held.provenance().revision
     );
+}
+
+#[test]
+fn duplicate_provider_in_manifest_preserves_last_known_revision() {
+    let (handle, held) = handle_with_builtin();
+    let (catalog, manifest) = Catalog::builtin_bundle_bytes();
+    let mut manifest: Value = serde_json::from_slice(manifest).unwrap();
+    let providers = manifest["providers"].as_array_mut().unwrap();
+    let provider = providers[0].as_str().unwrap().to_owned();
+    providers.push(Value::String(provider.clone()));
+    let error = handle
+        .try_install(catalog, &serde_json::to_vec(&manifest).unwrap())
+        .unwrap_err();
+    assert!(matches!(error, CatalogError::DuplicateProvider { provider: id } if id == provider));
+    assert!(std::sync::Arc::ptr_eq(&handle.current(), &held));
 }
 
 #[test]
@@ -311,24 +374,26 @@ fn invalid_entry_rejected_last_known_retained() {
 #[test]
 fn operation_qualified_getters_partition_the_real_catalog() {
     let catalog = Catalog::builtin().unwrap();
-    for provider in ["anthropic", "openrouter", "typesafe"] {
-        let chat = catalog
-            .models(provider, CatalogOperation::Chat)
-            .unwrap()
-            .count();
-        let image = catalog
-            .models(provider, CatalogOperation::Image)
-            .unwrap()
-            .count();
-        let classifier = catalog
-            .models(provider, CatalogOperation::Classifier)
-            .unwrap()
-            .count();
-        match provider {
-            "anthropic" => assert_eq!((chat, image, classifier), (17, 0, 0)),
-            "openrouter" => assert_eq!((chat, image, classifier), (394, 59, 23)),
-            "typesafe" => assert_eq!((chat, image, classifier), (0, 0, 1)),
-            _ => unreachable!(),
+    let raw: Value = serde_json::from_slice(Catalog::builtin_bundle_bytes().0).unwrap();
+    for (provider, entries) in raw.as_object().unwrap() {
+        for operation in [
+            CatalogOperation::Chat,
+            CatalogOperation::Image,
+            CatalogOperation::Classifier,
+        ] {
+            let expected: BTreeSet<_> = entries
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|entry| entry["type"] == operation.as_str())
+                .map(|entry| entry["id"].as_str().unwrap())
+                .collect();
+            let actual: BTreeSet<_> = catalog
+                .models(provider, operation)
+                .unwrap()
+                .map(|entry| entry.id.as_str())
+                .collect();
+            assert_eq!(actual, expected, "{provider}/{}", operation.as_str());
         }
     }
     // Unknown providers have no models but do not disturb known ones.

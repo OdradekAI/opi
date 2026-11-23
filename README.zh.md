@@ -145,14 +145,14 @@ opi --export-session <ID_OR_PATH> --output session.json --format json
 | 前缀 | 后端 | 默认认证方式 |
 | --- | --- | --- |
 | `anthropic:` | Anthropic Messages | `ANTHROPIC_API_KEY` 或 `/login anthropic` |
-| `openai:` | OpenAI Chat Completions | `OPENAI_API_KEY` |
+| `openai:` | OpenAI Responses | `OPENAI_API_KEY` |
 | `openai-responses:` | OpenAI Responses | `OPENAI_API_KEY` |
 | `openrouter:` | OpenRouter | `OPENROUTER_API_KEY` |
 | `mistral:` | Mistral | `MISTRAL_API_KEY` |
-| `gemini:` | Gemini | `GEMINI_API_KEY` |
+| `google:` | Gemini | `GEMINI_API_KEY` |
 | `bedrock:` | AWS Bedrock Converse | AWS 环境变量或共享 profile 凭据 |
-| `azure:` | Azure OpenAI | `AZURE_OPENAI_API_KEY` 和 endpoint 配置 |
-| `vertex:` | Vertex AI Gemini | `VERTEX_ACCESS_TOKEN` 和 project/location 配置 |
+| `azure:` | Azure OpenAI Responses 和 Chat Completions | `AZURE_OPENAI_API_KEY` 和端点或 Azure 资源名 |
+| `google-vertex:` | Vertex AI Gemini | Express 使用 `GOOGLE_CLOUD_API_KEY`；ADC 或 `VERTEX_ACCESS_TOKEN` 需要配置 project 和 location |
 | `github-copilot:` | GitHub Copilot | `/login github-copilot` 和 OS keychain |
 | `openai-codex:` | OpenAI Codex Responses | `/login openai-codex` 和 OS keychain |
 | 自定义 profile | OpenAI 兼容 Chat Completions | 配置的 `api_key_env` |

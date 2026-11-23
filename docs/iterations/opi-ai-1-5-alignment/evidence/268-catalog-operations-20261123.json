@@ -1,0 +1,460 @@
+{
+  "issue": 268,
+  "batch": 32,
+  "date": "2026-11-23",
+  "acceptance": "PASS",
+  "target": {
+    "name": "catalog_operations",
+    "required_features": [
+      "builtins"
+    ],
+    "root_bytes_before": 83690,
+    "root_bytes_after": 278
+  },
+  "owners": {
+    "publication": "catalog decode, freshness, atomic publication and restored route metadata",
+    "dispatch": "operation selection, scoped availability, and actual adapter calls",
+    "pricing": "unknown prices, exact tier thresholds and Anthropic fallback rates through store reopen and costing",
+    "fixtures": "shared mixed-operation records, authentication and requests; Anthropic builders shared by publication and pricing",
+    "catalog_bundled_package": "embedded catalog and isolated feature graph",
+    "protocol_adapters_package": "archive adapter exports and dependency graph for the two reviewed API paths",
+    "direct_differential_runner_bindings": []
+  },
+  "tests": {
+    "command": [
+      "python",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "opi-ai",
+      "--no-default-features",
+      "--features",
+      "builtins",
+      "--test",
+      "catalog_operations"
+    ],
+    "before": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
+    "after": "test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s",
+    "before_passed": 27,
+    "after_passed": 27,
+    "unchanged_bodies": 27,
+    "before_names_sha256": "4ce237052448ab98310a2bc17681f643744e0eb55aa550bfb85892315ba73b15",
+    "after_names_sha256": "71d1e49c14cedc7bf86609d80b05b2998709384446113f86d5b4b5cc7f9ef52e",
+    "name_map": {
+      "anthropic_complete_metadata::all_boolean_branches_and_owned_precedence_survive_restore": "publication::anthropic_complete_metadata::all_boolean_branches_and_owned_precedence_survive_restore",
+      "anthropic_complete_metadata::each_boolean_key_changes_only_its_own_typed_field_and_survives_restore": "publication::anthropic_complete_metadata::each_boolean_key_changes_only_its_own_typed_field_and_survives_restore",
+      "anthropic_complete_metadata::fallback_cardinality_identity_and_finite_source_prices_roundtrip": "pricing::anthropic_complete_metadata::fallback_cardinality_identity_and_finite_source_prices_roundtrip",
+      "anthropic_complete_metadata::fallback_local_prices_survive_public_store_roundtrip": "pricing::anthropic_complete_metadata::fallback_local_prices_survive_public_store_roundtrip",
+      "anthropic_complete_metadata::fallback_rate_boundaries_preserve_numeric_values_without_saturation": "pricing::anthropic_complete_metadata::fallback_rate_boundaries_preserve_numeric_values_without_saturation",
+      "anthropic_complete_metadata::invalid_typed_fallback_publication_preserves_the_previous_store": "publication::anthropic_complete_metadata::invalid_typed_fallback_publication_preserves_the_previous_store",
+      "anthropic_complete_metadata::source_and_owned_wrong_types_and_old_required_fields_are_rejected": "publication::anthropic_complete_metadata::source_and_owned_wrong_types_and_old_required_fields_are_rejected",
+      "anthropic_complete_metadata::source_defaults_optional_presence_and_generic_cache_opt_out_roundtrip": "publication::anthropic_complete_metadata::source_defaults_optional_presence_and_generic_cache_opt_out_roundtrip",
+      "catalog_document_rejects_unknown_operation": "publication::catalog_document_rejects_unknown_operation",
+      "complete_nonchat_record_protected_header_is_rejected_before_auth": "dispatch::complete_nonchat_record_protected_header_is_rejected_before_auth",
+      "custom_classifier_availability_is_scoped_to_each_provider_api": "dispatch::custom_classifier_availability_is_scoped_to_each_provider_api",
+      "dynamic_unknown_prices_preserve_models_without_reporting_free_results": "pricing::dynamic_unknown_prices_preserve_models_without_reporting_free_results",
+      "finite_fractional_thresholds_survive_all_operation_store_reopen_and_costing": "pricing::finite_fractional_thresholds_survive_all_operation_store_reopen_and_costing",
+      "image_adapter_replacement_keeps_authoritative_other_operations_and_frozen_calls": "dispatch::image_adapter_replacement_keeps_authoritative_other_operations_and_frozen_calls",
+      "image_availability_uses_each_provider_api_configuration_without_resolving_auth": "dispatch::image_availability_uses_each_provider_api_configuration_without_resolving_auth",
+      "integer_threshold_above_f64_precision_survives_decode_store_and_reopen": "pricing::integer_threshold_above_f64_precision_survives_decode_store_and_reopen",
+      "malformed_operation_route_does_not_replace_any_record_in_provider_entry": "publication::malformed_operation_route_does_not_replace_any_record_in_provider_entry",
+      "management_lists_actual_operation_owners_and_preserves_shared_catalog_bytes": "dispatch::management_lists_actual_operation_owners_and_preserves_shared_catalog_bytes",
+      "mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules": "publication::mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules",
+      "mixed_catalog_late_source_cannot_undo_invalidation_or_reopen_stale_records": "publication::mixed_catalog_late_source_cannot_undo_invalidation_or_reopen_stale_records",
+      "mixed_catalog_persist_failure_keeps_all_three_visible_records": "publication::mixed_catalog_persist_failure_keeps_all_three_visible_records",
+      "mixed_operation_catalog_reopens_into_three_real_models_calls": "dispatch::mixed_operation_catalog_reopens_into_three_real_models_calls",
+      "mixed_store_preserves_unknown_image_cost_and_classifier_tier_order": "pricing::mixed_store_preserves_unknown_image_cost_and_classifier_tier_order",
+      "provider_freshness_is_preserved_without_fabricating_missing_values": "publication::provider_freshness_is_preserved_without_fabricating_missing_values",
+      "removal_preserves_captured_image_and_classifier_calls_and_other_instances": "dispatch::removal_preserves_captured_image_and_classifier_calls_and_other_instances",
+      "restoring_a_cached_image_api_does_not_suppress_a_replacement_api_fallback": "dispatch::restoring_a_cached_image_api_does_not_suppress_a_replacement_api_fallback",
+      "source_unknown_base_retains_known_tiers_and_prices_only_above_the_boundary": "pricing::source_unknown_base_retains_known_tiers_and_prices_only_above_the_boundary"
+    },
+    "topic_selections": [
+      {
+        "source": "tests/catalog_operations/publication.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations",
+          "--",
+          "publication::"
+        ],
+        "filters": [
+          "publication::"
+        ],
+        "passed": 11,
+        "cases": [
+          "publication::anthropic_complete_metadata::all_boolean_branches_and_owned_precedence_survive_restore",
+          "publication::anthropic_complete_metadata::each_boolean_key_changes_only_its_own_typed_field_and_survives_restore",
+          "publication::anthropic_complete_metadata::invalid_typed_fallback_publication_preserves_the_previous_store",
+          "publication::anthropic_complete_metadata::source_and_owned_wrong_types_and_old_required_fields_are_rejected",
+          "publication::anthropic_complete_metadata::source_defaults_optional_presence_and_generic_cache_opt_out_roundtrip",
+          "publication::catalog_document_rejects_unknown_operation",
+          "publication::malformed_operation_route_does_not_replace_any_record_in_provider_entry",
+          "publication::mixed_catalog_failure_cancel_drop_and_empty_preserve_publication_rules",
+          "publication::mixed_catalog_late_source_cannot_undo_invalidation_or_reopen_stale_records",
+          "publication::mixed_catalog_persist_failure_keeps_all_three_visible_records",
+          "publication::provider_freshness_is_preserved_without_fabricating_missing_values"
+        ]
+      },
+      {
+        "source": "tests/catalog_operations/dispatch.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations",
+          "--",
+          "dispatch::"
+        ],
+        "filters": [
+          "dispatch::"
+        ],
+        "passed": 8,
+        "cases": [
+          "dispatch::complete_nonchat_record_protected_header_is_rejected_before_auth",
+          "dispatch::custom_classifier_availability_is_scoped_to_each_provider_api",
+          "dispatch::image_adapter_replacement_keeps_authoritative_other_operations_and_frozen_calls",
+          "dispatch::image_availability_uses_each_provider_api_configuration_without_resolving_auth",
+          "dispatch::management_lists_actual_operation_owners_and_preserves_shared_catalog_bytes",
+          "dispatch::mixed_operation_catalog_reopens_into_three_real_models_calls",
+          "dispatch::removal_preserves_captured_image_and_classifier_calls_and_other_instances",
+          "dispatch::restoring_a_cached_image_api_does_not_suppress_a_replacement_api_fallback"
+        ]
+      },
+      {
+        "source": "tests/catalog_operations/pricing.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations",
+          "--",
+          "pricing::"
+        ],
+        "filters": [
+          "pricing::"
+        ],
+        "passed": 8,
+        "cases": [
+          "pricing::anthropic_complete_metadata::fallback_cardinality_identity_and_finite_source_prices_roundtrip",
+          "pricing::anthropic_complete_metadata::fallback_local_prices_survive_public_store_roundtrip",
+          "pricing::anthropic_complete_metadata::fallback_rate_boundaries_preserve_numeric_values_without_saturation",
+          "pricing::dynamic_unknown_prices_preserve_models_without_reporting_free_results",
+          "pricing::finite_fractional_thresholds_survive_all_operation_store_reopen_and_costing",
+          "pricing::integer_threshold_above_f64_precision_survives_decode_store_and_reopen",
+          "pricing::mixed_store_preserves_unknown_image_cost_and_classifier_tier_order",
+          "pricing::source_unknown_base_retains_known_tiers_and_prices_only_above_the_boundary"
+        ]
+      }
+    ],
+    "full_target_inputs": [
+      {
+        "source": "tests/catalog_operations.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations"
+        ],
+        "filter": null,
+        "passed": 27
+      },
+      {
+        "source": "tests/catalog_operations/fixtures.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations"
+        ],
+        "filter": null,
+        "passed": 27
+      }
+    ],
+    "production_selections": [
+      {
+        "source": "src/api/openai_decisions.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations",
+          "--",
+          "custom_classifier_availability"
+        ],
+        "filters": [
+          "custom_classifier_availability"
+        ],
+        "passed": 1,
+        "cases": [
+          "dispatch::custom_classifier_availability_is_scoped_to_each_provider_api"
+        ]
+      },
+      {
+        "source": "src/api/system_one.rs",
+        "cargo_args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "catalog_operations",
+          "--",
+          "complete_nonchat_record_protected_header",
+          "custom_classifier_availability",
+          "dynamic_unknown_prices",
+          "finite_fractional_thresholds",
+          "management_lists_actual_operation_owners",
+          "mixed_operation_catalog_reopens",
+          "removal_preserves_captured_image_and_classifier",
+          "source_unknown_base"
+        ],
+        "filters": [
+          "complete_nonchat_record_protected_header",
+          "custom_classifier_availability",
+          "dynamic_unknown_prices",
+          "finite_fractional_thresholds",
+          "management_lists_actual_operation_owners",
+          "mixed_operation_catalog_reopens",
+          "removal_preserves_captured_image_and_classifier",
+          "source_unknown_base"
+        ],
+        "passed": 8,
+        "cases": [
+          "dispatch::complete_nonchat_record_protected_header_is_rejected_before_auth",
+          "dispatch::custom_classifier_availability_is_scoped_to_each_provider_api",
+          "dispatch::management_lists_actual_operation_owners_and_preserves_shared_catalog_bytes",
+          "dispatch::mixed_operation_catalog_reopens_into_three_real_models_calls",
+          "dispatch::removal_preserves_captured_image_and_classifier_calls_and_other_instances",
+          "pricing::dynamic_unknown_prices_preserve_models_without_reporting_free_results",
+          "pricing::finite_fractional_thresholds_survive_all_operation_store_reopen_and_costing",
+          "pricing::source_unknown_base_retains_known_tiers_and_prices_only_above_the_boundary"
+        ]
+      }
+    ],
+    "focused_execution": "libtest binary from the recorded builtins workspace Cargo test"
+  },
+  "package_consumers": [
+    {
+      "family": "catalog-bundled-package",
+      "verdict": "PASS",
+      "evidence": "268-catalog-operations-catalog-package-20261123.json",
+      "evidence_sha256": "6f0943304723755b0deecbaa35307d7902bc7d92993058f2b11213920a364ae5",
+      "archive_sha256": "678301f711b881b59338227f8ca84e0bd32d8aabd50608950cc1ddc6109cb487"
+    },
+    {
+      "family": "protocol-adapters-package",
+      "verdict": "PASS",
+      "evidence": "268-catalog-operations-protocol-package-20261123.json",
+      "evidence_sha256": "2537b9b40c987d3796defe84260ea80b7688cba1d896b34a1945f7d57570c9d9",
+      "archive_sha256": "678301f711b881b59338227f8ca84e0bd32d8aabd50608950cc1ddc6109cb487"
+    }
+  ],
+  "archived_integration_test": {
+    "status": "PASS",
+    "scope": "integration target executed from the extracted opi-ai archive",
+    "archive_sha256": "678301f711b881b59338227f8ca84e0bd32d8aabd50608950cc1ddc6109cb487",
+    "archive_source_hashes": {
+      "tests/catalog_operations.rs": "f7b04ff113b6f06b03eea833034f64cb60726693c3ad2080bbc1ddcc3aa2a56b",
+      "tests/catalog_operations/publication.rs": "f24a237f34ea22d468d83807255aea8ea0047bd26bffd2331fb6a2719c7e81fe",
+      "tests/catalog_operations/dispatch.rs": "c9a13873fe27b8497d58f863e1c1a229ecff91b9cb9b9d83cce5c5c5fc9726ae",
+      "tests/catalog_operations/pricing.rs": "d37a595dd8b95bfc49637cb231b304169a1e289f306ec6ce0c9b13b6f5a3a6d2",
+      "tests/catalog_operations/fixtures.rs": "e58b5b3d3b7b4d6ec9cfca9288c1c90080e66e435ca7e7f18f6f18cc023d8357"
+    },
+    "lockfile": {
+      "scope": "scratch extraction only; opi-telemetry resolves to the extracted companion artifact",
+      "update_command": [
+        "cargo",
+        "--config",
+        "E:\\opi\\scratch\\issue-268-catalog-operations-20261123-101018\\package-catalog_bundled\\candidate-telemetry.toml",
+        "update",
+        "-p",
+        "opi-telemetry",
+        "--offline"
+      ],
+      "original_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+      "locked_build_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+      "changed_packages": [
+        "opi-telemetry=0.8.3"
+      ]
+    },
+    "metadata_command": [
+      "cargo",
+      "--config",
+      "E:\\opi\\scratch\\issue-268-catalog-operations-20261123-101018\\package-catalog_bundled\\candidate-telemetry.toml",
+      "metadata",
+      "--format-version",
+      "1",
+      "--offline",
+      "--locked"
+    ],
+    "test_command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "--config",
+      "E:\\opi\\scratch\\issue-268-catalog-operations-20261123-101018\\package-catalog_bundled\\candidate-telemetry.toml",
+      "--locked",
+      "--offline",
+      "--no-default-features",
+      "--features",
+      "builtins",
+      "--test",
+      "catalog_operations"
+    ],
+    "passed": 27,
+    "names_equal_to_workspace": true
+  },
+  "structure_gate": {
+    "status": "PASS",
+    "summary_sha256": "ab1e8f8e39e0bd2f5514887b979a0acb37aa9ecd7d346623e2a6a0d54acecfbb",
+    "violations": [],
+    "targets": 124,
+    "entry_sources": 124,
+    "shared_support_helpers": 16,
+    "shared_support_edges": 60
+  },
+  "additional_checks": {
+    "selector_unittests": {
+      "passed": 25
+    },
+    "missing_path_selector": {
+      "status": "PASS",
+      "expansion": [
+        "tests/catalog_operations/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+        "tests/catalog_operations/missing_topic.rs: no resolved Cargo test consumer"
+      ]
+    },
+    "rustfmt_touched_target": "PASS",
+    "clippy": {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "catalog_operations"
+      ],
+      "advisory_exit": 0,
+      "strict_args": [
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "strict_exit": 101,
+      "carried_in_production_lints": [
+        "crates/opi-ai/src/api/openai_responses.rs:706:5",
+        "crates/opi-ai/src/models/auth_owner.rs:479:52",
+        "crates/opi-ai/src/models/prepared_call.rs:196:5"
+      ],
+      "integration_target_warnings": 0
+    },
+    "documentation": {
+      "opi_doc_check": "PASS",
+      "diff_check": "PASS (git -c core.whitespace=cr-at-eol diff --check)",
+      "new_files_whitespace": "PASS"
+    }
+  },
+  "test_impact": {
+    "retain_rust_cases": 27,
+    "add_python_regressions": 1,
+    "delete": 0
+  },
+  "worktree": {
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "committed": "none-for-this-task",
+    "staged": 0,
+    "before_unstaged": 184,
+    "after_unstaged": 184,
+    "before_untracked": 438,
+    "after_untracked": 445,
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/catalog_operations.rs",
+      "crates/opi-ai/tests/targets.tsv",
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "scripts/pi-sdk-conformance/test_select_tests.py",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md"
+    ],
+    "new_paths": [
+      "crates/opi-ai/tests/catalog_operations/dispatch.rs",
+      "crates/opi-ai/tests/catalog_operations/fixtures.rs",
+      "crates/opi-ai/tests/catalog_operations/pricing.rs",
+      "crates/opi-ai/tests/catalog_operations/publication.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-catalog-operations-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-catalog-operations-catalog-package-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-catalog-operations-protocol-package-20261123.json"
+    ],
+    "proof_dir": "E:\\opi\\scratch\\issue-268-catalog-operations-20261123-101018"
+  }
+}

@@ -518,7 +518,6 @@ fn provider_tool_result_error_no_phase12_breadth_guard() {
         // grammar tools) is a deliberate later-phase addition.
         "constrained_sampling",
         "context",
-        "deferred",
         "http",
         // Task 20.53.4: provider identity helpers are a deliberate addition.
         "identity",

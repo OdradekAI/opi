@@ -47,7 +47,7 @@ uses its resolved model for every input. Fresh cancel rows use a new job
 per case and refetch with the intact handle afterward.
 [#63 fetch case](63-compare-deferred-handle-route-mismatch.md) ·
 [Frozen cancel probe](../tools/observe_deferred_cancel_route.mjs#L16) ·
-[Rust cancel regression](../../../../crates/opi-ai/tests/deferred_contract.rs#L1084) ·
+[Rust cancel regression](../../../../crates/opi-ai/tests/deferred_contract/handle_validation.rs#L263) ·
 [Paired receipts](../evidence/phase5-deferred-route-authority-observations.json)
 
 | Changed handle field | Pi fetch auth / dispatch / result | Opi fetch auth / dispatch / result | Pi cancel auth / dispatch / result | Opi cancel auth / dispatch / result |

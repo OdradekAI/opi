@@ -3,7 +3,8 @@
 //! This module owns Mistral native options, transcript projection, prompt
 //! caching, tool-call normalization, SSE/event mapping, status handling,
 //! streaming and the typed Chat adapter. Profile state lives in the canonical
-//! providers module; ordinary compatible traffic remains owned by openai_chat.
+//! providers module; ordinary compatible traffic remains owned by
+//! [`crate::api::openai_completions`].
 
 use crate::provider::routes::MistralRouteContext;
 use crate::provider::{EventStream, ProviderError, Request};
@@ -111,9 +112,8 @@ impl MistralOptions {
         }
     }
 
-    /// The neutral mapping (pi `streamSimple` base): only tool choice
-    /// carries; reasoning entries stay with the model-driven simple
-    /// resolution in [`MistralConversationsProvider::stream_simple`].
+    /// Carry the neutral tool choice into the wire options.
+    /// Request encoding resolves reasoning against the selected model.
     pub fn from_simple(options: &crate::api::contract::SimpleOptions) -> Self {
         Self {
             tool_choice: options.tool_choice.map(|choice| match choice {
@@ -239,18 +239,11 @@ impl MistralRouteContext {
     /// explicit level map sends `reasoning_effort`, a mapless reasoning
     /// model sends `prompt_mode`, and non-reasoning models send neither.
     pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        let model = match self.resolve_model(&request.model).cloned() {
-            Some(model) => model,
-            None => {
-                let error = self.unknown_model_error(&request.model);
-                return Box::pin(futures_util::stream::once(async move { Err(error) }));
-            }
-        };
-        let mut options =
-            MistralOptions::from_simple(&crate::api::contract::SimpleOptions::default());
-        let (effort, mode) = simple_reasoning_members(&model, &request.thinking);
-        options.reasoning_effort = effort;
-        options.prompt_mode = mode;
+        if self.resolve_model(&request.model).is_none() {
+            let error = self.unknown_model_error(&request.model);
+            return Box::pin(futures_util::stream::once(async move { Err(error) }));
+        }
+        let options = MistralOptions::from_simple(&Default::default());
         self.stream_prepared_with_options(request, auth, Some(options))
     }
 
@@ -306,10 +299,15 @@ impl MistralRouteContext {
             if let Some(choice) = &options.tool_choice {
                 body["tool_choice"] = choice.wire_value();
             }
-            if let Some(mode) = options.prompt_mode {
+            let (effort, mode) = if options.is_simple() {
+                simple_reasoning_members(model, &request.thinking)
+            } else {
+                (None, None)
+            };
+            if let Some(mode) = options.prompt_mode.or(mode) {
                 body["prompt_mode"] = serde_json::json!(mode.wire_str());
             }
-            if let Some(effort) = options.reasoning_effort {
+            if let Some(effort) = options.reasoning_effort.or(effort) {
                 body["reasoning_effort"] = serde_json::json!(effort.wire_str());
             }
         }
@@ -354,8 +352,8 @@ fn simple_reasoning_members(
         }
         return (None, Some(MistralPromptMode::Reasoning));
     }
-    // pi `effortMap[level] ?? "high"`; the off entry covers a disabled
-    // request (pi `effortMap.off`).
+    // An unmapped off level omits the wire member. Only active reasoning
+    // levels fall back to the provider's high effort.
     let mapped = model
         .thinking_level_map
         .resolve(level)
@@ -369,8 +367,11 @@ fn simple_reasoning_members(
             "max" => Some(MistralReasoningEffort::Max),
             _ => None,
         })
-        .unwrap_or(MistralReasoningEffort::High);
-    (Some(mapped), None)
+        .or_else(|| {
+            (level != crate::model_info::ThinkingLevel::None)
+                .then_some(MistralReasoningEffort::High)
+        });
+    (mapped, None)
 }
 
 /// Project one tool (pi `toFunctionTools`): an unannotated tool sends

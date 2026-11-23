@@ -66,7 +66,7 @@ and unknown usage. A later completion cannot replace it. Each logical
 call settles one error span. Codex SSE and Azure controls verify their
 own field selection with one request each.
 [Models test](../../../../crates/opi-ai/tests/openai_responses_fixtures.rs#L691) ·
-[Codex test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L502) ·
+[Codex test](../../../../crates/opi-ai/tests/openai_codex_responses/wire.rs#L342) ·
 [Azure test](../../../../crates/opi-ai/tests/azure_openai_fixtures.rs#L1216)
 
 ## Codex WebSocket recovery
@@ -79,7 +79,7 @@ partial after public output, and two upgrades with zero SSE sends on
 a repeated connection limit. The latter produced a retryable whole-call
 diagnostic when the selected message describes an upstream failure.
 [#83 repeated-limit baseline](../evidence/phase5-responses-error-classification.json) ·
-[Partial output](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L4637)
+[Partial output](../../../../crates/opi-ai/tests/openai_codex_responses/ws_protocol_regressions.rs)
 
 The pinned Codex recovery branches at lines 356–386 and 1496–1507 show
 two policy differences. Opi protects already delivered output by

@@ -28,7 +28,6 @@ fn parse_vertex_config_defaults() {
     assert!(config.providers.google_vertex.access_token_env.is_empty());
     assert!(config.providers.google_vertex.project.is_none());
     assert!(config.providers.google_vertex.location.is_none());
-    assert!(config.providers.google_vertex.models.is_empty());
 }
 
 #[test]
@@ -59,21 +58,21 @@ location = "europe-west1"
 }
 
 #[test]
-fn parse_vertex_config_with_models() {
+fn vertex_config_rejects_replacing_the_builtin_catalog() {
     let dir = tempfile::tempdir().unwrap();
-    let path = write_temp_config(
-        dir.path(),
-        r#"
-[providers.google-vertex]
-project = "my-project"
-location = "us-central1"
-models = ["gemini-2.5-flash", "gemini-2.5-pro"]
-"#,
-    );
-    let config = load_config_file(&path);
-    assert_eq!(config.providers.google_vertex.models.len(), 2);
-    assert_eq!(config.providers.google_vertex.models[0], "gemini-2.5-flash");
-    assert_eq!(config.providers.google_vertex.models[1], "gemini-2.5-pro");
+    for provider in ["google-vertex", "vertex"] {
+        let path = write_temp_config(
+            dir.path(),
+            &format!("[providers.{provider}]\nmodels = [\"gemini-3.1-flash-lite-image\"]\n"),
+        );
+        let error = opi_coding_agent::config::load_config_file(&path).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Select google-vertex:<model-id>"),
+            "{error}"
+        );
+    }
 }
 
 #[test]
@@ -109,8 +108,7 @@ fn vertex_provider_builds_with_token() {
         "us-central1".into(),
         None,
     );
-    // The adapter keeps its historical id; host routes republish it as
-    // `google-vertex` through the canonical wrapper.
+    // The standalone factory publishes its explicit SDK registration ID.
     assert_eq!(provider.id(), "vertex");
 }
 
@@ -122,8 +120,6 @@ fn vertex_provider_from_config_with_models() {
         vec!["model-a".into(), "model-b".into()],
         None,
     );
-    // The adapter keeps its historical id; host routes republish it as
-    // `google-vertex` through the canonical wrapper.
     assert_eq!(provider.id(), "vertex");
     assert_eq!(provider.models().len(), 2);
     assert_eq!(provider.models()[0].id, "model-a");
@@ -279,6 +275,14 @@ mod adc_wiring {
             .expect("vertex route builds");
         let auth = resolver.resolve().await.expect("bearer resolves");
         assert!(matches!(auth.scheme, AuthScheme::Bearer));
+
+        let (_, projectless) = opi_coding_agent::provider_factory::build_runtime_route_for_tests(
+            &vertex_config(None, None),
+            "google-vertex",
+            &test_resolver(),
+        )
+        .unwrap();
+        assert!(!projectless.check_configuration().unwrap().await.unwrap());
     }
 
     #[tokio::test]
@@ -336,5 +340,277 @@ mod adc_wiring {
             .err()
             .expect("half-configured vertex fails");
         assert!(error.to_string().contains("project"));
+    }
+
+    #[tokio::test]
+    async fn published_vertex_models_send_express_and_bearer_requests_through_sdk_and_cli() {
+        use futures_util::StreamExt;
+        use opi_ai::auth::adc::native::{
+            AdcAuthSelection, AdcNativeOwner, ReqwestAdcTransport, SystemAdcClock,
+        };
+        use opi_ai::auth::{AuthContext, AuthContextError};
+        use opi_ai::provider::{Request, ThinkingConfig};
+        use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+        use opi_ai::transcript::{Context, normalize_context};
+        use opi_ai::{ChatModelRecord, Models, ModelsError, RegistryError, ThinkingLevel};
+        use opi_coding_agent::credential_store::FakeKeyringBackend;
+        use opi_coding_agent::provider_factory::{
+            build_harness_collection, build_provider, build_provider_bundle,
+        };
+        use serde_json::{Value, json};
+        use wiremock::matchers::{method, path, query_param};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        struct FixtureAuth {
+            express: bool,
+        }
+        impl AuthContext for FixtureAuth {
+            fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+                Ok((self.express && name == "GOOGLE_CLOUD_API_KEY").then(|| "sdk-key".into()))
+            }
+
+            fn file_exists(&self, path: &str) -> Result<bool, AuthContextError> {
+                Ok(std::path::Path::new(path).is_file())
+            }
+        }
+
+        const PROVIDER: &str = "google-vertex";
+        const RETIRED: &str = "gemini-3.1-flash-lite-image";
+        const PROJECT: &str = "test-project";
+        const LOCATION: &str = "europe-west1";
+        let user_context = normalize_context(Context {
+            messages: vec![opi_ai::message::Message::User(
+                opi_ai::message::UserMessage {
+                    content: vec![opi_ai::message::InputContent::Text {
+                        text: "ping".into(),
+                    }],
+                    timestamp_ms: 0,
+                },
+            )],
+            system_prompt: None,
+            tools: vec![],
+        })
+        .unwrap();
+        let request_for = |model| Request {
+            model,
+            context: user_context.clone(),
+            max_tokens: Some(53),
+            temperature: Some(0.25),
+            timeout: Some(std::time::Duration::from_secs(3)),
+            projection: Default::default(),
+            transport: Default::default(),
+            thinking: Default::default(),
+            sampling_params: None,
+            stop_sequences: vec![],
+            metadata: None,
+            cancel: tokio_util::sync::CancellationToken::new(),
+            extra_headers: vec![],
+            cache_retention: Default::default(),
+            session_id: None,
+            telemetry_context: None,
+            callbacks: Default::default(),
+        };
+
+        let _env = ENV_LOCK.lock().await;
+        for express in [true, false] {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(query_param("alt", "sse"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("content-type", "text/event-stream")
+                        .set_body_string(concat!(
+                            "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},",
+                            "\"finishReason\":\"STOP\"}]}\n\n"
+                        )),
+                )
+                .expect(6)
+                .mount(&server)
+                .await;
+            let dir = tempfile::tempdir().unwrap();
+            let mut overrides = BuiltinOverrides {
+                vertex_project: Some(PROJECT.into()),
+                vertex_location: Some(LOCATION.into()),
+                ..Default::default()
+            };
+            overrides.vertex_auth.base_url = Some(format!("{}/sdk-proxy/", server.uri()));
+            if !express {
+                let credentials = dir.path().join("adc.json");
+                std::fs::write(
+                    &credentials,
+                    json!({
+                        "type": "authorized_user",
+                        "client_id": "local-adc-client",
+                        "client_secret": "local-adc-secret",
+                        "refresh_token": "local-adc-refresh",
+                        "quota_project_id": "sdk-quota"
+                    })
+                    .to_string(),
+                )
+                .unwrap();
+                Mock::given(method("POST"))
+                    .and(path("/token"))
+                    .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                        "access_token": "sdk-token",
+                        "token_type": "Bearer",
+                        "expires_in": 3600
+                    })))
+                    .expect(1)
+                    .mount(&server)
+                    .await;
+                overrides.vertex_auth.adc = Some(
+                    AdcNativeOwner::new(
+                        AdcAuthSelection::CredentialsFile(credentials),
+                        Arc::new(ReqwestAdcTransport::new()),
+                        Arc::new(SystemAdcClock),
+                    )
+                    .with_token_endpoint(Some(format!("{}/token", server.uri()))),
+                );
+            }
+            let mut sdk = Models::new();
+            register_builtin(
+                &mut sdk,
+                Arc::new(FixtureAuth { express }),
+                Arc::new(opi_ai::http::HttpClient::new()),
+                &overrides,
+            )
+            .unwrap();
+
+            let _key =
+                EnvVarGuard::set("GOOGLE_CLOUD_API_KEY", if express { "cli-key" } else { "" });
+            let _token = EnvVarGuard::set("OPI_TEST_VERTEX_WIRE_TOKEN", "cli-token");
+            let mut config = vertex_config(Some(PROJECT), Some(LOCATION));
+            config.defaults.model = "google-vertex:gemini-3.1-pro-preview".into();
+            config.providers.google_vertex.base_url = Some(format!("{}/cli-proxy/", server.uri()));
+            config.providers.google_vertex.access_token_env = "OPI_TEST_VERTEX_WIRE_TOKEN".into();
+            let bundle = build_provider_bundle(
+                &config,
+                dir.path().to_path_buf(),
+                Box::new(|| Box::new(FakeKeyringBackend::new())),
+            )
+            .await
+            .unwrap();
+            let direct = build_provider(&config).unwrap();
+            let mut routes = vec![(bundle.provider, bundle.auth_resolver)];
+            routes.extend(bundle.extra_routes);
+            let cli = build_harness_collection(
+                routes,
+                Vec::new(),
+                Vec::new(),
+                PROVIDER,
+                Some(bundle.store),
+            );
+            let owners = [
+                (&sdk, "sdk-proxy", "sdk-key", "sdk-token", Some("sdk-quota")),
+                (cli.as_ref(), "cli-proxy", "cli-key", "cli-token", None),
+            ];
+            let cases = [
+                (
+                    "gemini-3.1-pro-preview",
+                    ThinkingLevel::Max,
+                    json!({"includeThoughts": true, "thinkingLevel": "HIGH"}),
+                ),
+                (
+                    "gemini-3.1-flash-lite",
+                    ThinkingLevel::None,
+                    json!({"thinkingLevel": "MINIMAL"}),
+                ),
+                (
+                    "gemini-2.5-flash-lite",
+                    ThinkingLevel::Minimal,
+                    json!({"includeThoughts": true, "thinkingBudget": 128}),
+                ),
+            ];
+            for (models, prefix, ..) in owners {
+                assert_eq!(models.get_models(Some(PROVIDER)).len(), 13);
+                for (id, level, _) in &cases {
+                    let model = models.get_model(PROVIDER, id).unwrap();
+                    let mut request = request_for(format!("{PROVIDER}:{id}"));
+                    request.thinking = ThinkingConfig {
+                        enabled: *level != ThinkingLevel::None,
+                        level: *level,
+                        budget_tokens: None,
+                    };
+                    let result = models
+                        .complete_simple(
+                            ChatModelRecord::new(PROVIDER, model),
+                            request,
+                            Default::default(),
+                        )
+                        .await
+                        .unwrap_or_else(|error| panic!("{prefix} {id}: {error:?}"));
+                    assert_eq!(result.provider, PROVIDER);
+                    assert_eq!(result.model, *id);
+                }
+                let spec = format!("{PROVIDER}:{RETIRED}");
+                assert!(models.get_model(PROVIDER, RETIRED).is_none());
+                assert!(matches!(
+                    models.prepare_call(&spec, request_for(spec.clone())).await,
+                    Err(ModelsError::Registry(RegistryError::UnknownModel { provider, model }))
+                        if provider == PROVIDER && model == RETIRED
+                ));
+            }
+            let auth = if express {
+                opi_ai::test_support::resolved_auth()
+            } else {
+                opi_ai::test_support::resolved_bearer_auth()
+            };
+            assert!(matches!(
+                direct.stream_prepared(request_for(format!("{PROVIDER}:{RETIRED}")), auth).next().await,
+                Some(Err(ProviderError::UnknownModel { provider_id, model_id }))
+                    if provider_id == PROVIDER && model_id == RETIRED
+            ));
+
+            let captured = server.received_requests().await.unwrap();
+            assert_eq!(captured.len(), if express { 6 } else { 7 });
+            let generations: Vec<_> = captured
+                .iter()
+                .filter(|request| request.url.query() == Some("alt=sse"))
+                .collect();
+            assert_eq!(generations.len(), 6);
+            for (request, ((_, prefix, key, token, quota), (id, _, thinking))) in
+                generations.into_iter().zip(
+                    owners
+                        .iter()
+                        .flat_map(|owner| cases.iter().map(move |case| (owner, case))),
+                )
+            {
+                let scope = if express {
+                    String::new()
+                } else {
+                    format!("/projects/{PROJECT}/locations/{LOCATION}")
+                };
+                assert_eq!(
+                    request.url.path(),
+                    format!(
+                        "/{prefix}/v1{scope}/publishers/google/models/{id}:streamGenerateContent"
+                    )
+                );
+                if express {
+                    assert_eq!(request.headers["x-goog-api-key"], *key);
+                    assert!(!request.headers.contains_key("authorization"));
+                    assert!(!request.headers.contains_key("x-goog-user-project"));
+                } else {
+                    assert_eq!(request.headers["authorization"], format!("Bearer {token}"));
+                    assert!(!request.headers.contains_key("x-goog-api-key"));
+                    assert_eq!(
+                        request
+                            .headers
+                            .get("x-goog-user-project")
+                            .map(|v| v.to_str().unwrap()),
+                        *quota
+                    );
+                }
+                let body: Value = serde_json::from_slice(&request.body).unwrap();
+                assert_eq!(
+                    body["generationConfig"],
+                    json!({
+                        "temperature": 0.25,
+                        "maxOutputTokens": 53,
+                        "thinkingConfig": thinking
+                    })
+                );
+            }
+        }
     }
 }

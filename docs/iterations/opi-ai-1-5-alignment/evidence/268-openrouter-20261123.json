@@ -1,0 +1,124 @@
+{
+  "issue": 268,
+  "batch": "openrouter-protocol-fixture",
+  "date": "2026-11-23",
+  "status": "PASS",
+  "scope": {
+    "target": "openrouter_fixtures",
+    "single_executable": true,
+    "root_before_bytes": 92959,
+    "root_after_bytes": 1101,
+    "test_declarations_before": 55,
+    "test_declarations_after": 55,
+    "package_consumer": "provider-openrouter",
+    "modules": {
+      "fixtures.rs": "shared Chat provider, stream collector, stalled-server and chunk helpers, no assertions",
+      "chat_wire.rs": "Chat model/request/SSE/usage/endpoint/HTTP assertions",
+      "chat_lifecycle.rs": "Chat cancellation, compatibility and custom registration/store lifecycle",
+      "images.rs": "Images topic index and fixture re-exports, no assertions",
+      "images/fixtures.rs": "image records, Models builder, retry/timeout peers and request helper, no assertions",
+      "images/wire.rs": "image request/response, modality, usage/cost, endpoint and protected-header assertions",
+      "images/lifecycle.rs": "image registration, retry, timeout, admission, binding and auth cancellation",
+      "images/callbacks.rs": "image callback, observer retention, callback timing and telemetry assertions"
+    }
+  },
+  "acceptance": {
+    "focused_selectors": {
+      "chat_wire::": {
+        "passed": 13,
+        "failed": 0,
+        "filtered": 42
+      },
+      "chat_lifecycle::": {
+        "passed": 3,
+        "failed": 0,
+        "filtered": 52
+      },
+      "images::wire::": {
+        "passed": 14,
+        "failed": 0,
+        "filtered": 41
+      },
+      "images::lifecycle::": {
+        "passed": 15,
+        "failed": 0,
+        "filtered": 40
+      },
+      "images::callbacks::": {
+        "passed": 10,
+        "failed": 0,
+        "filtered": 45
+      }
+    },
+    "focused_total": {
+      "passed": 55,
+      "failed": 0
+    },
+    "full_target": {
+      "passed": 55,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    "test_inventory": {
+      "explicit_targets": 124,
+      "test_sources": 124,
+      "result": "PASS"
+    },
+    "support_inventory": {
+      "helpers": 16,
+      "declared_target_edges": 60,
+      "result": "PASS"
+    },
+    "architecture_gate": {
+      "result": "PASS",
+      "violations": []
+    },
+    "package_consumer": {
+      "owner": "provider-openrouter",
+      "result": "PASS",
+      "evidence": "268-openrouter-package-20261123.json"
+    },
+    "format": {
+      "openrouter_rustfmt_edition_2024": "PASS"
+    },
+    "documentation": {
+      "result": "PASS",
+      "opi_doc_check": "PASS",
+      "scoped_diff_check": "PASS"
+    }
+  },
+  "test_impact": {
+    "add": [
+      "crates/opi-ai/tests/openrouter_fixtures/fixtures.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/chat_wire.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/chat_lifecycle.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/images.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/images/fixtures.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/images/wire.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/images/lifecycle.rs",
+      "crates/opi-ai/tests/openrouter_fixtures/images/callbacks.rs"
+    ],
+    "update": [
+      "crates/opi-ai/tests/openrouter_fixtures.rs",
+      "crates/opi-ai/tests/targets.tsv",
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md"
+    ],
+    "delete": [],
+    "retain": [
+      "all 55 default assertions",
+      "one Cargo executable",
+      "provider-openrouter package owner",
+      "support/pending_auth shared consumer",
+      "no compatibility behavior"
+    ]
+  },
+  "notes": [
+    "Original fixture was preserved at E:/opi/scratch/issue-268-openrouter-original.rs for declaration comparison.",
+    "The existing pending_auth helper remains support-owned and is consumed by the OpenRouter target through the real module graph.",
+    "No production source or runtime behavior changed."
+  ]
+}

@@ -1,8 +1,7 @@
 //! Constrained sampling: strict JSON-schema wire projection and grammar
 //! tools (task 20.11, DEL-04/V-34/AIR-040).
 //!
-//! Pinned reference: `.repo/pi-1.3.0/packages/ai/src/api/constrained-sampling.ts`
-//! (Pi AI 1.3.0). This module owns the provider-neutral strict/grammar
+//! This module owns the provider-neutral strict and grammar tool
 //! resolution: converting a **private wire schema** for provider constrained
 //! sampling never mutates the trusted [`ToolDef::input_schema`]; prefer
 //! projects non-strict when the wire or schema cannot support strict mode,
@@ -466,6 +465,18 @@ pub fn resolve_json_schema_strict_sampling(
             "strict tools are unsupported on this wire",
         )),
     }
+}
+
+/// Match the strict-tool limit markers shared by Anthropic and Bedrock.
+#[cfg(any(feature = "provider-anthropic", feature = "provider-bedrock"))]
+pub(crate) fn is_strict_tool_limit_message(message: &str) -> bool {
+    [
+        "The compiled grammar is too large",
+        "Too many strict tools (",
+        "Schemas contains too many parameters with union types (",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
 }
 
 /// A resolved grammar-constrained tool definition.

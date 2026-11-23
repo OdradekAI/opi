@@ -32,7 +32,7 @@ Agent and eval handle references copy or validate data.
 [Coding-agent assembly](../../../../crates/opi-coding-agent/src/provider_factory.rs#L166) ·
 [Scripted backend](../../../../crates/opi-ai/src/test_support.rs#L860) ·
 [External SDK test](../../../../crates/opi-ai/tests/external_sdk.rs#L1584) ·
-[Reopening consumer](../../../../crates/opi-ai/tests/deferred_contract.rs#L817)
+[Reopening consumer](../../../../crates/opi-ai/tests/deferred_contract/reopen.rs#L72)
 
 At the Pi pin, `packages/ai/src/providers/all.ts:135–189` constructs
 and installs the built-ins. `packages/ai/src/models.ts:1164–1186` forwards

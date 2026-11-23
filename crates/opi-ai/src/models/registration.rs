@@ -1,9 +1,12 @@
 //! Registration records and typed dispatch adapters for the [`Models`](crate::models::Models) facade.
 
+use super::*;
+
 use std::any::{Any, TypeId};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
+use futures_util::StreamExt;
 use futures_util::stream;
 
 use crate::api::contract::{
@@ -19,7 +22,7 @@ use crate::types::{ApiId, deferred::DeferredHandle};
 /// its typed [`ImageNativeOptions`].
 ///
 /// The handle carries no instance capability: its options stay valid for any
-/// [`Models`] with a compatible registration (same exact [`ApiId`], same
+/// [`Models`](crate::Models) with a compatible registration (same exact [`ApiId`], same
 /// options type), and a compatible registration upsert never invalidates
 /// them.
 pub struct ImageApiHandle<O: Send + 'static> {
@@ -167,7 +170,7 @@ pub(super) fn no_image_api_result(
 /// create its typed [`ClassifierNativeOptions`].
 ///
 /// The handle carries no instance capability: its options stay valid for any
-/// [`Models`] with a compatible registration (same exact [`ApiId`], same
+/// [`Models`](crate::Models) with a compatible registration (same exact [`ApiId`], same
 /// options type), and a compatible registration upsert never invalidates
 /// them.
 pub struct ClassifierApiHandle<O: Send + 'static> {
@@ -554,5 +557,633 @@ impl Provider for ChatApiRouteProvider {
         let options = self.dispatch.simple_options_erased(&simple);
         self.dispatch
             .stream_prepared_erased(model, request, options, auth, resources)
+    }
+}
+
+impl Models {
+    /// Register a lookup-only provider with its redacted auth descriptor and
+    /// compatibility metadata.
+    ///
+    /// Replaces any existing entry with the same provider id and removes its
+    /// dispatch resolver. Use [`register_route`](Self::register_route) for a
+    /// route that may start model attempts.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`RegistrationError::EmptyProviderId`] from the registry.
+    pub fn register(
+        &mut self,
+        provider: Box<dyn Provider>,
+        auth: AuthDescriptor,
+        compat: CompatMetadata,
+    ) -> Result<(), RegistrationError> {
+        let id = provider.id().to_owned();
+        let resource_owner = provider
+            .session_resources()
+            .map(|owner| owner.new_namespace());
+        self.registry.registry.register_provider(provider)?;
+        self.clear_catalog_entry(&id);
+        self.replace_resource_owner(&id, resource_owner);
+        self.auth_owner.builtin_default_auth.remove(&id);
+        self.auth_owner.resolvers.remove(&id);
+        self.auth_owner.oauth_routes.remove(&id);
+        self.auth_owner.sources.remove(&id);
+        self.auth_owner.probed.remove(&id);
+        self.auth_owner.auth.insert(id.clone(), auth);
+        self.compat.insert(id, compat);
+        Ok(())
+    }
+
+    /// Register a dispatchable route: a concrete provider plus its per-request
+    /// [`AuthResolver`] and non-secret source classification.
+    ///
+    /// The provider is registered in the underlying registry; the resolver and
+    /// source classification are retained so
+    /// [`prepare_call`](Self::prepare_call) can resolve and freeze authentication
+    /// for the route. Replaces any existing route with the same provider id.
+    ///
+    /// # Errors
+    ///
+    /// Propagates [`RegistrationError::EmptyProviderId`] from the registry.
+    pub fn register_route(
+        &mut self,
+        provider: Box<dyn Provider>,
+        resolver: Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+        compat: CompatMetadata,
+    ) -> Result<(), RegistrationError> {
+        let id = provider.id().to_owned();
+        let resource_owner = provider
+            .session_resources()
+            .map(|owner| owner.new_namespace());
+        self.registry.registry.register_provider(provider)?;
+        self.clear_catalog_entry(&id);
+        self.replace_resource_owner(&id, resource_owner);
+        self.auth_owner.builtin_default_auth.remove(&id);
+        self.auth_owner.oauth_routes.remove(&id);
+        self.auth_owner.auth.remove(&id);
+        self.auth_owner.probed.remove(&id);
+        self.auth_owner.resolvers.insert(id.clone(), resolver);
+        self.auth_owner.sources.insert(id.clone(), source);
+        self.compat.insert(id, compat);
+        Ok(())
+    }
+
+    /// Register one typed custom chat adapter (AIR-045).
+    ///
+    /// The adapter is keyed by its exact [`ApiId`] with its fixed options type
+    /// `O`; empty and whitespace identities remain distinct valid keys.
+    /// Registration installs a **catalog-invisible** provider route (the
+    /// adapter's complete record never appears in `get_model`/`all_models`)
+    /// plus the route's [`AuthResolver`], so every entry — native, simple,
+    /// direct — reaches the same frozen binding and collector. Registering
+    /// again with the same ApiId replaces the entry (compatible upsert);
+    /// options created before the upsert keep working when the options type is
+    /// unchanged and fail a typed pre-auth check when it is not.
+    ///
+    /// # Errors
+    ///
+    /// - [`RegistrationError::EmptyProviderId`] if the provider id is empty.
+    pub fn register_chat_api<O: Send + 'static>(
+        &mut self,
+        api: Arc<dyn ChatApi<O>>,
+        resolver: Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<ChatApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let resource_owner = api.session_resources().map(|owner| owner.new_namespace());
+        let dispatch: Arc<dyn ChatApiDispatch> = Arc::new(TypedChatApi { api });
+        // Catalog-invisible route: a Provider with no models keeps the adapter
+        // dispatchable through provider-route entries without listing it.
+        self.registry
+            .registry
+            .register_provider(Box::new(ChatApiRouteProvider {
+                provider_id: provider_id.clone(),
+                dispatch: Arc::clone(&dispatch),
+            }))?;
+        self.clear_catalog_entry(&provider_id);
+        self.replace_resource_owner(&provider_id, resource_owner.clone());
+        self.auth_owner.builtin_default_auth.remove(&provider_id);
+        self.auth_owner.auth.remove(&provider_id);
+        self.auth_owner.oauth_routes.remove(&provider_id);
+        self.auth_owner.probed.remove(&provider_id);
+        self.auth_owner
+            .resolvers
+            .insert(provider_id.clone(), resolver);
+        self.auth_owner.sources.insert(provider_id.clone(), source);
+        self.compat.remove(&provider_id);
+        self.operation_owner.chat_apis.insert(
+            api_id.clone(),
+            ChatApiRegistration {
+                provider_id,
+                options_type: TypeId::of::<O>(),
+                dispatch,
+                resource_owner,
+            },
+        );
+        Ok(ChatApiHandle::new(api_id))
+    }
+
+    /// Register one typed image adapter (task 20.45): the fixed-`O`
+    /// [`crate::api::ImageApi`] implementation, its provider auth resolver and provenance
+    /// source. The registration owns the adapter's complete
+    /// [`crate::images::ImageModelRecord`] for operation-qualified selection; image records
+    /// never enter the chat catalog. An upsert for the same provider and
+    /// [`ApiId`] replaces that registration wholesale.
+    pub fn register_image_api<O: Send + 'static>(
+        &mut self,
+        api: std::sync::Arc<dyn crate::api::ImageApi<O>>,
+        resolver: std::sync::Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<ImageApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let record = api.complete_record().clone();
+        self.auth_owner.sources.insert(provider_id.clone(), source);
+        self.catalog_owner.publication_generation = Arc::new(());
+        self.operation_owner.image_apis.insert(
+            (provider_id.clone(), api_id.clone()),
+            ImageApiRegistration {
+                builtin_auth: false,
+                provider_id,
+                options_type: std::any::TypeId::of::<O>(),
+                dispatch: Arc::new(TypedImageApi { api }),
+                resolver,
+                records: vec![record],
+            },
+        );
+        Ok(ImageApiHandle {
+            api_id,
+            _options: PhantomData,
+        })
+    }
+
+    /// Append or replace an image model within its exact provider/API registration.
+    pub fn register_image_model_record(
+        &mut self,
+        record: crate::images::ImageModelRecord,
+    ) -> Result<(), ModelsError> {
+        let Some(registration) = self
+            .operation_owner
+            .image_apis
+            .get_mut(&(record.provider_id.clone(), record.api.clone()))
+        else {
+            return Err(ModelsError::ImageApiNotRegistered {
+                api: record.api.as_str().to_owned(),
+            });
+        };
+        match registration
+            .records
+            .iter()
+            .position(|existing| existing.id == record.id)
+        {
+            Some(index) => registration.records[index] = record,
+            None => registration.records.push(record),
+        }
+        Ok(())
+    }
+
+    /// Register one typed classifier adapter (task 20.46): the fixed-`O`
+    /// [`crate::api::ClassifierApi`] implementation, its provider auth
+    /// resolver and provenance source. The registration owns the adapter's
+    /// complete [`crate::classifier::ClassifierModelRecord`] for
+    /// operation-qualified selection; classifier records never enter the
+    /// chat catalog, and an upsert with the same provider and exact [`ApiId`]
+    /// replaces that registration wholesale. One shared conformance spans
+    /// every real classifier protocol through this seam.
+    pub fn register_classifier_api<O: Send + 'static>(
+        &mut self,
+        api: std::sync::Arc<dyn crate::api::ClassifierApi<O>>,
+        resolver: std::sync::Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<ClassifierApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let record = api.complete_record().clone();
+        self.auth_owner.sources.insert(provider_id.clone(), source);
+        self.catalog_owner.publication_generation = Arc::new(());
+        self.operation_owner.classifier_apis.insert(
+            (provider_id.clone(), api_id.clone()),
+            ClassifierApiRegistration {
+                builtin_auth: false,
+                provider_id,
+                options_type: std::any::TypeId::of::<O>(),
+                dispatch: Arc::new(TypedClassifierApi { api }),
+                resolver,
+                records: vec![record],
+            },
+        );
+        Ok(ClassifierApiHandle {
+            api_id,
+            _options: PhantomData,
+        })
+    }
+
+    /// Append (or replace, keyed by provider/model id) one additional
+    /// classifier record to the registration matching its provider and `record.api`.
+    ///
+    /// One provider serves many classifier models under one API (pi's
+    /// Cloudflare Workers AI family); registration replaces the model set
+    /// wholesale, and a record whose API has no registration is a typed
+    /// [`ModelsError::ClassifierApiNotRegistered`] rejection.
+    pub fn register_classifier_model_record(
+        &mut self,
+        record: crate::classifier::ClassifierModelRecord,
+    ) -> Result<(), ModelsError> {
+        let Some(registration) = self
+            .operation_owner
+            .classifier_apis
+            .get_mut(&(record.provider_id.clone(), record.api.clone()))
+        else {
+            return Err(ModelsError::ClassifierApiNotRegistered {
+                api: record.api.as_str().to_owned(),
+            });
+        };
+        let key = (record.provider_id.clone(), record.id.clone());
+        match registration
+            .records
+            .iter()
+            .position(|existing| (existing.provider_id.clone(), existing.id.clone()) == key)
+        {
+            Some(index) => registration.records[index] = record,
+            None => registration.records.push(record),
+        }
+        Ok(())
+    }
+
+    /// Register one typed deferred-response backend (task 20.50): the
+    /// fixed-`O` [`DeferredApi`] implementation, its provider auth resolver
+    /// and provenance source. The registration owns the backend's route
+    /// identity (`ApiId`, provider, model); an upsert with the same exact
+    /// [`ApiId`] replaces the previous registration wholesale.
+    ///
+    /// Deferred submission stays a normal generation through the chat
+    /// surface; only the explicit fetch/cancel operations resolve here,
+    /// after validating the handle's route identity against this
+    /// registration.
+    pub fn register_deferred_api<O: Send + 'static>(
+        &mut self,
+        api: std::sync::Arc<dyn DeferredApi<O>>,
+        resolver: std::sync::Arc<dyn AuthResolver>,
+        source: AuthProvenanceSource,
+    ) -> Result<DeferredApiHandle<O>, RegistrationError> {
+        let api_id = api.api_id().clone();
+        let provider_id = api.provider_id().to_owned();
+        if provider_id.trim().is_empty() {
+            return Err(RegistrationError::EmptyProviderId);
+        }
+        let model_id = api.model_id().to_owned();
+        self.auth_owner.sources.insert(provider_id.clone(), source);
+        self.catalog_owner.publication_generation = Arc::new(());
+        self.operation_owner.deferred_apis.insert(
+            api_id.clone(),
+            DeferredApiRegistration {
+                api_id: api_id.clone(),
+                provider_id,
+                model_id,
+                dispatch: Arc::new(TypedDeferredApi { api }),
+                resolver,
+            },
+        );
+        Ok(DeferredApiHandle::new(api_id))
+    }
+
+    /// Submit one explicit asynchronous generation through a registered
+    /// deferred backend. The request is validated against the backend's fixed
+    /// provider/model identity before authentication; no implicit polling or
+    /// ordinary-route fallback occurs.
+    pub fn stream_deferred_submit(
+        &self,
+        api: &ApiId,
+        request: Request,
+    ) -> crate::stream::ChatStream {
+        let Some(registration) = self.operation_owner.deferred_apis.get(api) else {
+            let api = api.as_str().to_owned();
+            return crate::stream::ChatStream::new(Box::pin(stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(ProviderError::Config(
+                    ProviderErrorSummary::sanitized(format!(
+                        "no deferred backend is registered for API '{}'",
+                        api
+                    )),
+                ))
+            })));
+        };
+        let model_id = request
+            .model
+            .split_once(':')
+            .map(|(_, model)| model)
+            .unwrap_or(&request.model);
+        if request
+            .model
+            .split_once(':')
+            .is_some_and(|(provider, _)| provider != registration.provider_id)
+            || model_id != registration.model_id
+        {
+            let expected = format!("{}:{}", registration.provider_id, registration.model_id);
+            return crate::stream::ChatStream::new(Box::pin(stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(ProviderError::Config(
+                    ProviderErrorSummary::sanitized(format!(
+                        "deferred submit request model does not match registered route '{expected}'"
+                    )),
+                ))
+            })));
+        }
+        let options = registration.dispatch.default_options_erased();
+        let resolver = Arc::clone(&registration.resolver);
+        let dispatch = Arc::clone(&registration.dispatch);
+        let telemetry_context = request.telemetry_context.clone();
+        let stream = stream::once(async move {
+            match resolver.resolve().await {
+                Ok(auth) => {
+                    let mut events = dispatch.submit_erased(request, options.as_ref(), auth);
+                    let mut collected = Vec::new();
+                    while let Some(event) = events.next().await {
+                        collected.push(event);
+                    }
+                    collected
+                }
+                Err(error) => vec![Err(error)],
+            }
+        })
+        .flat_map(stream::iter);
+        let stream = Box::pin(stream) as EventStream;
+        let attributes = crate::telemetry::AiRequestAttributes::new(
+            registration.provider_id.clone(),
+            registration.model_id.clone(),
+            registration.api_id.as_str().to_owned(),
+        );
+        crate::stream::ChatStream::new_with_telemetry(
+            stream,
+            telemetry_context.as_ref(),
+            attributes,
+        )
+        .with_requested_route(
+            registration.provider_id.clone(),
+            registration.model_id.clone(),
+        )
+    }
+
+    /// Submit one explicit asynchronous generation and await its first
+    /// normalized outcome. A successful result has `StopReason::Deferred` and
+    /// a serializable handle; a provider may also complete immediately.
+    pub async fn submit_deferred(
+        &self,
+        api: &ApiId,
+        request: Request,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.stream_deferred_submit(api, request).result().await
+    }
+
+    /// Validate the handle against its exact API and provider registration,
+    /// then its model and optional expiry, before authentication (AIR-043).
+    /// Returns the typed [`DeferredError`] without resolving credentials
+    /// or dispatching a backend operation.
+    pub fn validate_deferred_handle(
+        &self,
+        handle: &DeferredHandle,
+        now_ms: Option<u64>,
+    ) -> Result<(), DeferredError> {
+        let registration = self.deferred_registration(handle)?;
+        handle.validate_identity(
+            &registration.provider_id,
+            &registration.model_id,
+            registration.api_id.as_str(),
+        )?;
+        if let Some(now_ms) = now_ms {
+            handle.validate_expiry(now_ms)?;
+        }
+        Ok(())
+    }
+
+    /// Fetch one deferred response as a [`crate::ChatStream`]: validate the handle
+    /// (identity, then expiry), resolve authentication through the
+    /// backend's registered resolver, and dispatch exactly one fetch.
+    ///
+    /// Pre-dispatch failures (missing provider/API registration, route mismatch,
+    /// expiry, missing credential) surface as one typed `Err` stream item,
+    /// which [`crate::ChatStream`] converts into the canonical `CallFailure`.
+    /// A missing registration diagnostic identifies the requested provider and API.
+    /// When it synthesizes a failure message without a partial, it uses the
+    /// handle's provider and model IDs.
+    /// `wait_ms = 0` (pi wait0) performs a single status check; the SDK
+    /// never polls implicitly. When the call carries a telemetry context,
+    /// the SDK installs the Pi-shaped `pi.ai.poll` observer at this boundary
+    /// and completes it with the same result that [`crate::ChatStream::result`]
+    /// returns.
+    ///
+    /// Direct iteration delivers the terminal as soon as it is cached.
+    /// The next read drives the retained source to EOF, releases it and
+    /// settles the poll observer before returning public EOF. Cancelling a
+    /// pending tail releases the source and preserves the delivered outcome.
+    /// Dropping the direct collector after a successful `Done` releases the
+    /// source immediately and settles its poll observer with the cached result.
+    ///
+    /// [`crate::ChatStream::start`] schedules the fetch independently of the
+    /// consumer and forwards a successful `Done` before draining the source.
+    /// Public EOF and the result await source release and poll settlement.
+    /// The task continues driving the source after consumer Drop.
+    pub fn stream_deferred(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> crate::stream::ChatStream {
+        let telemetry_context = call.telemetry_context.clone();
+        let attributes = crate::telemetry::AiRequestAttributes::new(
+            handle.provider.clone(),
+            handle.model_id.clone(),
+            handle.api.clone(),
+        )
+        .as_poll(true);
+        crate::stream::ChatStream::new_with_telemetry(
+            self.stream_deferred_source(handle, call),
+            telemetry_context.as_ref(),
+            attributes,
+        )
+        .with_requested_route(handle.provider.clone(), handle.model_id.clone())
+        .with_tail_drain_on_completion()
+    }
+
+    fn stream_deferred_source(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> EventStream {
+        let validated = self
+            .deferred_registration(handle)
+            .and_then(|registration| {
+                handle
+                    .validate_identity(
+                        &registration.provider_id,
+                        &registration.model_id,
+                        registration.api_id.as_str(),
+                    )
+                    .map(|()| registration)
+            })
+            .and_then(|registration| match call.now_ms {
+                Some(now_ms) => handle.validate_expiry(now_ms).map(|()| registration),
+                None => Ok(registration),
+            });
+        let (registration, options) = match validated {
+            Ok(registration) => {
+                let options = registration.dispatch.default_options_erased();
+                (registration, options)
+            }
+            Err(error) => {
+                let provider_error = error.into_provider_error(&handle.api);
+                return Box::pin(stream::once(async move { Err(provider_error) }));
+            }
+        };
+        let resolver = Arc::clone(&registration.resolver);
+        let dispatch = Arc::clone(&registration.dispatch);
+        let handle = handle.clone();
+        let cancel = call.cancel.clone();
+        let setup: BoxFuture<'static, EventStream> = Box::pin(async move {
+            match resolver.resolve().await {
+                Ok(auth) => dispatch.fetch_erased(&handle, options.as_ref(), auth, call),
+                Err(error) => Box::pin(stream::once(async move {
+                    Err::<AssistantStreamEvent, ProviderError>(error)
+                })) as EventStream,
+            }
+        });
+        let fetched = futures_util::FutureExt::flatten_stream(setup);
+        // Local abort (AIR-043): cancelling the fetch token ends the local
+        // attempt with a typed Cancelled failure and never reaches the
+        // remote deferred job.
+        if cancel.is_cancelled() {
+            return Box::pin(stream::once(async move {
+                Err::<AssistantStreamEvent, ProviderError>(ProviderError::Cancelled)
+            }));
+        }
+        Box::pin(stream::unfold(
+            (fetched, cancel, false),
+            |(mut inner, cancel, done)| async move {
+                if done {
+                    return None;
+                }
+                // None (outer) = cancelled; Some(None) = stream end.
+                let outcome = {
+                    let mut cancelled = std::pin::pin!(cancel.cancelled());
+                    let selected = futures_util::future::select(inner.next(), &mut cancelled).await;
+                    match selected {
+                        futures_util::future::Either::Left((item, _)) => Some(item),
+                        futures_util::future::Either::Right(((), _)) => None,
+                    }
+                };
+                match outcome {
+                    Some(Some(event)) => Some((event, (inner, cancel, false))),
+                    Some(None) => None,
+                    None => Some((
+                        Err::<AssistantStreamEvent, ProviderError>(ProviderError::Cancelled),
+                        (inner, cancel, true),
+                    )),
+                }
+            },
+        ))
+    }
+
+    /// Fetch one deferred response to the single final outcome: pending
+    /// results are `Ok` with [`crate::stream::StopReason::Deferred`] and the
+    /// handle on the returned message; ready results deliver the final
+    /// assistant message; every failure is one `Err(CallFailure)`.
+    /// The returned future drives source release and poll settlement. Use
+    /// [`Self::fetch_deferred_ready`] to receive the outcome as soon as the
+    /// first terminal is normalized.
+    pub async fn fetch_deferred(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.stream_deferred(handle, call).result().await
+    }
+
+    /// Fetch once and return the first normalized outcome while the execution
+    /// task drives source release and poll settlement independently.
+    ///
+    /// Routing, authentication and provider wait use [`Self::stream_deferred`].
+    /// A still-pending response returns `Ok` with
+    /// [`crate::stream::StopReason::Deferred`] and its handle. A caller
+    /// schedules any subsequent fetch. Failures return a typed [`CallFailure`].
+    ///
+    /// The first poll starts the task. Dropping the waiter after that leaves
+    /// the task running until it finishes or its runtime shuts down. The
+    /// request's token can stop an in-flight fetch or its tail locally. After the
+    /// outcome is cached, local cancellation of the tail preserves that
+    /// outcome. Remote cancellation uses [`Self::cancel_deferred`]. Use
+    /// [`Self::fetch_deferred`] when the caller needs to await source release
+    /// and poll settlement or observe a panic during the drain.
+    ///
+    /// # Panics
+    ///
+    /// Panics if polled outside a Tokio runtime. A source panic before the
+    /// terminal is resumed in this future. Once the terminal is cached, a
+    /// tail panic reaches Tokio's panic hook.
+    pub async fn fetch_deferred_ready(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredFetchCall,
+    ) -> Result<crate::message::AssistantMessage, CallFailure> {
+        self.stream_deferred(handle, call).first_outcome().await
+    }
+
+    /// Cancel one deferred response remotely, best effort (AIR-043/AIR-044).
+    ///
+    /// The SDK validates the handle's route as it does for fetch. A missing
+    /// registration reports the requested provider and API. Backend failures
+    /// are returned to the caller. Local fetch cancellation never reaches
+    /// this operation.
+    pub async fn cancel_deferred(
+        &self,
+        handle: &DeferredHandle,
+        call: DeferredCancelCall,
+    ) -> Result<(), ProviderError> {
+        let registration = self
+            .deferred_registration(handle)
+            .map_err(|error| error.into_provider_error(&handle.api))?;
+        handle
+            .validate_identity(
+                &registration.provider_id,
+                &registration.model_id,
+                registration.api_id.as_str(),
+            )
+            .map_err(|error| error.into_provider_error(&handle.api))?;
+        if call.cancel.is_cancelled() {
+            return Err(ProviderError::Cancelled);
+        }
+        let options = registration.dispatch.default_options_erased();
+        let auth = tokio::select! {
+            biased;
+            _ = call.cancel.cancelled() => return Err(ProviderError::Cancelled),
+            auth = registration.resolver.resolve() => auth?,
+        };
+        if call.cancel.is_cancelled() {
+            return Err(ProviderError::Cancelled);
+        }
+        registration
+            .dispatch
+            .cancel_erased(handle, options.as_ref(), auth, call)
+            .await
+    }
+
+    fn deferred_registration(
+        &self,
+        handle: &DeferredHandle,
+    ) -> Result<&DeferredApiRegistration, DeferredError> {
+        self.operation_owner
+            .deferred_apis
+            .get(&ApiId::new(handle.api.clone()))
+            .filter(|registration| registration.provider_id == handle.provider)
+            .ok_or_else(|| DeferredError::Unsupported {
+                provider: handle.provider.clone(),
+            })
     }
 }

@@ -12,6 +12,9 @@ from pathlib import Path
 import re
 import sys
 
+from lower_layer_edges import lower_layer_report
+from profile_api_edges import profile_api_edges
+
 
 REPO = Path(__file__).resolve().parents[2]
 SRC = REPO / "crates" / "opi-ai" / "src"
@@ -61,6 +64,8 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
 
     api_provider = matching_edges(api_files, r"crate::providers::")
     api_route_context = matching_edges(api_files, r"crate::provider::routes::")
+    profile_api = profile_api_edges(repo)
+    lower = lower_layer_report(repo)
     api_contract_provider = matching_edges(
         [src / "api" / "contract.rs"], r"crate::provider(?!::operation\b)"
     )
@@ -155,6 +160,8 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
 
     return {
         "api_provider_edges": api_provider,
+        "profile_api_edges": profile_api,
+        "lower_layer_dependencies": lower,
         "api_route_context_edges": api_route_context,
         "api_contract_provider_edges": api_contract_provider,
         "provider_contract_api_edges": provider_contract_api,
@@ -176,6 +183,16 @@ def architecture_report(repo: Path = REPO) -> dict[str, object]:
         "models_lines": models_lines,
         "counts": {
             "api_provider_edges": len(api_provider),
+            "profile_api_edges": len(profile_api),
+            "unapproved_profile_api_edges": sum(edge["permission"] is None for edge in profile_api),
+            "lower_layer_reviewed_contracts": len(lower["reviewed_contracts"]),
+            "lower_layer_known_exceptions": len(lower["known_exceptions"]),
+            "lower_layer_new_dependencies": len(lower["new_dependencies"]),
+            "lower_layer_unused_baseline_sites": sum(
+                edge["unused_sites"] for edge in lower["unused_baseline"]
+            ),
+            "lower_layer_excluded_test_sites": len(lower["excluded_tests"]),
+            "provider_copilot_policy_sites": len(lower["provider_copilot_policy"]),
             "api_route_context_edges": len(api_route_context),
             "api_contract_provider_edges": len(api_contract_provider),
             "provider_contract_api_edges": len(provider_contract_api),
@@ -204,6 +221,14 @@ def violations(report: dict[str, object]) -> list[str]:
     result = []
     if counts["api_provider_edges"]:
         result.append("api adapters import concrete provider profiles")
+    if counts["unapproved_profile_api_edges"]:
+        result.append("provider profiles have unapproved API dependencies (see --json for sites)")
+    if counts["lower_layer_new_dependencies"]:
+        result.append("lower owners have new guarded dependencies (see --json for sites)")
+    if counts["lower_layer_unused_baseline_sites"]:
+        result.append("lower-layer baseline has unused entries (see --json for sites)")
+    if counts["provider_copilot_policy_sites"]:
+        result.append("lower provider owns Copilot header policy (see --json for sites)")
     if counts["api_contract_provider_edges"]:
         result.append("api contract imports provider implementation types directly")
     if counts["provider_contract_api_edges"]:

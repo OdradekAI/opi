@@ -2,18 +2,19 @@
 //!
 //! This module owns the OpenAI identity, endpoint, model catalog, compatibility
 //! profile configuration, shared HTTP client and per-dispatch profile state.
-//! The wire protocol implementation lives in crate::api::openai.
+//! The wire protocol implementation lives in crate::api::openai_completions.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::api::shared::headers::ProviderHeaders;
 use crate::auth::AuthInvalidPolicy;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::ModelInfo;
-use crate::provider::routes::{OpenAiModelCompatOverride, OpenAiRouteContext};
+use crate::provider::policies::{OpenAiModelCompatOverride, OpenAiRoutePolicy};
+use crate::provider::routes::{OpenAiConfiguredRoute, OpenAiRouteContext};
 use crate::registry::ModelCapabilities;
+use crate::types::headers::ProviderHeaders;
 
 // ---------------------------------------------------------------------------
 // CompatConfig  - configuration points for OpenAI-compatible profiles
@@ -64,7 +65,7 @@ pub type ModelCompatOverride = OpenAiModelCompatOverride;
 // ---------------------------------------------------------------------------
 
 /// Canonical provider-facing name for the neutral OpenAI route context.
-pub type OpenAiChatProvider = OpenAiRouteContext;
+pub type OpenAiChatProvider = OpenAiConfiguredRoute;
 
 /// Built-in OpenAI Chat model metadata without credentials or HTTP construction.
 pub fn model_catalog() -> Vec<ModelInfo> {
@@ -106,10 +107,10 @@ pub fn model_catalog() -> Vec<ModelInfo> {
     ]
 }
 
-impl OpenAiRouteContext {
-    #[cfg(feature = "builtins")]
+impl OpenAiConfiguredRoute {
+    #[cfg(feature = "provider-azure-openai")]
     pub(crate) fn with_wire_model(mut self, deployment: String) -> Self {
-        self.wire_model_override = Some(deployment);
+        self.route.wire_model_override = Some(deployment);
         self
     }
 
@@ -171,20 +172,24 @@ impl OpenAiRouteContext {
             .collect();
         let direct_prompt_cache_key = provider_id == "openai";
         Self {
-            wire: crate::WireApi::OpenAiCompletions,
-            base_url,
-            models,
-            compat,
-            model_overrides: HashMap::new(),
-            provider_id,
-            headers: ProviderHeaders::default(),
-            route_headers: extra_headers,
-            catalog_compat: false,
-            auth_invalid_policy: AuthInvalidPolicy::CredentialManaged,
-            direct_prompt_cache_key,
-            copilot_initiator: false,
-            wire_model_override: None,
-            client,
+            route: OpenAiRouteContext {
+                wire: crate::WireApi::OpenAiCompletions,
+                base_url,
+                models,
+                provider_id,
+                headers: ProviderHeaders::default(),
+                route_headers: extra_headers,
+                wire_model_override: None,
+                client,
+            },
+            policy: OpenAiRoutePolicy {
+                compat,
+                model_overrides: HashMap::new(),
+                catalog_compat: false,
+                auth_invalid_policy: AuthInvalidPolicy::CredentialManaged,
+                direct_prompt_cache_key,
+                copilot_initiator: false,
+            },
         }
     }
 
@@ -211,20 +216,24 @@ impl OpenAiRouteContext {
             })
             .collect();
         Self {
-            wire: crate::WireApi::OpenAiCompletions,
-            base_url,
-            models,
-            compat,
-            model_overrides: HashMap::new(),
-            provider_id,
-            headers: ProviderHeaders::default(),
-            route_headers: extra_headers,
-            catalog_compat: false,
-            auth_invalid_policy: AuthInvalidPolicy::Static,
-            direct_prompt_cache_key: false,
-            copilot_initiator: false,
-            wire_model_override: None,
-            client: Arc::new(HttpClient::new()),
+            route: OpenAiRouteContext {
+                wire: crate::WireApi::OpenAiCompletions,
+                base_url,
+                models,
+                provider_id,
+                headers: ProviderHeaders::default(),
+                route_headers: extra_headers,
+                wire_model_override: None,
+                client: Arc::new(HttpClient::new()),
+            },
+            policy: OpenAiRoutePolicy {
+                compat,
+                model_overrides: HashMap::new(),
+                catalog_compat: false,
+                auth_invalid_policy: AuthInvalidPolicy::Static,
+                direct_prompt_cache_key: false,
+                copilot_initiator: false,
+            },
         }
     }
 
@@ -237,26 +246,30 @@ impl OpenAiRouteContext {
         client: Arc<HttpClient>,
     ) -> Self {
         Self {
-            wire: crate::WireApi::OpenAiCompletions,
-            base_url: default_base_url.unwrap_or_else(|| "https://api.openai.com".into()),
-            models,
-            compat: CompatConfig::default(),
-            model_overrides: HashMap::new(),
-            provider_id,
-            headers,
-            route_headers: Vec::new(),
-            catalog_compat: true,
-            auth_invalid_policy: AuthInvalidPolicy::Static,
-            direct_prompt_cache_key: false,
-            copilot_initiator: false,
-            wire_model_override: None,
-            client,
+            route: OpenAiRouteContext {
+                wire: crate::WireApi::OpenAiCompletions,
+                base_url: default_base_url.unwrap_or_else(|| "https://api.openai.com".into()),
+                models,
+                provider_id,
+                headers,
+                route_headers: Vec::new(),
+                wire_model_override: None,
+                client,
+            },
+            policy: OpenAiRoutePolicy {
+                compat: CompatConfig::default(),
+                model_overrides: HashMap::new(),
+                catalog_compat: true,
+                auth_invalid_policy: AuthInvalidPolicy::Static,
+                direct_prompt_cache_key: false,
+                copilot_initiator: false,
+            },
         }
     }
 
     /// Override how this route classifies provider 401/403 responses.
     pub fn with_auth_invalid_policy(mut self, policy: AuthInvalidPolicy) -> Self {
-        self.auth_invalid_policy = policy;
+        self.policy.auth_invalid_policy = policy;
         self
     }
 
@@ -264,21 +277,27 @@ impl OpenAiRouteContext {
     /// derived inside each stream from the last conversation message: user
     /// prompts map to `user`; assistant/tool continuations map to `agent`.
     pub fn with_copilot_initiator(mut self) -> Self {
-        self.copilot_initiator = true;
+        self.policy.copilot_initiator = true;
         self
     }
 
     /// Replace the HTTP client with a shared one (for proxy configuration
     /// and connection pooling).
     pub fn with_shared_client(self, client: Arc<HttpClient>) -> Self {
-        Self { client, ..self }
+        Self {
+            route: OpenAiRouteContext {
+                client,
+                ..self.route
+            },
+            ..self
+        }
     }
 
     /// Attach per-model compatibility overrides. Model-level
     /// overrides win over the provider-level [`CompatConfig`] for the models
     /// they declare; models without an entry inherit the provider default.
     pub fn with_model_overrides(mut self, overrides: HashMap<String, ModelCompatOverride>) -> Self {
-        self.model_overrides = overrides;
+        self.policy.model_overrides = overrides;
         self
     }
 }

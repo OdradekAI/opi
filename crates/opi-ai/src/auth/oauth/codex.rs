@@ -1,5 +1,4 @@
-//! OpenAI Codex (ChatGPT OAuth) legacy flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/openai-codex.ts`.
+//! OpenAI Codex (ChatGPT OAuth) legacy flow.
 //!
 //! Wire contract: form-urlencoded token exchange/refresh, the fixed
 //! `http://localhost:1455/auth/callback` redirect URI whose port is shared

@@ -1,14 +1,17 @@
 import unittest
-from run_anthropic_package import check_execution, check_telemetry_feature
+from run_anthropic_package import EXPECTED_TESTS, check_execution, check_telemetry_feature
 
 
 class ExecutionTests(unittest.TestCase):
     def test_complete(self):
-        check_execution("test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;")
+        output = "\n".join(f"test {name} ... ok" for name in sorted(EXPECTED_TESTS))
+        output += "\ntest result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;"
+        check_execution(output)
 
     def test_filtered_ignored_or_missing_cannot_pass(self):
         for text in ("", "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out;",
-                     "test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out;"):
+                     "test result: ok. 2 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out;",
+                     "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;"):
             with self.assertRaises(ValueError):check_execution(text)
 
     def test_companion_tracing_must_match(self):

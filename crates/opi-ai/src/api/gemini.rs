@@ -13,7 +13,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::shared::headers::ProviderHeaders;
 use crate::message::{AssistantContent, AssistantMessage, OutputContent, ToolCall};
-use crate::model_info::WireApi;
+use crate::model_info::{ThinkingLevel, WireApi};
 use crate::provider::routes::GeminiRouteContext;
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
@@ -850,8 +850,8 @@ fn google_budget_for(model_id: &str, pi_level: &str, wire: WireApi) -> i64 {
 /// unsupported or non-pi mapping).
 fn resolve_google_pi_level(
     model: &ModelInfo,
-    level: crate::model_info::ThinkingLevel,
-) -> Result<String, crate::provider::ProviderError> {
+    level: ThinkingLevel,
+) -> Result<String, ProviderError> {
     let mapped = model
         .thinking_level_map
         .resolve(level)
@@ -874,6 +874,27 @@ fn resolve_google_pi_level(
             )),
         ))
     }
+}
+
+fn disabled_google_thinking_config(model: &ModelInfo) -> Result<serde_json::Value, ProviderError> {
+    if uses_google_thinking_level(&model.id) {
+        let map = &model.thinking_level_map;
+        // Use the lowest supported level when the model disallows Off.
+        let level = match map.resolve(ThinkingLevel::None) {
+            Ok(level) => level,
+            Err(_) => map
+                .nearest_supported(ThinkingLevel::None)
+                .map(|level| resolve_google_pi_level(model, level))
+                .transpose()?,
+        };
+        if let Some(level) = level
+            .as_deref()
+            .and_then(GoogleApiThinkingLevel::from_pi_level)
+        {
+            return Ok(serde_json::json!({"thinkingLevel": level.wire_name()}));
+        }
+    }
+    Ok(serde_json::json!({"thinkingBudget": 0}))
 }
 
 /// Thought signatures must be base64 (TYPE_BYTES).
@@ -1022,6 +1043,15 @@ impl GeminiRouteContext {
             .split_once(':')
             .map(|(_, id)| id)
             .unwrap_or(&request.model);
+        self.build_model_request_body(model_id, request, native_options)
+    }
+
+    fn build_model_request_body(
+        &self,
+        model_id: &str,
+        request: &Request,
+        native_options: Option<&GoogleGenerativeAiOptions>,
+    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         let provider_id = self.provider_identity.as_str();
 
         let mut contents = Vec::new();
@@ -1395,10 +1425,14 @@ impl GeminiRouteContext {
 
         // Thinking config (task 20.40): native options own the wire when
         // bound; the neutral request intent drives the plain path.
-        let model_info = self.models.iter().find(|m| m.id == model_id);
-        let reasoning = model_info
-            .map(|m| m.capabilities.supports_thinking)
-            .unwrap_or(false);
+        let Some(model) = self
+            .models
+            .iter()
+            .find(|model| model.id == model_id)
+            .filter(|model| model.capabilities.supports_thinking)
+        else {
+            return Ok(body);
+        };
         // Native binding owns the thinking intent entirely: a bound native
         // options value without `thinking` omits the config (pi native
         // `buildParams` only reacts when `options.thinking` exists).
@@ -1408,9 +1442,7 @@ impl GeminiRouteContext {
         } else {
             None
         };
-        let thinking_config: Option<serde_json::Value> = if !reasoning {
-            None
-        } else if let Some(thinking) = native_thinking {
+        let thinking_config = if let Some(thinking) = native_thinking {
             if thinking.enabled {
                 let mut config = serde_json::json!({"includeThoughts": true});
                 if let Some(level) = thinking.level.as_ref() {
@@ -1419,32 +1451,13 @@ impl GeminiRouteContext {
                     config["thinkingBudget"] = serde_json::json!(budget);
                 }
                 Some(config)
-            } else if uses_google_thinking_level(model_id) {
-                // Level-mode models disable via the mapped off level when
-                // the map provides one, else budget zero (pi
-                // getDisabledGoogleThinkingConfig).
-                let off_level = model_info.and_then(|model| {
-                    model
-                        .thinking_level_map
-                        .resolve(crate::model_info::ThinkingLevel::None)
-                        .ok()
-                        .flatten()
-                });
-                match off_level
-                    .as_deref()
-                    .and_then(GoogleApiThinkingLevel::from_pi_level)
-                {
-                    Some(level) => Some(serde_json::json!({"thinkingLevel": level.wire_name()})),
-                    None => Some(serde_json::json!({"thinkingBudget": 0})),
-                }
             } else {
-                Some(serde_json::json!({"thinkingBudget": 0}))
+                Some(disabled_google_thinking_config(model)?)
             }
         } else if native_bound {
             // Native binding without a thinking intent: no config.
             None
         } else if request.thinking.enabled {
-            let model = model_info.expect("reasoning models resolve a record");
             let pi_level = resolve_google_pi_level(model, request.thinking.level)?;
             let mut config = serde_json::json!({"includeThoughts": true});
             if uses_google_thinking_level(model_id) {
@@ -1461,26 +1474,7 @@ impl GeminiRouteContext {
             }
             Some(config)
         } else {
-            // Neutral explicit off (pi streamSimple always sends the
-            // disabled config on reasoning models).
-            if uses_google_thinking_level(model_id) {
-                let off_level = model_info.and_then(|model| {
-                    model
-                        .thinking_level_map
-                        .resolve(crate::model_info::ThinkingLevel::None)
-                        .ok()
-                        .flatten()
-                });
-                match off_level
-                    .as_deref()
-                    .and_then(GoogleApiThinkingLevel::from_pi_level)
-                {
-                    Some(level) => Some(serde_json::json!({"thinkingLevel": level.wire_name()})),
-                    None => Some(serde_json::json!({"thinkingBudget": 0})),
-                }
-            } else {
-                Some(serde_json::json!({"thinkingBudget": 0}))
-            }
+            Some(disabled_google_thinking_config(model)?)
         };
         if let Some(config) = thinking_config {
             body["generationConfig"]["thinkingConfig"] = config;
@@ -1491,8 +1485,7 @@ impl GeminiRouteContext {
 
     /// Stream events from a raw SSE response body.
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper =
-            GeminiMapper::new("gemini", crate::model_info::WireApi::GoogleGenerativeAi, "");
+        let mut mapper = GeminiMapper::new(self.id(), self.wire, "");
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         let mut terminal_error = false;
 
@@ -1850,7 +1843,7 @@ impl Provider for GeminiRouteContext {
     }
 
     fn id(&self) -> &str {
-        "gemini"
+        &self.provider_identity
     }
 
     fn models(&self) -> &[ModelInfo] {
@@ -1865,9 +1858,27 @@ impl GeminiRouteContext {
         auth: crate::auth::ResolvedAuth,
         native_options: Option<GoogleGenerativeAiOptions>,
     ) -> EventStream {
-        let projection = /* frozen call */ match crate::provider::request_projection(self, &request, self.wire) {
-            Ok(facts) => facts,
+        let model_id = request
+            .model
+            .strip_prefix(self.id())
+            .and_then(|rest| rest.strip_prefix(':'))
+            .unwrap_or(&request.model);
+        let model = self.models.iter().find(|model| model.id == model_id);
+        let projection = /* frozen call */ match crate::transcript::compile_request_projection(
+            &request,
+            self.id(),
+            model,
+            self.wire,
+        ) {
+            Ok(projection) => projection.facts,
             Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let Some(model) = model else {
+            let error = ProviderError::UnknownModel {
+                provider_id: self.id().to_owned(),
+                model_id: model_id.to_owned(),
+            };
+            return Box::pin(stream::once(async move { Err(error) }));
         };
         let event_projection = projection.clone();
         crate::stream::project_call(event_projection, || -> EventStream {
@@ -1893,39 +1904,22 @@ impl GeminiRouteContext {
                     ))]));
                 }
             };
-            let model_id = request
-                .model
-                .split_once(':')
-                .map(|(_, id)| id.to_string())
-                .unwrap_or(request.model.clone());
-            // A selected record/auth endpoint is already the complete API base,
-            // including any version or proxy path. Only the legacy provider-host
-            // constructor supplies the default version path itself.
+            // All prepared endpoints include the API version or proxy path.
             let base_url = auth
                 .base_url
-                .clone()
-                .or_else(|| {
-                    self.models
-                        .iter()
-                        .find(|model| model.id == model_id)
-                        .and_then(|model| model.base_url.clone())
-                })
-                .unwrap_or_else(|| format!("{}/v1beta", self.base_url.trim_end_matches('/')));
-            let body = match self.build_request_body_with_options(&request, native_options.as_ref())
-            {
-                Ok(body) => body,
-                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-            };
+                .or_else(|| model.base_url.clone())
+                .unwrap_or_else(|| self.base_url.clone());
+            let body =
+                match self.build_model_request_body(&model.id, &request, native_options.as_ref()) {
+                    Ok(body) => body,
+                    Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+                };
+            let model_id = model.id.clone();
 
             let callbacks = request.callbacks.clone();
             let cancel = request.cancel.clone();
             let timeout = request.timeout;
-            let model_headers = self
-                .models
-                .iter()
-                .find(|model| model.id == model_id)
-                .map(|model| model.headers.clone())
-                .unwrap_or_default();
+            let model_headers = model.headers.clone();
             let extra_headers = request.extra_headers;
             let http_client = self.client.client().clone();
             let provider_identity = self.provider_identity.clone();
@@ -2076,7 +2070,7 @@ impl crate::api::contract::ChatApi<GoogleGenerativeAiOptions> for GoogleGenerati
     }
 
     fn provider_id(&self) -> &str {
-        "gemini"
+        self.provider.id()
     }
 
     fn complete_record(&self) -> ModelInfo {

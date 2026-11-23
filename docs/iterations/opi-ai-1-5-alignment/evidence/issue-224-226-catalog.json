@@ -1,0 +1,261 @@
+{
+  "issues": [
+    224,
+    225,
+    226
+  ],
+  "verdict": "PASS",
+  "host": "x86_64-pc-windows-msvc",
+  "worktree_base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "references": {
+    "previous": {
+      "package": "Pi 1.3.0",
+      "revision": "sha256-ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678",
+      "git_blob": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0:crates/opi-ai/resources/catalog/builtin/catalog.json"
+    },
+    "adopted_for_mistral": {
+      "package": "Pi 1.5.0",
+      "revision": "sha256-f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+      "artifact": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-model-catalog.json",
+      "pin": ".pi/pi-1.5.0/nix/model-catalog.json"
+    }
+  },
+  "bundle": {
+    "providers": 42,
+    "operation_counts": {
+      "chat": 1602,
+      "classifier": 38,
+      "image": 59
+    },
+    "records": 1699,
+    "two_offline_builds_identical": true,
+    "resources_sha256": {
+      "catalog.json": "6622045ba733eed62b84e8e4a312bb089b7016080ba1f692f13295a85675c270",
+      "manifest.json": "b408273fb96422e8c215a48d054fa2cd00b59467551e82c3290b89b32ab71e7a",
+      "openrouter-profile.json": "6d1127ad03019f53748adbe9713eddfb6c26f22a82cdf73bdfbbf290683a1804"
+    },
+    "openrouter_profile_bytes": 2185,
+    "openrouter_shared_ids": [
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+      "google/gemini-2.5-pro",
+      "deepseek/deepseek-r1"
+    ]
+  },
+  "mistral": {
+    "old_records": 40,
+    "new_records": 34,
+    "other_authoring_files_byte_identical": 41,
+    "old_source_sha256": "94d20bbb816f0afcd83be57326e608a6931e4fcb079ca01f47c0fc904d29b859",
+    "new_source_sha256": "9081672389a7f6cfa428286f7a4a0911d32ff6cec0f72e5347d05268e0609423",
+    "added": [
+      "deepseek-v4-1-flash-1017",
+      "mistral-large-4-0-8",
+      "zai-glm-5-3-flash"
+    ],
+    "removed": [
+      "devstral-medium-2507",
+      "devstral-small-2505",
+      "devstral-small-2507",
+      "mistral-large-2411",
+      "mistral-nemo",
+      "open-mistral-7b",
+      "open-mixtral-8x22b",
+      "open-mixtral-8x7b",
+      "pixtral-large-latest"
+    ],
+    "updated": {
+      "ministral-3b-latest": [
+        "cost.cacheRead",
+        "cost.input",
+        "cost.output"
+      ],
+      "ministral-8b-latest": [
+        "cost.cacheRead",
+        "cost.input",
+        "cost.output"
+      ],
+      "mistral-large-4": [
+        "cost.input",
+        "cost.output",
+        "thinkingLevelMap.low",
+        "thinkingLevelMap.medium",
+        "thinkingLevelMap.off"
+      ],
+      "voxtral-small-latest": [
+        "cost.output"
+      ]
+    },
+    "conflicts": [],
+    "all_rows_and_order_equal_to_reference": true,
+    "second_upgrade_fixture": {
+      "first_release_candidate": "2bfef0a054c25e4cfae05cea376f8c3331e016eef77788b03913e2543108e444",
+      "simulated_second_reference": "sha256-bdef3b3722aaf561fac5328f26b43bbb79c522563a5eb94c32a9894dfa98f96c",
+      "second_candidate": "40cf59e656126a5a0b5e8ab27f25d4a1fea8c7bac902f40c6f2c9ee2efd89704",
+      "retained_local_id": "opi-local-mistral-proof",
+      "shared_model": "mistral-large-4",
+      "retained_local_context_window": 1048607,
+      "second_upstream_output_rate": 2.125
+    }
+  },
+  "comparison_after_sync": {
+    "opi": 1699,
+    "reference": 1712,
+    "only_opi": 109,
+    "only_reference": 122,
+    "changed": 295,
+    "equal": 1295,
+    "providers_equal_by_id_and_fields": [
+      "ant-ling",
+      "anthropic",
+      "deepseek",
+      "meta",
+      "mistral",
+      "qwen-token-plan-individual",
+      "zai"
+    ],
+    "providers_with_differences": 35,
+    "openrouter": {
+      "only_reference": 37,
+      "only_opi": 28,
+      "changed": 80
+    }
+  },
+  "verification": {
+    "cargo_tests": {
+      "catalog-wire": {
+        "cargo_args": [
+          "test",
+          "-p",
+          "opi-ai",
+          "--offline",
+          "--locked",
+          "--test",
+          "catalog_artifact",
+          "--test",
+          "catalog_operations",
+          "--test",
+          "provider_collection",
+          "--test",
+          "openrouter_fixtures",
+          "--test",
+          "mistral_fixtures",
+          "--test",
+          "model_wire_metadata",
+          "--test",
+          "external_sdk"
+        ],
+        "passed": 298
+      },
+      "listing": {
+        "cargo_args": [
+          "test",
+          "-p",
+          "opi-coding-agent",
+          "--offline",
+          "--locked",
+          "--test",
+          "list_models",
+          "--test",
+          "provider_factory"
+        ],
+        "passed": 72
+      },
+      "profile-only": {
+        "cargo_args": [
+          "test",
+          "-p",
+          "opi-ai",
+          "--offline",
+          "--locked",
+          "--no-default-features",
+          "--features",
+          "provider-openrouter",
+          "--test",
+          "provider_openrouter_profile"
+        ],
+        "passed": 1
+      },
+      "catalog-only": {
+        "cargo_args": [
+          "test",
+          "-p",
+          "opi-ai",
+          "--offline",
+          "--locked",
+          "--no-default-features",
+          "--features",
+          "catalog-bundled",
+          "--test",
+          "catalog_artifact"
+        ],
+        "passed": 14
+      },
+      "author-final": {
+        "cargo_args": [
+          "test",
+          "-p",
+          "opi-ai",
+          "--offline",
+          "--locked",
+          "--no-default-features",
+          "--example",
+          "build_catalog"
+        ],
+        "passed": 6
+      }
+    },
+    "cargo_test_executions": 391,
+    "python_unittest": {
+      "scripts/pi-catalog": 14,
+      "test_provider_protocol_package.py": 36,
+      "test_catalog_bundled_package.py": 4
+    },
+    "package_consumers": {
+      "openrouter": {
+        "runner": "scripts/pi-sdk-conformance/run_provider_protocol_package.py",
+        "runner_sha256": "d81bc5c0f5de0db92bf58c893513e4dafbf33ec701125549f5f325c971595107",
+        "features": [
+          "http-transport",
+          "provider-openai-chat",
+          "provider-openai-responses-shared",
+          "provider-openrouter",
+          "provider-openrouter-usage",
+          "provider-protocol-common",
+          "tls-backend"
+        ],
+        "archive_sha256": "cc20ff5dcb5eb2ca19595c054c2f6d25a430cac3e0f943622e3b1d9d73f06541",
+        "verdict": "PASS",
+        "ordered_ids_asserted": 6
+      },
+      "catalog": {
+        "runner": "scripts/pi-sdk-conformance/run_catalog_bundled_package.py",
+        "runner_sha256": "674617b226df661323fd729c3ba41f5101adc4bfc8feb6937de5d549ca1d176f",
+        "features": [
+          "catalog-bundled"
+        ],
+        "archive_sha256": "cc20ff5dcb5eb2ca19595c054c2f6d25a430cac3e0f943622e3b1d9d73f06541",
+        "verdict": "PASS"
+      }
+    },
+    "architecture_violations": [],
+    "clippy": {
+      "exit": 0,
+      "existing_lints": [
+        "openai_responses.rs: too_many_arguments",
+        "models.rs: needless_borrow",
+        "models/prepared_call.rs: too_many_arguments"
+      ]
+    },
+    "roundtrip_checks": {
+      "cargo_fmt": "PASS",
+      "architecture": "PASS",
+      "doc_contracts": "PASS",
+      "git_diff_check": "PASS"
+    }
+  },
+  "openrouter_followup": {
+    "system_one_classifier_records_declaring_images": 12,
+    "direct_id_removed_by_next_release": "deepseek/deepseek-r1"
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "issue": 261,
+  "status": "done",
+  "provider": "xiaomi-token-plan-ams",
+  "fixed_reference": {"pi_version": "1.5.0", "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"},
+  "catalog": {
+    "records_before": 4,
+    "records_after": 2,
+    "added": 0,
+    "removed": 2,
+    "updated": 0,
+    "added_ids": [],
+    "removed_ids": ["mimo-v2.5", "mimo-v2.5-pro"],
+    "updated_ids": [],
+    "updated_fields": [],
+    "retired_ids": ["mimo-v2.5", "mimo-v2.5-pro"],
+    "author_source_sha256": "5c94d24b63659f18a172c9329a7f54a4a425361407318a82af48b17bde90130f",
+    "bundle_sha256": "b54a03b771ca33a4c72c58dde1942fc3f1719774d4691a6dc211974cfab8ea44",
+    "manifest_sha256": "79e3b858065b07f68ffcdb4e582af1b71dff0e773b4fc27f1f23725bd72852f"
+  },
+  "global_after": {"opi_records": 1711, "reference_records": 1712, "equal": 1710, "only_opi": 0, "only_reference": 1, "changed": 1, "providers_equal": 39, "providers_with_differences": 3},
+  "wire": {"endpoint": "/v1/chat/completions", "auth": "Bearer XIAOMI_TOKEN_PLAN_AMS_API_KEY", "model": "mimo-v2.6-pro", "max_tokens_field": "max_completion_tokens", "thinking": {"type": "enabled"}, "requests": 1},
+  "tests": {"provider_collection_xiaomi_token_plan_ams": 3, "provider_collection_regression": 186, "catalog_artifact": 14, "catalog_operations": 27, "openai_chat_fixtures": 116, "build_catalog_example": 9, "clippy_lib": "PASS (3 pre-existing warnings)", "build_catalog_check": "PASS", "catalog_bundled_external_consumer": "PASS", "pack_comparison": "PASS", "cargo_fmt": "PASS", "doc_check": "PASS", "architecture_boundaries": "PASS"},
+  "compatibility": {"additional_behavior": false, "legacy_model_aliases": false, "legacy_catalog_fallback": false}
+}

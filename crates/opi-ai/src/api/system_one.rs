@@ -1,7 +1,7 @@
 //! TypeSafe System One direct adapter (task 20.46).
 //!
-//! Reproduces the pinned pi `typesafe-system-one` module: classification
-//! over TypeSafe's native System One protocol (`POST <base>/systemone` with
+//! Classification over TypeSafe's native System One protocol
+//! (`POST <base>/systemone` with
 //! `{model, state, questions}`). Public `bool` questions and answers map to
 //! the wire-level `noul` type on both sides; choice and score questions keep
 //! their type and criteria shape. Bearer auth, no default timeout (a fresh
@@ -13,15 +13,17 @@
 //! requires: record shape, wire type agreement, string choices and finite
 //! numbers. A request with malformed answers was still billed, so its
 //! reported usage survives the parsing failure. Usage prices chat-style
-//! through the record's catalog tiers. Image input is rejected before any
-//! request, and `temperature` is a typed option System One cannot apply: it
-//! never reaches the wire.
+//! through the record's catalog tiers. TypeSafe image-capable models receive
+//! named `assets` before the original state and the experimental image opt-in
+//! header. OpenRouter image-capable models receive ordered `image_url` parts
+//! before the original state. Image input on other routes is rejected before
+//! dispatch. System One cannot apply `temperature`.
 //!
 //! The module also owns the shared System One transport core (pi
 //! `SystemOneTransport`): every service that serves System One models —
 //! the direct TypeSafe endpoint and the Cloudflare Workers AI REST
-//! endpoint — differs only in URL, request envelope and response unwrap,
-//! and drives the same attempt loop, guard set and output parser.
+//! endpoint — supplies its URL, input format, request envelope and response
+//! unwrap to the shared attempt loop and output parser.
 
 use std::time::Duration;
 
@@ -30,8 +32,8 @@ use secrecy::ExposeSecret;
 use crate::api::ClassifierApi;
 use crate::auth::{AuthScheme, ResolvedAuth};
 use crate::classifier::{
-    ClassifierAnswer, ClassifierCall, ClassifierContext, ClassifierModelRecord, ClassifierResult,
-    ClassifierStopReason,
+    ClassifierAnswer, ClassifierCall, ClassifierContext, ClassifierImageInput,
+    ClassifierModelRecord, ClassifierResult, ClassifierStopReason,
 };
 use crate::http::HttpClient;
 use crate::provider::{ProviderError, ProviderErrorSummary};
@@ -40,8 +42,7 @@ use crate::types::ApiId;
 /// The exact pi classifier API identity this adapter serves.
 pub const TYPESAFE_SYSTEM_ONE_API_ID: &str = "typesafe-system-one";
 
-/// Source default endpoint (the pi test fixture base URL; pi's generated
-/// catalog data `data/typesafe.json` is absent from the pinned source).
+/// Default base URL for direct System One classification.
 pub const TYPESAFE_SYSTEM_ONE_BASE_URL: &str = "https://api.typesafe.ai/v1";
 
 /// Source label used in error messages.
@@ -119,7 +120,7 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
         call: &ClassifierCall,
     ) -> Result<(), ProviderError> {
         self.validate_options(options)?;
-        validate_system_one_request(record, context, call, LABEL)
+        validate_system_one_request(record, context, call, LABEL, image_input(record))
     }
 
     fn classify_prepared<'a>(
@@ -135,6 +136,8 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
                 api_id: TYPESAFE_SYSTEM_ONE_API_ID,
                 label: LABEL,
                 url: format!("{}/systemone", record.base_url.trim_end_matches('/')),
+                image_input: image_input(&record),
+                send_image_opt_in_header: send_image_opt_in_header(&record),
                 payload: |body| body,
                 output: typesafe_output,
             };
@@ -155,24 +158,59 @@ impl ClassifierApi<TypesafeSystemOneOptions> for TypesafeSystemOneApi {
     }
 }
 
+fn image_input(record: &ClassifierModelRecord) -> Option<ClassifierImageInput> {
+    if let Some(image_input) = record.compat.as_ref().and_then(|compat| compat.image_input) {
+        return Some(image_input);
+    }
+    // The provider identity survives proxy overrides. A custom provider can
+    // also address the OpenRouter endpoint by its canonical or regional host.
+    if record.provider_id == "openrouter"
+        || reqwest::Url::parse(&record.base_url).is_ok_and(|url| {
+            url.host_str()
+                .is_some_and(|host| host == "openrouter.ai" || host.ends_with(".openrouter.ai"))
+        })
+    {
+        Some(ClassifierImageInput::StateImageUrls)
+    } else if record.provider_id == "typesafe" {
+        Some(ClassifierImageInput::Assets)
+    } else {
+        None
+    }
+}
+
+fn send_image_opt_in_header(record: &ClassifierModelRecord) -> bool {
+    record
+        .compat
+        .as_ref()
+        .and_then(|compat| compat.send_image_opt_in_header)
+        .unwrap_or(matches!(
+            image_input(record),
+            Some(ClassifierImageInput::Assets)
+        ))
+}
+
 /// The curated default record for the TypeSafe classifier adapter.
 ///
-/// pi's generated catalog data (`data/typesafe.json`) is absent from the
-/// pinned source, so opi ships one documented baseline entry (the pinned
-/// test fixture identity: `typesafe/jev-latest`, 64000-token context, text
-/// input); a registrar replaces it wholesale through
-/// [`ClassifierApi::complete_record`] — the record never enters chat catalog
-/// reads. Unknown pricing stays at the source generator's `0` fallback.
+/// The fallback is `typesafe/jev-latest`, with a 64,000-token context window,
+/// text and image input and zero pricing. Registration can supply a complete record
+/// with different metadata through [`ClassifierApi::complete_record`].
 pub fn default_typesafe_classifier_record() -> ClassifierModelRecord {
     ClassifierModelRecord {
         headers: Vec::new(),
         input_limits: None,
+        compat: Some(crate::classifier::ClassifierCompat {
+            image_input: Some(ClassifierImageInput::Assets),
+            send_image_opt_in_header: Some(true),
+        }),
         provider_id: "typesafe".into(),
         id: "jev-latest".into(),
         name: "Jev".into(),
         api: ApiId::new(TYPESAFE_SYSTEM_ONE_API_ID),
         base_url: TYPESAFE_SYSTEM_ONE_BASE_URL.into(),
-        input: vec![crate::classifier::ClassifierInputModality::Text],
+        input: vec![
+            crate::classifier::ClassifierInputModality::Text,
+            crate::classifier::ClassifierInputModality::Image,
+        ],
         context_window: 64000,
         cost: Some(
             crate::model_info::ModelPricing::try_new(crate::stream::Pricing::default(), Vec::new())
@@ -181,11 +219,11 @@ pub fn default_typesafe_classifier_record() -> ClassifierModelRecord {
     }
 }
 
-/// Build the System One wire request body: public `bool` questions ride as
-/// `noul`, choice and score keep their shape.
+/// Encode validated input. Public `bool` questions use the `noul` wire type.
 fn build_request_body(
     record: &ClassifierModelRecord,
     context: &ClassifierContext,
+    image_input: Option<ClassifierImageInput>,
 ) -> serde_json::Value {
     let questions: serde_json::Map<String, serde_json::Value> = context
         .questions
@@ -221,11 +259,69 @@ fn build_request_body(
             (id.clone(), value)
         })
         .collect();
-    serde_json::json!({
+    let mut body = serde_json::json!({
         "model": record.id,
         "state": context.state,
         "questions": questions,
-    })
+    });
+    let Some(images) = context
+        .images
+        .as_deref()
+        .filter(|images| !images.is_empty())
+    else {
+        return body;
+    };
+    match image_input {
+        Some(ClassifierImageInput::Assets) => {
+            let mut assets = serde_json::Map::new();
+            let mut state = Vec::with_capacity(images.len() + 1);
+            for (index, image) in images.iter().enumerate() {
+                let name = format!("<image-{}>", index + 1);
+                let format = if image.mime_type == "image/png" {
+                    "png"
+                } else {
+                    "jpeg"
+                };
+                assets.insert(
+                    name.clone(),
+                    serde_json::json!({
+                        "type": "image",
+                        "format": format,
+                        "data_base64": image.data,
+                    }),
+                );
+                state.push(serde_json::Value::String(name));
+            }
+            state.push(context.state.clone());
+            body["state"] = serde_json::Value::Array(state);
+            body["assets"] = serde_json::Value::Object(assets);
+        }
+        Some(ClassifierImageInput::Images) => {
+            body["images"] = serde_json::Value::Array(
+                images
+                    .iter()
+                    .map(|image| {
+                        serde_json::Value::String(format!(
+                            "data:{};base64,{}",
+                            image.mime_type, image.data
+                        ))
+                    })
+                    .collect(),
+            );
+        }
+        Some(ClassifierImageInput::StateImageUrls) => {
+            let parts = images.iter().map(|image| {
+                serde_json::json!({
+                    "type": "image_url",
+                    "image_url": {"url": format!("data:{};base64,{}", image.mime_type, image.data)},
+                })
+            });
+            body["state"] =
+                serde_json::Value::Array(parts.chain([context.state.clone()]).collect());
+        }
+        None => {}
+    }
+    body
 }
 
 /// One terminal failure of the attempt loop with its retry classification.
@@ -264,6 +360,10 @@ pub(crate) struct SystemOneTransport {
     pub label: &'static str,
     /// Absolute request URL.
     pub url: String,
+    /// How the route encodes image input, when it supports images.
+    pub image_input: Option<ClassifierImageInput>,
+    /// Whether image requests add TypeSafe's experimental opt-in header.
+    pub send_image_opt_in_header: bool,
     /// Wraps the System One wire request `{model, state, questions}` in the
     /// service's request envelope.
     pub payload: fn(serde_json::Value) -> serde_json::Value,
@@ -286,15 +386,74 @@ pub(crate) fn validate_system_one_request(
     context: &ClassifierContext,
     call: &ClassifierCall,
     label: &str,
+    image_input: Option<ClassifierImageInput>,
 ) -> Result<(), ProviderError> {
-    if context
-        .images
-        .as_ref()
-        .is_some_and(|images| !images.is_empty())
+    if image_input.is_some()
+        && context
+            .images
+            .as_ref()
+            .is_some_and(|images| !images.is_empty())
+        && !record
+            .input
+            .contains(&crate::classifier::ClassifierInputModality::Image)
     {
         return Err(ProviderError::UnsupportedCapability(
             ProviderErrorSummary::sanitized(format!("{label} does not support image input")),
         ));
+    }
+    if image_input.is_none()
+        && context
+            .images
+            .as_ref()
+            .is_some_and(|images| !images.is_empty())
+    {
+        return Err(ProviderError::UnsupportedCapability(
+            ProviderErrorSummary::sanitized(format!("{label} does not support image input")),
+        ));
+    }
+    if let Some(images) = context
+        .images
+        .as_deref()
+        .filter(|images| !images.is_empty())
+        && image_input == Some(ClassifierImageInput::Assets)
+        && let Some(image) = images
+            .iter()
+            .find(|image| !matches!(image.mime_type.as_str(), "image/png" | "image/jpeg"))
+    {
+        return Err(ProviderError::UnsupportedCapability(
+            ProviderErrorSummary::sanitized(format!(
+                "{label} accepts PNG and JPEG images for {}, got {}",
+                record.id, image.mime_type
+            )),
+        ));
+    }
+    if let Some(images) = context
+        .images
+        .as_deref()
+        .filter(|images| !images.is_empty())
+        && image_input == Some(ClassifierImageInput::Images)
+    {
+        if images.len() > 4 {
+            return Err(ProviderError::UnsupportedCapability(
+                ProviderErrorSummary::sanitized(format!(
+                    "{label} accepts at most 4 images for {}",
+                    record.id
+                )),
+            ));
+        }
+        if let Some(image) = images.iter().find(|image| {
+            !matches!(
+                image.mime_type.as_str(),
+                "image/png" | "image/jpeg" | "image/webp"
+            )
+        }) {
+            return Err(ProviderError::UnsupportedCapability(
+                ProviderErrorSummary::sanitized(format!(
+                    "{label} accepts PNG, JPEG, and WebP images for {}, got {}",
+                    record.id, image.mime_type
+                )),
+            ));
+        }
     }
     crate::classifier::validate_classifier_request(record, context, call)
 }
@@ -312,12 +471,18 @@ pub(crate) async fn classify_over_system_one(
     transport: SystemOneTransport,
 ) -> ClassifierResult {
     call.callbacks = call.callbacks.for_call();
-    if let Err(error) = validate_system_one_request(&record, &context, &call, transport.label) {
+    if let Err(error) = validate_system_one_request(
+        &record,
+        &context,
+        &call,
+        transport.label,
+        transport.image_input,
+    ) {
         return failure_from_error(&record, &call, error);
     }
     let label = transport.label;
     // Pre-dispatch rejections: the transport guard, Bearer-only wire,
-    // unsupported callback families, and image input.
+    // and unsupported callback families.
     if record.api.as_str() != transport.api_id {
         let message = format!("Unsupported classifier API: {}", record.api.as_str());
         return ClassifierResult::failure(
@@ -348,21 +513,19 @@ pub(crate) async fn classify_over_system_one(
             message,
         );
     }
-    if let Some(images) = context.images.as_ref()
-        && !images.is_empty()
+    let image_headers = if context
+        .images
+        .as_deref()
+        .is_some_and(|images| !images.is_empty())
+        && transport.send_image_opt_in_header
     {
-        let message = format!("{label} does not support image input");
-        return ClassifierResult::failure(
-            &record,
-            ClassifierStopReason::Error,
-            ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(message.clone())),
-            message,
-        );
-    }
-
+        vec![("TypeSafe-Danger-Zone-Images".to_owned(), "true".to_owned())]
+    } else {
+        Vec::new()
+    };
     let headers = match crate::api::shared::headers::ProviderHeaders::default().merge_model_request(
         &record.headers,
-        &[],
+        &image_headers,
         &call.extra_headers,
     ) {
         Ok(headers) => headers,
@@ -375,7 +538,8 @@ pub(crate) async fn classify_over_system_one(
     // telemetry section (AIR-054): the payload observer routes its
     // observation to the frozen parent/Dispatch exactly like the attempt.
     let attempt = async {
-        let mut body = (transport.payload)(build_request_body(&record, &context));
+        let mut body =
+            (transport.payload)(build_request_body(&record, &context, transport.image_input));
         // The payload observer runs once per logical call; an ordinary retry
         // reuses the frozen body byte-for-byte (the shared callback seam).
         match call

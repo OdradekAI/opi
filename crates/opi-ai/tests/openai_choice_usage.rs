@@ -3,7 +3,9 @@
 //! Pi 1.5.0 accepts `choices[0].usage` when a provider omits the standard
 //! chunk-level usage member. Keep the public Rust stream result equivalent.
 
-use opi_ai::api::openai::{OpenAiChatEvent, OpenAiChatMapper, ParsedEvent, parse_sse_events};
+use opi_ai::api::openai_completions::{
+    OpenAiChatEvent, OpenAiChatMapper, ParsedEvent, parse_sse_events,
+};
 use opi_ai::stream::AssistantStreamEvent;
 
 #[test]

@@ -16,9 +16,20 @@ from run_readme_examples import check_opi_feature_profile
 REPO=Path(__file__).resolve().parents[2]
 
 
+EXPECTED_TESTS = {
+    "nested_cache_and_reasoning_usage_reaches_the_canonical_message",
+    "reasoning_delta_subset_validation_is_atomic",
+    "merged_delta_validation_is_atomic_and_cost_zero_has_authority",
+    "anthropic_usage_trace",
+    "anthropic_usage_contract",
+}
+
+
 def check_execution(stdout):
-    if not re.search(r"test result: ok\. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;",stdout):
-        raise ValueError("all three Anthropic contract tests must execute")
+    observed = set(re.findall(r"^test ([A-Za-z0-9_]+) \.\.\. ok$", stdout, re.MULTILINE))
+    missing = EXPECTED_TESTS - observed
+    if missing or not re.search(r"test result: ok\. \d+ passed; 0 failed; 0 ignored; 0 measured; 0 filtered out;", stdout):
+        raise ValueError(f"named Anthropic contract tests did not all execute: {sorted(missing)}")
 
 
 def check_telemetry_feature(metadata, telemetry_id, defaults):

@@ -1,5 +1,4 @@
-//! OpenRouter OAuth PKCE flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/openrouter.ts` (sdk-contracts row 143).
+//! OpenRouter OAuth PKCE flow.
 //!
 //! OpenRouter exchanges an authorization code for a permanent,
 //! user-controlled API key rather than an expiring access/refresh pair. The

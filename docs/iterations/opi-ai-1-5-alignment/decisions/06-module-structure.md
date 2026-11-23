@@ -71,7 +71,8 @@ crates/
       errors.rs             # 通用错误合同；专用错误仍归所属 Module
       models/               # provider 集合、查询、路由、鉴权/刷新编排
       provider.rs           # Provider：服务对象的公共合同
-      providers/            # 内置 provider 工厂与正式 Faux
+      providers/            # 内置 provider 工厂
+      test_support.rs       # 可独立使用的脚本化 Faux
       api/                  # 操作合同、原生选项、各 wire 协议 Adapter
       execution/            # 高级调用控制；内部 driver/resource 状态机私有
       stream/               # 事件、读取/result 等公开流合同
@@ -164,6 +165,17 @@ Cargo feature 是依赖图中的加法合并：能力开关不能意外改变无
 此结论是后续实施依据；本轮不改生产代码、README、依赖或现有测试，不声称已实现独立接入或通过行为验收。
 
 ## 后续实施记录
+
+2026-11-22 的 #266 冻结 route context 字段 owner，并将 provider-specific
+URL/endpoint 规范化移回所属 provider factory 或 wire adapter。Vertex collection URL
+由 `providers::vertex` 统一供 wire 与 builtin auth 使用，Bedrock 标准 endpoint 与
+placeholder 校验由 `providers::bedrock` 持有，Azure endpoint/version/deployment
+解析由 `providers::azure_openai` 持有，Azure Responses path 由
+`api::azure_openai` 持有。OpenAI Chat/Responses 的 compat、auth-invalid、affinity
+与 Copilot policy 由 configured-route policy contract 传入，neutral
+`OpenAiRouteContext` 与 `OpenAiResponsesRouteContext` 不再保存逐项策略字段。
+详见 [#266](../issues/266-separate-route-context-contracts.md) 及其
+[owner evidence](../evidence/issue-266-route-context-owners.json)。
 
 2026-11-17 的 #158 将内置 provider 装配模块从 crate 根迁移到
 `providers::collection`。该模块负责 profile、catalog、auth resolver 与已构造
@@ -370,3 +382,74 @@ contexts 组装两个 wire，profile-to-profile edge 收口为零。
 2026-11-18 的 #192 将 Codex endpoint、catalog、HTTP client 与 WebSocket
 resource state 抽取到 `provider::routes::OpenAiCodexRouteContext`，主 wire
 与 native subadapter 共享该 context，API/profile inversion 收口。
+
+2026-11-19 的 #208 关闭了 G0–G6 结构门槛。该结论只覆盖已定义的
+import/owner/composition 检查，不代表整个 crate 已形成严格 DAG。后续维护按
+[#209](../issues/209-maintain-module-test-and-catalog-boundaries.md) 执行：补齐
+provider→api 的组合根白名单、provider/stream/telemetry 等未覆盖的语义边，
+收敛 adapter 文件名和来源注释，显式管理 Cargo test targets，并把 Pi 1.5.0
+catalog freshness 与行为、平台、性能、fuzz、Deferred 证据分开计量。
+
+2026-11-20 起，新文件先说明实际调用方、它拥有的状态或协议规则，以及能单独验证的入口。
+一个领域入口用 `foo.rs` 即可。已有同一职责下可独立变更、可独立验证的实现细节时，
+使用 `foo.rs` 加 `foo/`，例如 Bedrock 二进制帧解析。根文件数、厂商数和 TS 文件数
+均不作为拆目录指标。`provider/` 供合同双方使用，放请求、操作和注入的路由状态。
+`providers/` 拥有具体服务的身份、配置、目录与工厂，`collection` 负责内置装配。
+工厂的装配引用和已有公开计费转出按符号核准；普通 profile 直接从底层 owner 导入通用类型。
+
+模型的价格、限制及能力记录由 `resources/catalog/providers/<provider>.json` 维护。
+profile 选择独立入口提供的模型、端点和认证，协议适配器负责把类型化记录变成实际请求。
+如果轻量工厂与完整目录共享记录，由生成器从同一份源派生所需子集。新增声明先过
+生成器校验，涉及行为的字段还须在请求 fixture 中可见。[OpenRouter 三入口](../issues/224-unify-openrouter-model-facts.md) · [生成阶段验证](../issues/225-validate-authored-catalog.md)
+
+新建单协议 adapter 使用可辨识的 wire 名。多协议家族和共享实现按实际职责命名。
+公开改名在同一票验证声明、调用方、双语指南和归档消费者。
+[首批 68 个文件的归属表](../issues/210-audit-owners-and-name-classifier-adapters.md)记录现存入口及例外。
+
+Chat Completions 使用 `api::openai_completions`，OpenAI 服务商 profile 使用
+`providers::openai`。Azure 的共享 SSE 解析从协议层复用。[#223](../issues/223-disambiguate-openai-chat-module.md)
+
+Radius profile 拥有 gateway 选择、`/v1/config` 解码和 chat 记录映射。
+`register_builtin` 为它装配单个 Pi Messages 路由与目录来源。Models 解析选定的认证，
+经现有 store ACK 发布，API adapter 处理 Pi Messages 请求和响应。[#222](../issues/222-refresh-radius-builtin-catalog.md)
+
+[#212 的逐符号门禁](../issues/212-guard-profile-to-api-imports.md)已覆盖 `providers/` 下的直接 API 路径。普通服务配置从 `provider::operation` 取操作合同，从 `types::headers` 取请求头类型。新增 API 引用时，先确认谁构造或消费该符号，再用 `check_architecture_boundaries.py --enforce --json` 核对用途。若改变公开转出，同时从实际 crate 归档验证原有调用方。
+
+[#213 的底层基线](../issues/213-measure-lower-layer-dependencies.md)将 76 处现存引用与 4 处执行接口分别登记。依赖变化按文件、引用方式与消费符号验收，移动后同步删减对应基线。部分协议策略仍留在 Provider 和 retry 的调用链中，其迁移依据、真实调用方与回归用例见该票。
+
+[#214](../issues/214-move-copilot-header-policy.md) 已将 Copilot 请求头归到 `api::shared::copilot_headers`。profile 和调用方决定是否启用，Anthropic、OpenAI Chat、OpenAI Responses 在各自的合并位置消费同一份规则。Provider 合同继续提供通用的请求图片检测，底层架构门禁检查原 Copilot 策略定义。
+
+[#218](../issues/218-separate-faux-and-private-probes.md) 保留 `test_support` 作为 minimum 的正式 Faux 接口。需要观测私有状态的 UUID 测试归 `identity`，仅供 Bedrock auth 用例使用的 AWS 替身归 Bedrock fixture。来源和版本比较写在迭代证据，生产 rustdoc 说明当前行为和 feature 条件。[现行指南检查](../issues/219-remove-stale-source-guidance.md)
+
+2026-11-22 的 #267 完成 Models facade 的物理实现拆分。`models.rs` 只拥有模块
+索引、公开转出、`Models` 核心状态和跨 owner 的请求编译/错误映射 seam。字段与
+公开 API 的 owner 固定如下：`models/facade.rs` 负责构造与默认值，
+`models/contracts.rs` 负责 public contracts、errors 和 refresh results，
+`models/registry_owner.rs` 负责 registry、lookup 与 resource lifecycle，
+`models/auth_owner.rs` 负责 auth descriptor、resolver 和 credential operations，
+`models/catalog_owner.rs` 负责 catalog reads、availability 与 refresh publication，
+`models/operation_owner.rs` 负责 classifier/image/deferred routing，
+`models/registration.rs` 负责 typed registration records 与 handles，
+`models/chat_call.rs` 负责普通 ChatCall state machine 与 binding，
+`models/dispatch.rs` 负责 advanced request preparation，
+`models/prepared_call.rs` 负责 prepared attempt execution。
+
+这个 owner 表是维护边界，不是按文件大小拆分的建议。新增 `Models` public method
+必须先选择一个已有 owner，或者先记录一个新的可独立验证职责。`models.rs` 只有在
+需要协调两个以上 owner 的编译、认证、失败归一化或公开转出时才增加代码。provider
+wire policy、catalog record、认证后端和执行期 stream 不回流到 facade。目录中每个
+实现文件的模块文档应说明它拥有的状态、调用方和独立验证入口，历史来源版本留在
+iteration evidence，不写入生产 rustdoc。
+
+这次拆分没有增加兼容 shim。`opi_ai::Models`、`opi_ai::models::*` 和 crate-root
+re-export 由 package consumer 与 rustdoc 验证，结构报告要求 facade 中 owner、
+registration record、ChatCall orchestration 和 Models protocol branch 均为零。
+
+2026-11-22 的 #268 固定了 oversized protocol fixture 的拆分规则。fixture source
+按真实协议 seam 拥有请求、流、认证/retry 或 lifecycle 断言；Cargo test target
+使用能描述该 seam 的稳定名；package consumer 仍归同一个 provider feature owner，
+不因为测试拆分复制 provider 目录或增加新的兼容层。一个大 target 先移动一个可独立
+选测的 seam，保留原 target 的其他 fixture 与 public/parser/terminal assertions，
+再用 `targets.tsv`、Cargo metadata、精确 selector 和 provider package consumer
+共同验收。稳定测试工具只有在两个 target 共享且不拥有业务断言时才进入现有
+`tests/support` owner。

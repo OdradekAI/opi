@@ -15,6 +15,7 @@ use crate::stream::AssistantStreamEvent;
 pub use crate::model_info::ModelInfo;
 
 pub mod operation;
+pub mod policies;
 pub mod routes;
 
 use operation::{DeferredApi, SimpleOptions};
@@ -48,6 +49,9 @@ pub enum PayloadVariant {
     /// require kept, payload callback re-run and re-frozen under its own
     /// variant label.
     AnthropicStrictDowngrade,
+    /// The rebuilt Bedrock Converse payload with strict sampling disabled
+    /// for `Prefer` tools.
+    BedrockStrictDowngrade,
 }
 
 impl PayloadVariant {
@@ -57,6 +61,7 @@ impl PayloadVariant {
         match self {
             Self::Ordinary => crate::callbacks::ORDINARY_PAYLOAD_VARIANT,
             Self::AnthropicStrictDowngrade => crate::callbacks::STRICT_DOWNGRADE_PAYLOAD_VARIANT,
+            Self::BedrockStrictDowngrade => "bedrock_strict_downgrade",
         }
     }
 }
@@ -416,52 +421,6 @@ impl Request {
                 .any(|content| matches!(content, OutputContent::Image { .. })),
             _ => false,
         })
-    }
-}
-
-#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
-const GITHUB_COPILOT_MANAGED_HEADERS: &[&str] = &[
-    "user-agent",
-    "editor-version",
-    "editor-plugin-version",
-    "copilot-integration-id",
-    "x-initiator",
-    "openai-intent",
-    "copilot-vision-request",
-];
-
-/// Build the request-dependent GitHub Copilot headers other than `X-Initiator`.
-///
-/// All Copilot-managed names are rejected in per-request headers before any
-/// network call. Concrete wire providers append the separately derived
-/// initiator so the same policy applies to every Copilot route.
-#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
-pub(crate) fn github_copilot_route_headers(
-    request: &Request,
-) -> Result<Vec<(String, String)>, ProviderError> {
-    if let Some((name, _)) = request.extra_headers.iter().find(|(name, _)| {
-        GITHUB_COPILOT_MANAGED_HEADERS.contains(&name.to_ascii_lowercase().as_str())
-    }) {
-        return Err(ProviderError::RequestFailed(
-            ProviderErrorSummary::sanitized(format!(
-                "request header '{name}' is reserved for GitHub Copilot"
-            )),
-        ));
-    }
-
-    let mut headers = vec![("Openai-Intent".into(), "conversation-edits".into())];
-    if request.contains_image_content() {
-        headers.push(("Copilot-Vision-Request".into(), "true".into()));
-    }
-    Ok(headers)
-}
-
-/// Derive GitHub Copilot's initiator from the final conversation message.
-#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
-pub(crate) fn github_copilot_initiator(request: &Request) -> &'static str {
-    match request.context.messages().last() {
-        Some(Message::User(_)) | None => "user",
-        Some(_) => "agent",
     }
 }
 

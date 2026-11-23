@@ -1,6 +1,6 @@
 //! Replay through the actual Gemini and Bedrock object-argument serializers.
 
-use super::{assistant, call, not_executed_result, request, result, user};
+use super::fixtures::{assistant, call, not_executed_result, request, result, user};
 use opi_ai::message::{AssistantContent, Message, ToolCall, ToolNotExecutedReason};
 use opi_ai::provider::{ProviderError, Request};
 use opi_ai::providers::bedrock::BedrockProvider;

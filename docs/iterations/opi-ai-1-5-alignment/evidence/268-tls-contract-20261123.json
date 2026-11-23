@@ -1,0 +1,920 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 37,
+  "date": "2026-11-23",
+  "baseline_head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "test_impact": {
+    "retain": "25 existing TLS assertions",
+    "update": "one shared-fixture selector regression"
+  },
+  "target": {
+    "name": "tls_contract",
+    "owner": "tls",
+    "layer": "public-contract",
+    "cost": "extended",
+    "required_features": [
+      "builtins"
+    ]
+  },
+  "source_before": {
+    "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/tls_contract.before.rs",
+    "bytes": 64622,
+    "sha256": "9cc801278f57b3ee0e757d4431b2b591d6baec85fcf51506b35a2e1b3c64c999"
+  },
+  "index": {
+    "path": "crates/opi-ai/tests/tls_contract.rs",
+    "bytes": 456,
+    "sha256": "1d238585649bb8a34a4ade1b19e86c827d1612cb939a07e7c191df05e93bd138"
+  },
+  "topics": {
+    "negotiation_and_trust": {
+      "path": "crates/opi-ai/tests/tls_contract/negotiation_and_trust.rs",
+      "bytes": 7790,
+      "sha256": "d5f008aaf425b5cd105e4bf5c66415714e73b4078942a378224acbac86692a56",
+      "passed": 11,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 14,
+      "child_processes": 0,
+      "filter": "negotiation_and_trust::",
+      "cargo": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "tls_contract",
+        "--",
+        "negotiation_and_trust::"
+      ],
+      "case_names": {
+        "chat_tls13_h2_negotiation_with_explicit_roots": "negotiation_and_trust::chat_tls13_h2_negotiation_with_explicit_roots",
+        "chat_tls13_h1_explicit_selection_with_extra_roots": "negotiation_and_trust::chat_tls13_h1_explicit_selection_with_extra_roots",
+        "chat_tls12_h2_negotiation": "negotiation_and_trust::chat_tls12_h2_negotiation",
+        "untrusted_server_root_fails_zero_http": "negotiation_and_trust::untrusted_server_root_fails_zero_http",
+        "wrong_hostname_and_expired_server_fail_zero_http": "negotiation_and_trust::wrong_hostname_and_expired_server_fail_zero_http",
+        "host_system_roots_do_not_trust_the_loopback_ca": "negotiation_and_trust::host_system_roots_do_not_trust_the_loopback_ca",
+        "alpn_no_overlap_fails_zero_http": "negotiation_and_trust::alpn_no_overlap_fails_zero_http",
+        "p521_only_key_exchange_fails_zero_http": "negotiation_and_trust::p521_only_key_exchange_fails_zero_http",
+        "root_input_negatives_fail_typed": "negotiation_and_trust::root_input_negatives_fail_typed",
+        "build_error_displays_redacted": "negotiation_and_trust::build_error_displays_redacted",
+        "default_roots_reject_unconfigured_loopback_ca_without_business_http": "negotiation_and_trust::default_roots_reject_unconfigured_loopback_ca_without_business_http"
+      },
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/workspace-negotiation_and_trust.log",
+        "bytes": 198208,
+        "sha256": "6998dcdbd112e69788c1931ab490b32383ea1505c76c083be973bf0e8e295663"
+      }
+    },
+    "mtls": {
+      "path": "crates/opi-ai/tests/tls_contract/mtls.rs",
+      "bytes": 7227,
+      "sha256": "bbdaadf7ac367065775250033e809247c183ef036eb7f7745e3cad74e36985f1",
+      "passed": 6,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 19,
+      "child_processes": 0,
+      "filter": "mtls::",
+      "cargo": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "tls_contract",
+        "--",
+        "mtls::"
+      ],
+      "case_names": {
+        "admitted_client_identity_profiles_over_mtls": "mtls::admitted_client_identity_profiles_over_mtls",
+        "p521_server_identity_and_client_identity": "mtls::p521_server_identity_and_client_identity",
+        "connection_source_identity_isolation": "mtls::connection_source_identity_isolation",
+        "wrong_client_identities_fail_zero_http": "mtls::wrong_client_identities_fail_zero_http",
+        "unsupported_client_keys_fail_typed_at_admission": "mtls::unsupported_client_keys_fail_typed_at_admission",
+        "mismatched_identity_fails_before_any_socket": "mtls::mismatched_identity_fails_before_any_socket"
+      },
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/workspace-mtls.log",
+        "bytes": 197209,
+        "sha256": "87d8824d4ab5ef9c4d1d5db88e8e3a40f5eeaf2017980b379a4e50ac99b4274d"
+      }
+    },
+    "cancellation": {
+      "path": "crates/opi-ai/tests/tls_contract/cancellation.rs",
+      "bytes": 23812,
+      "sha256": "2381e05d510eb2785cac4626a8c62f2d9c26db314015b989b9a4f10e639a3964",
+      "passed": 5,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 20,
+      "child_processes": 0,
+      "filter": "cancellation::",
+      "cargo": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "tls_contract",
+        "--",
+        "cancellation::"
+      ],
+      "case_names": {
+        "cancellation_during_handshake_and_response_releases_transport": "cancellation::cancellation_during_handshake_and_response_releases_transport",
+        "accepted_partial_body_cancellation_cleanup": "cancellation::accepted_partial_body_cancellation_cleanup",
+        "public_tls_partial_cancellation_preserves_known_usage_and_eof": "cancellation::public_tls_partial_cancellation_preserves_known_usage_and_eof",
+        "chat_level_cancellation_stops_the_attempt_without_extra_sends": "cancellation::chat_level_cancellation_stops_the_attempt_without_extra_sends",
+        "h2_refused_stream_does_not_trigger_backend_retry": "cancellation::h2_refused_stream_does_not_trigger_backend_retry"
+      },
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/workspace-cancellation.log",
+        "bytes": 197309,
+        "sha256": "6381f9ba5178bf70dd08e793668d257db7d63a82c19a3f09a1d589a0bfa7eee8"
+      }
+    },
+    "provider_isolation": {
+      "path": "crates/opi-ai/tests/tls_contract/provider_isolation.rs",
+      "bytes": 6646,
+      "sha256": "d10de226bee2132e4b984e8d026eb63904b1a3cef928a8698ed6155c4e8709f9",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 22,
+      "child_processes": 2,
+      "filter": "provider_isolation::",
+      "cargo": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "tls_contract",
+        "--",
+        "provider_isolation::"
+      ],
+      "case_names": {
+        "instance_tls_never_installs_a_process_global_provider": "provider_isolation::instance_tls_never_installs_a_process_global_provider",
+        "host_preinstalled_ring_provider_control": "provider_isolation::host_preinstalled_ring_provider_control",
+        "default_tls_ignores_host_provider_profile": "provider_isolation::default_tls_ignores_host_provider_profile"
+      },
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/workspace-provider_isolation.log",
+        "bytes": 197353,
+        "sha256": "435358cc690fafa7501440d0ce50afb25a9f185806cf4c0d6010b100c98eea65"
+      }
+    }
+  },
+  "fixture": {
+    "owner": "tls_contract",
+    "scope": "shared loopback TLS/H1/H2 harness and injected HttpClient-to-Models Chat driver",
+    "path": "crates/opi-ai/tests/tls_contract/fixtures.rs",
+    "bytes": 20427,
+    "sha256": "8760262fa95688339fce4d8ce69a6d38ea288a8d455d0104f1e1ae9dc7b4dbd7"
+  },
+  "full_selection_from": [
+    "tests/tls_contract.rs",
+    "tests/tls_contract/fixtures.rs"
+  ],
+  "shared_fixture": {
+    "owner": "TLS transport test support",
+    "path": "crates/opi-ai/tests/support/tls_fixtures.rs",
+    "bytes": 49266,
+    "sha256": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1",
+    "owner_inventory": {
+      "path": "crates/opi-ai/tests/support/OWNERS.tsv",
+      "bytes": 2427,
+      "sha256": "ac46dab458f6c5a89f8e5e2cb0ad6e1edcdf5295ad67a4d1ed54824dfc4a97c2"
+    },
+    "byte_identity_to_baseline": true,
+    "identical_consumer_args": {
+      "bedrock_fixtures": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "bedrock_fixtures"
+      ],
+      "http_acceptance": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "http_acceptance"
+      ],
+      "oauth_copilot": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "oauth_copilot"
+      ],
+      "oauth_regressions": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "oauth_regressions"
+      ],
+      "tls_contract": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "tls_contract"
+      ],
+      "ws_upgrade": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "websocket-compression",
+        "--test",
+        "ws_upgrade"
+      ]
+    },
+    "before_runners": [
+      "archive@scripts/pi-sdk-conformance/package_slice.py --family ws"
+    ],
+    "after_runners": [
+      "archive@scripts/pi-sdk-conformance/package_slice.py --family crypto",
+      "archive@scripts/pi-sdk-conformance/package_slice.py --family ws"
+    ],
+    "boundary": "shared certificate and key data; WS package runner retains Upgrade/WSS coverage"
+  },
+  "case_body_check": {
+    "unchanged": 23,
+    "selector_only_changes": {
+      "host_preinstalled_ring_provider_control": "module-qualified exact subprocess selector",
+      "default_tls_ignores_host_provider_profile": "module-qualified exact subprocess selector"
+    }
+  },
+  "workspace_test": {
+    "baseline": {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0,
+      "child_processes": 2,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/workspace-before.log",
+        "bytes": 199872,
+        "sha256": "86473c3e54221110bfd6ba00aa6c42a71a26ccdf286e653b3b6471933edcc145"
+      }
+    },
+    "after": {
+      "passed": 25,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0,
+      "child_processes": 2,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/workspace-all.log",
+        "bytes": 200444,
+        "sha256": "bacc7aa180970f6de318a805bc5fcdca966e9350cc68be4e8e4d7a36a186d260"
+      }
+    }
+  },
+  "archive": {
+    "consumer": "consumer-crypto",
+    "boundary": "public TLS/Models call with independently owned loopback peer and trust material",
+    "profiles": [
+      {
+        "name": "ordinary",
+        "report": {
+          "verdict": "PASS",
+          "profile": "ordinary",
+          "total": 6,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "ordinary-no-global-provider",
+              "passed": true,
+              "detail": "fresh ordinary consumer has no process-global provider"
+            },
+            {
+              "name": "chat-mtls-tls13-h2-round-trip",
+              "passed": true,
+              "detail": "response_id=Ok(\"chatcmpl-pkg\") accepts=1 http=1"
+            },
+            {
+              "name": "chat-tls12-h1-explicit-selection",
+              "passed": true,
+              "detail": "response_id=Ok(\"chatcmpl-pkg\")"
+            },
+            {
+              "name": "untrusted-roots-zero-business-http",
+              "passed": true,
+              "detail": "error=Err(Network(ProviderErrorSummary(\"error sending request for url (https://127.0.0.1:8099/v1/chat/completions)\"))) http=0"
+            },
+            {
+              "name": "mismatched-identity-rejected-before-io",
+              "passed": true,
+              "detail": "build_error=Some(\"build: TLS configuration rejected: client identity could not be assembled\")"
+            },
+            {
+              "name": "global-provider-state-unchanged",
+              "passed": true,
+              "detail": "global present=false (union=false)"
+            }
+          ]
+        }
+      },
+      {
+        "name": "caller-union",
+        "report": {
+          "verdict": "PASS",
+          "profile": "caller-union",
+          "total": 6,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "caller-union-host-ring-installed",
+              "passed": true,
+              "detail": "host ring provider installed as the process default"
+            },
+            {
+              "name": "chat-mtls-tls13-h2-round-trip",
+              "passed": true,
+              "detail": "response_id=Ok(\"chatcmpl-pkg\") accepts=1 http=1"
+            },
+            {
+              "name": "chat-tls12-h1-explicit-selection",
+              "passed": true,
+              "detail": "response_id=Ok(\"chatcmpl-pkg\")"
+            },
+            {
+              "name": "untrusted-roots-zero-business-http",
+              "passed": true,
+              "detail": "error=Err(Network(ProviderErrorSummary(\"error sending request for url (https://127.0.0.1:9067/v1/chat/completions)\"))) http=0"
+            },
+            {
+              "name": "mismatched-identity-rejected-before-io",
+              "passed": true,
+              "detail": "build_error=Some(\"build: TLS configuration rejected: client identity could not be assembled\")"
+            },
+            {
+              "name": "global-provider-state-unchanged",
+              "passed": true,
+              "detail": "global present=true (union=true)"
+            }
+          ]
+        }
+      }
+    ],
+    "receipt": {
+      "path": "docs/iterations/opi-ai-1-5-alignment/evidence/268-tls-contract-crypto-package-20261123.json",
+      "bytes": 1814909,
+      "sha256": "cf41ec73f1b054e56ec28495900d1155fb3021a3c8cba682655b92d6d92ee30e"
+    },
+    "extract_target": {
+      "archive": "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\opi-ai-0.8.3.crate",
+      "package": "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\package\\opi-ai-0.8.3",
+      "configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "archive_sha256": "89eb2be78a10c15e16a933533b7f2fc3939b23d1002186f4a18961da01b3a904",
+      "files": {
+        "tests/tls_contract.rs": {
+          "bytes": 456,
+          "sha256": "1d238585649bb8a34a4ade1b19e86c827d1612cb939a07e7c191df05e93bd138"
+        },
+        "tests/support/tls_fixtures.rs": {
+          "bytes": 49266,
+          "sha256": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1"
+        },
+        "tests/tls_contract/negotiation_and_trust.rs": {
+          "bytes": 7790,
+          "sha256": "d5f008aaf425b5cd105e4bf5c66415714e73b4078942a378224acbac86692a56"
+        },
+        "tests/tls_contract/mtls.rs": {
+          "bytes": 7227,
+          "sha256": "bbdaadf7ac367065775250033e809247c183ef036eb7f7745e3cad74e36985f1"
+        },
+        "tests/tls_contract/cancellation.rs": {
+          "bytes": 23812,
+          "sha256": "2381e05d510eb2785cac4626a8c62f2d9c26db314015b989b9a4f10e639a3964"
+        },
+        "tests/tls_contract/provider_isolation.rs": {
+          "bytes": 6646,
+          "sha256": "d10de226bee2132e4b984e8d026eb63904b1a3cef928a8698ed6155c4e8709f9"
+        },
+        "tests/tls_contract/fixtures.rs": {
+          "bytes": 20427,
+          "sha256": "8760262fa95688339fce4d8ce69a6d38ea288a8d455d0104f1e1ae9dc7b4dbd7"
+        }
+      },
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0,
+          "label": "archive-scratch-lock"
+        },
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0,
+          "label": "archive-metadata"
+        },
+        {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "tls_contract"
+          ],
+          "exit": 0,
+          "label": "archive-tls-contract"
+        }
+      ],
+      "scratch_lock": {
+        "archived_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "updated_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "only_changed_package": "opi-telemetry"
+      },
+      "active_features": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "suite": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "tls_contract",
+        "src_path": "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\package\\opi-ai-0.8.3\\tests\\tls_contract.rs",
+        "edition": "2024",
+        "required-features": [
+          "builtins"
+        ],
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-tls-contract-20261123-114032/crypto/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-tls-contract-20261123-114032/crypto/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed": 25,
+      "one_case_child_controls": [
+        "provider_isolation::host_preinstalled_ring_provider_control",
+        "provider_isolation::default_tls_ignores_host_provider_profile"
+      ]
+    }
+  },
+  "differential": {
+    "scope": "TLS transport checked by real loopback peers; no Pi differential driver references the TLS target or helper",
+    "existing_repro_inputs_identical": {
+      "previous_archive": {
+        "path": "E:\\opi\\scratch\\issue-268-node4-preparation-20261123-111539\\catalog\\opi-ai-0.8.3.crate",
+        "sha256": "65d88e3cb8f91042c191c32828c8865306dddf89ab09c764bc93ad91b273eab7"
+      },
+      "current_archive": {
+        "path": "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\crypto\\opi-ai-0.8.3.crate",
+        "sha256": "89eb2be78a10c15e16a933533b7f2fc3939b23d1002186f4a18961da01b3a904"
+      },
+      "unchanged_inputs": 276,
+      "production_lock_example_inputs": 257,
+      "support_and_independent_targets": {
+        "tests/openai_chat_output_limits.rs": "4f187708b31cdd3bd92386058c907ffacd57725e3dab35469f96c65c4f090772",
+        "tests/support/OWNERS.tsv": "ac46dab458f6c5a89f8e5e2cb0ad6e1edcdf5295ad67a4d1ed54824dfc4a97c2",
+        "tests/support/catalog_store.rs": "b6fbdce3bd82fc2b2f5bdb3edac9782c75253cd642170061cccc647907fc3b59",
+        "tests/support/oauth_anthropic.rs": "2000105fc94ff3d56ecb7e1dddf556fca89cd17bad5482c26936d48e24fc8847",
+        "tests/support/oauth_assembly.rs": "9bd63e1744b1770e774bb5a44373d9de82f6b64529c734454100544815183e56",
+        "tests/support/oauth_chatgpt.rs": "33d69965a515172788b1275edc749bf80361cde6dee76823c0a962c498ebd9c3",
+        "tests/support/oauth_codex.rs": "22d57cd9c067c3fa67917c21c57152d54107a4d550651a6c750f4eb968a923b8",
+        "tests/support/oauth_copilot.rs": "fac1741358fcc3ec6f1bc115a10264e3e431b6de46793eb5373226b996f00cdb",
+        "tests/support/oauth_fixtures.rs": "c99fcbb4a93557d348feabae29add1afd323258d26be4ffa8e27a33731acda56",
+        "tests/support/oauth_kimi.rs": "5820abb51416ada66ce17525017ee0326de72ba4e4790e6222939d8afea2f487",
+        "tests/support/oauth_loopback.rs": "1b862e843e3ebcdc7091e8bedce174804c0a527b5cfe6f1795e4a0e88efc5f20",
+        "tests/support/oauth_meta.rs": "7e79d1d74e687eea6e975ea01ea0bbad2d1d2e9d2fdbff31dc6cc56506dec64d",
+        "tests/support/oauth_radius.rs": "f8b6c9f7ea71b9c495f4f11ed7b33191a494ff816d02eaf7b4606660e3ff7464",
+        "tests/support/oauth_store.rs": "ff194afe5a4ead4d2f197042750ea37d1a4fc174cd66c5110abf8a26f0a3ba84",
+        "tests/support/oauth_xai.rs": "b0792256ef38eb1d44bbca31e9bb5d118a20e33daa9f44762176894cf36d4e63",
+        "tests/support/pending_auth.rs": "3e213329091e66a5a79f8691744de66bde68ba8326d48b8cdc01e289f81a101e",
+        "tests/support/tls_fixtures.rs": "f74d9ab95595b35bfd0d8c3af4f5eed9266f14a2cbe0d0538f0c7424354933d1",
+        "tests/support/ws_peer.rs": "a4efab5bb1b8b388683240ee2d74a14120fa92c8f080742ce2e61f2955456329",
+        "tests/ws_upgrade.rs": "37e1370b02ad0776f70e29080ff6ac5661459e18182eebfc3174b19735cf7625"
+      },
+      "case_bodies_unchanged": 23,
+      "case_bodies_with_selector_only_changes": {
+        "host_preinstalled_ring_provider_control": "module-qualified exact subprocess selector",
+        "default_tls_ignores_host_provider_profile": "module-qualified exact subprocess selector"
+      }
+    }
+  },
+  "structure_gate": {
+    "exit": 0,
+    "architecture_and_inventory_violations": [],
+    "targets": 124,
+    "test_sources": 330,
+    "support_helpers": 16,
+    "support_edges": 60,
+    "summary_sha256": "6e2d8917da15290799417928909ad7505f5f26884301b8775f0cab7abd17697d",
+    "log": {
+      "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/structure-gate.json",
+      "bytes": 176248,
+      "sha256": "aac40619b67adb5f2e362602978cc024db5c1b7481b66ebdfd831d8d459bad3e"
+    },
+    "changed_selection": {
+      "paths": [
+        "crates/opi-ai/tests/tls_contract.rs",
+        "crates/opi-ai/tests/support/tls_fixtures.rs",
+        "crates/opi-ai/tests/targets.tsv",
+        "crates/opi-ai/tests/tls_contract/cancellation.rs",
+        "crates/opi-ai/tests/tls_contract/fixtures.rs",
+        "crates/opi-ai/tests/tls_contract/mtls.rs",
+        "crates/opi-ai/tests/tls_contract/negotiation_and_trust.rs",
+        "crates/opi-ai/tests/tls_contract/provider_isolation.rs"
+      ],
+      "scope": "focused",
+      "tests": [
+        {
+          "target": "bedrock_fixtures",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "bedrock_fixtures"
+          ],
+          "reasons": [
+            "tests/support/tls_fixtures.rs"
+          ]
+        },
+        {
+          "target": "http_acceptance",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "http_acceptance"
+          ],
+          "reasons": [
+            "tests/support/tls_fixtures.rs"
+          ]
+        },
+        {
+          "target": "oauth_copilot",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "oauth_copilot"
+          ],
+          "reasons": [
+            "tests/support/tls_fixtures.rs"
+          ]
+        },
+        {
+          "target": "oauth_regressions",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "oauth_regressions"
+          ],
+          "reasons": [
+            "tests/support/tls_fixtures.rs"
+          ]
+        },
+        {
+          "target": "tls_contract",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "tls_contract"
+          ],
+          "reasons": [
+            "tests/support/tls_fixtures.rs",
+            "tests/tls_contract.rs",
+            "tests/tls_contract/cancellation.rs",
+            "tests/tls_contract/fixtures.rs",
+            "tests/tls_contract/mtls.rs",
+            "tests/tls_contract/negotiation_and_trust.rs",
+            "tests/tls_contract/provider_isolation.rs"
+          ]
+        },
+        {
+          "target": "ws_upgrade",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "websocket-compression",
+            "--test",
+            "ws_upgrade"
+          ],
+          "reasons": [
+            "tests/support/tls_fixtures.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/package_slice.py --family crypto",
+        "archive@scripts/pi-sdk-conformance/package_slice.py --family ws",
+        "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+      ],
+      "expansion": []
+    }
+  },
+  "selector_validation": {
+    "unit": {
+      "passed": 25,
+      "exit": 0,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/selector-regression.log",
+        "bytes": 4026,
+        "sha256": "63aa14cda3faf795178d78b8df6a4a30bfa47f9f5b22e65665dac30b78bb365d"
+      }
+    },
+    "missing_path": {
+      "exit": 1,
+      "selection": {
+        "paths": [
+          "crates/opi-ai/tests/tls_contract/missing_topic.rs"
+        ],
+        "scope": "broader checks required",
+        "tests": [],
+        "runners": [],
+        "expansion": [
+          "tests/tls_contract/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+          "tests/tls_contract/missing_topic.rs: no resolved Cargo test consumer"
+        ]
+      }
+    }
+  },
+  "lint": {
+    "target_format": {
+      "argv": [
+        "rustfmt",
+        "--edition",
+        "2024",
+        "--check",
+        "crates\\opi-ai\\tests\\tls_contract.rs"
+      ],
+      "exit": 0
+    },
+    "all_format": {
+      "exit": 1,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/fmt-all.log",
+        "bytes": 4259,
+        "sha256": "b36158637c4a3aa8aaadee61394583db613fa6f0e6caecdec0ac7a672c39ab74"
+      },
+      "carried_in": [
+        "tests/openai_responses_fixtures.rs",
+        "tests/openai_responses_fixtures/fixtures.rs",
+        "tests/openai_responses_fixtures/wire.rs"
+      ]
+    },
+    "clippy": {
+      "argv": [
+        "cargo",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "tls_contract"
+      ],
+      "strict_suffix": [
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "strict_exit": 101,
+      "advisory_exit": 0,
+      "strict_log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/clippy-strict.log",
+        "bytes": 180213,
+        "sha256": "9ef44a527991f4bb3ae8fce803f29a1b3e6a5567e477b11321abaadc21ae8fd6"
+      },
+      "advisory_log": {
+        "path": "E:/opi/scratch/issue-268-tls-contract-20261123-114032/clippy.log",
+        "bytes": 182383,
+        "sha256": "417744fee8a6266f74cdd44b5308306ca6e025b2d3bdcb86dc00ad3bb13b6743"
+      },
+      "carried_in": [
+        [
+          "src/api/openai_responses.rs:706",
+          "too_many_arguments"
+        ],
+        [
+          "src/models/auth_owner.rs:479",
+          "needless_borrow"
+        ],
+        [
+          "src/models/prepared_call.rs:196",
+          "too_many_arguments"
+        ]
+      ]
+    }
+  },
+  "worktree": {
+    "mode": "worktree-only",
+    "committed": "none-for-this-task",
+    "head_unchanged": true,
+    "staged": {
+      "before": 0,
+      "after": 0,
+      "added": [],
+      "removed": []
+    },
+    "unstaged": {
+      "before": 186,
+      "after": 187,
+      "added": [
+        "M\tcrates/opi-ai/tests/tls_contract.rs"
+      ],
+      "removed": []
+    },
+    "untracked": {
+      "before": 472,
+      "after": 479,
+      "added": [
+        "crates/opi-ai/tests/tls_contract/cancellation.rs",
+        "crates/opi-ai/tests/tls_contract/fixtures.rs",
+        "crates/opi-ai/tests/tls_contract/mtls.rs",
+        "crates/opi-ai/tests/tls_contract/negotiation_and_trust.rs",
+        "crates/opi-ai/tests/tls_contract/provider_isolation.rs",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/268-tls-contract-20261123.json",
+        "docs/iterations/opi-ai-1-5-alignment/evidence/268-tls-contract-crypto-package-20261123.json"
+      ],
+      "removed": []
+    },
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/select_tests.py",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ]
+  },
+  "documentation_check": {
+    "exit": 0,
+    "log": "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\doc-check.log"
+  },
+  "diff_check": {
+    "raw_exit": 2,
+    "raw_log": "E:\\opi\\scratch\\issue-268-tls-contract-20261123-114032\\diff-check-raw.log",
+    "crlf_rule": "core.whitespace=cr-at-eol",
+    "crlf_aware_exit": 0,
+    "untracked_checked": 11
+  }
+}

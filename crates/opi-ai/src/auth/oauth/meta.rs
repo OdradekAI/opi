@@ -1,5 +1,4 @@
-//! Meta (Muse subscription) OAuth device flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/meta.ts` (sdk-contracts row 145).
+//! Meta (Muse subscription) OAuth device flow.
 //!
 //! RFC 8628 device authorization grant against `https://auth.meta.com`
 //! (form requests, JSON responses). Meta splits identity from API access:

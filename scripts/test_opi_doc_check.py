@@ -262,6 +262,22 @@ class ContextLifecycleTests(unittest.TestCase):
                 self.assertIn(f"{rel}: duplicate domain entry; use docs/GLOSSARY.md", doc_check.ERRORS)
                 (self.root / rel).unlink()
 
+    def test_sdk_guidance_checks_current_source_and_guides_only(self) -> None:
+        self.write(
+            "crates/opi-ai/src/replay.rs",
+            "//! Replay contract.\n//! Pinned TypeScript reference: .repo/pi-1.3.0/source.ts\n",
+        )
+        self.write("crates/opi-ai/docs/provider-auth.zh.md", "Pi 1.3.0 profile table\n")
+        self.write("crates/opi-ai/src/tls/mod.rs", "//! The PinnedNodeDefault trust profile.\n")
+        self.write(
+            "docs/iterations/opi-ai-alignment/evidence/source.md",
+            "Pinned TypeScript reference: .repo/pi-1.3.0/packages/ai/src/api/replay.ts\n",
+        )
+        doc_check.check_opi_ai_current_guidance()
+        self.assertEqual(2, len(doc_check.ERRORS))
+        self.assertTrue(any(error.startswith("crates/opi-ai/src/replay.rs:2:") for error in doc_check.ERRORS))
+        self.assertTrue(any(error.startswith("crates/opi-ai/docs/provider-auth.zh.md:1:") for error in doc_check.ERRORS))
+
 
 class ContextCliTests(unittest.TestCase):
     def test_main_returns_failure_for_broken_current_context_link(self) -> None:
@@ -282,6 +298,25 @@ sys.exit(module.main())
         result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
         self.assertEqual(1, result.returncode, result.stderr)
         self.assertIn("docs/engineering/README.md: broken local link: missing-current-contract.md", result.stderr)
+
+    def test_main_returns_failure_for_a_stale_sdk_source_reference(self) -> None:
+        script = rf"""
+import importlib.util
+import sys
+spec = importlib.util.spec_from_file_location("doc_check", {str(SCRIPT)!r})
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original = module.read
+module.read = lambda rel: original(rel) + (
+    "\n//! Pinned TypeScript reference: .repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts\n"
+    if rel == "crates/opi-ai/src/replay.rs" else ""
+)
+sys.exit(module.main())
+"""
+        result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=False)
+        self.assertEqual(1, result.returncode, result.stderr)
+        self.assertIn("FAIL: crates/opi-ai/src/replay.rs:", result.stderr)
+        self.assertIn("stale Pi source guidance", result.stderr)
 
 
 class DocumentFactsTests(unittest.TestCase):

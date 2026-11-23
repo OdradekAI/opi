@@ -9,19 +9,22 @@ import run_minimal_package as runner
 
 
 class MinimumGraphTests(unittest.TestCase):
-    def test_catalog_negative_rejects_unrelated_compile_failures(self):
-        message = {"level": "error", "code": {"code": "E0599"},
-                   "message": "no associated function or constant named `builtin` found for struct `Catalog`"}
+    def test_negative_api_probes_require_the_expected_diagnostic(self):
         def output(value):
             return json.dumps({"reason": "compiler-message", "message": value})
-        runner.check_catalog_absence(output(message))
-        for mutation in (dict(message, code={"code": "E0433"}),
-                         dict(message, message="cannot find `Catalog`"),
-                         dict(message, message="no method `other` on `Catalog`")):
-            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, "different reason"):
-                runner.check_catalog_absence(output(mutation))
-        with self.assertRaisesRegex(ValueError, "different reason"):
-            runner.check_catalog_absence("")
+        for code, detail, symbols in (
+            ("E0599", "no associated function or constant named `builtin` found for struct `Catalog`",
+             ("builtin", "Catalog")),
+            ("E0432", "unresolved import `opi_ai::test_support::force_sequence_exhausted`",
+             ("opi_ai::test_support::force_sequence_exhausted",)),
+        ):
+            message = {"level": "error", "code": {"code": code}, "message": detail}
+            with self.subTest(code=code):
+                runner.check_api_absence(output(message), code, *symbols)
+                for unrelated in (output(dict(message, code={"code": "E0433"})),
+                                  output(dict(message, message="cannot find `unrelated`")), ""):
+                    with self.assertRaisesRegex(ValueError, "different reason"):
+                        runner.check_api_absence(unrelated, code, *symbols)
 
     def graph(self, tracing=False):
         package = Path("candidate/opi-ai").resolve()

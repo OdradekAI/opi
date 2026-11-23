@@ -1,11 +1,10 @@
-//! Radius gateway OAuth flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/radius.ts` (sdk-contracts row 147).
+//! Radius gateway OAuth flow.
 //!
 //! Radius is a `pi-messages` gateway: every OAuth client API lives on the
 //! configured gateway (`/v1/oauth` discovery, `/v1/oauth/device`,
 //! `/v1/oauth/token`) and only the interactive browser authorization
-//! endpoint is discovered. Model-catalog loading is owned by the Radius
-//! provider (task 20.51), not this flow. The login method selection mirrors
+//! endpoint is discovered. The Radius provider owns gateway catalog loading.
+//! The login method selection mirrors
 //! pi's prompt through [`LoginPresenter::select_login_method`] with browser
 //! as the recommended default; the device mode never runs discovery first.
 //!
@@ -214,23 +213,22 @@ impl RadiusOAuthProvider {
 
     /// Production gateway with an injected HTTP client.
     pub fn with_http_client(client: reqwest::Client) -> Self {
-        Self {
-            id: PROVIDER_ID.to_owned(),
-            name: "Radius".to_owned(),
-            gateway: RADIUS_DEFAULT_GATEWAY.to_owned(),
-            client,
-        }
+        Self::with_gateway_client(RADIUS_DEFAULT_GATEWAY, client)
     }
 
     /// Injected gateway (tests and alternate deployments); the URL is
     /// normalized and then fixed for the provider's lifetime (pi pins
     /// gateway/id/name at construction; requests never rewrite them).
     pub fn new_with_gateway(gateway: impl Into<String>) -> Self {
+        Self::with_gateway_client(&gateway.into(), reqwest::Client::new())
+    }
+
+    pub(crate) fn with_gateway_client(gateway: &str, client: reqwest::Client) -> Self {
         Self {
             id: PROVIDER_ID.to_owned(),
             name: "Radius".to_owned(),
-            gateway: normalize_gateway(&gateway.into()),
-            client: reqwest::Client::new(),
+            gateway: normalize_gateway(gateway),
+            client,
         }
     }
 

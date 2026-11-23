@@ -1,0 +1,75 @@
+{
+  "issue": 246,
+  "status": "done",
+  "provider": "together",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 17,
+    "records_after": 15,
+    "added": 3,
+    "removed": 5,
+    "updated": 4,
+    "added_ids": [
+      "meta-models/Muse-Spark-Open-816B-A42B",
+      "nvidia/NVIDIA-Nemotron-3.5-Super-VL",
+      "reflection/Beam-1.0-501B-A23B"
+    ],
+    "removed_ids": [
+      "MiniMaxAI/MiniMax-M2.7",
+      "Qwen/Qwen2.5-7B-Instruct-Turbo",
+      "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "meta-llama/Llama-3.3-70B-Instruct-Turbo",
+      "nvidia/nemotron-3-ultra-550b-a55b"
+    ],
+    "updated_ids": [
+      "MiniMaxAI/MiniMax-M3",
+      "Qwen/Qwen3.6-Plus",
+      "Qwen/Qwen3.7-Max",
+      "zai-org/GLM-5.3"
+    ],
+    "author_source_sha256": "c5c325cc905566be93d5d1852ff57fedcaed3759af3340a421b3ee924e3517fe",
+    "bundle_sha256": "c9353fe37bb1cd12806221ee0505a02bef06aee2d5cbc40c01de6c89ee568890",
+    "manifest_sha256": "16610730632ba38823a968b6edb768a5d50810adccbc15002f353a9224e21bd4"
+  },
+  "global_after": {
+    "opi_records": 1704,
+    "reference_records": 1712,
+    "equal": 1668,
+    "only_opi": 13,
+    "only_reference": 21,
+    "changed": 23,
+    "providers_equal": 24,
+    "providers_with_differences": 18
+  },
+  "wire": {
+    "endpoint": "/v1/chat/completions",
+    "auth": "Bearer",
+    "model": "Qwen/Qwen3.7-Max",
+    "reasoning": {
+      "enabled": true
+    },
+    "max_tokens": 131072,
+    "reasoning_effort": "omitted",
+    "requests": 1
+  },
+  "tests": {
+    "provider_collection_together": 3,
+    "provider_collection_regression": 140,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "build_catalog_check": "PASS",
+    "clippy": "PASS",
+    "catalog_bundled_external_consumer": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

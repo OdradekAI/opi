@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-20",
+  "base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "host": "x86_64-pc-windows-msvc",
+  "cargo_default_passed_before": {
+    "deferred_contract": 19,
+    "public_utilities": 54,
+    "test_support_tests": 26
+  },
+  "cargo_default_passed_after": {
+    "bedrock_fixtures": 179,
+    "deferred_contract": 19,
+    "public_utilities": 53,
+    "test_support_tests": 26
+  },
+  "private_test": {
+    "before_target": "public_utilities",
+    "after_case": "identity::tests::uuidv7_sequence_exhaustion_is_a_typed_failure",
+    "minimum_passed": 1
+  },
+  "minimum_archive": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "262195be5a49f4d8a2850d97607950ff5d3eac9bcc9e28977b35f2c9eee7d98d",
+    "feature_sets": {
+      "core": [],
+      "core-tracing": [
+        "telemetry-tracing"
+      ]
+    },
+    "consumer_tests_passed": {
+      "core": {
+        "core_profile": 4,
+        "streaming_json": 12,
+        "incremental_argument_preview": 3,
+        "final_numeric_decoding": 2
+      },
+      "core-tracing": {
+        "core_profile": 5,
+        "streaming_json": 12,
+        "incremental_argument_preview": 3,
+        "final_numeric_decoding": 2
+      }
+    },
+    "private_probe_compile_diagnostic": "E0432",
+    "private_probe_compile_exit": 101,
+    "rustdoc": "PASS",
+    "verdict": "PASS"
+  }
+}

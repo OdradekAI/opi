@@ -35,7 +35,7 @@ keeps the existing terminal and cost behavior. The public caller chain is:
 | `parse_sse_events` / `OpenAiChatMapper` | `providers::openai::OpenAiChatProvider::stream_from_sse` and the OpenAI-compatible provider adapter | `crates/opi-ai/src/api/openai.rs` (wire) + `crates/opi-ai/src/providers/openai.rs` (profile) |
 | `Models::stream_simple` / `complete_simple` | ordinary Models callers and the `opi-agent` prepared/ordinary Chat consumers | `crates/opi-ai/src/models.rs`, `crates/opi-agent/src/agent_loop.rs` |
 | `Models::stream_direct` / `complete_direct` | explicit-auth SDK callers | `crates/opi-ai/src/models.rs` |
-| `parse_streaming_json` / `finalize_tool_arguments` | direct SDK preview/finalization callers; unchanged legacy whole-prefix owner | `crates/opi-ai/tests/public_utilities.rs`, #110–#113 |
+| `parse_streaming_json` / `finalize_tool_arguments` | direct SDK preview/finalization callers; unchanged legacy whole-prefix owner | `crates/opi-ai/tests/public_utilities/tool_arguments.rs`, #110–#113 |
 | `Models::generate_images`, `Models::classify`, `Models::cancel_deferred` | operation-specific adapters | #19 carrier-only observer contract; no automatic `pi.ai.*` span |
 
 The last two rows are mapping evidence, not a request to expand the approved

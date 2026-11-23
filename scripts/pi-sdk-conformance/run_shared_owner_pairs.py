@@ -48,7 +48,7 @@ fn main() {
     );
     assert!(signed.authorization.expose_secret().starts_with("AWS4-HMAC-SHA256"));
     let catalog = opi_ai::catalog::Catalog::builtin().expect("embedded catalog loads");
-    assert_eq!(catalog.provenance().counts.chat, 1608);
+    assert!(catalog.provenance().counts.chat > 0);
     println!("cloud-auth+catalog-bundled=ok");
 }
 """,

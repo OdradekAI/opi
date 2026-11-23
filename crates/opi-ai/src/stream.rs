@@ -935,7 +935,7 @@ mod cancellation_tests {
     use super::{CancelAwareReceiverStream, send_or_cancel};
     use crate::provider::{ProviderError, ProviderErrorSummary};
 
-    #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
+    #[cfg(feature = "provider-anthropic")]
     #[tokio::test]
     async fn cancellation_retains_silent_producer_state_at_the_barrier() {
         let cancel = CancellationToken::new();

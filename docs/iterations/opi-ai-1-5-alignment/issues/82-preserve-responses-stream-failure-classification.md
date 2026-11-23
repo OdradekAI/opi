@@ -55,7 +55,7 @@ The terminal preserves streamed text, route, projection and the
 created response identity. Usage remains unknown on this failure path,
 including when the failed frame or a later ignored completion carries
 usage. Each attempt emits one failure and settles one request span.
-[Loopback test](../../../../crates/opi-ai/tests/whole_call_retry.rs#L1211)
+[Loopback test](../../../../crates/opi-ai/tests/whole_call_retry/call_and_callbacks.rs#L352)
 
 ## Verification
 

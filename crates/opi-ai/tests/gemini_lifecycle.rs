@@ -511,9 +511,10 @@ fn google_usage_frame(finish: Option<&str>, input: u32, output: u32, total: u32)
 fn google_direct_stream(
     base: String,
     vertex: bool,
-    request: Request,
+    mut request: Request,
 ) -> opi_ai::provider::EventStream {
     if vertex {
+        request.model = "vertex:gemini-2.5-flash".into();
         opi_ai::providers::vertex::VertexProvider::new(
             "p1".into(),
             "us-central1".into(),
@@ -690,17 +691,7 @@ async fn google_direct_duration_starts_at_activation_and_includes_payload_wait()
                 }
             }
         });
-        let stream = if vertex {
-            opi_ai::providers::vertex::VertexProvider::new(
-                "p1".into(),
-                "us-central1".into(),
-                Some(server.uri()),
-            )
-            .stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())
-        } else {
-            GeminiProvider::new(Some(server.uri()))
-                .stream_prepared(request, opi_ai::test_support::resolved_auth())
-        };
+        let stream = google_direct_stream(server.uri(), vertex, request);
         tokio::time::advance(std::time::Duration::from_secs(60)).await;
         assert!(!observed.load(std::sync::atomic::Ordering::SeqCst));
         assert!(server.received_requests().await.unwrap().is_empty());
@@ -922,17 +913,7 @@ async fn google_direct_terminal_absorbs_late_cancel() {
             .await;
         let request = make_request(CancellationToken::new());
         let cancel = request.cancel.clone();
-        let mut stream = if vertex {
-            opi_ai::providers::vertex::VertexProvider::new(
-                "p1".into(),
-                "us-central1".into(),
-                Some(server.uri()),
-            )
-            .stream_prepared(request, opi_ai::test_support::resolved_bearer_auth())
-        } else {
-            GeminiProvider::new(Some(server.uri()))
-                .stream_prepared(request, opi_ai::test_support::resolved_auth())
-        };
+        let mut stream = google_direct_stream(server.uri(), vertex, request);
         loop {
             let event = stream.next().await.expect("terminal").unwrap();
             if let AssistantStreamEvent::Done { message, .. } = event {

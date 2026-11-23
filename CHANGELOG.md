@@ -33,6 +33,128 @@
 
 ### Fixed
 
+- The OpenRouter direct factory and coding-agent model listing now use the
+  bundled prices, limits and capabilities for their three shared chat models.
+  Configured proxy endpoints also apply to those models.
+- The OpenRouter builtin catalog adds 37 records, removes 28 and updates 80.
+  Four Claude latest aliases now use Anthropic Messages, and simple adaptive
+  requests send the selected effort. The OpenRouter direct factory and
+  coding-agent listing drop `deepseek/deepseek-r1`, `anthropic/claude-sonnet-4`
+  and `anthropic/claude-haiku-4` to match the reviewed catalog.
+- OpenCode Zen adds five chat models, removes nine and updates 76 catalog
+  records to use the current protocol-specific endpoints. The simple chat
+  entry point uses the updated reasoning levels for `kimi-k3` and `qwen3.8-max`.
+- OpenCode Go adds six chat models, removes seven and updates 24 records
+  with protocol-specific endpoints. The catalog also updates `kimi-k3`'s
+  cache-write price.
+- Baseten adopts the fixed Pi 1.5 catalog with two new chat records, ten
+  retired records and ten metadata updates. OpenAI-format reasoning records
+  use the published `reasoning_effort` mappings, and Baseten-format records
+  preserve `chat_template_args`.
+- Gemini and Vertex use the lowest supported thinking level for a disabled
+  request when the selected discrete-level model disallows Off. This applies
+  to OpenCode Go's `gemini-4-argon`.
+- The Amazon Bedrock bundled catalog adds four models and enables strict
+  tool schemas on 51 existing records. Converse streaming accepts
+  catalog-listed inference profile IDs. Adaptive Claude requests honor
+  explicit effort mappings such as `max`.
+- Amazon Bedrock Converse rebuilds the payload once after a recognized
+  pre-stream strict-tool limit rejection, restoring the original schemas
+  of `Prefer` tools and preserving `Require` tools.
+- OpenRouter System One models that accept images send them as ordered
+  `image_url` parts before the original state.
+- TypeSafe's builtin classifier record now follows the fixed Pi 1.5 catalog.
+  PNG and JPEG image requests use named `assets` and send
+  `TypeSafe-Danger-Zone-Images: true` only when images are present.
+- xAI's builtin Responses catalog now follows the fixed Pi 1.5 model records.
+  `grok-4.3` and `grok-4.5` map XHigh to `reasoning.effort=xhigh` and retain
+  the encrypted reasoning include field.
+- Fireworks' builtin catalog now follows the fixed Pi 1.5 model records. The
+  seven published chat routes are included, Qwen Max uses adaptive XHigh
+  effort, and both Anthropic Messages and OpenAI Completions preserve the
+  published session-affinity behavior.
+- Radius' builtin Pi Messages catalog now follows the fixed Pi 1.5 model
+  records. The gateway baseline exposes 28 models, authenticated `/v1/config`
+  refresh replaces that baseline, and four retired IDs are rejected before
+  dispatch.
+- Together's builtin catalog now follows the fixed Pi 1.5 model records.
+  The OpenAI Completions route exposes 15 models, sends Bearer
+  /v1/chat/completions, and maps Qwen3.7-Max reasoning with the published
+  max_tokens limit. Five retired IDs are rejected before dispatch.
+- Hugging Face's builtin catalog now follows the fixed Pi 1.5 model records.
+  The OpenAI Completions route exposes 78 models, sends Bearer
+  /v1/chat/completions, and maps DeepSeek-R1-0528 to the published
+  max_completion_tokens limit with reasoning_effort=high. Three retired IDs
+  are rejected before dispatch.
+- Cloudflare Workers AI's builtin catalog now follows the fixed Pi 1.5 model
+  records with 19 chat models and 5 classifiers. Chat requests use Bearer
+  /accounts/{account}/ai/v1/chat/completions. Cloudflare Clef classifiers use
+  Bearer /accounts/{account}/ai/run and send PNG, JPEG or WebP images as
+  input.images data URLs without TypeSafe's opt-in header. This fixed catalog
+  revision has no retired Cloudflare IDs.
+- Moonshot AI CN's builtin catalog now follows the fixed Pi 1.5 model records
+  with six OpenAI Completions models. Kimi K3.1 Pro and HighSpeed send Bearer
+  /v1/chat/completions, max_tokens and reasoning_effort=high. This fixed
+  catalog revision has no retired Moonshot AI CN IDs.
+- NVIDIA's builtin catalog now follows the fixed Pi 1.5 model records with
+  21 OpenAI Completions models. Requests use Bearer /v1/chat/completions,
+  max_tokens and the published NVCF-POLL-SECONDS header. DeepSeek V4.1 Flash
+  preserves its catalog thinking envelope, and the retired z-ai/glm-5.3 ID
+  is removed from all builtin entrypoints.
+- Cerebras' builtin catalog now follows the fixed Pi 1.5 model records with
+  two OpenAI Completions models. Requests use Bearer /v1/chat/completions,
+  max_completion_tokens and the published reasoning_effort mapping. The
+  gpt-oss-120b cache-read price is corrected to 0.35.
+- Groq's builtin catalog now follows the fixed Pi 1.5 model records with
+  seven OpenAI Completions models. Requests use Bearer
+  /openai/v1/chat/completions. The gpt-oss-safeguard cache-read price and
+  qwen3.8 context window now match the published values.
+- Kimi Coding's builtin catalog now follows the fixed Pi 1.5 model records
+  with six OpenAI Completions models. K3.1 Pro and HighSpeed send Bearer
+  /coding/v1/chat/completions requests with reasoning_effort=high. The
+  k3-256k prices and 262144-token context window now match the published values.
+- Moonshot AI's builtin catalog now follows the fixed Pi 1.5 model records
+  with six OpenAI Completions models. K3.1 Pro and HighSpeed send Bearer
+  /v1/chat/completions requests with reasoning_effort=high, and their
+  published prices and 1048576-token context window are exposed.
+- Qwen Token Plan and Qwen Token Plan CN now follow the fixed Pi 1.5 model
+  records with 21 OpenAI Completions models each. Their Bearer routes use
+  /compatible-mode/v1/chat/completions. DeepSeek V4.1 Flash 1017 exposes its
+  1000000-token context window and sends max_completion_tokens with the
+  published thinking and reasoning_effort fields.
+- Z.AI Coding CN's builtin catalog now follows the fixed Pi 1.5 model records
+  with four OpenAI Completions models. Requests use Bearer
+  /api/coding/paas/v4/chat/completions and the published max_tokens field.
+  The glm-4.6v cache-read price and 128000-token context window match the
+  published values.
+- Xiaomi's builtin catalog now follows the fixed Pi 1.5 model records with
+  three OpenAI Completions models. The three retired MiMo 2.5 IDs are removed
+  from builtin entrypoints. Requests use Bearer /v1/chat/completions,
+  max_completion_tokens and the published DeepSeek thinking envelope.
+- Xiaomi Token Plan AMS, CN and SGP now each follow the fixed Pi 1.5 catalog
+  with two OpenAI Completions models. Their retired MiMo 2.5 IDs are removed
+  from builtin entrypoints. Each regional route uses its Pi Bearer credential,
+  /v1/chat/completions, max_completion_tokens and the published DeepSeek
+  thinking envelope.
+- MiniMax's builtin catalog now follows the fixed Pi 1.5 model records with
+  four Anthropic Messages models. MiniMax-M3.1-Flash uses API-key
+  /anthropic/v1/messages requests with adaptive xhigh effort, and MiniMax-M3
+  exposes the published 524288-token output limit.
+- MiniMax CN's builtin catalog now follows the fixed Pi 1.5 model records
+  with four Anthropic Messages models. MiniMax-M3.1-Flash sends API-key
+  /anthropic/v1/messages requests with adaptive xhigh effort, while the
+  existing MiniMax prices and M3 output limit follow the published values.
+- Cloudflare AI Gateway's builtin catalog now follows the fixed Pi 1.5
+  records. The gateway exposes 59 models across Anthropic Messages, OpenAI
+  Completions and OpenAI Responses. All three routes send
+  cf-aig-authorization, Terra maps XHigh to reasoning.effort=xhigh, DeepSeek
+  uses max_tokens, and Claude Sonnet 5.5 uses adaptive xhigh effort.
+- The bundled Mistral catalog adds three models, removes nine and updates four.
+  Simple calls send the selected model's reasoning effort. A model with no
+  off mapping omits the effort field when reasoning is disabled.
+- `opi-ai` route contexts compile when a provider feature is selected on its
+  own, including `provider-openai-chat` with default features disabled.
+
 - `opi-ai`: Anthropic Messages HTTP streams now defer `message_stop` until
   provider EOF, preserving repeated tail usage and raw observer failures before
   the single terminal `Done` event.
@@ -65,6 +187,81 @@
   atomically while the legacy flat cache field remains accepted.
 
 ### Breaking Changes
+
+- `ClassifierModelRecord` includes optional typed classifier compatibility
+  metadata. Callers that construct records with struct literals must provide
+  `compat`.
+
+- GitHub Copilot uses one embedded 27-model catalog across the SDK and
+  coding-agent. Configurations using a retired Copilot model ID must select
+  a current ID, such as `github-copilot:gpt-6.1-terra`.
+
+- OpenAI Codex uses one embedded eight-model catalog across the SDK and
+  coding-agent. Configurations using a retired Codex model ID must select a
+  current ID, such as `openai-codex:gpt-6.1-terra`.
+
+- The coding-agent `openai:` route now uses OpenAI Responses. It shares the
+  embedded 44-model chat catalog with the SDK and `openai-responses:`.
+  Added `chat-latest`, `gpt-5.6-cyber` and `gpt-6.1-terra`. Select a current
+  model if your configuration uses `gpt-5.2-chat-latest`,
+  `gpt-5.3-chat-latest` or `gpt-realtime-2.1`. GPT-5.4, GPT-5.4 Mini,
+  GPT-5.4 Pro and GPT-5.5 send the active tool set in top-level `tools`.
+
+- Azure OpenAI uses one embedded 45-model catalog across the SDK, coding-agent
+  listing, and runtime. The selected model determines the Responses or Chat
+  Completions route. The catalog adds `chat-latest`, `gpt-5.6-cyber`, and
+  `gpt-6.1-terra`, and retires three IDs. Replace `providers.azure.deployments`
+  with `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` and select models by catalog ID.
+
+- Google Gemini uses one embedded 23-model catalog across the SDK, standalone
+  factory, and coding-agent. It adds `gemini-pro-latest` and
+  `gemini-robotics-er-2-preview`. If your configuration selects
+  `gemini-2.0-flash`, `gemini-3.1-flash-lite-image`, or
+  `gemini-3.1-flash-live-preview`, choose a current ID such as
+  `google:gemini-pro-latest`.
+
+- Vertex AI uses one embedded 13-model catalog in the SDK, standalone factory,
+  and coding-agent. Remove `[providers.google-vertex].models` and choose a
+  current catalog ID such as `google-vertex:gemini-3.1-pro-preview` in place of
+  the retired `gemini-3.1-flash-lite-image`.
+
+- The Vercel AI Gateway builtin exposes 303 chat models and 14 classifiers.
+  Choose a current Vercel model ID if your SDK configuration selects one of
+  the 12 retired entries. Chat uses the Messages beta endpoint and
+  classification uses System One.
+
+- The Baseten builtin exposes 14 chat models from the fixed Pi 1.5 catalog.
+  Choose a current Baseten model ID if your SDK configuration selects one of
+  the ten retired entries. Chat uses the OpenAI-compatible
+  `/v1/chat/completions` endpoint with `BASETEN_API_KEY`.
+
+- `opi-ai` and coding-agent use the reviewed Bedrock catalog for the direct
+  factory, runtime selection, and model listing. Configurations that
+  select one of the three former handwritten Claude IDs must select an ID
+  from the current catalog, such as
+  `amazon-bedrock:us.anthropic.claude-sonnet-4-20250514-v1:0` for US Sonnet 4.
+- `opi-ai`: exhaustive matches on `provider::PayloadVariant` now handle
+  `BedrockStrictDowngrade` for the rebuilt Converse payload.
+
+- `opi-ai` (0.x) moves Chat Completions imports to
+  `opi_ai::api::openai_completions`. The OpenAI service profile uses
+  `opi_ai::providers::openai`. Select the wire with `provider-openai-chat`.
+
+- `opi-ai` (0.x) uses bundle format v2 for the opi model catalog.
+  Match `CatalogProvenance::origin` on `CatalogOrigin::PiPublished` to
+  read the former `pi_package`, `source_url`, `local_origin` and
+  `generator` fields. `Catalog::from_bytes` still reads v1 bundles.
+  The opi builder uses `CatalogOrigin::Opi` and a content-derived revision.
+
+- `opi-ai`: UUID exhaustion is tested inside `identity` and the AWS
+  transport fakes live in the Bedrock fixtures. The internal
+  `force_sequence_exhausted`, `FakeSourceTransport`, `NeverTransport` and
+  `DeferredScripting` paths are removed from `test_support`. The module's
+  rustdoc documents the downstream scripted Faux interface.
+
+- `opi-ai` classifier imports under `api` now use their wire names.
+  Migrate `decisions` to `openai_decisions`, `cloudflare` to
+  `cloudflare_workers_ai_system_one` and `llama` to `llama_cpp_classify`.
 
 - `opi-ai` (0.x): operation contracts now have canonical owners. Use
   `api::contract` for `ChatApi`, `DeferredApi`, typed call options and
@@ -785,10 +982,10 @@
   without locking prose wording or retired phase names. CLI safety and workflow
   guards move to their owning Rust tests; CI now runs the checker's regression suite.
 
-- `opi-ai`: custom Radius gateways start with an empty model catalog; only an
-  omitted gateway or the exact built-in `BASE_URL` selects the bundled baseline.
-  Caller-supplied models remain usable, and acknowledged empty stored catalogs
-  remain authoritative after reopening without hiding explicit model overrides.
+- Builtin Radius serves the opi bundle for the default gateway and starts
+  empty on custom gateways. An authenticated refresh reads `GET /v1/config`
+  and publishes a complete gateway-scoped catalog. Offline refresh restores
+  the recorded catalog, including a successful empty list.
 - `opi-coding-agent`: configured response limits remain total ceilings with
   numeric Claude thinking through prepared routes, retries and model changes.
   Standalone SDK budgeting retains its source-defined answer-plus-thinking rule.
@@ -1737,9 +1934,8 @@
   preserves an explicit integer timestamp in `0..=2^48-1` without advancing
   the ordinary rollback floor, the 41-bit sequence is seeded from random
   bytes and incremented until exhaustion, which fails with the typed
-  `UuidV7Error::SequenceExhausted` (deterministically reachable via the
-  `test_support::force_sequence_exhausted` hook). No new dependency and no
-  generic identity framework.
+  `UuidV7Error::SequenceExhausted`. The `identity` module test exercises
+  exhaustion for both ordinary and explicit timestamps.
 - `opi-ai`: public context-overflow, recoverable-Length and typed
   diagnostic predicates (task 20.53.3, P20-S53-3). `is_context_overflow`
   (pinned `isContextOverflow`) matches the pinned provider overflow error
@@ -1894,36 +2090,13 @@
   fetching one distribution-schema-v1 document with pooled connections and
   redacted failures. `Models` gains `set_models_store`,
   `register_catalog_source`, `refresh_with(token)`, and per-entry
-  `RefreshReport`/`RefreshOutcome`/`RefreshStatus` reporting. The SDK
-  registers no source, attaches no store, and has no pi.dev/default startup
-  fetch policy.
-- `opi-ai`: offline bundled model catalog substrate (DEL-10, task 20.32).
-  The new `catalog` module embeds the authentic Pi published model catalog
-  as offline resources, packaged byte-for-byte by the explicit
-  delivery-input tool `scripts/pi-catalog/pack.py` from the exact revision
-  pinned by the local Pi 1.3.0 tree (`sha256-ffa3e986…678`; 42 providers,
-  1608 chat / 59 image / 38 classifier entries). The bundle manifest
-  records the full provenance chain — pi.dev source URL and revision,
-  artifact SHA-256, `@earendil-works/pi-ai@1.3.0` package/local-origin
-  association, data schema version 6, bundle schema version 1, provider
-  and operation identities, and the digests of Pi's own
-  `model-data.ts`/`hydrate-model-catalog.ts` plus the packer.
-  `Catalog::builtin()` validates the embedded bytes once per process with
-  no network I/O, account probing, or generator runs, re-verifying digest,
-  schema versions, provider set, every entry's data contract, `type:id`
-  uniqueness, and the structure digest — any mismatch is a typed
-  fail-closed `CatalogError`. Operation-qualified getters expose
-  chat/image/classifier entries (typed core fields plus the complete raw
-  entry); `CatalogHandle::try_install` validates a candidate completely
-  before an atomic swap, so tampered, stale, wrong-version,
-  missing-provider, duplicate-identity, and contract-violating candidates
-  are rejected while the last-known revision stays readable and held
-  `Arc<Catalog>` values are never rebound. Explicit complete custom records
-  remain usable independently of catalog state. Missing authentic material
-  remains a blocking input: nothing invents catalog data from synthetic
-  fixtures or implicit construction. Substrate for the ModelsStore
-  restore/refresh/personalization and profile/catalog integration owners;
-  closes no store acceptance scenario.
+  `RefreshReport`/`RefreshOutcome`/`RefreshStatus` reporting. Hosts attach
+  stores and custom sources explicitly. Catalog I/O follows explicit refresh.
+- `opi-ai`: the offline catalog embeds the model lists maintained in
+  `resources/catalog/providers/`. The `build_catalog` example builds and
+  checks the offline bundle with the public Rust reader. The Pi comparison
+  tool reports changes for review.
+
 - `opi-ai`: `OAuthProvider::{name, is_subscription, login_label}` expose
   read-only metadata on trait objects. All nine SDK flows retain their fixed
   Pi values and optional-field differences; custom implementations default to

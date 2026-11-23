@@ -1,7 +1,6 @@
 //! OpenAI "Sign in with ChatGPT" OAuth (Responses API token sharing).
 //!
-//! Pinned to pi 1.3.0 `openai-chatgpt.ts`: a public-client flow (no client
-//! secret) that registers a dynamic client per login (`client_id=
+//! This public-client flow registers a dynamic client per login (`client_id=
 //! dynamic_agent_client` at the authorize endpoint), receives OpenAI's
 //! issued client id on the callback, and sends the resulting user access
 //! token directly to api.openai.com. The fixed loopback redirect

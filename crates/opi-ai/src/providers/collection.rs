@@ -1,18 +1,17 @@
 //! The builtin provider collection (task 20.34).
 //!
-//! Turns the pinned [`crate::providers`] profile table plus the bundled
+//! Turns the [`crate::providers`] profile table plus the bundled
 //! [`Catalog`] into registered providers on an existing [`Models`]
-//! collection, reusing the completed wire adapters — one
-//! [`crate::providers::mapped::ApiMappedProvider`] per profile
-//! over per-wire routes built from the existing constructors. Canonical ids
+//! collection. Mapped profiles assemble multiple per-wire routes. Radius
+//! installs its Pi Messages route even when its model catalog is empty. Canonical ids
 //! replace the legacy opi ids (`gemini`, `vertex`, `bedrock`,
 //! `openai-responses`): nothing here registers a permanent alias. Source-backed
 //! profiles remain registered while credentials and dynamic endpoint inputs
 //! resolve lazily for each call.
 //! Classifier and image builtins register through the typed classifier/image
 //! seams with catalog records. Construction is data-only: no environment,
-//! store, or network access happens here; env keys resolve at dispatch time
-//! through the injected [`AuthContext`].
+//! store, or network access happens here. Calls and authenticated catalog
+//! refresh resolve keys through the injected [`AuthContext`].
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -26,11 +25,17 @@ use crate::models::{AuthDescriptor, CompatMetadata, Models};
 use crate::registry::RegistrationError;
 
 use crate::model_info::{ModelInfo, ModelPricing, PricingTier, WireApi};
+use crate::provider::operation::SimpleOptions;
 use crate::provider::{
     EventStream, ModelInfo as ProviderModelInfo, Provider, ProviderError, Request,
 };
-use crate::providers::{BuiltinEndpoint, BuiltinProviderProfile, builtin_provider_profiles};
+use crate::providers::azure_openai::AzureCatalogProvider;
+use crate::providers::pi_messages::{BASE_URL as RADIUS_BASE_URL, RadiusCatalog};
+use crate::providers::{
+    BuiltinEndpoint, BuiltinProviderProfile, builtin_provider_profiles, catalog_routes,
+};
 use crate::stream::Pricing;
+use crate::types::headers::ProviderHeaders;
 
 /// Per-construction configuration the builtin table cannot supply itself.
 #[derive(Debug, Clone, Default)]
@@ -50,6 +55,18 @@ pub struct BuiltinOverrides {
     /// Per-provider default base URL overrides (tests point profiles at
     /// local mock servers).
     pub base_urls: BTreeMap<String, String>,
+}
+
+impl BuiltinOverrides {
+    fn vertex_config(&self) -> crate::auth::builtin_vertex::BuiltinVertexConfig {
+        let mut config = self.vertex_auth.clone();
+        config.project = config.project.or_else(|| self.vertex_project.clone());
+        config.location = config.location.or_else(|| self.vertex_location.clone());
+        config.base_url = config
+            .base_url
+            .or_else(|| self.base_urls.get("google-vertex").cloned());
+        config
+    }
 }
 
 /// What `register_builtin` registered and what it skipped, with reasons.
@@ -167,11 +184,9 @@ impl AuthResolver for BuiltinEnvAuthResolver {
 /// A route wrapper republishing one concrete provider under its canonical
 /// profile id with the profile's catalog subset.
 ///
-/// The wrapped adapters with fixed internal ids (`gemini`, `vertex`,
-/// `bedrock`) stay reusable as-is. Profile authentication and session headers
-/// are applied before dispatch; a prepared replacement retains those policies
-/// and the selected model snapshot. Dispatch, resource and refresh ownership
-/// remains with the inner provider.
+/// Profile authentication and session headers are applied before dispatch.
+/// A prepared replacement retains those policies and the selected model
+/// snapshot. The inner provider owns dispatch, resources, and refresh.
 struct CanonicalRoute {
     id: String,
     models: Vec<ModelInfo>,
@@ -268,7 +283,7 @@ impl Provider for CanonicalRoute {
     fn validate_simple_options(
         &self,
         model: &ProviderModelInfo,
-        options: &crate::api::contract::SimpleOptions,
+        options: &SimpleOptions,
     ) -> Result<(), ProviderError> {
         self.inner.validate_simple_options(model, options)
     }
@@ -308,7 +323,7 @@ impl Provider for CanonicalRoute {
     fn stream_model_resource_attempt(
         &self,
         model: ProviderModelInfo,
-        options: crate::api::contract::SimpleOptions,
+        options: SimpleOptions,
         request: Request,
         auth: ResolvedAuth,
         attempt: crate::provider::AttemptContext,
@@ -345,8 +360,8 @@ impl Provider for CanonicalRoute {
 
 /// Republish one concrete provider under its canonical profile id with the
 /// profile's catalog subset (a no-op pass-through when the ids already
-/// match). The coding agent uses this to keep its fixed-id adapters
-/// (`gemini`/`vertex`/`bedrock`) dispatchable under canonical ids.
+/// match). The coding agent uses this to publish Vertex and Bedrock under
+/// their canonical ids.
 pub fn canonical_route(
     id: &str,
     models: Vec<ModelInfo>,
@@ -375,168 +390,6 @@ fn builtin_route(id: &str, models: Vec<ModelInfo>, inner: Box<dyn Provider>) -> 
 
 /// Azure's builtin profile uses its source Chat API as well as Responses.
 /// The legacy direct Azure provider retains its separate deployment-URL API.
-struct BuiltinAzureRoute {
-    models: Vec<ModelInfo>,
-    context: Arc<dyn AuthContext>,
-    client: Arc<HttpClient>,
-    api_version: Option<String>,
-}
-
-impl Provider for BuiltinAzureRoute {
-    fn id(&self) -> &str {
-        "azure"
-    }
-    fn models(&self) -> &[ModelInfo] {
-        &self.models
-    }
-    fn validate_simple_options(
-        &self,
-        model: &ModelInfo,
-        _: &crate::api::contract::SimpleOptions,
-    ) -> Result<(), ProviderError> {
-        if let Some(base) = model.base_url.as_deref().filter(|base| !base.is_empty()) {
-            crate::providers::azure_openai::resolve_azure_base_url(Some(base), None, None)?;
-        }
-        if !matches!(
-            model.wire_api,
-            WireApi::OpenAiCompletions | WireApi::AzureOpenAiResponses
-        ) {
-            return Err(ProviderError::Config(
-                crate::provider::ProviderErrorSummary::attested_static(
-                    "Azure builtin models require Chat or Azure Responses",
-                ),
-            ));
-        }
-        Ok(())
-    }
-    fn stream_prepared(&self, request: Request, auth: ResolvedAuth) -> EventStream {
-        let model_id = request
-            .model
-            .strip_prefix("azure:")
-            .unwrap_or(&request.model);
-        let Some(model) = self
-            .models
-            .iter()
-            .find(|model| model.id == model_id)
-            .cloned()
-        else {
-            let error = ProviderError::UnknownModel {
-                provider_id: "azure".into(),
-                model_id: model_id.into(),
-            };
-            return Box::pin(futures_util::stream::once(async move { Err(error) }));
-        };
-        self.stream_model_resource_attempt(
-            model,
-            Default::default(),
-            request,
-            auth,
-            crate::provider::AttemptContext {
-                invocation_id: uuid::Uuid::new_v4().to_string(),
-                attempt: 1,
-                max_attempts: 1,
-                payload_variant: crate::provider::PayloadVariant::Ordinary,
-            },
-            None,
-        )
-    }
-    fn prepare_model_call(
-        &self,
-        model: &mut ModelInfo,
-        auth: &mut ResolvedAuth,
-    ) -> Result<Option<Arc<dyn Provider>>, ProviderError> {
-        let env = |name: &str| {
-            if let Some(value) = auth.env.get(name) {
-                return Ok(Some(secrecy::ExposeSecret::expose_secret(value).to_owned()));
-            }
-            self.context.env(name).map_err(|error| {
-                ProviderError::Config(crate::provider::ProviderErrorSummary::from_untrusted(
-                    error.to_string(),
-                ))
-            })
-        };
-        let base = env("AZURE_OPENAI_BASE_URL")?;
-        let resource = if base.as_deref().is_none_or(|base| base.trim().is_empty()) {
-            env("AZURE_OPENAI_RESOURCE_NAME")?
-        } else {
-            None
-        };
-        let endpoint = crate::providers::azure_openai::resolve_azure_base_url(
-            base.as_deref(),
-            resource.as_deref(),
-            model.base_url.as_deref(),
-        )?;
-        let version = match &self.api_version {
-            Some(version) => Some(version.clone()),
-            None => env("AZURE_OPENAI_API_VERSION")?,
-        };
-        let deployment_map = env("AZURE_OPENAI_DEPLOYMENT_NAME_MAP")?;
-        model.base_url = Some(endpoint.clone());
-        if model.wire_api == WireApi::AzureOpenAiResponses {
-            let provider = crate::providers::azure_openai::AzureOpenAIProvider::for_records(
-                Some(endpoint),
-                vec![model.clone()],
-                version,
-            )?
-            .with_client(self.client.clone())
-            .with_deployment_map(deployment_map);
-            return Ok(Some(Arc::new(provider)));
-        }
-        // Resolve one source route before the acquisition owner starts. Every
-        // attempt reuses this adapter, endpoint and deployment snapshot.
-        let mut url = url::Url::parse(&endpoint).expect("validated Azure endpoint");
-        if url.host_str().is_some_and(|host| {
-            [
-                ".openai.azure.com",
-                ".cognitiveservices.azure.com",
-                ".ai.azure.com",
-            ]
-            .iter()
-            .any(|suffix| host.ends_with(suffix))
-        }) && url.path().trim_matches('/').is_empty()
-        {
-            url.set_path("/openai/v1");
-        }
-        model.base_url = Some(url.to_string().trim_end_matches('/').into());
-        let deployment = crate::providers::azure_openai::resolve_deployment_name(
-            None,
-            deployment_map.as_deref(),
-            &model.id,
-        );
-        auth.scheme = AuthScheme::Bearer;
-        let provider = crate::providers::openai::OpenAiChatProvider::for_route(
-            model.base_url.clone(),
-            "azure".into(),
-            Default::default(),
-            vec![model.clone()],
-            self.client.clone(),
-        )
-        .with_wire_model(deployment);
-        Ok(Some(Arc::new(provider)))
-    }
-    fn stream_model_resource_attempt(
-        &self,
-        mut model: ModelInfo,
-        options: crate::api::contract::SimpleOptions,
-        request: Request,
-        mut auth: ResolvedAuth,
-        attempt: crate::provider::AttemptContext,
-        resources: Option<crate::codex_resources::CallResourceLease>,
-    ) -> EventStream {
-        // Direct prepared dispatch has no collection preparation owner.
-        match self.prepare_model_call(&mut model, &mut auth) {
-            Ok(Some(provider)) => provider
-                .stream_model_resource_attempt(model, options, request, auth, attempt, resources),
-            Ok(None) => unreachable!("Azure always freezes a concrete wire adapter"),
-            Err(error) => Box::pin(futures_util::stream::once(async move { Err(error) })),
-        }
-    }
-    fn replace_model_catalog(&mut self, models: Vec<ModelInfo>) -> Result<(), ProviderError> {
-        self.models = models;
-        Ok(())
-    }
-}
-
 /// Catalog cost (base rates plus optional tiers) into typed pricing.
 fn catalog_pricing(entry: &CatalogModel) -> Result<ModelPricing, BuiltinError> {
     let invalid = |reason: &str| BuiltinError::InvalidModel {
@@ -629,6 +482,13 @@ fn classifier_record(entry: &CatalogModel) -> Result<ClassifierModelRecord, Buil
             .get("inputLimits")
             .filter(|value| !value.is_null())
             .cloned(),
+        compat: crate::catalog::wire::decode_classifier_compat(&entry.raw).map_err(|reason| {
+            BuiltinError::InvalidModel {
+                provider: entry.provider.clone(),
+                model: entry.id.clone(),
+                reason,
+            }
+        })?,
         provider_id: entry.provider.clone(),
         id: entry.id.clone(),
         name: entry.name.clone(),
@@ -704,7 +564,6 @@ fn openai_compatible(wires: &BTreeMap<WireApi, Vec<ModelInfo>>) -> bool {
                 | WireApi::OpenAiResponses
                 | WireApi::OpenAiCodexResponses
                 | WireApi::MistralConversations
-                | WireApi::PiMessages
         )
     })
 }
@@ -723,18 +582,53 @@ pub fn register_builtin(
     overrides: &BuiltinOverrides,
 ) -> Result<BuiltinReport, BuiltinError> {
     let catalog = Catalog::builtin().map_err(|error| BuiltinError::Catalog(error.to_string()))?;
+    let radius = Arc::new(
+        RadiusCatalog::new(
+            overrides
+                .base_urls
+                .get("radius")
+                .map_or(RADIUS_BASE_URL, String::as_str),
+            client.clone(),
+        )
+        .map_err(|error| BuiltinError::Construction {
+            provider: "radius".into(),
+            message: error.to_string(),
+        })?,
+    );
     let mut report = BuiltinReport::default();
 
     for profile in builtin_provider_profiles() {
-        register_chat_profile(
-            models,
-            catalog,
-            profile,
-            &context,
-            &client,
-            overrides,
-            &mut report,
-        )?;
+        if profile.id == "radius" {
+            let baseline = if radius.is_default() {
+                chat_infos(catalog, profile, None)?
+            } else {
+                Vec::new()
+            };
+            let route = radius.route(baseline);
+            let provider = builtin_route(profile.id, provider_models(&route), Box::new(route));
+            register_env_route(
+                models,
+                profile,
+                provider,
+                &context,
+                CompatMetadata {
+                    openai_compatible: true,
+                    profile: Some(profile.name.into()),
+                },
+            )?;
+            models.register_authenticated_catalog(profile.id, radius.clone());
+            report.registered.push(profile.id.into());
+        } else {
+            register_chat_profile(
+                models,
+                catalog,
+                profile,
+                &context,
+                &client,
+                overrides,
+                &mut report,
+            )?;
+        }
         // A classifier-only profile may own the provider's default auth
         // management slot, but must not claim an existing custom chat route.
         models.mark_builtin_default_auth(profile.id, profile.classifier_only);
@@ -742,23 +636,13 @@ pub fn register_builtin(
     register_classifiers(models, catalog, &context, &client, overrides, &mut report)?;
     register_images(models, catalog, &context, &client, overrides, &mut report)?;
     for profile in builtin_provider_profiles() {
-        let flow = models
-            .oauth_flow_for_builtin(profile.id)
-            .or_else(|| crate::auth::builtin::default_oauth_flow(profile.id));
-        if let Some(flow) = &flow {
-            models.register_oauth_flow(profile.id, flow.clone());
-        }
+        let flow = models.bind_builtin_oauth_flow(profile.id, || match profile.id {
+            "radius" => Some(radius.oauth_flow()),
+            _ => crate::auth::builtin::default_oauth_flow(profile.id),
+        });
         let factory = match profile.id {
             "google-vertex" => {
-                let mut config = overrides.vertex_auth.clone();
-                config.project = config.project.or_else(|| overrides.vertex_project.clone());
-                config.location = config
-                    .location
-                    .or_else(|| overrides.vertex_location.clone());
-                config.base_url = config
-                    .base_url
-                    .or_else(|| overrides.base_urls.get(profile.id).cloned());
-                crate::auth::builtin_vertex::factory(context.clone(), config)
+                crate::auth::builtin_vertex::factory(context.clone(), overrides.vertex_config())
             }
             "amazon-bedrock" => {
                 let mut config = overrides.aws_auth.clone();
@@ -801,12 +685,12 @@ fn register_chat_profile(
                     .as_deref()
                     .or_else(|| overrides.base_urls.get(id).map(String::as_str)),
             )?;
-            let provider = BuiltinAzureRoute {
-                models: records,
-                context: context.clone(),
-                client: client.clone(),
-                api_version: overrides.azure_api_version.clone(),
-            };
+            let provider = AzureCatalogProvider::from_models(
+                records,
+                context.clone(),
+                client.clone(),
+                overrides.azure_api_version.clone(),
+            );
             register_env_route(
                 models,
                 profile,
@@ -821,21 +705,19 @@ fn register_chat_profile(
             return Ok(());
         }
         BuiltinEndpoint::VertexLocation => {
-            let forced = overrides.base_urls.get(profile.id).map(String::as_str);
-            let infos = chat_infos(catalog, profile, forced)?;
-            let provider = crate::providers::vertex::VertexProvider::new(
-                overrides.vertex_project.clone().unwrap_or_default(),
-                overrides.vertex_location.clone().unwrap_or_default(),
-                profile_base_url(profile, overrides),
-            )
-            .with_models(infos)
-            .with_provider_identity(id)
-            .with_client(Arc::clone(client));
-            let provider = builtin_route(id, provider_models(&provider), Box::new(provider));
+            let config = overrides.vertex_config();
+            let model_base = overrides.base_urls.get(id).map(String::as_str);
+            let provider = crate::providers::vertex::VertexProvider::from_models(
+                id,
+                config.project.zip(config.location),
+                config.base_url,
+                chat_infos(catalog, profile, model_base)?,
+                Arc::clone(client),
+            );
             register_env_route(
                 models,
                 profile,
-                provider,
+                Box::new(provider),
                 context,
                 CompatMetadata::default(),
             )?;
@@ -845,11 +727,11 @@ fn register_chat_profile(
         BuiltinEndpoint::BedrockRegion => {
             let forced = overrides.base_urls.get(profile.id).map(String::as_str);
             let infos = chat_infos(catalog, profile, forced)?;
-            let provider = crate::providers::bedrock::BedrockProvider::new(
+            let provider = crate::providers::bedrock::BedrockProvider::from_models(
                 profile_base_url(profile, overrides),
                 Arc::clone(client),
+                infos,
             )
-            .with_models(infos)
             .with_provider_identity(id);
             let provider = builtin_route(id, provider_models(&provider), Box::new(provider));
             // The lazy source factory below binds the native chain after registration.
@@ -880,49 +762,58 @@ fn register_chat_profile(
     let mut routes: BTreeMap<WireApi, Box<dyn Provider>> = BTreeMap::new();
     let base_url = profile_base_url(profile, overrides);
     let headers =
-        crate::api::shared::headers::ProviderHeaders::try_new(Vec::new()).map_err(|error| {
-            BuiltinError::Construction {
-                provider: id.into(),
-                message: error.to_string(),
-            }
+        ProviderHeaders::try_new(Vec::new()).map_err(|error| BuiltinError::Construction {
+            provider: id.into(),
+            message: error.to_string(),
         })?;
+    let copilot = id == "github-copilot";
     for (wire, subset) in group_by_wire(infos)? {
         let route: Box<dyn Provider> = match wire {
             WireApi::OpenAiCompletions => {
-                Box::new(crate::providers::openai::OpenAiChatProvider::for_route(
+                let route = crate::providers::openai::OpenAiChatProvider::for_route(
                     base_url.clone(),
                     id.to_owned(),
                     headers.clone(),
                     subset.clone(),
                     Arc::clone(client),
-                ))
+                );
+                Box::new(if copilot {
+                    route.with_copilot_initiator()
+                } else {
+                    route
+                })
             }
             WireApi::AnthropicMessages => {
-                Box::new(crate::providers::anthropic::AnthropicProvider::for_route(
+                let route = crate::providers::anthropic::AnthropicProvider::for_route(
                     id.to_owned(),
                     subset.clone(),
                     base_url.clone(),
                     headers.clone(),
                     Arc::clone(client),
                     id == "anthropic",
-                ))
+                );
+                Box::new(if copilot {
+                    route.with_copilot_headers()
+                } else {
+                    route
+                })
             }
-            WireApi::OpenAiResponses => Box::new(
-                crate::providers::openai_responses::OpenAiResponsesProvider::for_route(
+            WireApi::OpenAiResponses => {
+                let route = crate::providers::openai_responses::OpenAiResponsesProvider::for_route(
                     base_url.clone(),
                     id.to_owned(),
                     headers.clone(),
                     subset.clone(),
                     Arc::clone(client),
-                ),
-            ),
+                );
+                Box::new(if copilot {
+                    route.with_copilot_headers()
+                } else {
+                    route
+                })
+            }
             WireApi::MistralConversations => Box::new(
                 crate::providers::mistral::MistralConversationsProvider::new(base_url.clone())
-                    .with_client(Arc::clone(client))
-                    .with_models(subset.clone()),
-            ),
-            WireApi::PiMessages => Box::new(
-                crate::providers::pi_messages::PiMessagesProvider::new(base_url.clone())
                     .with_client(Arc::clone(client))
                     .with_models(subset.clone()),
             ),
@@ -933,14 +824,15 @@ fn register_chat_profile(
                     Arc::clone(client),
                 ),
             ),
-            WireApi::GoogleGenerativeAi => Box::new(
-                crate::providers::gemini::GeminiProvider::with_client(
+            WireApi::GoogleGenerativeAi => {
+                Box::new(crate::providers::gemini::GeminiProvider::from_models(
+                    id,
+                    WireApi::GoogleGenerativeAi,
                     base_url.clone(),
+                    subset.clone(),
                     Arc::clone(client),
-                )
-                .with_models(subset.clone())
-                .with_provider_identity(id),
-            ),
+                ))
+            }
             other => {
                 return Err(BuiltinError::Construction {
                     provider: id.into(),
@@ -1075,16 +967,7 @@ fn register_classifiers(
     overrides: &BuiltinOverrides,
     report: &mut BuiltinReport,
 ) -> Result<(), BuiltinError> {
-    // (provider, api id, env key) triples sourced from the profile table.
-    let plans: &[(&str, &str)] = &[
-        ("typesafe", "typesafe-system-one"),
-        ("openrouter", "typesafe-system-one"),
-        ("opencode", "typesafe-system-one"),
-        ("vercel-ai-gateway", "typesafe-system-one"),
-        ("openai", "openai-decisions"),
-        ("cloudflare-workers-ai", "cloudflare-workers-ai-system-one"),
-    ];
-    for (provider_id, api_id) in plans {
+    for (provider_id, api_id) in catalog_routes::CLASSIFIERS {
         let profile = crate::providers::builtin_profile(provider_id)
             .expect("classifier builtin profile exists");
         let entries: Vec<&CatalogModel> = catalog
@@ -1117,7 +1000,7 @@ fn register_classifiers(
             ),
             "openai-decisions" => register_one_classifier(
                 models,
-                Box::new(crate::api::decisions::OpenAiDecisionsApi::new(
+                Box::new(crate::api::openai_decisions::OpenAiDecisionsApi::new(
                     http,
                     record.clone(),
                 )),
@@ -1128,7 +1011,7 @@ fn register_classifiers(
             _ => register_one_classifier(
                 models,
                 Box::new(
-                    crate::api::cloudflare::CloudflareWorkersAiSystemOneApi::new(
+                    crate::api::cloudflare_workers_ai_system_one::CloudflareWorkersAiSystemOneApi::new(
                         http,
                         record.clone(),
                     ),
@@ -1198,11 +1081,12 @@ fn register_images(
     overrides: &BuiltinOverrides,
     report: &mut BuiltinReport,
 ) -> Result<(), BuiltinError> {
-    let Some(profile) = crate::providers::builtin_profile("openrouter") else {
+    let (provider_id, api_id) = catalog_routes::IMAGE;
+    let Some(profile) = crate::providers::builtin_profile(provider_id) else {
         return Ok(());
     };
     let entries: Vec<&CatalogModel> = catalog
-        .models("openrouter", CatalogOperation::Image)
+        .models(provider_id, CatalogOperation::Image)
         .map(|entries| entries.collect())
         .unwrap_or_default();
     let Some(first) = entries.first() else {
@@ -1210,7 +1094,7 @@ fn register_images(
     };
     let make_record = |entry: &CatalogModel| {
         let mut record = image_record(entry)?;
-        if let Some(base) = overrides.base_urls.get("openrouter") {
+        if let Some(base) = overrides.base_urls.get(provider_id) {
             record.base_url = base.clone();
         }
         Ok::<_, BuiltinError>(record)
@@ -1234,19 +1118,19 @@ fn register_images(
             },
         )
         .map_err(|error| BuiltinError::Construction {
-            provider: "openrouter".into(),
+            provider: provider_id.into(),
             message: error.to_string(),
         })?;
-    models.mark_builtin_image_auth("openrouter", &crate::types::ApiId::new("openrouter-images"));
+    models.mark_builtin_image_auth(provider_id, &crate::types::ApiId::new(api_id));
     for extra in entries.iter().skip(1) {
         models
             .register_image_model_record(make_record(extra)?)
             .map_err(|error| BuiltinError::Construction {
-                provider: "openrouter".into(),
+                provider: provider_id.into(),
                 message: error.to_string(),
             })?;
     }
-    report.image_apis.push("openrouter-images".into());
+    report.image_apis.push(api_id.into());
     Ok(())
 }
 
@@ -1394,12 +1278,12 @@ mod tests {
         for wire in [WireApi::OpenAiCompletions, WireApi::AzureOpenAiResponses] {
             for base in ["", "  \t "] {
                 for model_base in [None, Some("https://wrong-model.example.com")] {
-                    let route = BuiltinAzureRoute {
-                        models: vec![],
-                        context: Arc::new(NoAmbient),
-                        client: Arc::new(HttpClient::new()),
-                        api_version: None,
-                    };
+                    let route = AzureCatalogProvider::from_models(
+                        vec![],
+                        Arc::new(NoAmbient),
+                        Arc::new(HttpClient::new()),
+                        None,
+                    );
                     let mut model = ModelInfo::new(
                         "model",
                         "model",

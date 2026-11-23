@@ -1,5 +1,7 @@
 //! Ordinary chat-call orchestration for the [`Models`](crate::models::Models) facade.
 
+use super::*;
+
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -8,9 +10,10 @@ use futures_util::Stream;
 use futures_util::future::BoxFuture;
 use tokio_util::sync::CancellationToken;
 
+use super::registration::ChatApiEntry;
 use super::{
-    ChatApiEntry, Models, compile_prepared_request, drive_resolved_call_registered,
-    models_error_cause, resolve_route_auth, setup_config_error,
+    Models, compile_prepared_request, drive_resolved_call_registered, models_error_cause,
+    resolve_route_auth, setup_config_error,
 };
 use crate::api::contract::CallOptions;
 use crate::auth::{AuthProvenanceSource, AuthResolver, ResolvedAuth};
@@ -487,5 +490,171 @@ async fn resolve_binding_auth(
         } => resolve_route_auth(resolver, source.clone(), cancel)
             .await
             .map_err(models_error_cause),
+    }
+}
+
+impl Models {
+    fn provider_binding(&self, record: &ChatModelRecord) -> FrozenChatBinding {
+        let provider = self
+            .registry
+            .registry
+            .get_provider_arc(record.provider_id());
+        FrozenChatBinding {
+            record: record.clone(),
+            registration_gate: self.registry.registration_gate.clone(),
+            resource_owner: self
+                .registry
+                .resource_owners
+                .get(record.provider_id())
+                .cloned(),
+            route: FrozenRoute::Provider {
+                provider_id: record.provider_id().to_owned(),
+                provider,
+            },
+            auth_plan: AuthPlan::default_for(self, record.provider_id()),
+        }
+    }
+
+    /// Native entry: start one chat call with the adapter's typed options.
+    ///
+    /// Construction captures the owned input, the caller's complete record,
+    /// and the registered adapter behind the options' exact [`ApiId`], then
+    /// schedules setup and execution independently of consumption. Type/provider/
+    /// registration problems surface as one typed [`CallFailure`] before auth.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime. See [`ChatCall`] for lifecycle and buffering.
+    pub fn stream<O: Send + 'static>(
+        &self,
+        record: ChatModelRecord,
+        request: Request,
+        options: NativeOptions<O>,
+    ) -> ChatCall {
+        let auth_plan = AuthPlan::default_for(self, record.provider_id());
+        let binding = self.chat_api_binding(&record, &options, auth_plan);
+        ChatCall::new(binding, request, options.into_call_options())
+    }
+
+    /// Schedule a native call and return a waiter for its single final outcome.
+    /// Execution begins independently of polling or retaining that waiter.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream`](Self::stream).
+    pub fn complete<O: Send + 'static>(
+        &self,
+        record: ChatModelRecord,
+        request: Request,
+        options: NativeOptions<O>,
+    ) -> impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<O> {
+        self.stream(record, request, options).result()
+    }
+
+    /// Neutral entry: start one chat call with common options only.
+    ///
+    /// Dispatches through the record's provider route (a registered
+    /// [`crate::ChatApi`] serves the route through its `simple_options` mapping).
+    /// `Some` fields in `options` override the corresponding request fields
+    /// before the shared compiler runs; everything else matches the native
+    /// entry's frozen-binding and independent-execution contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream`](Self::stream).
+    pub fn stream_simple(
+        &self,
+        record: ChatModelRecord,
+        mut request: Request,
+        options: SimpleOptions,
+    ) -> ChatCall {
+        options.apply(&mut request);
+        if let Some(provider) = self
+            .registry
+            .registry
+            .get_provider_arc(record.provider_id())
+        {
+            provider.prepare_simple_request(record.info(), &mut request);
+        }
+        let binding = self.provider_binding(&record);
+        ChatCall::new(binding, request, CallOptions::Simple(options))
+    }
+
+    /// Schedule a neutral call and return a waiter for its single final outcome.
+    /// Execution begins independently of polling or retaining that waiter.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream_simple`](Self::stream_simple).
+    pub fn complete_simple(
+        &self,
+        record: ChatModelRecord,
+        request: Request,
+        options: SimpleOptions,
+    ) -> impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<> {
+        self.stream_simple(record, request, options).result()
+    }
+
+    /// Direct entry: one chat call on a registered adapter with injected,
+    /// already-resolved authentication.
+    ///
+    /// The driver never consults its own resolvers for this call; the injected
+    /// [`ResolvedAuth`] is frozen at construction exactly like the rest of the
+    /// binding. Execution is scheduled independently of consumption.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream`](Self::stream).
+    pub fn stream_direct<O: Send + 'static>(
+        &self,
+        record: ChatModelRecord,
+        request: Request,
+        options: NativeOptions<O>,
+        auth: ResolvedAuth,
+    ) -> ChatCall {
+        let binding = self.chat_api_binding(&record, &options, AuthPlan::Injected(Box::new(auth)));
+        ChatCall::new(binding, request, options.into_call_options())
+    }
+
+    /// Freeze the owned call and injected authentication, schedule execution,
+    /// and return a waiter for the single final outcome. Dropping this waiter
+    /// does not cancel execution.
+    ///
+    /// # Panics
+    ///
+    /// Panics outside a Tokio runtime, just like [`stream_direct`](Self::stream_direct).
+    pub fn complete_direct<O: Send + 'static>(
+        &self,
+        record: ChatModelRecord,
+        request: Request,
+        options: NativeOptions<O>,
+        auth: ResolvedAuth,
+    ) -> impl Future<Output = Result<AssistantMessage, CallFailure>> + Send + 'static + use<O> {
+        self.stream_direct(record, request, options, auth).result()
+    }
+
+    fn chat_api_binding<O: Send + 'static>(
+        &self,
+        record: &ChatModelRecord,
+        options: &NativeOptions<O>,
+        auth_plan: AuthPlan,
+    ) -> FrozenChatBinding {
+        let registration = self.operation_owner.chat_apis.get(options.api_id());
+        let resource_owner = registration.and_then(|entry| entry.resource_owner.clone());
+        let entry = registration.map(|registration| ChatApiEntry {
+            provider_id: registration.provider_id.clone(),
+            options_type: registration.options_type,
+            dispatch: Arc::clone(&registration.dispatch),
+        });
+        FrozenChatBinding {
+            record: record.clone(),
+            registration_gate: self.registry.registration_gate.clone(),
+            resource_owner,
+            route: FrozenRoute::ChatApi {
+                api_id: options.api_id().clone(),
+                entry,
+            },
+            auth_plan,
+        }
     }
 }

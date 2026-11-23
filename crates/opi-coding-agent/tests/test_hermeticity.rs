@@ -130,7 +130,7 @@ fn phase17_required_non_named_sources_are_discovered_from_markers() {
         "crates/opi-agent/tests/evidence_contract.rs",
         "crates/opi-agent/tests/evidence_runtime.rs",
         "crates/opi-agent/tests/tool_authority.rs",
-        "crates/opi-ai/tests/auth_contracts.rs",
+        "crates/opi-ai/tests/auth_contracts/errors.rs",
         "crates/opi-ai/tests/oauth_wire_shape.rs",
         "crates/opi-ai/tests/per_request_auth.rs",
         "crates/opi-coding-agent/src/rpc.rs",

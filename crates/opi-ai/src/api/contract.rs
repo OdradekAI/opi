@@ -111,11 +111,11 @@ pub trait ChatApi<O: Send + 'static>: Send + Sync {
     /// need a starting record; it never enters catalog reads.
     fn complete_record(&self) -> ModelInfo;
 
-    /// The adapter's neutral options mapping used by [`Models::stream_simple`].
+    /// The adapter's neutral options mapping used by [`Models::stream_simple`](crate::Models::stream_simple).
     fn simple_options(&self) -> O;
 
     /// Dispatch one prepared request with resolved authentication. This is
-    /// the same prepared-auth seam [`Provider::stream_prepared`] uses; the
+    /// the same prepared-auth seam [`Provider::stream_prepared`](crate::Provider::stream_prepared) uses; the
     /// adapter consumes the supplied [`ResolvedAuth`] directly and never
     /// consults a resolver.
     fn stream_prepared(&self, request: Request, options: O, auth: ResolvedAuth) -> EventStream;
@@ -125,7 +125,7 @@ pub trait ChatApi<O: Send + 'static>: Send + Sync {
 /// [`NativeOptions`].
 ///
 /// The handle carries no instance capability: its options stay valid for any
-/// [`Models`] with a compatible registration (same exact [`ApiId`], same
+/// [`Models`](crate::Models) with a compatible registration (same exact [`ApiId`], same
 /// options type), and a compatible registration upsert never invalidates
 /// them.
 pub struct ChatApiHandle<O: Send + 'static> {
@@ -160,7 +160,7 @@ impl<O: Send + 'static> ChatApiHandle<O> {
 /// Typed native options created by a [`ChatApiHandle`].
 ///
 /// Carries the API/type tag of its creating registration, not an instance
-/// capability: the same value may cross [`Models`] instances whose
+/// capability: the same value may cross [`Models`](crate::Models) instances whose
 /// registrations share the exact [`ApiId`] and options type.
 pub struct NativeOptions<O: Send + 'static> {
     api_id: ApiId,

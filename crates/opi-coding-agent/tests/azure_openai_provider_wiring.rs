@@ -29,7 +29,6 @@ fn parse_azure_config_defaults() {
     assert!(config.providers.azure.api_key_env.is_empty());
     assert!(config.providers.azure.endpoint.is_none());
     assert!(config.providers.azure.api_version.is_none());
-    assert!(config.providers.azure.deployments.is_empty());
 }
 
 #[test]
@@ -57,7 +56,7 @@ api_version = "2024-08-01-preview"
 }
 
 #[test]
-fn parse_azure_config_with_deployments() {
+fn azure_deployment_list_is_rejected_with_mapping_instructions() {
     let dir = tempfile::tempdir().unwrap();
     let path = write_temp_config(
         dir.path(),
@@ -67,10 +66,14 @@ endpoint = "https://myresource.openai.azure.com"
 deployments = ["gpt4o-prod", "gpt4o-mini-prod"]
 "#,
     );
-    let config = load_config_file(&path);
-    assert_eq!(config.providers.azure.deployments.len(), 2);
-    assert_eq!(config.providers.azure.deployments[0], "gpt4o-prod");
-    assert_eq!(config.providers.azure.deployments[1], "gpt4o-mini-prod");
+    match opi_coding_agent::config::load_config_file(&path).unwrap_err() {
+        opi_coding_agent::config::ConfigError::Parse { source, .. } => {
+            let message = source.to_string();
+            assert!(message.contains("providers.azure.deployments has been removed"));
+            assert!(message.contains("AZURE_OPENAI_DEPLOYMENT_NAME_MAP"));
+        }
+        error => panic!("expected a config parse error, got {error}"),
+    }
 }
 
 #[test]

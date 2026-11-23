@@ -77,6 +77,7 @@ Rust/Cargo 的上述访问和 target 规则见 [Cargo tests](https://doc.rust-la
 有限抽样确认 usage_cost.rs:808 直接检查费用与倍率；service_tier_cost.rs:218 起检查真实请求路径、请求/响应 tier 和序列化，二者不能整体互相替代。特别是 usage_cost.rs:856 的 openrouter_image_parse_usage_uses_base_rates_without_tiers，没有调用图像解析或图像入口；:872 将 base 与相同参数的 calculate_cost 再比较。它只额外确认 fixture 跨阈值，不能作为图像实际路径的证据。建议补真正图像入口反例，或把数据自检合入该反例；不能据此推断仓库其他位置完全没有图像费用覆盖。
 
 **Schema。** schema_engine.rs:31 的 compile/check 与 schema_public.rs:416 的参数归一化/结构化错误是不同契约；两者都走公开 API，不能仅因 engine 文件名把它迁到私有测试。可以共享关键字/边界输入表，但 bool 验证、归一化结果、错误位置各保留对应断言。schema_public.rs:453 的旧 Pi 1.3 差异说明须对当前快照重判，不按“年代久”直接删除。
+[#268 拆分后的 compile/check 语料用例](../../../../crates/opi-ai/tests/schema_engine/corpus.rs#L7)
 
 **WS 与遥测。** 自有 codec 的分帧/取消/恢复机制、本地 Upgrade/代理/TLS、Codex session/fallback 是不同故障面；依赖替换后，机制测试随实现责任退役，公开行为契约由新旧 backend 共同通过后保留。遥测中立行为转到 opi-telemetry；AI schema/费用/入口埋点仍归 opi-ai；跨任务传播与真实协议路径保留少量贯通案例。telemetry_carrier.rs:177 的精确 poll 行为和 codex_telemetry.rs:286 的回调/父 span 行为不同。涉及“consumer Drop 停止 producer”的旧预期须按已确认生命周期重写，不能只搬位置后继续冻结错误目标；中立 noop 与 tracing 适配的现有差异也不能照搬成新合同。
 
@@ -146,3 +147,54 @@ Pi 当前快照有 183 个 *.test.ts；它们提供回归族和输入样本，�
 - 当前具体缺口及迁移建议进入实施清单，包括图像费用测试未触达声称入口、UUID 私有测试探针、旧生命周期预期。有限抽样不构成整组测试可删的证明；本次确认不授权跳过替代验证。
 
 本轮仅确定后续测试重构依据，没有修改或执行生产测试；产品测试影响为 none。
+
+2026-11-19 复核发现，历史的 73 个根 integration target 已不再是当前
+基线。当前工作树有 102 个根级 `tests/*.rs`，Cargo metadata 有 112 个 test
+target，其中 19 个仍由自动发现产生，11 个 provider profile target 复用同一
+源文件。该数字只用于维护性盘点，不构成删测目标。后续按
+[#209](../issues/209-maintain-module-test-and-catalog-boundaries.md) 先生成
+target/feature inventory，补齐 `required-features` 和语义 manifest，再处理
+同一公开 seam 的子模块聚合。`test_support` 的正式 Faux API 与私有状态探针
+也必须分别计量，不能因为 `lib.rs` 的 doc-hidden 导出而整体删除或整体当作
+正式公共能力。
+
+2026-11-20 的落地顺序为 [#215 target 归属](../issues/215-own-integration-test-targets.md)、
+[#216 按改动选测](../issues/216-select-tests-by-changed-owner.md) 和
+[#217 classifier 分组试点](../issues/217-partition-classifier-contract-tests.md)。
+本轮改名命中的五个目标及各自保护的失败模式已列入
+[#210 的测试矩阵](../issues/210-audit-owners-and-name-classifier-adapters.md)。
+
+#215 的[测试归属清单](../../../../crates/opi-ai/tests/targets.tsv)已覆盖全部 Cargo 集成目标。
+Cargo 管理源路径和 feature 准入条件，清单管理主要职责与具名 runner 绑定。
+维护者可用 `python scripts/pi-sdk-conformance/check_test_inventory.py --list` 查看合并结果。
+
+日常改动使用[按路径选测入口](../../../../crates/opi-ai/tests/README.zh.md#按改动选测)。规则随其验证的行为维护。调整协议断言时，同时核对直接 wire、共享分派和确实调用该 adapter 的跨层用例；迁移测试时，逐个核对原用例名与 runner。共享 helper 按物理模块引用找到集成目标，私有库测试和归档消费者的额外绑定在选择器中显式维护。改变 feature、装配根或未覆盖路径时，计划会列出扩大检查的原因。实施证据见 [#216](../issues/216-select-tests-by-changed-owner.md)。
+
+[#217](../issues/217-partition-classifier-contract-tests.md)保留一个 classifier Cargo 目标，并为四种 wire、Models 生命周期、跨协议行为和声明顺序提供各自的 libtest 模块。后续按同一方式分组时，先在原 feature 下保存完整用例名，再核对旧名到新名的映射与所有具名选测入口。共享搭建留在其实际消费范围内，协议响应与行为断言随各自模块维护。
+
+[#218](../issues/218-separate-faux-and-private-probes.md) 用真实归档验证公开 Faux 的工具调用、deferred 提交与 fetch。UUID 耗尽用例在 `identity` 的 `cfg(test)` 模块直接设置私有序列。测试 fixture 按消费范围放置，Bedrock 的 AWS transport 替身由单个 integration 目标拥有。
+
+2026-11-22 的复核发现，provider feature-profile 仍是唯一的多 target 单源映射。
+[#265](../issues/265-split-provider-profile-test-sources.md) 已将 11 个 profile target
+拆为 11 个独立源文件。当前清单为 124 个 target、124 个源文件。后续新增 profile
+默认沿用一 target 一源，真正共享的源码只允许作为显式记录的例外。
+
+[#268](../issues/268-partition-oversized-protocol-fixtures.md) 的 Anthropic protocol
+批次保留一个 `anthropic_fixtures` executable，把 154 项公开协议断言拆为 target 内的
+`sse`、`constrained_sampling`、`adapter` 三个可过滤 topic，并让
+`tests/anthropic_fixtures/fixtures.rs` 成为唯一共享 SSE fixture owner。目录子模块用于
+失败定位和职责边界，Cargo target 仍由 `tests/anthropic_fixtures.rs` 统一管理。没有为
+每个 topic 增加 executable，也没有把没有直接 consumer 绑定的 fixture 复制到 package。
+
+剩余结构工作按 [#266](../issues/266-separate-route-context-contracts.md)、
+[#267](../issues/267-split-models-facade-implementation.md)、
+[#268](../issues/268-partition-oversized-protocol-fixtures.md)、
+[#269](../issues/269-classify-shared-test-support.md) 和最后的
+[#270](../issues/270-enforce-structure-and-test-inventory.md) 顺序推进。这个顺序先
+收敛 adapter 与 provider contract 的依赖，再处理 facade locality，随后才移动大
+fixture 和 shared helper，避免测试重排掩盖生产结构变化。
+
+本批 all-features Clippy 还发现两个 image fixture 仍初始化已删除的 `compat`
+字段，分别由 [#271](../issues/271-repair-stale-image-fixture.md) 和
+[#272](../issues/272-repair-stale-openrouter-image-fixture.md) 修复。两项受影响
+target 共 67 个测试通过，all-features test Clippy 只保留 3 个既有生产 warning。

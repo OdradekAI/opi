@@ -1,0 +1,206 @@
+{
+  "date": "2026-11-20",
+  "base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "host": "x86_64-pc-windows-msvc",
+  "selector_sha256": "59f7ac0c38d537d3af8c0a74c383915e34de432ecface41e29f1080ae8002758",
+  "distinct_cargo_target_feature_configurations_listed": 35,
+  "paths": {
+    "src/api/openai_decisions.rs": {
+      "verified_by": "executed",
+      "targets": {
+        "builtin_auth_ownership": 1,
+        "catalog_operations": 1,
+        "classifier_contract": 20,
+        "external_sdk": 1,
+        "provider_collection": 4
+      },
+      "selected": 27,
+      "qualified_case_names_sha256": "efb3c4c331ef7fe9e0c1ff4938d99b5e2dd8a31e09072a52f14c811c3461fdb0"
+    },
+    "src/api/cloudflare_workers_ai_system_one.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "classifier_contract": 15,
+        "external_sdk": 1,
+        "provider_collection": 2
+      },
+      "selected": 18,
+      "qualified_case_names_sha256": "76d177c924f0b29678ce35810b432963f43e4908360ab3a054ac98f05b0ddfce"
+    },
+    "src/api/llama_cpp_classify.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "classifier_contract": 19,
+        "external_sdk": 1
+      },
+      "selected": 20,
+      "qualified_case_names_sha256": "b8a0f4347a2f91704b67f1d463c9d61e37db07ed7816ffd5e1cedd9ce3d41a30"
+    },
+    "src/api/system_one.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "builtin_auth_ownership": 1,
+        "catalog_operations": 8,
+        "classifier_contract": 84,
+        "external_sdk": 1,
+        "provider_collection": 4,
+        "telemetry_operations": 1
+      },
+      "selected": 99,
+      "qualified_case_names_sha256": "5a49efe0e465c223cc0e7e34e3e8397dd897678f479a3aae7373e32e768474bd"
+    },
+    "src/providers/mapped.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "api_mapped_provider": 17,
+        "external_sdk": 1,
+        "provider_collection": 3
+      },
+      "selected": 21,
+      "qualified_case_names_sha256": "38530761eae256ce2e1f7ad260343f7aaa659de7b8e54fc2fcd366fbf40555f1"
+    },
+    "src/providers/openai.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "api_mapped_provider": 2,
+        "external_sdk": 1,
+        "openai_chat_fixtures": 4,
+        "openai_compat_lifecycle": 15,
+        "provider_collection": 1,
+        "provider_openai_chat_profile": 1
+      },
+      "selected": 24,
+      "qualified_case_names_sha256": "2a1643a8376502b5201d87066d90aefe5370ca6993a4561435ad6350d09ad8b7"
+    },
+    "src/providers/openai_responses.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "api_mapped_provider": 2,
+        "external_sdk": 1,
+        "openai_responses_fixtures": 3,
+        "openai_responses_lifecycle": 15,
+        "provider_collection": 1,
+        "provider_openai_responses_profile": 1
+      },
+      "selected": 23,
+      "qualified_case_names_sha256": "a629752df59459937251db0e9f576eb0a7f502547a1e0462f2ea4928fc351cb4"
+    },
+    "tests/support/pending_auth.rs": {
+      "verified_by": "executed",
+      "targets": {
+        "classifier_contract": 84,
+        "deferred_contract": 19,
+        "openrouter_fixtures": 55
+      },
+      "selected": 158,
+      "qualified_case_names_sha256": "fcc5cf913e9b4b4505d677959c77dc5a581d6c22069827713b711b82b4c11b10"
+    },
+    "tests/support/ws_peer.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "codex_native_options": 21,
+        "service_tier_cost": 8,
+        "ws_upgrade": 16,
+        "lib": 4
+      },
+      "selected": 49,
+      "qualified_case_names_sha256": "22bf8aebe07df517d745cfbdd81f2fa28b9883462595132c553ce04153e7dae5"
+    },
+    "tests/support/tls_fixtures.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "bedrock_fixtures": 178,
+        "http_acceptance": 21,
+        "oauth_flows": 195,
+        "tls_contract": 25,
+        "ws_upgrade": 16
+      },
+      "selected": 435,
+      "qualified_case_names_sha256": "ae3b276cf97c81e6b8300b2aff0e5ea144fa96764c075832ad284a6e4a7fe788"
+    },
+    "tests/support/catalog_store.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "catalog_lifecycle": 9,
+        "node4_preparation": 26,
+        "provider_collection": 111,
+        "registry": 28
+      },
+      "selected": 174,
+      "qualified_case_names_sha256": "65dc3b809688d5082ef862ec013d37e8e6cd36ec54911200a64feabc86b6bdfb"
+    },
+    "tests/provider_protocol_profile.rs": {
+      "verified_by": "cargo test -- --list",
+      "targets": {
+        "provider_anthropic_profile": 1,
+        "provider_azure_openai_profile": 1,
+        "provider_bedrock_profile": 1,
+        "provider_gemini_profile": 1,
+        "provider_mistral_profile": 1,
+        "provider_openai_chat_profile": 1,
+        "provider_openai_codex_responses_profile": 1,
+        "provider_openai_responses_profile": 1,
+        "provider_openrouter_profile": 1,
+        "provider_pi_messages_profile": 1,
+        "provider_vertex_profile": 1
+      },
+      "selected": 11,
+      "qualified_case_names_sha256": "33dc0026b748d84dde8633071967c457cdb81281caff4e5ef4940a51ea20be3a"
+    }
+  },
+  "expansion_commands": [
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "opi-ai",
+      "--all-targets"
+    ],
+    [
+      "cargo",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "opi-ai",
+      "--no-default-features",
+      "--tests"
+    ]
+  ],
+  "cli_controls": {
+    "feature": {
+      "scope": "broader checks required",
+      "reason": [
+        "Cargo.toml: feature selection or builtin composition affects multiple owners"
+      ],
+      "focused_targets_retained": 0
+    },
+    "unmapped": {
+      "scope": "broader checks required",
+      "reason": [
+        "src/transcript.rs: reviewed production or test mapping unavailable"
+      ],
+      "focused_targets_retained": 0
+    },
+    "combined": {
+      "scope": "broader checks required",
+      "reason": [
+        "Cargo.toml: feature selection or builtin composition affects multiple owners"
+      ],
+      "focused_targets_retained": 5
+    },
+    "full": {
+      "scope": "broader checks required",
+      "reason": [
+        "explicit broad check"
+      ],
+      "focused_targets_retained": 0
+    },
+    "invalid_target": {
+      "exit": 2
+    }
+  }
+}

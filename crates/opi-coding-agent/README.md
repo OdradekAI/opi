@@ -132,20 +132,45 @@ Run `opi --help` for the exact current surface. Important commands and flags:
 | Prefix | Backend | Default credentials/config |
 |--------|---------|----------------------------|
 | `anthropic:` | `AnthropicProvider` | `ANTHROPIC_API_KEY` |
-| `openai:` | `OpenAiChatProvider` | `OPENAI_API_KEY` |
+| `openai:` | `OpenAiResponsesProvider` | `OPENAI_API_KEY` |
 | `openai-responses:` | `OpenAiResponsesProvider` | `OPENAI_API_KEY` |
 | `openrouter:` | OpenRouter profile | `OPENROUTER_API_KEY` |
 | `mistral:` | Mistral profile | `MISTRAL_API_KEY` |
-| `google:` | `GeminiProvider` under its canonical id | `GEMINI_API_KEY` |
+| `google:` | Gemini with the embedded Google chat catalog | `GEMINI_API_KEY` |
 | `amazon-bedrock:` | `BedrockProvider` under its canonical id | AWS env vars or shared AWS profile/config |
-| `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`; endpoint/deployments in config |
-| `google-vertex:` | `VertexProvider` under its canonical id | `VERTEX_ACCESS_TOKEN`; project/location in config |
-| `github-copilot:` | One audited static catalog mapped across Anthropic Messages, OpenAI Completions/Chat, and OpenAI Responses | OS keychain via `/login github-copilot` |
-| `openai-codex:` | Dedicated `OpenAiCodexResponsesProvider` | OS keychain via `/login openai-codex` |
+| `azure:` | `AzureCatalogProvider` for Responses and Chat Completions | `AZURE_OPENAI_API_KEY` and a configured endpoint, `AZURE_OPENAI_BASE_URL` or `AZURE_OPENAI_RESOURCE_NAME` |
+| `google-vertex:` | Vertex AI with the embedded chat catalog | `GOOGLE_CLOUD_API_KEY` for Express, or ADC / `VERTEX_ACCESS_TOKEN` with project and location |
+| `github-copilot:` | Embedded opi catalog mapped across Anthropic Messages, OpenAI Chat Completions and OpenAI Responses | OS keychain via `/login github-copilot` |
+| `openai-codex:` | Embedded opi catalog on the dedicated Codex Responses route | OS keychain via `/login openai-codex` |
 | configured profile | OpenAI-compatible profile | profile-specific `api_key_env`, `base_url`, and model list |
 
-Provider credential env names, base URLs, model lists, and proxies can be
+Provider credential env names, base URLs, and proxies can be
 overridden in config.
+
+`openai:` and `openai-responses:` use the same embedded OpenAI chat catalog
+and send `POST /v1/responses`. Each reads its own provider configuration.
+Set `base_url` to the endpoint's origin or to its `/v1` API prefix. Use a
+qualified model ID such as `openai:chat-latest` to select the provider.
+
+Select Azure models by catalog ID, for example `azure:gpt-6.1-terra`.
+Set `AZURE_OPENAI_DEPLOYMENT_NAME_MAP=gpt-6.1-terra=terra-prod` when the
+resource uses a different deployment name. Separate multiple mappings with
+commas. Replace `[providers.azure].deployments` with this mapping and update
+default model selections to catalog IDs. `[providers.azure].endpoint` and
+`api_version` take precedence over their corresponding environment variables.
+
+The Google runtime and `--list-models` use the same embedded 23-model catalog.
+Select a catalog ID such as `google:gemini-pro-latest`. To route requests through
+a proxy, set `[providers.google].base_url` to its origin or path prefix. The route
+appends `/v1beta/models/{id}:streamGenerateContent?alt=sse`.
+
+Vertex runtime and `--list-models` share the same embedded 13-model catalog.
+Remove `[providers.google-vertex].models` and select a current model in
+`[defaults].model`, such as `google-vertex:gemini-3.1-pro-preview`. Express
+uses `GOOGLE_CLOUD_API_KEY` and the publisher collection. For Bearer
+authentication via ADC or `VERTEX_ACCESS_TOKEN`, set both `project` and
+`location` under `[providers.google-vertex]`. A `base_url` host or path prefix
+routes either mode through a proxy.
 
 ### Canonical provider ids and legacy reference migration (task 20.34)
 
@@ -213,11 +238,12 @@ Production startup installs Windows Credential Manager on Windows, macOS
 Keychain Services on macOS, or Freedesktop Secret Service on Linux before any
 credential-aware path constructs an entry.
 
-`github-copilot` uses one audited static pi-0.80.6 catalog and one lazy stored
-credential across Anthropic Messages, OpenAI Completions/Chat, and OpenAI
-Responses routes. Its model listing intentionally does not call live account
-entitlement/model-enable endpoints. `openai-codex` uses the dedicated
-`openai-codex-responses` provider at `/codex/responses`.
+`github-copilot` uses the embedded opi-ai catalog for listing and runtime
+selection across Anthropic Messages, OpenAI Chat Completions and OpenAI
+Responses. Listing reads local model data. Requests use stored OAuth
+credentials and the endpoint selected for the account. `openai-codex` uses
+the embedded Codex catalog for listing and runtime selection. Its dedicated
+adapter sends requests to `/codex/responses`.
 
 `/login openai-codex` offers Browser (default) and Device Code. Anthropic and
 Codex Browser are PKCE flows with callback/manual-paste fallback. GitHub
@@ -707,7 +733,7 @@ which mutably borrows the runner through lifecycle completion.
   built-in core workflows.
 - OAuth providers beyond Anthropic, GitHub Copilot, and OpenAI Codex remain
   deferred. Other deferred product decisions are provider catalogs beyond the
-  audited static pi-0.80.6 Copilot/Codex snapshots, a broad new first-class
+  reviewed Copilot and Codex catalogs, a broad new first-class
   provider list (compatible providers stay
   config-driven OpenAI-compatible profiles), image generation
   (image support is input-only), browser automation outside the approved

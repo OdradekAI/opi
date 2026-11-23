@@ -1,0 +1,1231 @@
+{
+  "schema": 1,
+  "issue": 269,
+  "related_issues": [
+    268,
+    270
+  ],
+  "date": "2026-11-23",
+  "verdict": "PASS Windows x64 structure closeout and three-graph WS archive",
+  "scope": "Restore formatter and strict Clippy gates, then execute the actual SDK or external consumer for each WS layer.",
+  "test_impact": {
+    "retain": "all named cases and package consumers",
+    "update": "format three fixture sources"
+  },
+  "source_review": {
+    "only_rustfmt": [
+      "tests/openai_responses_fixtures.rs",
+      "tests/openai_responses_fixtures/fixtures.rs",
+      "tests/openai_responses_fixtures/wire.rs"
+    ],
+    "auth_filter": "same expression with the extra borrow removed",
+    "prepared_attempt": "same attempt lifecycle and inputs read from the grouped dispatch record",
+    "responses_http": "unchanged JSON request body, header and callback sequence, and status mapping",
+    "format_reference": [
+      "rustfmt",
+      "--edition",
+      "2024",
+      "--config",
+      "skip_children=true",
+      "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\format-expected\\tests\\openai_responses_fixtures.rs",
+      "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\format-expected\\tests\\openai_responses_fixtures\\fixtures.rs",
+      "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\format-expected\\tests\\openai_responses_fixtures\\wire.rs"
+    ],
+    "sources": [
+      {
+        "path": "src/models.rs",
+        "before": "3bf6a5fd06d34c484370c3804aac5edf279e079b6f999c0ac03e135e64aceede",
+        "after": "fe5906c974d2bd9ef63fb2449cc9238f7d8f392e6af8edbd4861e1bf4a25743a"
+      },
+      {
+        "path": "src/models/dispatch.rs",
+        "before": "9274ca6e2206a33cfadfe4ee2be9e8b76fab3c244fa7e92857c4a1018c6c69fc",
+        "after": "837ca9ded356c31ee34d4ca9fbbce10eae9bdb7b4f770bd85ce083714332a52a"
+      },
+      {
+        "path": "src/models/auth_owner.rs",
+        "before": "4a782e5d42252ba3c3dc8f3b1f68257fdfa689cc8ef6c14d176b11f05e662d22",
+        "after": "76e9cb65da11e76f3f801eca3734843b63dc304917065523804e0d6e4bbbde8b"
+      },
+      {
+        "path": "src/models/prepared_call.rs",
+        "before": "eebcf689576ff9100600c70e14f28f84c0ce99724c4dfcfc42ba4f275bed9b66",
+        "after": "a1bfbe1e9819af1c77b358c6f38703765a69632681d11acd65fe3aadf10c3413"
+      },
+      {
+        "path": "src/api/openai_responses.rs",
+        "before": "23a7943f27601cfb024951642d0ef7ba5764ab32099724e84a010ba16248229d",
+        "after": "354998980427cc739ced2574599693afb5569341f24a9a261a528141d28f67a3"
+      },
+      {
+        "path": "tests/openai_responses_fixtures.rs",
+        "before": "5227f37640da3d8b61867167b9ee69507f45749763c0c6ffd696c91d5b61935b",
+        "after": "6dc67618fadaf2afaa805175e4b21fc6400b8c5963b60cfeef03e9deff162b26"
+      },
+      {
+        "path": "tests/openai_responses_fixtures/fixtures.rs",
+        "before": "9c9edeb089e69c19d68d1cebd09c8ef9e2430c9b3a81fc4314865fb2cf7b774b",
+        "after": "2fa7e7d625a59cb8ce16a5b51e117cf5649f3373575322da388b1dc3eeafe331"
+      },
+      {
+        "path": "tests/openai_responses_fixtures/wire.rs",
+        "before": "a0d564e5d830856bcb08c81d22098f364f8e2597b834ffe3b54846b841b1bc5f",
+        "after": "dcdcf33292081664b7ac008a7493a396164391da62068c60c2561e02b0607f62"
+      }
+    ]
+  },
+  "workspace": {
+    "baseline": {
+      "baseline-fmt": {
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ],
+        "exit": 1
+      },
+      "baseline-clippy": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--lib",
+          "--test",
+          "ws_upgrade",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 101
+      },
+      "baseline-boundaries": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "node4_preparation",
+          "--test",
+          "resource_cleanup",
+          "--test",
+          "openai_responses_lifecycle",
+          "--test",
+          "oauth_copilot",
+          "--test",
+          "openai_responses_fixtures"
+        ],
+        "exit": 0
+      }
+    },
+    "workspace": {
+      "final-fmt": {
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ],
+        "exit": 0
+      },
+      "strict-ws": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--lib",
+          "--test",
+          "ws_upgrade",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      },
+      "focus-tests": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "node4_preparation",
+          "--test",
+          "resource_cleanup",
+          "--test",
+          "openai_responses_lifecycle",
+          "--test",
+          "oauth_copilot",
+          "--test",
+          "openai_responses_fixtures"
+        ],
+        "exit": 0
+      },
+      "focus-clippy": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "node4_preparation",
+          "--test",
+          "resource_cleanup",
+          "--test",
+          "openai_responses_lifecycle",
+          "--test",
+          "oauth_copilot",
+          "--test",
+          "openai_responses_fixtures",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      },
+      "acquisition": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "retry_backoff",
+          "--",
+          "acquisition::"
+        ],
+        "exit": 0
+      },
+      "native-codex": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "codex_native_options"
+        ],
+        "exit": 0
+      },
+      "min-clippy": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--lib",
+          "--test",
+          "core_profile",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      },
+      "min-tests": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--test",
+          "core_profile"
+        ],
+        "exit": 0
+      },
+      "responses-only": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "provider-openai-responses",
+          "--lib",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0
+      }
+    },
+    "baseline_diagnostic_locations": [
+      [
+        "crates\\opi-ai\\src\\api\\openai_responses.rs",
+        "706"
+      ],
+      [
+        "crates\\opi-ai\\src\\models\\auth_owner.rs",
+        "479"
+      ],
+      [
+        "crates\\opi-ai\\src\\models\\prepared_call.rs",
+        "196"
+      ]
+    ],
+    "focused_cases_retained": {
+      "node4_preparation": 26,
+      "oauth_copilot": 22,
+      "openai_responses_fixtures": 83,
+      "openai_responses_lifecycle": 15,
+      "resource_cleanup": 16
+    },
+    "additional_tests": {
+      "retry_backoff": 13,
+      "codex_native_options": 21,
+      "core_profile": 4
+    },
+    "workspace_passed": 200,
+    "structure": {
+      "targets": 124,
+      "rust_test_sources": 402,
+      "support_helpers": 16,
+      "support_edges": 60,
+      "fixture_gate_sha256": "223bb4515d17810141f4f11af287e5dec57801e01e8fddb5709d52632b492553",
+      "production_gate_sha256": "8d00824d01286de5ae0c9627ed0cf99618c081f9512461154d29210001eb39d1",
+      "fixtures": {
+        "paths": [
+          "crates/opi-ai/tests/openai_responses_fixtures.rs",
+          "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+          "crates/opi-ai/tests/openai_responses_fixtures/wire.rs"
+        ],
+        "scope": "focused",
+        "tests": [
+          {
+            "target": "openai_responses_fixtures",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "openai_responses_fixtures"
+            ],
+            "reasons": [
+              "tests/openai_responses_fixtures.rs",
+              "tests/openai_responses_fixtures/fixtures.rs",
+              "tests/openai_responses_fixtures/wire.rs"
+            ]
+          }
+        ],
+        "runners": [],
+        "expansion": []
+      },
+      "production": {
+        "paths": [
+          "crates/opi-ai/src/models.rs",
+          "crates/opi-ai/src/models/auth_owner.rs",
+          "crates/opi-ai/src/models/prepared_call.rs",
+          "crates/opi-ai/src/models/dispatch.rs",
+          "crates/opi-ai/src/api/openai_responses.rs"
+        ],
+        "scope": "broader checks required",
+        "tests": [],
+        "runners": [],
+        "expansion": [
+          "src/api/openai_responses.rs: reviewed production or test mapping unavailable",
+          "src/models.rs: reviewed production or test mapping unavailable",
+          "src/models/auth_owner.rs: reviewed production or test mapping unavailable",
+          "src/models/dispatch.rs: reviewed production or test mapping unavailable",
+          "src/models/prepared_call.rs: reviewed production or test mapping unavailable"
+        ]
+      }
+    },
+    "log_sha256": {
+      "baseline-fmt": {
+        "stdout": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "baseline-clippy": {
+        "stdout": "20e7a9528b48a9dc10dd63260b8db3cd6b16819698fdb8616fb16534ca882f21",
+        "stderr": "33a0c51f306c30eafc83e203c5e23eadee347ce3d6c01defeb39ccafedce963c"
+      },
+      "baseline-boundaries": {
+        "stdout": "af26b9b6fede507e07909b4983e650a1a2ca245aab16f6d94c397093701ee402",
+        "stderr": "ff3d248d85a595c9a2ad0f695b5e75b45a1d0f26dd246eb795bcf0cf59714537"
+      },
+      "final-fmt": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "strict-ws": {
+        "stdout": "ec265a4c0d089bb2e89f4d68537e8980200c441f7b41bf8dd08968590585241b",
+        "stderr": "71575f9047ee1bc95132bcf660fe4a613c7838aed1514f2065431e289081b7b1"
+      },
+      "focus-tests": {
+        "stdout": "94ebd40ce5afdcd0b2d4596569ae7a6512ca7a00dc445207201f13ddb444937e",
+        "stderr": "4c9aa4b2e473ba75fb0b4a1030f5c42567a0847713927a984e96fcb2705c002e"
+      },
+      "focus-clippy": {
+        "stdout": "9e5149757262c66bc4d2ba5f18ee2c86b619b5df56ece63969a36dc56110ea8a",
+        "stderr": "78b7c6f5015cdabe517b19b8d0563d555bc5ef180703ef7226b3b9f6782eba86"
+      },
+      "acquisition": {
+        "stdout": "e9f0734eb799e42d0eda22afd7dca09daf1588bb60984c5b07835711dc541843",
+        "stderr": "14511b0035130fe5e9b3a58c59d3cf67b3d6e392d658610e7878861e65ea55b3"
+      },
+      "native-codex": {
+        "stdout": "86371c0358ab940230a065d4e1020fa96d48c4671ca75ccb4b1d7e9224365643",
+        "stderr": "e67eace45c860aeb7f23b33652492f4ab70aabd4f60a8207468c1dfe8a013d17"
+      },
+      "min-clippy": {
+        "stdout": "ecbab2741b384d397f18fda397c29e6a0c3013474d9c501708eeb9445e90db7d",
+        "stderr": "70c33a08aaa3a48fe65934c5a0ad971c14e3e439b0c4cdf33a2a670688676f7a"
+      },
+      "min-tests": {
+        "stdout": "843fb2bdc7f116e82d51e9e60a7ddcc98423d26126c36c192c4a9720dd56fcf0",
+        "stderr": "a29b0ebafa2272a53be11e5bbf373a48a8e5992bf0d334c16252edd763b7a3b3"
+      },
+      "responses-only": {
+        "stdout": "19928885cff7036da776c76e7b9511b74a356e3fea056a4f0232334321d66756",
+        "stderr": "0b8591a168600bfaef2ada45f275c5cd3fe6ac72093acdf1acd0e9899c7b6b1b"
+      },
+      "structure-fixtures": {
+        "stdout": "e7fbe68b7b24adc3bc06a4a3ac64654e7dfb656121bf730ef69bd0f30fc8edea",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "structure-production": {
+        "stdout": "571b5279dac917192a89062b25e96fb3b611174bd93ff534c09d98577b3cd7e0",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  },
+  "archive": {
+    "runner": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "-B",
+        "scripts/pi-sdk-conformance/package_slice.py",
+        "--family",
+        "ws",
+        "--offline",
+        "--scratch",
+        "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws",
+        "--target-dir",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+      ],
+      "exit": 0
+    },
+    "runner_sha256": "e4003a74993718123149b456b10295bf8f01aa98cc19fb564fe58941ac8d6fd2",
+    "toolchain": {
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\nrelease: 1.99.1\ncommit-hash: 5f94df4789f005f9a352888e8355ffc645b7ed0e\ncommit-date: 2026-08-27\nhost: x86_64-pc-windows-msvc\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.21.0-DEV (sys:0.4.90+curl-8.21.0 vendored ssl:Schannel)\nos: Windows 10.0.22631 (Windows 11 Core) [64-bit]"
+    },
+    "stages": [
+      {
+        "name": "rustc-version",
+        "command": [
+          "rustc",
+          "-vV"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.03
+      },
+      {
+        "name": "cargo-version",
+        "command": [
+          "cargo",
+          "-vV"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.02
+      },
+      {
+        "name": "lease-start",
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+          "lease",
+          "start",
+          "--target",
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+          "--pid",
+          "55304"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.19
+      },
+      {
+        "name": "package",
+        "command": [
+          "cargo",
+          "package",
+          "-p",
+          "opi-telemetry",
+          "-p",
+          "opi-ai",
+          "--allow-dirty",
+          "--no-verify",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.78
+      },
+      {
+        "name": "consumer-lock",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "generate-lockfile",
+          "--offline"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.51
+      },
+      {
+        "name": "private-ws-metadata-ordinary",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "metadata",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--format-version",
+          "1",
+          "--offline"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.25
+      },
+      {
+        "name": "private-ws-test-ordinary",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "test",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--lib",
+          "ws::",
+          "--offline",
+          "--locked",
+          "--",
+          "--skip",
+          "auth::aws::"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 76.62
+      },
+      {
+        "name": "public-ws-test-ordinary",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "test",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--test",
+          "ws_upgrade",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 27.75
+      },
+      {
+        "name": "packaged-ws-clippy-ordinary",
+        "command": [
+          "cargo",
+          "clippy",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--lib",
+          "--test",
+          "ws_upgrade",
+          "--offline",
+          "--locked",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 49.41
+      },
+      {
+        "name": "private-ws-metadata-union-default",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "metadata",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--format-version",
+          "1",
+          "--offline",
+          "--features",
+          "flate2/default"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.28
+      },
+      {
+        "name": "private-ws-test-union-default",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "test",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--lib",
+          "ws::",
+          "--offline",
+          "--locked",
+          "--features",
+          "flate2/default",
+          "--",
+          "--skip",
+          "auth::aws::"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 30.25
+      },
+      {
+        "name": "public-ws-test-union-default",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "test",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--test",
+          "ws_upgrade",
+          "--offline",
+          "--locked",
+          "--features",
+          "flate2/default"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 28.16
+      },
+      {
+        "name": "packaged-ws-clippy-union-default",
+        "command": [
+          "cargo",
+          "clippy",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--lib",
+          "--test",
+          "ws_upgrade",
+          "--offline",
+          "--locked",
+          "--features",
+          "flate2/default",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 8.69
+      },
+      {
+        "name": "private-ws-metadata-union-c-zlib",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "metadata",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--format-version",
+          "1",
+          "--offline",
+          "--features",
+          "flate2/zlib"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.27
+      },
+      {
+        "name": "private-ws-test-union-c-zlib",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "test",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--lib",
+          "ws::",
+          "--offline",
+          "--locked",
+          "--features",
+          "flate2/zlib",
+          "--",
+          "--skip",
+          "auth::aws::"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 30.5
+      },
+      {
+        "name": "public-ws-test-union-c-zlib",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "test",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--test",
+          "ws_upgrade",
+          "--offline",
+          "--locked",
+          "--features",
+          "flate2/zlib"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 27.74
+      },
+      {
+        "name": "packaged-ws-clippy-union-c-zlib",
+        "command": [
+          "cargo",
+          "clippy",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--lib",
+          "--test",
+          "ws_upgrade",
+          "--offline",
+          "--locked",
+          "--features",
+          "flate2/zlib",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 8.83
+      },
+      {
+        "name": "private-ws-doc",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "doc",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--no-deps",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 24.19
+      },
+      {
+        "name": "ordinary-metadata",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "metadata",
+          "--format-version",
+          "1",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.26
+      },
+      {
+        "name": "ordinary-build",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "build",
+          "--message-format=json",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 30.41
+      },
+      {
+        "name": "ordinary-consumer",
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\consumer-ws.exe"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 2.59
+      },
+      {
+        "name": "union-default-metadata",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "metadata",
+          "--format-version",
+          "1",
+          "--offline",
+          "--locked",
+          "--features",
+          "union-default"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.19
+      },
+      {
+        "name": "union-default-build",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "build",
+          "--message-format=json",
+          "--offline",
+          "--locked",
+          "--features",
+          "union-default"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 26.53
+      },
+      {
+        "name": "union-default-consumer",
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\consumer-ws.exe"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 2.45
+      },
+      {
+        "name": "union-c-zlib-metadata",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "metadata",
+          "--format-version",
+          "1",
+          "--offline",
+          "--locked",
+          "--features",
+          "union-c-zlib"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.19
+      },
+      {
+        "name": "union-c-zlib-build",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "build",
+          "--message-format=json",
+          "--offline",
+          "--locked",
+          "--features",
+          "union-c-zlib"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 26.94
+      },
+      {
+        "name": "union-c-zlib-consumer",
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\consumer-ws.exe"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 2.45
+      },
+      {
+        "name": "lease-end",
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+          "lease",
+          "end",
+          "--target",
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+          "--pid",
+          "55304"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.2
+      }
+    ],
+    "validation": {
+      "verdict": "PASS",
+      "archive": "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\opi-ai-0.8.3.crate",
+      "archive_sha256": "4eccd6b512352a9c7e78864faddeb4b74ab875c971c87abf1eb360861aaa1c83",
+      "companion": {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      },
+      "previous_failed_receipt_sha256": "73ecd664e04ca10c32b586b69c70746873fa252b02b9970c0094073cde5f99cb",
+      "raw_receipt_sha256": "8714eb085bd343c5736313fe1fa87496b4a125e0cf2913903b9e6af46cfb543c",
+      "extracted_crate": "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3",
+      "archive_comparison": {
+        "prior_package": "E:\\opi\\scratch\\issue-268-model-wire-metadata-20261123-184912\\catalog\\opi-ai-0.8.3.crate",
+        "prior_sha256": "1faf8816df961a9a9d0acd5fc85bb5af4409500a4d141ed251e8c3c93d6d408f",
+        "changed_members": [
+          "src/api/openai_responses.rs",
+          "src/models.rs",
+          "src/models/auth_owner.rs",
+          "src/models/dispatch.rs",
+          "src/models/prepared_call.rs",
+          "tests/README.md",
+          "tests/README.zh.md",
+          "tests/openai_responses_fixtures.rs",
+          "tests/openai_responses_fixtures/fixtures.rs",
+          "tests/openai_responses_fixtures/wire.rs"
+        ],
+        "unchanged_members": 702
+      },
+      "rustdoc": {
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "doc",
+          "--manifest-path",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\package\\opi-ai-0.8.3\\Cargo.toml",
+          "--no-deps",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "RUSTDOCFLAGS": "-D warnings"
+      },
+      "profiles": [
+        {
+          "name": "ordinary",
+          "private": 98,
+          "public": 16,
+          "external": 10,
+          "strict_clippy_exit": 0,
+          "consumer_checks": [
+            "strict-upgrade-and-raw-tail-once",
+            "models-codex-upgrade-private-codec-chain",
+            "models-codex-window8-pmd-trailing-close",
+            "models-codex-active-cleanup",
+            "models-codex-idle-cleanup",
+            "direction-specific-pmd-facts",
+            "reject-mismatched-accept",
+            "reject-unoffered-subprotocol",
+            "reject-unsolicited-extension",
+            "redirect-is-terminal"
+          ],
+          "consumer_report_sha256": "61fd77527e1eb1f17f102c5a145be6b7c4a81c880f400a87354667afaf7d6b67",
+          "native_units": [
+            "aws-lc-sys"
+          ]
+        },
+        {
+          "name": "union-default",
+          "private": 98,
+          "public": 16,
+          "external": 10,
+          "strict_clippy_exit": 0,
+          "consumer_checks": [
+            "strict-upgrade-and-raw-tail-once",
+            "models-codex-upgrade-private-codec-chain",
+            "models-codex-window8-pmd-trailing-close",
+            "models-codex-active-cleanup",
+            "models-codex-idle-cleanup",
+            "direction-specific-pmd-facts",
+            "reject-mismatched-accept",
+            "reject-unoffered-subprotocol",
+            "reject-unsolicited-extension",
+            "redirect-is-terminal"
+          ],
+          "consumer_report_sha256": "61fd77527e1eb1f17f102c5a145be6b7c4a81c880f400a87354667afaf7d6b67",
+          "native_units": [
+            "aws-lc-sys"
+          ]
+        },
+        {
+          "name": "union-c-zlib",
+          "private": 98,
+          "public": 16,
+          "external": 10,
+          "strict_clippy_exit": 0,
+          "consumer_checks": [
+            "strict-upgrade-and-raw-tail-once",
+            "models-codex-upgrade-private-codec-chain",
+            "models-codex-window8-pmd-trailing-close",
+            "models-codex-active-cleanup",
+            "models-codex-idle-cleanup",
+            "direction-specific-pmd-facts",
+            "reject-mismatched-accept",
+            "reject-unoffered-subprotocol",
+            "reject-unsolicited-extension",
+            "redirect-is-terminal"
+          ],
+          "consumer_report_sha256": "61fd77527e1eb1f17f102c5a145be6b7c4a81c880f400a87354667afaf7d6b67",
+          "native_units": [
+            "aws-lc-sys",
+            "libz-sys"
+          ]
+        }
+      ],
+      "lease_ended": true,
+      "archived_background": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--config",
+          "E:\\opi\\scratch\\issue-269-closeout-20261123-194537\\ws\\candidate-telemetry.toml",
+          "--offline",
+          "--locked",
+          "--test",
+          "openai_responses_lifecycle",
+          "--",
+          "--exact",
+          "background_deferred_registration_submits_fetches_and_cancels"
+        ],
+        "exit": 0,
+        "named_tests_passed": 1
+      }
+    },
+    "background_wire": [
+      "POST /v1/responses",
+      "GET /v1/responses/resp_bg_1",
+      "POST /v1/responses/resp_bg_1/cancel"
+    ]
+  },
+  "worktree": {
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "committed": "none for this task",
+    "staged": [],
+    "before": {
+      "unstaged": 207,
+      "untracked": 564
+    },
+    "after": {
+      "unstaged": 207,
+      "untracked": 565
+    },
+    "carried_in_and_touched": [
+      "crates/opi-ai/src/api/openai_responses.rs",
+      "crates/opi-ai/src/models.rs",
+      "crates/opi-ai/src/models/auth_owner.rs",
+      "crates/opi-ai/src/models/dispatch.rs",
+      "crates/opi-ai/src/models/prepared_call.rs",
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/openai_responses_fixtures.rs",
+      "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+      "crates/opi-ai/tests/openai_responses_fixtures/wire.rs",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/269-classify-shared-test-support.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/270-enforce-structure-and-test-inventory.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/README.md"
+    ],
+    "task_only_unstaged": [],
+    "task_only_untracked": [
+      "docs/iterations/opi-ai-1-5-alignment/evidence/269-ws-archive-closeout-20261123.json"
+    ]
+  },
+  "scratch": "E:\\opi\\scratch\\issue-269-closeout-20261123-194537",
+  "files": [
+    {
+      "path": "crates/opi-ai/src/models.rs",
+      "size": 17198,
+      "sha256": "fe5906c974d2bd9ef63fb2449cc9238f7d8f392e6af8edbd4861e1bf4a25743a"
+    },
+    {
+      "path": "crates/opi-ai/src/models/dispatch.rs",
+      "size": 6192,
+      "sha256": "837ca9ded356c31ee34d4ca9fbbce10eae9bdb7b4f770bd85ce083714332a52a"
+    },
+    {
+      "path": "crates/opi-ai/src/models/auth_owner.rs",
+      "size": 35981,
+      "sha256": "76e9cb65da11e76f3f801eca3734843b63dc304917065523804e0d6e4bbbde8b"
+    },
+    {
+      "path": "crates/opi-ai/src/models/prepared_call.rs",
+      "size": 17658,
+      "sha256": "a1bfbe1e9819af1c77b358c6f38703765a69632681d11acd65fe3aadf10c3413"
+    },
+    {
+      "path": "crates/opi-ai/src/api/openai_responses.rs",
+      "size": 70148,
+      "sha256": "354998980427cc739ced2574599693afb5569341f24a9a261a528141d28f67a3"
+    },
+    {
+      "path": "crates/opi-ai/tests/openai_responses_fixtures.rs",
+      "size": 1315,
+      "sha256": "6dc67618fadaf2afaa805175e4b21fc6400b8c5963b60cfeef03e9deff162b26"
+    },
+    {
+      "path": "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+      "size": 9415,
+      "sha256": "2fa7e7d625a59cb8ce16a5b51e117cf5649f3373575322da388b1dc3eeafe331"
+    },
+    {
+      "path": "crates/opi-ai/tests/openai_responses_fixtures/wire.rs",
+      "size": 72276,
+      "sha256": "dcdcf33292081664b7ac008a7493a396164391da62068c60c2561e02b0607f62"
+    },
+    {
+      "path": "crates/opi-ai/tests/README.md",
+      "size": 55308,
+      "sha256": "4dde2fcfb65ac82001c84f7495f268150fd2dc175c6677d253eac9348a071800"
+    },
+    {
+      "path": "crates/opi-ai/tests/README.zh.md",
+      "size": 52619,
+      "sha256": "bf79f7c57f4d4851217905ac1720d90d0937aafa1affddab1370ebb0c9e85283"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/README.md",
+      "size": 11417,
+      "sha256": "18e930cd74776b237379b4a8db54ea079318acea80bd3f4dffa694eb3fbf2c35"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "size": 147172,
+      "sha256": "68b00be392e480033ceede4413b58411e9c15039c95398460e4357d9fa1317d2"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/269-classify-shared-test-support.md",
+      "size": 4459,
+      "sha256": "5e7f3f03c9aedca79a0cc3c9164c68012518e5729da5bae8575b6b6cc7977274"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/270-enforce-structure-and-test-inventory.md",
+      "size": 3631,
+      "sha256": "b9e0fb03f99bb47c22801155dcde0283a528b6ab679cdd3a695943758eb0da21"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "size": 192958,
+      "sha256": "57757eba4fc1804c2dcb58b0eef19f0211b3840a95186f7049a121b03640ae1b"
+    }
+  ]
+}

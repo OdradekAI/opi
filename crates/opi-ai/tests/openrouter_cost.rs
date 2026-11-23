@@ -2,7 +2,7 @@ use opi_ai::api::anthropic::{
     AnthropicEvent, ParsedEvent as AnthropicParsedEvent,
     parse_sse_events as parse_anthropic_sse_events,
 };
-use opi_ai::api::openai::{
+use opi_ai::api::openai_completions::{
     OpenAiChatEvent, ParsedEvent, parse_sse_events, parse_sse_events_for_openrouter,
 };
 use opi_ai::providers::openrouter::{

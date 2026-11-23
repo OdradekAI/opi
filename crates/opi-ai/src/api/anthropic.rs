@@ -11,13 +11,13 @@ use secrecy::ExposeSecret;
 use serde::Deserialize;
 use tokio_util::sync::CancellationToken;
 
+use crate::api::shared::copilot_headers::github_copilot_route_headers;
 use crate::auth::{AuthInvalidPolicy, AuthScheme, ResolvedAuth};
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::{AnthropicMessagesCompat, ModelInfo, WireCompat};
 use crate::provider::routes::AnthropicRouteContext;
 use crate::provider::{
     CacheRetention, EventStream, Provider, ProviderError, ProviderErrorSummary, Request,
-    github_copilot_initiator, github_copilot_route_headers,
 };
 use crate::stream::{
     AssistantStreamEvent, CancelAwareReceiverStream, StopReason, Usage, send_or_cancel,
@@ -1549,12 +1549,16 @@ impl AnthropicMessagesWireAdapter {
                 .unwrap_or(false);
 
         let native = self.native_options.as_ref();
+        let simple = native.is_some_and(AnthropicMessagesOptions::is_simple);
         let native_enabled = native
             .and_then(|options| options.thinking_enabled)
             .or_else(|| {
-                (compat.supports_mid_convo_effort
-                    && native.is_some_and(AnthropicMessagesOptions::is_simple))
-                .then_some(request.thinking.enabled)
+                // Vercel simple calls also set the state for numeric thinking.
+                (simple
+                    && (compat.supports_mid_convo_effort
+                        || compat.force_adaptive_thinking
+                        || self.provider_id == "vercel-ai-gateway"))
+                    .then_some(request.thinking.enabled)
             });
         let neutral_enabled = request.thinking.enabled || native_enabled == Some(true);
         let thinking_disabled = native_enabled == Some(false)
@@ -1566,8 +1570,10 @@ impl AnthropicMessagesWireAdapter {
                         .is_ok()
             });
         let managed_effort = compat.supports_mid_convo_effort && !thinking_disabled;
-        let provider_thinking_level = if managed_effort {
-            let effort = if let Some(level) = native.and_then(|options| options.effort) {
+        let adaptive_effort = if managed_effort
+            || (neutral_enabled && !thinking_disabled && compat.force_adaptive_thinking)
+        {
+            if let Some(level) = native.and_then(|options| options.effort) {
                 model_caps
                     .map(|model| model.thinking_level_map.resolve(level))
                     .transpose()
@@ -1575,7 +1581,7 @@ impl AnthropicMessagesWireAdapter {
                         "anthropic-messages native options reject unsupported thinking level {level:?}"
                     ))))?
                     .flatten()
-            } else if native.is_none_or(AnthropicMessagesOptions::is_simple)
+            } else if (simple || (managed_effort && native.is_none()))
                 && request.thinking.enabled
                 && compat.force_adaptive_thinking
             {
@@ -1599,11 +1605,12 @@ impl AnthropicMessagesWireAdapter {
                 }))
             } else {
                 None
-            };
-            Some(effort.unwrap_or_else(|| "high".into()))
+            }
         } else {
             None
         };
+        let provider_thinking_level =
+            managed_effort.then(|| adaptive_effort.clone().unwrap_or_else(|| "high".into()));
 
         let cache_marker = if use_long_ttl {
             serde_json::json!({"type": "ephemeral", "ttl": "1h"})
@@ -1774,20 +1781,8 @@ impl AnthropicMessagesWireAdapter {
                     "type": "adaptive",
                     "display": display.wire_str(),
                 });
-                if let Some(level) = native.and_then(|options| options.effort) {
-                    let resolved = model_caps
-                        .map(|model| model.thinking_level_map.resolve(level))
-                        .transpose()
-                        .map_err(|_| {
-                            crate::provider::ProviderError::Config(
-                                crate::provider::ProviderErrorSummary::sanitized(format!(
-                                    "anthropic-messages native options reject unsupported thinking level {level:?}"
-                                )),
-                            )
-                        })?;
-                    if let Some(effort) = resolved.flatten() {
-                        body["output_config"] = serde_json::json!({"effort": effort});
-                    }
+                if let Some(effort) = adaptive_effort {
+                    body["output_config"] = serde_json::json!({"effort": effort});
                 }
             } else {
                 // `|| 1024`: a missing or zero budget on enabled thinking
@@ -2032,14 +2027,7 @@ impl AnthropicMessagesWireAdapter {
             let cancel = request.cancel.clone();
             let timeout = request.timeout;
             let copilot_headers = if self.copilot_headers {
-                match github_copilot_route_headers(&request) {
-                    Ok(mut headers) => {
-                        let initiator = github_copilot_initiator(&request);
-                        headers.push(("X-Initiator".into(), initiator.into()));
-                        Ok(headers)
-                    }
-                    Err(error) => Err(error),
-                }
+                github_copilot_route_headers(&request)
             } else {
                 Ok(Vec::new())
             };
@@ -2237,7 +2225,7 @@ impl AnthropicMessagesWireAdapter {
                         diagnostics_seed,
                         provider_thinking_level,
                         model_info,
-                        &body,
+                        body,
                         cancel,
                         timeout,
                         extra_headers,
@@ -2288,7 +2276,7 @@ impl AnthropicMessagesWireAdapter {
         diagnostics_seed: Vec<crate::stream::AssistantDiagnostic>,
         provider_thinking_level: Option<String>,
         model_info: Option<ModelInfo>,
-        body: &serde_json::Value,
+        mut body: serde_json::Value,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         extra_headers: Vec<(String, String)>,
@@ -2301,8 +2289,26 @@ impl AnthropicMessagesWireAdapter {
         let mut request = client
             .post(format!("{base_url}/v1/messages"))
             .header("anthropic-version", "2023-06-01")
-            .header("content-type", "application/json")
-            .body(serde_json::to_string(body).unwrap_or_default());
+            .header("content-type", "application/json");
+        if provider_id == "vercel-ai-gateway" {
+            // The gateway uses the beta Messages endpoint. Payload callbacks
+            // see the beta list before HTTP moves it into the request header.
+            request = request.query(&[("beta", "true")]);
+            if let Some(betas) = body
+                .as_object_mut()
+                .and_then(|params| params.shift_remove("betas"))
+            {
+                let betas: Option<Vec<String>> = serde_json::from_value(betas).map_err(|_| {
+                    ProviderError::CallbackPhase(ProviderErrorSummary::attested_static(
+                        "Vercel Messages betas must be a list of strings",
+                    ))
+                })?;
+                if let Some(betas) = betas {
+                    request = request.header("anthropic-beta", betas.join(","));
+                }
+            }
+        }
+        request = request.body(serde_json::to_string(&body).unwrap_or_default());
         // Apply extra headers from Request (validated by caller).
         for (name, value) in &extra_headers {
             request = request.header(name.as_str(), value.as_str());
@@ -2376,13 +2382,7 @@ impl AnthropicMessagesWireAdapter {
                     && error.get("type").and_then(serde_json::Value::as_str)
                         == Some("invalid_request_error")
                     && let Some(message) = error.get("message").and_then(serde_json::Value::as_str)
-                    && [
-                        "The compiled grammar is too large",
-                        "Too many strict tools (",
-                        "Schemas contains too many parameters with union types (",
-                    ]
-                    .iter()
-                    .any(|marker| message.contains(marker))
+                    && crate::constrained_sampling::is_strict_tool_limit_message(message)
                 {
                     return Err(ProviderError::StrictToolLimits {
                         detail: ProviderErrorSummary::sanitized(message),

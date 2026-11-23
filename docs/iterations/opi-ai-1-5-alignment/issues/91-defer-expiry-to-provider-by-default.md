@@ -48,8 +48,8 @@ The Rust reopen fixture serializes the entire handle, uses a fake
 clock for the next poll and passes that time as `now_ms`. Its test job
 has no expiry. The explicit expiry tests supply a deadline.
 [Scripted submission](../../../../crates/opi-ai/src/test_support.rs#L786) ·
-[Reopen fixture](../../../../crates/opi-ai/tests/deferred_contract.rs#L771) ·
-[Explicit expiry test](../../../../crates/opi-ai/tests/deferred_contract.rs#L441)
+[Reopen fixture](../../../../crates/opi-ai/tests/deferred_contract/reopen.rs#L72) ·
+[Explicit expiry test](../../../../crates/opi-ai/tests/deferred_contract/handle_validation.rs#L220)
 
 ## Same-material replay
 

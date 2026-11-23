@@ -1,0 +1,185 @@
+{
+  "issue": 268,
+  "batch": "oauth-shared",
+  "date": "2026-11-22",
+  "status": "PASS",
+  "owner_table": [
+    {
+      "owner": "tests/support/oauth_store.rs",
+      "scope": "shared FakeStore, StoreMode, mutation ACK outcomes, barrier observations and concurrent serialization",
+      "consumers": [
+        "oauth_models_store",
+        "oauth_regressions"
+      ]
+    },
+    {
+      "owner": "tests/oauth_models_store.rs",
+      "scope": "Models default and explicit store lifecycle, ACK outcomes, failure typing, check_auth and concurrent writes",
+      "target": "oauth_models_store",
+      "required_features": [
+        "builtins"
+      ],
+      "package_consumer": "oauth-store"
+    },
+    {
+      "owner": "tests/oauth_regressions.rs",
+      "scope": "cross-provider registration, shared store behavior, provider error boundaries, cancellation, Codex originator, Radius browser and OAuth metadata",
+      "target": "oauth_regressions",
+      "required_features": [
+        "builtins"
+      ],
+      "package_consumer": "oauth-store"
+    },
+    {
+      "owner": "tests/support/oauth_fixtures.rs",
+      "scope": "shared scripted presenter, expiry checks, callback URL decoding and stored credential fixture",
+      "consumers": [
+        "oauth_anthropic",
+        "oauth_codex",
+        "oauth_chatgpt",
+        "oauth_copilot",
+        "oauth_kimi",
+        "oauth_meta",
+        "oauth_xai",
+        "oauth_openrouter",
+        "oauth_radius",
+        "oauth_models_store",
+        "oauth_regressions"
+      ]
+    },
+    {
+      "owner": "tests/support/oauth_assembly.rs",
+      "scope": "shared Models OAuth route assembly and actual adapter request assertions",
+      "consumers": [
+        "oauth_anthropic",
+        "oauth_codex",
+        "oauth_chatgpt",
+        "oauth_copilot",
+        "oauth_kimi",
+        "oauth_meta",
+        "oauth_xai",
+        "oauth_openrouter",
+        "oauth_radius",
+        "oauth_models_store",
+        "oauth_regressions"
+      ]
+    },
+    {
+      "owner": "retired tests/oauth_flows.rs",
+      "scope": "retired broad target; all 21 assertions moved to the two owned targets",
+      "consumers": []
+    }
+  ],
+  "sizes": {
+    "oauth_models_store_bytes": 15917,
+    "oauth_regressions_bytes": 23524,
+    "oauth_support_store_bytes": 5076
+  },
+  "acceptance": {
+    "target_selectable": [
+      {
+        "command": "python scripts/pi-sdk-conformance/select_tests.py --target oauth_models_store --json",
+        "result": "PASS",
+        "selected_target": "oauth_models_store"
+      },
+      {
+        "command": "python scripts/pi-sdk-conformance/select_tests.py --target oauth_regressions --json",
+        "result": "PASS",
+        "selected_target": "oauth_regressions"
+      }
+    ],
+    "shared_fixture_selector": {
+      "command": "python scripts/pi-sdk-conformance/select_tests.py crates/opi-ai/tests/support/oauth_store.rs --json",
+      "result": "PASS",
+      "selected_targets": [
+        "oauth_models_store",
+        "oauth_regressions"
+      ]
+    },
+    "inventory_and_metadata": {
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 124,
+      "sources": 124,
+      "retired_target": "oauth_flows"
+    },
+    "tests": {
+      "oauth_models_store": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_models_store",
+        "passed": 9,
+        "failed": 0
+      },
+      "oauth_regressions": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_regressions",
+        "passed": 12,
+        "failed": 0
+      },
+      "oauth_store_profile": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features oauth-store --test oauth_store_profile",
+        "passed": 2,
+        "failed": 0
+      },
+      "oauth_store_integration": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_store_integration",
+        "passed": 10,
+        "failed": 0
+      },
+      "oauth_wire_shape": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_wire_shape",
+        "passed": 12,
+        "failed": 0
+      },
+      "shared_oauth_matrix": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_anthropic --test oauth_codex --test oauth_chatgpt --test oauth_copilot --test oauth_kimi --test oauth_meta --test oauth_xai --test oauth_openrouter --test oauth_radius --test oauth_models_store --test oauth_regressions --test oauth_store_integration --test oauth_wire_shape",
+        "result": "PASS"
+      },
+      "oauth_shared_clippy": {
+        "command": "cargo clippy --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_models_store --test oauth_regressions -- -D warnings -A unreachable_patterns -A clippy::too_many_arguments -A clippy::needless_borrow",
+        "result": "PASS"
+      },
+      "selector_unit": {
+        "command": "Push-Location scripts/pi-sdk-conformance; python -m unittest -v test_select_tests.py; Pop-Location",
+        "result": "PASS",
+        "cases": 11
+      }
+    },
+    "package_consumers": {
+      "oauth_store": {
+        "runner": "scripts/pi-sdk-conformance/run_oauth_store_package.py",
+        "evidence": "C:/Temp/opi-268-oauth-shared-package-r1.json",
+        "result": "PASS"
+      },
+      "websocket_compression_oauth_store": {
+        "runner": "scripts/pi-sdk-conformance/run_shared_owner_pairs.py --mode package --only websocket-compression+oauth-store",
+        "evidence": "C:/Temp/opi-268-oauth-shared-pair-r1.json",
+        "result": "PASS"
+      }
+    },
+    "documentation": {
+      "cargo_fmt": "PASS",
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS",
+      "compatibility_behavior_added": false
+    }
+  },
+  "test_impact": {
+    "add": [
+      "oauth_models_store",
+      "oauth_regressions",
+      "support/oauth_store.rs"
+    ],
+    "update": [
+      "provider support consumer mappings",
+      "Cargo target metadata",
+      "test inventory",
+      "oauth README files"
+    ],
+    "delete": [
+      "oauth_flows target and source"
+    ],
+    "retain": [
+      "all 9 Models store assertions",
+      "all 12 cross-provider regression assertions"
+    ]
+  }
+}

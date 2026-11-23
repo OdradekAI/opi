@@ -376,7 +376,6 @@ pub(crate) fn default_oauth_flow(id: &str) -> Option<Arc<dyn OAuthProvider>> {
         "kimi-coding" => Arc::new(oauth::kimi_coding::KimiCodingOAuthProvider::production()),
         "meta" => Arc::new(oauth::meta::MetaOAuthProvider::production()),
         "openrouter" => Arc::new(oauth::openrouter::OpenRouterOAuthProvider::production()),
-        "radius" => Arc::new(oauth::radius::RadiusOAuthProvider::production()),
         "xai" => Arc::new(oauth::xai::XaiOAuthProvider::production()),
         _ => return None,
     })

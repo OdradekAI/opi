@@ -3222,6 +3222,34 @@ async fn anthropic_selects_between_browser_and_copy_code_copilot_never_selects()
     assert!(copilot_presenter.selections.lock().unwrap().is_empty());
 }
 
+async fn codex_factory_stream(
+    store: Arc<KeychainCredentialStore>,
+    endpoint: String,
+) -> opi_ai::stream::StartedChatStream {
+    let resolver = resolver_with(store);
+    let registry = OAuthProviderRegistry::registry_with_builtins();
+    let mut config = OpiConfig::default();
+    config.defaults.model = "openai-codex:gpt-6.1-terra".into();
+    let provider = build_provider_with_oauth(&config, &resolver, &registry)
+        .await
+        .expect("dedicated provider");
+    let models = dispatch_collection(provider, "openai-codex", &config, resolver, &registry);
+    let record = models
+        .get_model("openai-codex", "gpt-6.1-terra")
+        .expect("published Terra model")
+        .with_base_url(endpoint);
+    let mut request = factory_request(&config.defaults.model);
+    request.transport = opi_ai::provider::TransportPreference::Sse;
+    request.timeout = Some(Duration::from_secs(5));
+    models
+        .stream_simple(
+            opi_ai::ChatModelRecord::new("openai-codex", record),
+            request,
+            Default::default(),
+        )
+        .start()
+}
+
 async fn capture_codex_factory_sse(body: String) -> Vec<String> {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
@@ -3241,25 +3269,12 @@ async fn capture_codex_factory_sse(body: String) -> Vec<String> {
                 "openai-codex",
                 "synthetic-sse-access",
                 "synthetic-sse-refresh",
-                Some(server.uri()),
+                None,
             ),
         )
         .await
         .unwrap();
-    let resolver = resolver_with(store);
-    let mut config = OpiConfig::default();
-    config.defaults.model = "openai-codex:gpt-5.4".into();
-    let provider = build_provider_with_oauth(
-        &config,
-        &resolver,
-        &OAuthProviderRegistry::registry_with_builtins(),
-    )
-    .await
-    .expect("dedicated provider");
-    let mut stream = provider.stream_prepared(
-        factory_request("openai-codex:gpt-5.4"),
-        opi_ai::test_support::resolved_auth(),
-    );
+    let mut stream = codex_factory_stream(store, server.uri()).await;
     let mut captures = Vec::new();
     while let Some(result) = stream.next().await {
         match result {
@@ -3270,13 +3285,15 @@ async fn capture_codex_factory_sse(body: String) -> Vec<String> {
                     break;
                 }
             }
-            Err(error) => {
+            Err(failure) => {
+                let error = failure.cause();
                 captures.push(format!("{error:?} {error}"));
-                captures.push(format!("{:?}", opi_agent::Diagnostic::from(&error)));
+                captures.push(format!("{:?}", opi_agent::Diagnostic::from(error)));
                 break;
             }
         }
     }
+    assert_eq!(server.received_requests().await.unwrap().len(), 1);
     captures
 }
 
@@ -3433,39 +3450,21 @@ async fn openai_codex_bounded_redaction_scenario() {
         .mount(&provider_server)
         .await;
     let (_dir, provider_store, _backend) = store_with(FakeKeyringBackend::new());
-    let persisted_credential =
-        stored_oauth_for("openai-codex", ACCESS, REFRESH, Some(provider_server.uri()));
+    let persisted_credential = stored_oauth_for("openai-codex", ACCESS, REFRESH, None);
     captures.push(format!("{persisted_credential:?}"));
     provider_store
         .write("openai-codex", &persisted_credential)
         .await
         .unwrap();
-    let resolver = resolver_with(provider_store);
-    let mut config = OpiConfig::default();
-    config.defaults.model = "openai-codex:gpt-5.4".into();
-    let provider = build_provider_with_oauth(
-        &config,
-        &resolver,
-        &OAuthProviderRegistry::registry_with_builtins(),
-    )
-    .await
-    .expect("dedicated provider");
-    let mut stream = provider.stream_prepared(
-        factory_request("openai-codex:gpt-5.4"),
-        opi_ai::test_support::resolved_auth(),
-    );
-    let provider_error = loop {
-        match stream.next().await {
-            Some(Err(error)) => break error,
-            Some(Ok(_)) => {}
-            None => panic!("provider failure stream ended without error"),
-        }
-    };
+    let failure = codex_factory_stream(provider_store, provider_server.uri())
+        .await
+        .result()
+        .await
+        .expect_err("provider returns HTTP 500");
+    let provider_error = failure.cause();
+    assert_eq!(provider_server.received_requests().await.unwrap().len(), 1);
     captures.push(format!("{provider_error:?} {provider_error}"));
-    captures.push(format!(
-        "{:?}",
-        opi_agent::Diagnostic::from(&provider_error)
-    ));
+    captures.push(format!("{:?}", opi_agent::Diagnostic::from(provider_error)));
 
     // Dedicated streaming failures: malformed data becomes a fixed typed
     // ProviderError/diagnostic, while valid upstream error messages and
@@ -4712,7 +4711,7 @@ async fn factory_routes_github_copilot_models_by_declared_wire() {
     let registry = OAuthProviderRegistry::registry_with_builtins();
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "github-copilot:gpt-4.1".into();
+    config.defaults.model = "github-copilot:gemini-4-argon".into();
 
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
@@ -4722,7 +4721,7 @@ async fn factory_routes_github_copilot_models_by_declared_wire() {
     // Register the store-backed Copilot resolver so prepare_call resolves the
     // stored OAuth token on each logical call across all three wires.
     let collection = dispatch_collection(provider, "github-copilot", &config, resolver, &registry);
-    for model in ["claude-sonnet-4.5", "gpt-4.1", "gpt-5.4"] {
+    for model in ["claude-sonnet-4.6", "gemini-4-argon", "gpt-6.1-terra"] {
         drain_route(&collection, &format!("github-copilot:{model}")).await;
     }
 
@@ -4767,7 +4766,7 @@ async fn factory_builds_codex_without_promoting_credential_base_url_into_its_cat
     let registry = OAuthProviderRegistry::registry_with_builtins();
 
     let mut config = OpiConfig::default();
-    config.defaults.model = "openai-codex:gpt-5.4".into();
+    config.defaults.model = "openai-codex:gpt-6.1-terra".into();
 
     let provider = build_provider_with_oauth(&config, &resolver, &registry)
         .await
@@ -5470,8 +5469,8 @@ fn login_logout_commands_are_discoverable() {
 async fn factory_built_approved_profiles_resolve_auth_inside_each_stream() {
     for (provider_id, model) in [
         ("anthropic", "claude-sonnet-4-5-20250514"),
-        ("github-copilot", "gpt-4.1"),
-        ("openai-codex", "gpt-5.4"),
+        ("github-copilot", "gemini-4-argon"),
+        ("openai-codex", "gpt-6.1-terra"),
     ] {
         let server = MockServer::start().await;
         let (_dir, store, _backend) = store_with(FakeKeyringBackend::new());
@@ -5572,7 +5571,7 @@ async fn collection_prepare_call_error(collection: &Models, spec: &str) -> Optio
 async fn factory_stream_reresolves_after_store_change() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
-        ("github-copilot", "gpt-4.1", "/chat/completions"),
+        ("github-copilot", "gemini-4-argon", "/chat/completions"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -5758,7 +5757,7 @@ async fn refresh_timeout_releases_lock_and_preserves_prior_credential() {
 async fn factory_built_approved_profiles_map_revocation_without_retry() {
     for (provider_id, model, request_path) in [
         ("anthropic", "claude-sonnet-4-5-20250514", "/v1/messages"),
-        ("github-copilot", "gpt-4.1", "/chat/completions"),
+        ("github-copilot", "gemini-4-argon", "/chat/completions"),
     ] {
         let server = MockServer::start().await;
         Mock::given(method("POST"))

@@ -1,7 +1,7 @@
 //! JavaScript value semantics shared by the private schema dialect engine.
 //!
 //! The pinned upstream (TypeBox 1.3.27, tree SHA `ebf39b14…`, see
-//! `docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md`)
+//! `contract-index.json`)
 //! evaluates over already-parsed JavaScript values. This module reproduces the
 //! exact JavaScript semantics the dialect depends on: property-key
 //! enumeration order, binary64 float semantics, and deep structural equality.

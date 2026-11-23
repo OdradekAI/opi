@@ -1,0 +1,1154 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 44,
+  "date": "2026-11-23",
+  "scope": "Partition the minimum SDK Deferred contract test suite and its path selection.",
+  "verdict": "PASS",
+  "source": "crates/opi-ai/tests/deferred_contract.rs",
+  "root_bytes": {
+    "before": 49376,
+    "after": 534
+  },
+  "owner": {
+    "target": "deferred_contract",
+    "owner": "provider/operation",
+    "layer": "public-contract",
+    "cost": "in-process",
+    "cases": "Handle validation, submission and fetch, cancellation, reopening and telemetry; the external minimal consumer checks submission and explicit fetch",
+    "runners": "archive@scripts/pi-sdk-conformance/run_minimal_package.py",
+    "source": "tests/deferred_contract.rs",
+    "required-features": "-"
+  },
+  "shared_support": {
+    "helper": "pending_auth.rs",
+    "role": "stable-tool",
+    "owner": "auth deferred shared test support",
+    "layers": "public-contract",
+    "cost": "in-process",
+    "runners": "-",
+    "consumers": "classifier_contract,deferred_contract,openrouter_fixtures"
+  },
+  "test_impact": {
+    "retain": 19,
+    "add": {
+      "selector": 1
+    },
+    "update": {
+      "selector_shared_helper_consumer_regression": 1
+    }
+  },
+  "checks": {
+    "case_preservation": {
+      "cases": {
+        "deferred_registration_preserves_arbitrary_exact_api_ids_without_auth": "handle_validation::deferred_registration_preserves_arbitrary_exact_api_ids_without_auth",
+        "deferred_handle_serializes_pi_camel_case": "handle_validation::deferred_handle_serializes_pi_camel_case",
+        "deferred_handle_minimal_roundtrip_omits_optional_fields": "handle_validation::deferred_handle_minimal_roundtrip_omits_optional_fields",
+        "deferred_handle_identity_mismatch_is_typed": "handle_validation::deferred_handle_identity_mismatch_is_typed",
+        "deferred_handle_expiry_is_typed_against_injected_clock": "handle_validation::deferred_handle_expiry_is_typed_against_injected_clock",
+        "unregistered_deferred_api_names_the_lookup_in_fetch_and_cancel": "handle_validation::unregistered_deferred_api_names_the_lookup_in_fetch_and_cancel",
+        "expired_handle_fails_typed_before_auth_or_dispatch": "handle_validation::expired_handle_fails_typed_before_auth_or_dispatch",
+        "cancel_checks_all_deferred_route_fields_before_auth_or_dispatch": "handle_validation::cancel_checks_all_deferred_route_fields_before_auth_or_dispatch",
+        "normal_generation_returns_pending_handle_or_final": "submission_and_fetch::normal_generation_returns_pending_handle_or_final",
+        "wait0_fetch_checks_once_and_may_stay_pending": "submission_and_fetch::wait0_fetch_checks_once_and_may_stay_pending",
+        "unsupported_provider_and_unknown_handle_fail_typed": "submission_and_fetch::unsupported_provider_and_unknown_handle_fail_typed",
+        "missing_credential_fails_typed_with_remediation_message": "submission_and_fetch::missing_credential_fails_typed_with_remediation_message",
+        "deferred_auth_failure_preserves_cause_and_message_retry_input": "submission_and_fetch::deferred_auth_failure_preserves_cause_and_message_retry_input",
+        "local_abort_never_cancels_the_remote_job": "cancellation::local_abort_never_cancels_the_remote_job",
+        "explicit_cancel_is_recorded_and_best_effort": "cancellation::explicit_cancel_is_recorded_and_best_effort",
+        "remote_cancel_observes_caller_abort_before_and_during_auth": "cancellation::remote_cancel_observes_caller_abort_before_and_during_auth",
+        "reopened_consumer_fetches_without_resubmit_and_never_polls": "reopen::reopened_consumer_fetches_without_resubmit_and_never_polls",
+        "consumer_fallback_missing_model_and_cancel_failures_are_observable": "reopen::consumer_fallback_missing_model_and_cancel_failures_are_observable",
+        "fetch_and_cancel_carry_the_frozen_telemetry_carrier": "telemetry::fetch_and_cancel_carry_the_frozen_telemetry_carrier"
+      },
+      "original_sha256": "073719cda64a9208bcb542a25bd555b5e41fe8021441817a867db52effd1e683",
+      "body_identical": 19,
+      "shared_helpers_identical": [
+        "pending_handle",
+        "chat_request",
+        "chat_record",
+        "registered_collection"
+      ],
+      "reopen_fixture_identical": true,
+      "pending_auth_unchanged": true,
+      "inventory_changed": [
+        "deferred_contract\tprovider/operation\tpublic-contract\tin-process\tPending handles, explicit fetch/cancel, identity checks and cancellation before dispatch\t-",
+        "deferred_contract\tprovider/operation\tpublic-contract\tin-process\tHandle validation, submission and fetch, cancellation, reopening and telemetry; the external minimal consumer checks submission and explicit fetch\tarchive@scripts/pi-sdk-conformance/run_minimal_package.py"
+      ]
+    },
+    "named_test_runs": {
+      "baseline_passed": 19,
+      "workspace_passed": 19,
+      "topics_passed": {
+        "handle_validation": 8,
+        "submission_and_fetch": 5,
+        "cancellation": 3,
+        "reopen": 2,
+        "telemetry": 1
+      },
+      "exact_case": "handle_validation::cancel_checks_all_deferred_route_fields_before_auth_or_dispatch",
+      "route_rows": [
+        {
+          "name": "provider-mismatch",
+          "route": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred"
+          },
+          "original": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "request_handle": {
+            "provider": "other-provider",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "direct_validation": "Unsupported",
+          "cancel": {
+            "auth_calls": 0,
+            "dispatch_count": 0,
+            "dispatches": [],
+            "result_delivery": "typed-err",
+            "typed_cause": "Config",
+            "error_message": "invalid provider configuration: no deferred backend is registered for provider 'other-provider' and API 'scripted-deferred'"
+          },
+          "refetch_original": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "result_delivery": "ok",
+            "typed_cause": null,
+            "stop": "stop",
+            "text": "ready",
+            "error_message": null
+          }
+        },
+        {
+          "name": "model-mismatch",
+          "route": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred"
+          },
+          "original": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "request_handle": {
+            "provider": "lifecycle-differential",
+            "modelId": "other-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "direct_validation": "RouteMismatch",
+          "cancel": {
+            "auth_calls": 0,
+            "dispatch_count": 0,
+            "dispatches": [],
+            "result_delivery": "typed-err",
+            "typed_cause": "Config",
+            "error_message": "invalid provider configuration: deferred handle route mismatch: handle lifecycle-differential/other-model/scripted-deferred does not match route lifecycle-differential/mock-model/scripted-deferred"
+          },
+          "refetch_original": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "result_delivery": "ok",
+            "typed_cause": null,
+            "stop": "stop",
+            "text": "ready",
+            "error_message": null
+          }
+        },
+        {
+          "name": "api-mismatch",
+          "route": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred"
+          },
+          "original": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "request_handle": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "other-api",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "direct_validation": "Unsupported",
+          "cancel": {
+            "auth_calls": 0,
+            "dispatch_count": 0,
+            "dispatches": [],
+            "result_delivery": "typed-err",
+            "typed_cause": "Config",
+            "error_message": "invalid provider configuration: no deferred backend is registered for provider 'lifecycle-differential' and API 'other-api'"
+          },
+          "refetch_original": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "result_delivery": "ok",
+            "typed_cause": null,
+            "stop": "stop",
+            "text": "ready",
+            "error_message": null
+          }
+        },
+        {
+          "name": "unknown-job-id",
+          "route": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred"
+          },
+          "original": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "request_handle": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-missing",
+            "pollAfterMs": 25
+          },
+          "direct_validation": "ok",
+          "cancel": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "dispatches": [
+              {
+                "provider": "lifecycle-differential",
+                "modelId": "mock-model",
+                "api": "scripted-deferred",
+                "id": "deferred-missing",
+                "pollAfterMs": 25
+              }
+            ],
+            "result_delivery": "ok",
+            "typed_cause": null,
+            "error_message": null
+          },
+          "refetch_original": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "result_delivery": "ok",
+            "typed_cause": null,
+            "stop": "stop",
+            "text": "ready",
+            "error_message": null
+          }
+        },
+        {
+          "name": "matching-handle",
+          "route": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred"
+          },
+          "original": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "request_handle": {
+            "provider": "lifecycle-differential",
+            "modelId": "mock-model",
+            "api": "scripted-deferred",
+            "id": "deferred-1",
+            "pollAfterMs": 25
+          },
+          "direct_validation": "ok",
+          "cancel": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "dispatches": [
+              {
+                "provider": "lifecycle-differential",
+                "modelId": "mock-model",
+                "api": "scripted-deferred",
+                "id": "deferred-1",
+                "pollAfterMs": 25
+              }
+            ],
+            "result_delivery": "ok",
+            "typed_cause": null,
+            "error_message": null
+          },
+          "refetch_original": {
+            "auth_calls": 1,
+            "dispatch_count": 1,
+            "result_delivery": "typed-err",
+            "typed_cause": "Config",
+            "stop": "error",
+            "text": "",
+            "error_message": "invalid provider configuration: Scripted deferred response was cancelled: deferred-1"
+          }
+        }
+      ],
+      "same_rows_as_before": true,
+      "preserved_observations_against_pi": {
+        "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+        "receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-route-authority-observations.json",
+        "receipt_sha256": "434d8100b9577596722aad815e9c71ab4e0abab0876cba87acac6163f6987b14",
+        "same_rust_rows": true
+      }
+    },
+    "commands": {
+      "workspace": {
+        "workspace": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-all"
+          ],
+          "exit": 0
+        },
+        "focused-handle_validation": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-handle_validation",
+            "handle_validation::"
+          ],
+          "exit": 0
+        },
+        "focused-submission_and_fetch": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-submission_and_fetch",
+            "submission_and_fetch::"
+          ],
+          "exit": 0
+        },
+        "focused-cancellation": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-cancellation",
+            "cancellation::"
+          ],
+          "exit": 0
+        },
+        "focused-reopen": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-reopen",
+            "reopen::"
+          ],
+          "exit": 0
+        },
+        "focused-telemetry": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-telemetry",
+            "telemetry::"
+          ],
+          "exit": 0
+        },
+        "route-case": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "route-observations",
+            "--exact",
+            "handle_validation::cancel_checks_all_deferred_route_fields_before_auth_or_dispatch",
+            "--nocapture"
+          ],
+          "exit": 0
+        },
+        "clippy-strict": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--",
+            "clippy",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--test",
+            "deferred_contract",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit": 101
+        },
+        "clippy-advisory": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--",
+            "clippy",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--test",
+            "deferred_contract"
+          ],
+          "exit": 0
+        }
+      },
+      "selector": {
+        "selector-unit": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "scripts/pi-sdk-conformance/",
+            "-p",
+            "test_select_tests.py",
+            "-v"
+          ],
+          "exit": 0
+        }
+      },
+      "structure": {
+        "scoped-fmt": {
+          "command": [
+            "rustfmt",
+            "--edition",
+            "2024",
+            "--check",
+            "crates/opi-ai/tests/deferred_contract.rs"
+          ],
+          "exit": 0
+        },
+        "workspace-fmt": {
+          "command": [
+            "cargo",
+            "fmt",
+            "--all",
+            "--check"
+          ],
+          "exit": 1
+        },
+        "gate": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/pi-sdk-conformance/check_structure_gate.py",
+            "--json",
+            "--strict-selection",
+            "crates/opi-ai/tests/deferred_contract.rs",
+            "crates/opi-ai/tests/deferred_contract/handle_validation.rs",
+            "crates/opi-ai/tests/deferred_contract/submission_and_fetch.rs",
+            "crates/opi-ai/tests/deferred_contract/cancellation.rs",
+            "crates/opi-ai/tests/deferred_contract/reopen.rs",
+            "crates/opi-ai/tests/deferred_contract/telemetry.rs",
+            "crates/opi-ai/tests/deferred_contract/fixtures.rs",
+            "crates/opi-ai/tests/targets.tsv",
+            "crates/opi-ai/tests/support/pending_auth.rs"
+          ],
+          "exit": 0
+        },
+        "gate-missing": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/pi-sdk-conformance/check_structure_gate.py",
+            "--json",
+            "--strict-selection",
+            "crates/opi-ai/tests/deferred_contract/missing_topic.rs"
+          ],
+          "exit": 1
+        }
+      },
+      "minimal": {
+        "package-minimal": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/pi-sdk-conformance/run_minimal_package.py",
+            "--scratch",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal",
+            "--target-dir",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--evidence-output",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal-proof.json"
+          ],
+          "exit": 0
+        }
+      }
+    }
+  },
+  "selection": {
+    "targets": 124,
+    "rust_test_sources": 364,
+    "support_helpers": 16,
+    "shared_support_edges": 60,
+    "unit_tests_passed": 32,
+    "gate": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\gate.stdout",
+      "bytes": 175548,
+      "sha256": "08029a8be78d454be7739dd8e97882bd684634557c3298c45102a962be7fe8dc"
+    },
+    "missing_path": {
+      "paths": [
+        "crates/opi-ai/tests/deferred_contract/missing_topic.rs"
+      ],
+      "scope": "broader checks required",
+      "tests": [],
+      "runners": [],
+      "expansion": [
+        "tests/deferred_contract/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+        "tests/deferred_contract/missing_topic.rs: no resolved Cargo test consumer"
+      ]
+    },
+    "support_selection": [
+      {
+        "target": "classifier_contract",
+        "args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "classifier_contract"
+        ],
+        "reasons": [
+          "tests/support/pending_auth.rs"
+        ]
+      },
+      {
+        "target": "deferred_contract",
+        "args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--test",
+          "deferred_contract"
+        ],
+        "reasons": [
+          "tests/deferred_contract.rs",
+          "tests/deferred_contract/cancellation.rs",
+          "tests/deferred_contract/fixtures.rs",
+          "tests/deferred_contract/handle_validation.rs",
+          "tests/deferred_contract/reopen.rs",
+          "tests/deferred_contract/submission_and_fetch.rs",
+          "tests/deferred_contract/telemetry.rs",
+          "tests/support/pending_auth.rs"
+        ]
+      },
+      {
+        "target": "openrouter_fixtures",
+        "args": [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "openrouter_fixtures"
+        ],
+        "reasons": [
+          "tests/support/pending_auth.rs"
+        ]
+      }
+    ],
+    "zero_test_targets": []
+  },
+  "package": {
+    "external_consumer": "opi-minimum-consumer",
+    "external_boundary": "Public Faux normal submission and explicit wait0 fetch through pending and ready.",
+    "external_profiles": {
+      "core": {
+        "core_profile": {
+          "passed": 4,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-core_profile.stdout",
+            "bytes": 340,
+            "sha256": "12922b119d8f7eaa6dd9ca6c60b6760fe8640ef6940310360ee0ce5140f921ed"
+          }
+        },
+        "streaming_json": {
+          "passed": 12,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-streaming_json.stdout",
+            "bytes": 1142,
+            "sha256": "a3de064828ae31513e983708be5b09c7968e8a4aade501d85c88b28e2f0208b7"
+          }
+        },
+        "incremental_argument_preview": {
+          "passed": 3,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-incremental_argument_preview.stdout",
+            "bytes": 51270,
+            "sha256": "af24e6634ef33abe5e7276f330aaac11859c5077ca0a81d7fc6d7a206a544055"
+          }
+        },
+        "final_numeric_decoding": {
+          "passed": 2,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-final_numeric_decoding.stdout",
+            "bytes": 1290,
+            "sha256": "0478785ce490921f78fefbaeb5455c5160ae8fbae6185a5fc1a00f3722506b74"
+          }
+        }
+      },
+      "core-tracing": {
+        "core_profile": {
+          "passed": 5,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-tracing-core_profile.stdout",
+            "bytes": 407,
+            "sha256": "e4cbbf653f6276f9bfd10cd595f9c98f9aa5b1476dab3ea060aea971667b7f62"
+          }
+        },
+        "streaming_json": {
+          "passed": 12,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-tracing-streaming_json.stdout",
+            "bytes": 1142,
+            "sha256": "98d76dafdc19e6083b051cae103507c506a8bb9edaef94322723c24dd8a960cc"
+          }
+        },
+        "incremental_argument_preview": {
+          "passed": 3,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-tracing-incremental_argument_preview.stdout",
+            "bytes": 51272,
+            "sha256": "80380d8f507f24a1a58a56413af91e27686d0b2c21a2e23f56809f62ad3717db"
+          }
+        },
+        "final_numeric_decoding": {
+          "passed": 2,
+          "stdout": {
+            "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\core-tracing-final_numeric_decoding.stdout",
+            "bytes": 1290,
+            "sha256": "5c3f39005a09ceac88a5051a6a71921e7f07eb341df83645b39e4274be5ff09c"
+          }
+        }
+      }
+    },
+    "consumer_receipt": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal-proof.json",
+      "bytes": 21125,
+      "sha256": "82b64f6ffc5b5aac7e3240c04eae650bfe08344bff7d51346d3f61c2b78683ce"
+    },
+    "extracted_target": {
+      "archive": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\opi-ai-0.8.3.crate",
+      "archive_sha256": "120a5adbf93caeb722af2ee507539043b47bcc1f82002400b01d047a06896e90",
+      "companion_archive": {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      },
+      "extracted_crate": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\package\\opi-ai-0.8.3",
+      "cargo_configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "files": {
+        "tests/deferred_contract.rs": {
+          "bytes": 534,
+          "sha256": "08c0354ee1e5c0d3b5b9e400bb70b1f32f38526a5402db4edc226c687b533b70"
+        },
+        "tests/deferred_contract/cancellation.rs": {
+          "bytes": 7840,
+          "sha256": "e5c594f0381b5911703b0c873d5513f93d27875abaf52b982872f3103cbfe549"
+        },
+        "tests/deferred_contract/fixtures.rs": {
+          "bytes": 2904,
+          "sha256": "ba1d019226ea49bade0b6292b5c03e05df58e17b78db98901d617800b86e9398"
+        },
+        "tests/deferred_contract/handle_validation.rs": {
+          "bytes": 14724,
+          "sha256": "9f961330c517a7a8b0a716ca0c5e3ce284bc623809197f02fc5b4d99c9107d90"
+        },
+        "tests/deferred_contract/reopen.rs": {
+          "bytes": 12515,
+          "sha256": "93ec01a7cb28edd29ca17d2cbb9bfbd2eb6fb0ee8b82e7c0376d84fb7a9fda6f"
+        },
+        "tests/deferred_contract/submission_and_fetch.rs": {
+          "bytes": 11387,
+          "sha256": "2d165f64eac357ce2730c1cfb32ff760b344f734937df4b8dac0544f60a05ef6"
+        },
+        "tests/deferred_contract/telemetry.rs": {
+          "bytes": 1505,
+          "sha256": "9380f85315a9a8969e95d8a05ea071feb427694163a9c86c5c45d8e0d6e14f60"
+        }
+      },
+      "steps": [
+        {
+          "label": "archive-scratch-lock",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archive-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archived-test",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--test",
+            "deferred_contract"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archived-route-case",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--test",
+            "deferred_contract",
+            "--",
+            "--exact",
+            "handle_validation::cancel_checks_all_deferred_route_fields_before_auth_or_dispatch",
+            "--nocapture"
+          ],
+          "exit": 0
+        }
+      ],
+      "archive_comparison": {
+        "prior_archive": "E:\\opi\\scratch\\issue-268-provider-lifecycle-20261123-153145\\readme\\opi-ai-0.8.3.crate",
+        "prior_archive_sha256": "8a6bb245961b837ccf597d04472cc0708b6eb4ae4893e8cf6e6c99b009452929",
+        "added": [
+          "tests/deferred_contract/cancellation.rs",
+          "tests/deferred_contract/fixtures.rs",
+          "tests/deferred_contract/handle_validation.rs",
+          "tests/deferred_contract/reopen.rs",
+          "tests/deferred_contract/submission_and_fetch.rs",
+          "tests/deferred_contract/telemetry.rs"
+        ],
+        "modified": [
+          "tests/README.md",
+          "tests/README.zh.md",
+          "tests/deferred_contract.rs",
+          "tests/targets.tsv"
+        ],
+        "removed": [],
+        "unchanged_files": 664,
+        "same_build_inputs": 257,
+        "retained_input_sha256": {
+          "examples/lifecycle_differential.rs": "fd26724f71995fdb34da5554bbce678813473a4d45cfe10c2d6de858fad87927",
+          "tests/classifier_contract.rs": "8be29837e9cd6abd34c9e561bc4d899d04ff25ff1334fc229efff9e9fdf1765b",
+          "tests/core_profile.rs": "da613c044e7263d89130cc8656679bbe34eb414811705c060b1f1abf62ac5f91",
+          "tests/execution_lifecycle.rs": "283e8a5859a03c6ba6b1f19d0da2754136d6f4303725469ea6762e45f8a6edcd",
+          "tests/openrouter_fixtures.rs": "3085d6685bceeba1f70197061a3b00fe1c15f77b93b5bf324315ace2ea26bea8",
+          "tests/support/OWNERS.tsv": "ac46dab458f6c5a89f8e5e2cb0ad6e1edcdf5295ad67a4d1ed54824dfc4a97c2",
+          "tests/support/pending_auth.rs": "3e213329091e66a5a79f8691744de66bde68ba8326d48b8cdc01e289f81a101e",
+          "tests/telemetry_operations/deferred.rs": "318f5293c27c5b74bed9265e69d23154c0b599e5e774b939d1af6d7b9c968e22"
+        }
+      },
+      "scratch_lock": {
+        "archive": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "rebound": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "package": "opi-telemetry",
+        "version": "0.8.3"
+      },
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "deferred_contract",
+        "src_path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\minimal\\package\\opi-ai-0.8.3\\tests\\deferred_contract.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-deferred-contract-20261123-161106/minimal/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "active_features": [],
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-deferred-contract-20261123-161106/minimal/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed_cases": [
+        "cancellation::explicit_cancel_is_recorded_and_best_effort",
+        "cancellation::local_abort_never_cancels_the_remote_job",
+        "cancellation::remote_cancel_observes_caller_abort_before_and_during_auth",
+        "handle_validation::cancel_checks_all_deferred_route_fields_before_auth_or_dispatch",
+        "handle_validation::deferred_handle_expiry_is_typed_against_injected_clock",
+        "handle_validation::deferred_handle_identity_mismatch_is_typed",
+        "handle_validation::deferred_handle_minimal_roundtrip_omits_optional_fields",
+        "handle_validation::deferred_handle_serializes_pi_camel_case",
+        "handle_validation::deferred_registration_preserves_arbitrary_exact_api_ids_without_auth",
+        "handle_validation::expired_handle_fails_typed_before_auth_or_dispatch",
+        "handle_validation::unregistered_deferred_api_names_the_lookup_in_fetch_and_cancel",
+        "reopen::consumer_fallback_missing_model_and_cancel_failures_are_observable",
+        "reopen::reopened_consumer_fetches_without_resubmit_and_never_polls",
+        "submission_and_fetch::deferred_auth_failure_preserves_cause_and_message_retry_input",
+        "submission_and_fetch::missing_credential_fails_typed_with_remediation_message",
+        "submission_and_fetch::normal_generation_returns_pending_handle_or_final",
+        "submission_and_fetch::unsupported_provider_and_unknown_handle_fail_typed",
+        "submission_and_fetch::wait0_fetch_checks_once_and_may_stay_pending",
+        "telemetry::fetch_and_cancel_carry_the_frozen_telemetry_carrier"
+      ],
+      "route_rows_equal": 5
+    }
+  },
+  "differential": {
+    "route_cancel": {
+      "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+      "receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-deferred-route-authority-observations.json",
+      "receipt_sha256": "434d8100b9577596722aad815e9c71ab4e0abab0876cba87acac6163f6987b14",
+      "same_rust_rows": true
+    },
+    "prior_lifecycle_receipt": {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\evidence\\268-execution-lifecycle-20261123.json",
+      "bytes": 26097,
+      "sha256": "d00a5c2023c5c01be0dddcd401c8c078ccb8abeeb54e02242cd6c67f36cec933"
+    },
+    "same_driver_and_build_inputs": true
+  },
+  "known_wider_checks": {
+    "strict_clippy": {
+      "exit": 101,
+      "existing_diagnostics": [
+        "src/models/auth_owner.rs:479 needless_borrow",
+        "src/models/prepared_call.rs:196 too_many_arguments"
+      ]
+    },
+    "workspace_rustfmt": {
+      "exit": 1,
+      "existing_differences": "openai_responses_fixtures root, fixtures and wire"
+    }
+  },
+  "raw": {
+    "cache-status.json": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\cache-status.json",
+      "bytes": 433,
+      "sha256": "cfa46f2a5381fbdf3297404ac81c28ca2916bacf0e38c65d517308eaaf77da72"
+    },
+    "baseline.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\baseline.stdout",
+      "bytes": 153257,
+      "sha256": "7150a20ec6e445de2352d303705d3a7b501863a675e9c2ba64dae1ff4bcfe294"
+    },
+    "baseline.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\baseline.stderr",
+      "bytes": 434,
+      "sha256": "423ea5411eaaecb486f537b0615eb56a28686b82351d5a646d7950d09ce83549"
+    },
+    "workspace-all.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-all.stdout",
+      "bytes": 149200,
+      "sha256": "5b2859a5372e70f18030f0c3dd43db91e8c9e4489a1ab8e79d524115336e34f0"
+    },
+    "workspace-handle_validation.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-handle_validation.stdout",
+      "bytes": 148301,
+      "sha256": "117accfc1c41071e7333ec7f8434b1b0d63dab5763b2f143d45fa534f841bbac"
+    },
+    "workspace-submission_and_fetch.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-submission_and_fetch.stdout",
+      "bytes": 148045,
+      "sha256": "32036d8e345ea210af0e685fdfc1a560dff0887593604039669d445700289d70"
+    },
+    "workspace-cancellation.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-cancellation.stdout",
+      "bytes": 147833,
+      "sha256": "d2792a856a21b1ef795e63d5e39ee9520af908f4de84577eaa340c7adfb864ba"
+    },
+    "workspace-reopen.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-reopen.stdout",
+      "bytes": 147777,
+      "sha256": "a7eba23ce582d11a93e679db26942dec4a14fa48922c5e6e02756be0cd5f7922"
+    },
+    "workspace-telemetry.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-telemetry.stdout",
+      "bytes": 147685,
+      "sha256": "65a70ad8b765e7ce00d7e3c160f21530b368e593a08484331091a54d379caa72"
+    },
+    "route-observations.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\route-observations.stdout",
+      "bytes": 152088,
+      "sha256": "b9844a9d5282258c223711f5392a42e93d6328c415b962937b23533b64f5f538"
+    },
+    "archived-test.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\archived-test.stdout",
+      "bytes": 149727,
+      "sha256": "c16f5d6e979338eaa194a582671b5561a853436ae9f81f9e8c96f33be5c44ad7"
+    },
+    "archived-route-case.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\archived-route-case.stdout",
+      "bytes": 152608,
+      "sha256": "b08e9676ef8b36855300df6d51da3b00df06d034f33d7917e9dfd016e66b5c44"
+    },
+    "archive-metadata.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\archive-metadata.stdout",
+      "bytes": 958907,
+      "sha256": "33e8a5dbc28fb85048d8a1b68b08ecc545fa022961fd725c42d79883028f10b0"
+    },
+    "selector-unit.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\selector-unit.stderr",
+      "bytes": 5286,
+      "sha256": "7fa0f10f3ae753aa98ff4080a6363ef9a59e842d8ad4dbacf0402f3f0998ae60"
+    },
+    "clippy-strict.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\clippy-strict.stderr",
+      "bytes": 1462,
+      "sha256": "a6c08ec6ae4253979a0c76399c41e550060d988be9d8b85c431cd6874caf8300"
+    },
+    "clippy-advisory.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\clippy-advisory.stderr",
+      "bytes": 1418,
+      "sha256": "c9a437a0f2c6711912bdfc3ef09b21a5ad30e09672269191c1e96a19b82c7781"
+    },
+    "workspace-fmt.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\workspace-fmt.stdout",
+      "bytes": 4160,
+      "sha256": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd"
+    },
+    "gate-missing.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-deferred-contract-20261123-161106\\gate-missing.stdout",
+      "bytes": 173615,
+      "sha256": "e0830d03b2d53e299991e29be38d4311bd68cbfae30caf9eafc55899caaa2a3f"
+    }
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "staged": [],
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only_tracked_paths": [
+      "crates/opi-ai/tests/deferred_contract.rs",
+      "docs/iterations/opi-ai-1-5-alignment/issues/100-decide-deferred-auth-setup-failure.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/19-non-chat-ai-telemetry-boundary.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/91-defer-expiry-to-provider-by-default.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/92-validate-deferred-routes-before-dispatch.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/93-assess-deferred-job-failure-classification.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/94-record-real-deferred-integration-gap.md"
+    ],
+    "new_paths": [
+      "crates/opi-ai/tests/deferred_contract/cancellation.rs",
+      "crates/opi-ai/tests/deferred_contract/fixtures.rs",
+      "crates/opi-ai/tests/deferred_contract/handle_validation.rs",
+      "crates/opi-ai/tests/deferred_contract/reopen.rs",
+      "crates/opi-ai/tests/deferred_contract/submission_and_fetch.rs",
+      "crates/opi-ai/tests/deferred_contract/telemetry.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-deferred-contract-20261123.json"
+    ],
+    "before": {
+      "unstaged": 194,
+      "untracked": 514
+    },
+    "after": {
+      "unstaged": 201,
+      "untracked": 521
+    }
+  },
+  "files": [
+    {
+      "path": "crates\\opi-ai\\tests\\README.md",
+      "bytes": 46812,
+      "sha256": "0fdd4d8f4e61d13ca17f70e35cc3cb21664af0df0802a4596b9b3e9d35c0e95f"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\README.zh.md",
+      "bytes": 44674,
+      "sha256": "6dc3a644098d2d367e9381820d1b276552aa6cc1208a3437d2912435a64e1484"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract.rs",
+      "bytes": 534,
+      "sha256": "08c0354ee1e5c0d3b5b9e400bb70b1f32f38526a5402db4edc226c687b533b70"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract\\cancellation.rs",
+      "bytes": 7840,
+      "sha256": "e5c594f0381b5911703b0c873d5513f93d27875abaf52b982872f3103cbfe549"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract\\fixtures.rs",
+      "bytes": 2904,
+      "sha256": "ba1d019226ea49bade0b6292b5c03e05df58e17b78db98901d617800b86e9398"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract\\handle_validation.rs",
+      "bytes": 14724,
+      "sha256": "9f961330c517a7a8b0a716ca0c5e3ce284bc623809197f02fc5b4d99c9107d90"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract\\reopen.rs",
+      "bytes": 12515,
+      "sha256": "93ec01a7cb28edd29ca17d2cbb9bfbd2eb6fb0ee8b82e7c0376d84fb7a9fda6f"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract\\submission_and_fetch.rs",
+      "bytes": 11387,
+      "sha256": "2d165f64eac357ce2730c1cfb32ff760b344f734937df4b8dac0544f60a05ef6"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\deferred_contract\\telemetry.rs",
+      "bytes": 1505,
+      "sha256": "9380f85315a9a8969e95d8a05ea071feb427694163a9c86c5c45d8e0d6e14f60"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\targets.tsv",
+      "bytes": 23832,
+      "sha256": "27b01cea7cd47bc3e286b19498f7ffc7f8b127b685bab98aac3fbb99f1471eeb"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\100-decide-deferred-auth-setup-failure.md",
+      "bytes": 7206,
+      "sha256": "2c05e03cfaa1f8fd133b7fea18383470f95938c9a94c8cf1531d0a4f11d4b94a"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\19-non-chat-ai-telemetry-boundary.md",
+      "bytes": 2580,
+      "sha256": "683831fbe959c47d161a73a27bfd1d21dc74e597d9dc0d7564aec8acba429619"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\268-partition-oversized-protocol-fixtures.md",
+      "bytes": 132998,
+      "sha256": "4bf14663eafb9e8c2bc24605b7cfb63ea7871429a9c22cb28eabf8a66eb7beb1"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\91-defer-expiry-to-provider-by-default.md",
+      "bytes": 6997,
+      "sha256": "7fe6744aca4f9392e40349fa16b74b453c678fa9f177181cc41cf596e1dcd2b2"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\92-validate-deferred-routes-before-dispatch.md",
+      "bytes": 7363,
+      "sha256": "6eb4261d7d8c8652ae7c51752629e2733e5f9d9947b11dd0601cbe4044627dda"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\93-assess-deferred-job-failure-classification.md",
+      "bytes": 8194,
+      "sha256": "e6e73342bc549cd741c0a03a30b3c747973f0a4f1de3d6970b6c659752f034d4"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\94-record-real-deferred-integration-gap.md",
+      "bytes": 8561,
+      "sha256": "324298239516061db66e78992f438cc4af7ad7ff4df0419188e1e708cb85c0f1"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\spec.md",
+      "bytes": 189586,
+      "sha256": "641b4759f2127697dc0c8a88bc957ec40ce8ff0aaaa16d414bf66a3e1726fc59"
+    },
+    {
+      "path": "scripts\\pi-sdk-conformance\\test_select_tests.py",
+      "bytes": 29144,
+      "sha256": "e57ffd196119824519f6985e0b2325a5281daedcf96618250f843bf146b08a49"
+    }
+  ]
+}

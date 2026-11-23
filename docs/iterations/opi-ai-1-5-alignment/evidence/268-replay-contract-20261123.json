@@ -1,0 +1,1001 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 48,
+  "date": "2026-11-23",
+  "verdict": "PASS scoped fixture, selection, archive and wire differential checks",
+  "source": "crates/opi-ai/tests/replay_contract.rs",
+  "root_bytes": {
+    "before": 46956,
+    "after": 599
+  },
+  "owner": {
+    "target": "replay_contract",
+    "owner": "replay",
+    "layer": "wire",
+    "cost": "in-process",
+    "required_features": [
+      "builtins"
+    ],
+    "external_consumer": "consumer-readme",
+    "archive_runner": "scripts/pi-sdk-conformance/run_readme_examples.py"
+  },
+  "test_impact": {
+    "retain": 22,
+    "update": "1 tool pairing assertion and the Anthropic fixture endpoint",
+    "add": "1 topic selector regression"
+  },
+  "moved_cases": {
+    "before_source_sha256": "a49dbed5f72fe59ed22314d24287ef2a9df5c61d959678255894dab6b9486511",
+    "cases": {
+      "association_matrix_through_real_adapters": "association::association_matrix_through_real_adapters",
+      "omitted_batches_still_validate_association": "association::omitted_batches_still_validate_association",
+      "association_failure_surfaces_typed_before_network": "association::association_failure_surfaces_typed_before_network",
+      "missing_results_close_request_locally_with_unknown_effect": "execution_effects::missing_results_close_request_locally_with_unknown_effect",
+      "failed_turns_omit_with_linked_results_and_length_keeps_pairs": "execution_effects::failed_turns_omit_with_linked_results_and_length_keeps_pairs",
+      "failed_turn_missing_results_keep_unknown_effect_across_batch_boundaries": "execution_effects::failed_turn_missing_results_keep_unknown_effect_across_batch_boundaries",
+      "failed_turns_reject_results_without_non_execution_facts": "execution_effects::failed_turns_reject_results_without_non_execution_facts",
+      "malformed_missing_result_keeps_unknown_effect_distinct_from_non_execution": "execution_effects::malformed_missing_result_keeps_unknown_effect_distinct_from_non_execution",
+      "legacy_result_serde_has_no_non_execution_fact": "execution_effects::legacy_result_serde_has_no_non_execution_fact",
+      "malformed_proposals_split_by_wire_argument_shape": "malformed_arguments::malformed_proposals_split_by_wire_argument_shape",
+      "malformed_object_wire_does_not_infer_non_execution_from_error_text": "malformed_arguments::malformed_object_wire_does_not_infer_non_execution_from_error_text",
+      "malformed_non_execution_context_is_one_sanitized_user_block_after_serde": "malformed_arguments::malformed_non_execution_context_is_one_sanitized_user_block_after_serde",
+      "responses_dual_ids_round_trip_and_cross_drops_item_id": "wire_ids::responses_dual_ids_round_trip_and_cross_drops_item_id",
+      "wire_ids_legalize_synchronously_on_both_sides_of_the_pair": "wire_ids::wire_ids_legalize_synchronously_on_both_sides_of_the_pair",
+      "legalized_wire_ids_remain_bijective_when_a_source_id_matches_a_generated_id": "wire_ids::legalized_wire_ids_remain_bijective_when_a_source_id_matches_a_generated_id",
+      "cross_identity_drops_all_thinking_and_same_identity_preserves_opaque": "content_projection::cross_identity_drops_all_thinking_and_same_identity_preserves_opaque",
+      "tool_result_images_preserve_association_order_and_failure_flag": "content_projection::tool_result_images_preserve_association_order_and_failure_flag",
+      "chat_keeps_turn_text_alongside_tool_calls": "content_projection::chat_keeps_turn_text_alongside_tool_calls",
+      "grammar_replay_tests::grammar_call_and_result_replay_as_custom_items_with_ctc_ids": "grammar_replay_tests::grammar_call_and_result_replay_as_custom_items_with_ctc_ids",
+      "object_wire::object_wire_consumers_sanitize_invalid_proposals_and_preserve_valid_pairs": "object_wire::object_wire_consumers_sanitize_invalid_proposals_and_preserve_valid_pairs",
+      "object_wire::object_wire_consumers_require_trusted_non_execution_facts": "object_wire::object_wire_consumers_require_trusted_non_execution_facts",
+      "object_wire::bedrock_wire_id_mapping_is_bijective_synchronized_and_request_local": "object_wire::bedrock_wire_id_mapping_is_bijective_synchronized_and_request_local"
+    },
+    "assertion_bodies_preserved": 21,
+    "strengthened_case": "association::association_matrix_through_real_adapters",
+    "old_full_names_retained": [
+      "grammar_replay_tests::grammar_call_and_result_replay_as_custom_items_with_ctc_ids",
+      "object_wire::bedrock_wire_id_mapping_is_bijective_synchronized_and_request_local",
+      "object_wire::object_wire_consumers_require_trusted_non_execution_facts",
+      "object_wire::object_wire_consumers_sanitize_invalid_proposals_and_preserve_valid_pairs"
+    ],
+    "object_wire_change": "fixture import only",
+    "fixture_functions": [
+      "anthropic",
+      "assistant",
+      "assistant_with_openai_identity",
+      "call",
+      "grammar_request",
+      "grammar_tool",
+      "not_executed_result",
+      "request",
+      "result",
+      "user",
+      "user_url_image"
+    ],
+    "fixture_endpoint": "http://127.0.0.1:1"
+  },
+  "validation": {
+    "baseline": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "replay_contract"
+      ],
+      "passed": 22
+    },
+    "focused": {
+      "baseline_passed": 22,
+      "workspace_passed": 22,
+      "topic_passes": {
+        "association": 3,
+        "execution_effects": 6,
+        "malformed_arguments": 3,
+        "wire_ids": 3,
+        "content_projection": 3,
+        "object_wire": 3,
+        "grammar_replay_tests": 1
+      },
+      "exact_case": {
+        "workspace-grammar_replay_tests-exact": "grammar_replay_tests::grammar_call_and_result_replay_as_custom_items_with_ctc_ids",
+        "workspace-object_wire-exact": "object_wire::bedrock_wire_id_mapping_is_bijective_synchronized_and_request_local"
+      },
+      "structure_summary": {
+        "targets": 124,
+        "rust_sources": 394,
+        "support_helpers": 16,
+        "support_edges": 60,
+        "zero_test_targets": []
+      },
+      "structure_sha256": "6d072e8d81895b97d297e20ccd5db5a1392e9b61935e3c946a1202bdea092f74",
+      "family_selection": {
+        "paths": [
+          "crates/opi-ai/tests/replay_contract.rs",
+          "crates/opi-ai/tests/replay_contract/association.rs",
+          "crates/opi-ai/tests/replay_contract/execution_effects.rs",
+          "crates/opi-ai/tests/replay_contract/malformed_arguments.rs",
+          "crates/opi-ai/tests/replay_contract/wire_ids.rs",
+          "crates/opi-ai/tests/replay_contract/content_projection.rs",
+          "crates/opi-ai/tests/replay_contract/object_wire.rs",
+          "crates/opi-ai/tests/replay_contract/responses_grammar.rs",
+          "crates/opi-ai/tests/replay_contract/fixtures.rs",
+          "crates/opi-ai/tests/targets.tsv"
+        ],
+        "scope": "focused",
+        "tests": [
+          {
+            "target": "replay_contract",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "replay_contract"
+            ],
+            "reasons": [
+              "tests/replay_contract.rs",
+              "tests/replay_contract/association.rs",
+              "tests/replay_contract/content_projection.rs",
+              "tests/replay_contract/execution_effects.rs",
+              "tests/replay_contract/fixtures.rs",
+              "tests/replay_contract/malformed_arguments.rs",
+              "tests/replay_contract/object_wire.rs",
+              "tests/replay_contract/responses_grammar.rs",
+              "tests/replay_contract/wire_ids.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py",
+          "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+        ],
+        "expansion": []
+      },
+      "missing_path": {
+        "paths": [
+          "crates/opi-ai/tests/replay_contract/missing_topic.rs"
+        ],
+        "scope": "broader checks required",
+        "tests": [],
+        "runners": [],
+        "expansion": [
+          "tests/replay_contract/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+          "tests/replay_contract/missing_topic.rs: no resolved Cargo test consumer"
+        ]
+      },
+      "workspace_commands": {
+        "workspace": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-all"
+          ],
+          "exit": 0
+        },
+        "focused-association": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-association",
+            "association::"
+          ],
+          "exit": 0
+        },
+        "focused-execution_effects": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-execution_effects",
+            "execution_effects::"
+          ],
+          "exit": 0
+        },
+        "focused-malformed_arguments": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-malformed_arguments",
+            "malformed_arguments::"
+          ],
+          "exit": 0
+        },
+        "focused-wire_ids": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-wire_ids",
+            "wire_ids::"
+          ],
+          "exit": 0
+        },
+        "focused-content_projection": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-content_projection",
+            "content_projection::"
+          ],
+          "exit": 0
+        },
+        "focused-object_wire": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-object_wire",
+            "object_wire::"
+          ],
+          "exit": 0
+        },
+        "focused-grammar_replay_tests": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-grammar_replay_tests",
+            "grammar_replay_tests::"
+          ],
+          "exit": 0
+        },
+        "exact-grammar_replay_tests": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-grammar_replay_tests-exact",
+            "--exact",
+            "grammar_replay_tests::grammar_call_and_result_replay_as_custom_items_with_ctc_ids"
+          ],
+          "exit": 0
+        },
+        "exact-object_wire": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\run-workspace.py",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-object_wire-exact",
+            "--exact",
+            "object_wire::bedrock_wire_id_mapping_is_bijective_synchronized_and_request_local"
+          ],
+          "exit": 0
+        },
+        "clippy-strict": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--",
+            "clippy",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "replay_contract",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit": 101
+        },
+        "clippy-advisory": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--",
+            "clippy",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "replay_contract"
+          ],
+          "exit": 0
+        }
+      }
+    },
+    "selector": {
+      "selector-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/",
+          "-p",
+          "test_select_tests.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "structure": {
+      "scoped-fmt": {
+        "command": [
+          "rustfmt",
+          "--edition",
+          "2024",
+          "--check",
+          "crates/opi-ai/tests/replay_contract.rs"
+        ],
+        "exit": 0
+      },
+      "workspace-fmt": {
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ],
+        "exit": 1
+      },
+      "gate": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/replay_contract.rs",
+          "crates/opi-ai/tests/replay_contract/association.rs",
+          "crates/opi-ai/tests/replay_contract/execution_effects.rs",
+          "crates/opi-ai/tests/replay_contract/malformed_arguments.rs",
+          "crates/opi-ai/tests/replay_contract/wire_ids.rs",
+          "crates/opi-ai/tests/replay_contract/content_projection.rs",
+          "crates/opi-ai/tests/replay_contract/object_wire.rs",
+          "crates/opi-ai/tests/replay_contract/responses_grammar.rs",
+          "crates/opi-ai/tests/replay_contract/fixtures.rs",
+          "crates/opi-ai/tests/targets.tsv"
+        ],
+        "exit": 0
+      },
+      "gate-missing": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/replay_contract/missing_topic.rs"
+        ],
+        "exit": 1
+      }
+    },
+    "differential": {
+      "chat-interleaving": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "openai_chat_interleaved",
+          "--",
+          "--exact",
+          "observe_interleaved_chat",
+          "--nocapture"
+        ],
+        "exit": 0
+      },
+      "differential-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/differential",
+          "-p",
+          "test_chat_interleaving.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "log_sha256": {
+      "baseline": {
+        "stdout": "7333ae5b281f87fb9c9c3f7ec3b13d91a900dcbb3346d3325ed8815ab88f6aad",
+        "stderr": "ce3422ca52b1e05eb7d9ea7699c56db6ba8ac92604686a59bba6d4c18a479783"
+      },
+      "workspace-all": {
+        "stdout": "bc5fb992b633abdb7d192850240c81a4c7728b9ccd2c404f4e4d657ec8fabad3",
+        "stderr": "be34b5838b8881933ec985c68b49579f374ae094e7996548eafe6ae07d8005e5"
+      },
+      "workspace-grammar_replay_tests-exact": {
+        "stdout": "387e196085cd7dae7e94508d70fc4f86987f73dac08c383609785af7497702d7",
+        "stderr": "075f6e4c1ce8a294e5b111f90d8283eb3cb5d1554aab0439f6b0707321e3e5c3"
+      },
+      "workspace-object_wire-exact": {
+        "stdout": "d46900ad4a27a96558b6d795c30b8bf5ca340d1f97a3982701904ca3b78db584",
+        "stderr": "9e8bb45b8be329636c97d8bca534fe7f412ac4385c5d517fd078451c14a81711"
+      },
+      "workspace-association": {
+        "stdout": "52fa6e72d68d192e38ed523595a88dc804792149cb7bfbed886f51b42b257bfa",
+        "stderr": "1aa1f14d94589f4bf215327ff2bc0ad40fb0d8aed150fee06dd2975d2a517102"
+      },
+      "workspace-execution_effects": {
+        "stdout": "984ce634c4bfee232e734d378d99b0ef66da32af3c64ffe6331c8fec783c0f62",
+        "stderr": "075f6e4c1ce8a294e5b111f90d8283eb3cb5d1554aab0439f6b0707321e3e5c3"
+      },
+      "workspace-malformed_arguments": {
+        "stdout": "4697f65392ebbe22b1f5ccdd73c6b85f17e78161007294da69c405d3e6407c69",
+        "stderr": "075f6e4c1ce8a294e5b111f90d8283eb3cb5d1554aab0439f6b0707321e3e5c3"
+      },
+      "workspace-wire_ids": {
+        "stdout": "54ce144781e313920734c3c837b5470070b08e1a45480d86683049728395d233",
+        "stderr": "9e8bb45b8be329636c97d8bca534fe7f412ac4385c5d517fd078451c14a81711"
+      },
+      "workspace-content_projection": {
+        "stdout": "a9cd834ea1fd6123edde1217d823eaae120ac8288d3576e31ac6237d4f5f7b2b",
+        "stderr": "075f6e4c1ce8a294e5b111f90d8283eb3cb5d1554aab0439f6b0707321e3e5c3"
+      },
+      "workspace-object_wire": {
+        "stdout": "ef3dfb6498c519f27cc37b2c9f603b3e5902bf45f8b7bc3ea7ffe55b97d30929",
+        "stderr": "075f6e4c1ce8a294e5b111f90d8283eb3cb5d1554aab0439f6b0707321e3e5c3"
+      },
+      "workspace-grammar_replay_tests": {
+        "stdout": "17b6ce840aaa867c1c64e7dcc9e1f6c6ef527f7b5d5a6e7382fa107980bc1d4c",
+        "stderr": "1aa1f14d94589f4bf215327ff2bc0ad40fb0d8aed150fee06dd2975d2a517102"
+      },
+      "clippy-strict": {
+        "stdout": "fa5d79fa61f81a88f4992216190b64a0929ede901a59e07cc860d1bf75defc43",
+        "stderr": "33a0c51f306c30eafc83e203c5e23eadee347ce3d6c01defeb39ccafedce963c"
+      },
+      "clippy-advisory": {
+        "stdout": "4d6c5af7fc8d7100971594929e350839126986ce72e55970f1c1c205571aa3b0",
+        "stderr": "4a9f09e55ede2997546f7687756ded5984136814582687d35152ebe8fb542266"
+      },
+      "scoped-fmt": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "workspace-fmt": {
+        "stdout": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "selector-unit": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "db041a8d50b34bb26b35bda7312cdf91602f8f3ddd507b8db21e1ca93188d1ff"
+      },
+      "gate": {
+        "stdout": "f9588a52916525368e4d31f4d8490b740e1f7704885d38e61937bbee15c45af7",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "gate-missing": {
+        "stdout": "70b2cdb0fab5aeb3d296f0a5cb7c98afbed7a652f17fee07dfe3d0930f820ed3",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "archive-replay_contract": {
+        "stdout": "d5e83825992d39d77a6fe48daba9fa47b72027404db9025bd0fc7fccba02b1ce",
+        "stderr": "543ec0e1b54d19d98a8d9e7503301fd2e0f075711098bdf2d364251772b2fa8c"
+      },
+      "chat-interleaving": {
+        "stdout": "f91e3022dd9b1a90828dace43135b797a5c789408e3620adc653d2253e4aba7f",
+        "stderr": "19f3f2b88ec2a6e83b30ab95096565cfc55bd51086d10e2a3818ae628d7734fc"
+      },
+      "differential-unit": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "ccb21b2ec10fc05db37518d4dde9cec9f7a0ac7ff9041a0e3db767b2bd41635d"
+      }
+    }
+  },
+  "package": {
+    "runner_sha256": "ccef666b1036ce2949770bca6fa661e19a732285c7e603fcb06759fb245d7c91",
+    "receipt_sha256": "0095954ab5417896e13d056f5d9a146fef29966240ed315e69ad1027be7fb53e",
+    "runner_verdict": "PASS",
+    "commands": {
+      "package-readme": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/run_readme_examples.py",
+          "--offline",
+          "--scratch",
+          "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme",
+          "--target-dir",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--evidence-output",
+          "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme-proof.json"
+        ],
+        "exit": 0
+      }
+    },
+    "toolchain": {
+      "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1",
+      "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\nrelease: 1.99.1\ncommit-hash: 5f94df4789f005f9a352888e8355ffc645b7ed0e\ncommit-date: 2026-08-27\nhost: x86_64-pc-windows-msvc\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.21.0-DEV (sys:0.4.90+curl-8.21.0 vendored ssl:Schannel)\nos: Windows 10.0.22631 (Windows 11 Core) [64-bit]"
+    },
+    "archive_and_consumer": {
+      "archive": "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme\\opi-ai-0.8.3.crate",
+      "package": "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme\\package\\opi-ai-0.8.3",
+      "cargo_configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "archive_sha256": "7cfd64541ce834bfd8802a5da54ec091d8bf59437b4ceeece6031ca43b20686d",
+      "files": {
+        "tests/replay_contract.rs": {
+          "bytes": 599,
+          "sha256": "be7de65974e383ad829aec47d00d9e7e53cd1f46ef485d03dab918be58e95300"
+        },
+        "tests/replay_contract/association.rs": {
+          "bytes": 7430,
+          "sha256": "3148974e28051b95f8d7bf44ff99ec89d0ee27523322dc3c82bcfd8ab9a61310"
+        },
+        "tests/replay_contract/execution_effects.rs": {
+          "bytes": 12757,
+          "sha256": "750a7c4435fef2d9844b1cd34b56cfcf9868f5f1f9e45d9b5155fe15d37109c0"
+        },
+        "tests/replay_contract/malformed_arguments.rs": {
+          "bytes": 6461,
+          "sha256": "a9bf0458825c620e5fb099d31e596dfc97a8c913bbf5f6edcd252fe6597a2c09"
+        },
+        "tests/replay_contract/wire_ids.rs": {
+          "bytes": 4769,
+          "sha256": "79d354591bec4d1199d02d046044be076aabbfad25019395991fec20d2308f62"
+        },
+        "tests/replay_contract/content_projection.rs": {
+          "bytes": 9141,
+          "sha256": "c7f224b64f7de4c71a745952252ab65f4f03c7d87e39be38a2b98abb42fba9dd"
+        },
+        "tests/replay_contract/object_wire.rs": {
+          "bytes": 13616,
+          "sha256": "ab9e602f52f0901dfd9778dc2040282764d6ff670230127fc481cbc523424721"
+        },
+        "tests/replay_contract/responses_grammar.rs": {
+          "bytes": 3340,
+          "sha256": "ae7fe6f66cb18daf9a84ee5be2590a25f8b750bce7fff2b853cc87ae0fc50943"
+        },
+        "tests/replay_contract/fixtures.rs": {
+          "bytes": 3453,
+          "sha256": "8b8a77f81ca7f8dcd372cede4fc5596e9c7891695d86ec4f2e43d1e19d140439"
+        }
+      },
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0,
+          "label": "archive-scratch-lock"
+        },
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0,
+          "label": "archive-metadata"
+        },
+        {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "replay_contract"
+          ],
+          "exit": 0,
+          "label": "archive-replay_contract"
+        }
+      ],
+      "external_consumer_profiles": [
+        {
+          "name": "builtins-no-tracing",
+          "features": [
+            "builtins",
+            "catalog-bundled",
+            "cloud-auth",
+            "http-transport",
+            "oauth-store",
+            "protocol-adapters",
+            "provider-anthropic",
+            "provider-azure-openai",
+            "provider-bedrock",
+            "provider-gemini",
+            "provider-mistral",
+            "provider-openai-chat",
+            "provider-openai-codex-responses",
+            "provider-openai-responses",
+            "provider-openai-responses-shared",
+            "provider-openrouter",
+            "provider-openrouter-usage",
+            "provider-pi-messages",
+            "provider-protocol-common",
+            "provider-vertex",
+            "tls-backend",
+            "websocket-compression"
+          ],
+          "examples_passed": 3,
+          "peer_checks_passed": 1,
+          "tool_loop_requests": 2,
+          "linked_call_id": "weather-1"
+        },
+        {
+          "name": "defaults-on",
+          "features": [
+            "builtins",
+            "catalog-bundled",
+            "cloud-auth",
+            "default",
+            "http-transport",
+            "oauth-store",
+            "protocol-adapters",
+            "provider-anthropic",
+            "provider-azure-openai",
+            "provider-bedrock",
+            "provider-gemini",
+            "provider-mistral",
+            "provider-openai-chat",
+            "provider-openai-codex-responses",
+            "provider-openai-responses",
+            "provider-openai-responses-shared",
+            "provider-openrouter",
+            "provider-openrouter-usage",
+            "provider-pi-messages",
+            "provider-protocol-common",
+            "provider-vertex",
+            "telemetry-tracing",
+            "tls-backend",
+            "websocket-compression"
+          ],
+          "examples_passed": 3,
+          "peer_checks_passed": 1,
+          "tool_loop_requests": 2,
+          "linked_call_id": "weather-1"
+        }
+      ],
+      "companion_archive": {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      },
+      "archive_comparison": {
+        "prior_archive": "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\opi-ai-0.8.3.crate",
+        "prior_sha256": "4df35a3df1aed99b07541e6a48798811f40468abf9a09c4ed9bf6508e152878c",
+        "added": [
+          "tests/replay_contract/association.rs",
+          "tests/replay_contract/content_projection.rs",
+          "tests/replay_contract/execution_effects.rs",
+          "tests/replay_contract/fixtures.rs",
+          "tests/replay_contract/malformed_arguments.rs",
+          "tests/replay_contract/responses_grammar.rs",
+          "tests/replay_contract/wire_ids.rs"
+        ],
+        "modified": [
+          "tests/README.md",
+          "tests/README.zh.md",
+          "tests/replay_contract.rs",
+          "tests/replay_contract/object_wire.rs",
+          "tests/targets.tsv"
+        ],
+        "removed": [],
+        "unchanged_package_files": 692,
+        "unchanged_production_lock_and_example_input_count": 257,
+        "differential_inputs_sha256": {
+          "tests/openai_chat_interleaved.rs": "012c739ab011eac989ccd09ddcd2cfb65a5fe50c925596b01c9256f52e265e19",
+          "tests/data/openai-chat-interleaved.sse": "9efaeed49e406cae08fea80898f3009442bc6104d2c856fdd36fbfd81fd568a3"
+        }
+      },
+      "scratch_lock": {
+        "archived_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "rebound_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "only_changed_package": "opi-telemetry"
+      },
+      "active_features": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "replay_contract",
+        "src_path": "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628\\readme\\package\\opi-ai-0.8.3\\tests\\replay_contract.rs",
+        "edition": "2024",
+        "required-features": [
+          "builtins"
+        ],
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-replay-contract-20261123-182628/readme/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-replay-contract-20261123-182628/readme/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed_cases": [
+        "association::association_failure_surfaces_typed_before_network",
+        "association::association_matrix_through_real_adapters",
+        "association::omitted_batches_still_validate_association",
+        "content_projection::chat_keeps_turn_text_alongside_tool_calls",
+        "content_projection::cross_identity_drops_all_thinking_and_same_identity_preserves_opaque",
+        "content_projection::tool_result_images_preserve_association_order_and_failure_flag",
+        "execution_effects::failed_turn_missing_results_keep_unknown_effect_across_batch_boundaries",
+        "execution_effects::failed_turns_omit_with_linked_results_and_length_keeps_pairs",
+        "execution_effects::failed_turns_reject_results_without_non_execution_facts",
+        "execution_effects::legacy_result_serde_has_no_non_execution_fact",
+        "execution_effects::malformed_missing_result_keeps_unknown_effect_distinct_from_non_execution",
+        "execution_effects::missing_results_close_request_locally_with_unknown_effect",
+        "grammar_replay_tests::grammar_call_and_result_replay_as_custom_items_with_ctc_ids",
+        "malformed_arguments::malformed_non_execution_context_is_one_sanitized_user_block_after_serde",
+        "malformed_arguments::malformed_object_wire_does_not_infer_non_execution_from_error_text",
+        "malformed_arguments::malformed_proposals_split_by_wire_argument_shape",
+        "object_wire::bedrock_wire_id_mapping_is_bijective_synchronized_and_request_local",
+        "object_wire::object_wire_consumers_require_trusted_non_execution_facts",
+        "object_wire::object_wire_consumers_sanitize_invalid_proposals_and_preserve_valid_pairs",
+        "wire_ids::legalized_wire_ids_remain_bijective_when_a_source_id_matches_a_generated_id",
+        "wire_ids::responses_dual_ids_round_trip_and_cross_drops_item_id",
+        "wire_ids::wire_ids_legalize_synchronously_on_both_sides_of_the_pair"
+      ]
+    }
+  },
+  "differential": {
+    "scope": "Request bodies and assistant replay blocks in both #104 scenes",
+    "revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "frozen_receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-chat-interleaving.json",
+    "receipt_sha256": "91629a0598035d939325170c6ea85486163297f4bcdf0cac13e3ba9b272baddd",
+    "driver": "crates/opi-ai/tests/openai_chat_interleaved.rs",
+    "driver_sha256": "012c739ab011eac989ccd09ddcd2cfb65a5fe50c925596b01c9256f52e265e19",
+    "fixture": "crates/opi-ai/tests/data/openai-chat-interleaved.sse",
+    "fixture_sha256": "9efaeed49e406cae08fea80898f3009442bc6104d2c856fdd36fbfd81fd568a3",
+    "checks": {
+      "resumed_text": {
+        "chat_requests": 2,
+        "anthropic_replay": 2
+      },
+      "resumed_whitespace": {
+        "chat_requests": 2,
+        "anthropic_replay": 2
+      }
+    }
+  },
+  "known_wider_checks": {
+    "strict_clippy": {
+      "exit": 101,
+      "carried_in": [
+        "crates\\opi-ai\\src\\api\\openai_responses.rs:706",
+        "crates\\opi-ai\\src\\models\\auth_owner.rs:479",
+        "crates\\opi-ai\\src\\models\\prepared_call.rs:196"
+      ]
+    },
+    "workspace_format": {
+      "exit": 1,
+      "carried_in": [
+        "openai_responses_fixtures.rs",
+        "openai_responses_fixtures/fixtures.rs",
+        "openai_responses_fixtures/wire.rs"
+      ]
+    }
+  },
+  "scratch": "E:\\opi\\scratch\\issue-268-replay-contract-20261123-182628",
+  "worktree": {
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "committed": "none for this task",
+    "staged": [],
+    "before": {
+      "unstaged": 205,
+      "untracked": 547
+    },
+    "after": {
+      "unstaged": 207,
+      "untracked": 555
+    },
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only_unstaged": [
+      "crates/opi-ai/tests/replay_contract.rs",
+      "crates/opi-ai/tests/replay_contract/object_wire.rs"
+    ],
+    "task_only_untracked": [
+      "crates/opi-ai/tests/replay_contract/association.rs",
+      "crates/opi-ai/tests/replay_contract/content_projection.rs",
+      "crates/opi-ai/tests/replay_contract/execution_effects.rs",
+      "crates/opi-ai/tests/replay_contract/fixtures.rs",
+      "crates/opi-ai/tests/replay_contract/malformed_arguments.rs",
+      "crates/opi-ai/tests/replay_contract/responses_grammar.rs",
+      "crates/opi-ai/tests/replay_contract/wire_ids.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-replay-contract-20261123.json"
+    ]
+  },
+  "files": [
+    {
+      "path": "crates/opi-ai/tests/replay_contract.rs",
+      "bytes": 599,
+      "sha256": "be7de65974e383ad829aec47d00d9e7e53cd1f46ef485d03dab918be58e95300"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/association.rs",
+      "bytes": 7430,
+      "sha256": "3148974e28051b95f8d7bf44ff99ec89d0ee27523322dc3c82bcfd8ab9a61310"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/content_projection.rs",
+      "bytes": 9141,
+      "sha256": "c7f224b64f7de4c71a745952252ab65f4f03c7d87e39be38a2b98abb42fba9dd"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/execution_effects.rs",
+      "bytes": 12757,
+      "sha256": "750a7c4435fef2d9844b1cd34b56cfcf9868f5f1f9e45d9b5155fe15d37109c0"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/fixtures.rs",
+      "bytes": 3453,
+      "sha256": "8b8a77f81ca7f8dcd372cede4fc5596e9c7891695d86ec4f2e43d1e19d140439"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/malformed_arguments.rs",
+      "bytes": 6461,
+      "sha256": "a9bf0458825c620e5fb099d31e596dfc97a8c913bbf5f6edcd252fe6597a2c09"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/object_wire.rs",
+      "bytes": 13616,
+      "sha256": "ab9e602f52f0901dfd9778dc2040282764d6ff670230127fc481cbc523424721"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/responses_grammar.rs",
+      "bytes": 3340,
+      "sha256": "ae7fe6f66cb18daf9a84ee5be2590a25f8b750bce7fff2b853cc87ae0fc50943"
+    },
+    {
+      "path": "crates/opi-ai/tests/replay_contract/wire_ids.rs",
+      "bytes": 4769,
+      "sha256": "79d354591bec4d1199d02d046044be076aabbfad25019395991fec20d2308f62"
+    },
+    {
+      "path": "crates/opi-ai/tests/README.md",
+      "bytes": 53696,
+      "sha256": "7e845be53a63b360d13cb7e06ecf7bcfb003c01708e4840cfa449f403d167a6c"
+    },
+    {
+      "path": "crates/opi-ai/tests/README.zh.md",
+      "bytes": 51126,
+      "sha256": "7953c4bb1d4c89ff608935721b1266c97bddac7f37e98301d2071127bd390fe9"
+    },
+    {
+      "path": "crates/opi-ai/tests/targets.tsv",
+      "bytes": 24327,
+      "sha256": "7d411c3ac5328a8d7f327dd6a4e5d80173bf2b466d256bb766d212e2ea8dfc6f"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/test_select_tests.py",
+      "bytes": 33375,
+      "sha256": "58a2726e5c1a22a81176e748cfc25c8f6aa1bbabe0439c31048d96c7c82b2fab"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "bytes": 143986,
+      "sha256": "2dec888dffbb72e4b93aaeb458188254af832eb5b3c777074d28aea92687a152"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "bytes": 191830,
+      "sha256": "15bb3774057eab5974739b301e44fb520361ec337f9796b5da0a25f043d95077"
+    }
+  ]
+}

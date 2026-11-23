@@ -1,0 +1,1085 @@
+{
+  "schema": 1,
+  "date": "2026-11-23",
+  "issue": 268,
+  "batch": 47,
+  "verdict": "PASS scoped fixture, selection, archive and differential checks",
+  "source": "crates/opi-ai/tests/custom_provider_registration.rs",
+  "root_bytes": {
+    "before": 47787,
+    "after": 644
+  },
+  "owner": {
+    "target": "custom_provider_registration",
+    "owner": "models",
+    "layer": "public-contract",
+    "cost": "in-process",
+    "required_features": [],
+    "package_consumer": "opi-minimum-consumer",
+    "runner": "scripts/pi-sdk-conformance/run_minimal_package.py"
+  },
+  "test_impact": {
+    "retain": 35,
+    "update": "1 admission test and the minimum package runner",
+    "add": "1 selector regression"
+  },
+  "case_migration": {
+    "original_sha256": "218795f3697e659d162381992fa97bf7bd479c9ed66ac5ea37411ec937281499",
+    "qualified_names": {
+      "register_custom_provider_and_resolve": "registry_providers::register_custom_provider_and_resolve",
+      "register_provider_appears_in_provider_ids": "registry_providers::register_provider_appears_in_provider_ids",
+      "register_provider_empty_id_rejected": "registry_providers::register_provider_empty_id_rejected",
+      "register_provider_replaces_existing": "registry_providers::register_provider_replaces_existing",
+      "stream_from_custom_provider": "registry_providers::stream_from_custom_provider",
+      "empty_registry_provider_ids_is_empty": "registry_providers::empty_registry_provider_ids_is_empty",
+      "get_provider_returns_registered": "registry_providers::get_provider_returns_registered",
+      "register_model_and_resolve": "registry_models::register_model_and_resolve",
+      "register_model_duplicate_rejected": "registry_models::register_model_duplicate_rejected",
+      "register_model_empty_id_rejected": "registry_models::register_model_empty_id_rejected",
+      "register_model_rejects_zero_token_limits": "registry_models::register_model_rejects_zero_token_limits",
+      "register_model_override_duplicate_override_rejected": "registry_models::register_model_override_duplicate_override_rejected",
+      "capabilities_for_custom_provider": "registry_models::capabilities_for_custom_provider",
+      "capabilities_for_model_override": "registry_models::capabilities_for_model_override",
+      "all_models_includes_custom_providers": "registry_models::all_models_includes_custom_providers",
+      "all_models_includes_model_overrides": "registry_models::all_models_includes_model_overrides",
+      "all_models_lists_overrides_in_deterministic_order": "registry_models::all_models_lists_overrides_in_deterministic_order",
+      "all_models_deduplicates_when_override_shadows_built_in": "registry_models::all_models_deduplicates_when_override_shadows_built_in",
+      "resolve_override_takes_precedence_over_provider_model": "registry_models::resolve_override_takes_precedence_over_provider_model",
+      "resolve_unknown_provider_returns_error": "registry_models::resolve_unknown_provider_returns_error",
+      "resolve_unknown_model_returns_error": "registry_models::resolve_unknown_model_returns_error",
+      "empty_registry_all_models_is_empty": "registry_models::empty_registry_all_models_is_empty",
+      "chat_registration_preserves_arbitrary_exact_api_ids_without_auth": "chat_registration::chat_registration_preserves_arbitrary_exact_api_ids_without_auth",
+      "models_register_chat_api_keeps_record_out_of_catalog": "chat_registration::models_register_chat_api_keeps_record_out_of_catalog",
+      "models_get_model_returns_owned_record_with_exact_wire": "chat_registration::models_get_model_returns_owned_record_with_exact_wire",
+      "models_frozen_record_is_not_replaced_by_same_id_catalog_data": "chat_dispatch::models_frozen_record_is_not_replaced_by_same_id_catalog_data",
+      "models_simple_entry_uses_neutral_options_and_same_binding": "chat_dispatch::models_simple_entry_uses_neutral_options_and_same_binding",
+      "models_direct_entry_uses_injected_auth_without_models_auth": "chat_dispatch::models_direct_entry_uses_injected_auth_without_models_auth",
+      "models_native_options_portable_across_instances": "chat_dispatch::models_native_options_portable_across_instances",
+      "models_old_call_survives_provider_mutation": "chat_lifecycle::models_old_call_survives_provider_mutation",
+      "models_six_ordinary_entries_freeze_binding_and_execute_before_consumption": "chat_lifecycle::models_six_ordinary_entries_freeze_binding_and_execute_before_consumption",
+      "models_auth_runs_without_consumption_and_call_is_send_static": "chat_lifecycle::models_auth_runs_without_consumption_and_call_is_send_static",
+      "codex_wire_metadata_does_not_admit_unconsumed_simple_tool_selection": "chat_admission::codex_wire_metadata_does_not_admit_unconsumed_simple_tool_selection",
+      "models_type_mismatch_and_unregistered_api_fail_before_auth": "chat_admission::models_type_mismatch_and_unregistered_api_fail_before_auth",
+      "models_pre_cancelled_request_fails_before_auth": "chat_admission::models_pre_cancelled_request_fails_before_auth"
+    },
+    "identical_bodies": 34,
+    "updated_admission": "chat_admission::models_type_mismatch_and_unregistered_api_fail_before_auth",
+    "fixture_implementations_preserved": true,
+    "support_ownership_unchanged": true
+  },
+  "verification": {
+    "worktree": {
+      "baseline_passed": 35,
+      "workspace_passed": 35,
+      "topic_passes": {
+        "registry_providers": 7,
+        "registry_models": 15,
+        "chat_registration": 3,
+        "chat_dispatch": 4,
+        "chat_lifecycle": 3,
+        "chat_admission": 3
+      },
+      "exact_case": "chat_admission::models_type_mismatch_and_unregistered_api_fail_before_auth",
+      "structure_summary": {
+        "targets": 124,
+        "rust_sources": 387,
+        "support_helpers": 16,
+        "support_edges": 60,
+        "zero_test_targets": []
+      },
+      "structure_sha256": "d771ae652c4e0f3aafd859b736fcf32e0c030672d386c918c697d58786a74f24",
+      "family_selection": {
+        "paths": [
+          "crates/opi-ai/tests/custom_provider_registration.rs",
+          "crates/opi-ai/tests/custom_provider_registration/registry_providers.rs",
+          "crates/opi-ai/tests/custom_provider_registration/registry_models.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_registration.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_dispatch.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_lifecycle.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_admission.rs",
+          "crates/opi-ai/tests/custom_provider_registration/fixtures.rs",
+          "crates/opi-ai/tests/targets.tsv"
+        ],
+        "scope": "focused",
+        "tests": [
+          {
+            "target": "custom_provider_registration",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--test",
+              "custom_provider_registration"
+            ],
+            "reasons": [
+              "tests/custom_provider_registration.rs",
+              "tests/custom_provider_registration/chat_admission.rs",
+              "tests/custom_provider_registration/chat_dispatch.rs",
+              "tests/custom_provider_registration/chat_lifecycle.rs",
+              "tests/custom_provider_registration/chat_registration.rs",
+              "tests/custom_provider_registration/fixtures.rs",
+              "tests/custom_provider_registration/registry_models.rs",
+              "tests/custom_provider_registration/registry_providers.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_minimal_package.py",
+          "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+        ],
+        "expansion": []
+      },
+      "missing_path": {
+        "paths": [
+          "crates/opi-ai/tests/custom_provider_registration/missing_topic.rs"
+        ],
+        "scope": "broader checks required",
+        "tests": [],
+        "runners": [],
+        "expansion": [
+          "tests/custom_provider_registration/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+          "tests/custom_provider_registration/missing_topic.rs: no resolved Cargo test consumer"
+        ]
+      },
+      "workspace_commands": {
+        "workspace": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-all"
+          ],
+          "exit": 0
+        },
+        "focused-registry_providers": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-registry_providers",
+            "registry_providers::"
+          ],
+          "exit": 0
+        },
+        "focused-registry_models": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-registry_models",
+            "registry_models::"
+          ],
+          "exit": 0
+        },
+        "focused-chat_registration": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-chat_registration",
+            "chat_registration::"
+          ],
+          "exit": 0
+        },
+        "focused-chat_dispatch": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-chat_dispatch",
+            "chat_dispatch::"
+          ],
+          "exit": 0
+        },
+        "focused-chat_lifecycle": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-chat_lifecycle",
+            "chat_lifecycle::"
+          ],
+          "exit": 0
+        },
+        "focused-chat_admission": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-chat_admission",
+            "chat_admission::"
+          ],
+          "exit": 0
+        },
+        "exact-admission": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\run-workspace.py",
+            "E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "workspace-exact-admission",
+            "--exact",
+            "chat_admission::models_type_mismatch_and_unregistered_api_fail_before_auth"
+          ],
+          "exit": 0
+        },
+        "clippy-strict": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--",
+            "clippy",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--test",
+            "custom_provider_registration",
+            "--",
+            "-D",
+            "warnings"
+          ],
+          "exit": 101
+        },
+        "clippy-advisory": {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "scripts/opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+            "--",
+            "clippy",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--test",
+            "custom_provider_registration"
+          ],
+          "exit": 0
+        }
+      }
+    },
+    "baseline": {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--test",
+        "custom_provider_registration"
+      ],
+      "passed": 35
+    },
+    "structure": {
+      "scoped-fmt": {
+        "command": [
+          "rustfmt",
+          "--edition",
+          "2024",
+          "--check",
+          "crates/opi-ai/tests/custom_provider_registration.rs"
+        ],
+        "exit": 0
+      },
+      "workspace-fmt": {
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ],
+        "exit": 1
+      },
+      "gate": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/custom_provider_registration.rs",
+          "crates/opi-ai/tests/custom_provider_registration/registry_providers.rs",
+          "crates/opi-ai/tests/custom_provider_registration/registry_models.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_registration.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_dispatch.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_lifecycle.rs",
+          "crates/opi-ai/tests/custom_provider_registration/chat_admission.rs",
+          "crates/opi-ai/tests/custom_provider_registration/fixtures.rs",
+          "crates/opi-ai/tests/targets.tsv"
+        ],
+        "exit": 0
+      },
+      "gate-missing": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/custom_provider_registration/missing_topic.rs"
+        ],
+        "exit": 1
+      }
+    },
+    "selector": {
+      "selector-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/",
+          "-p",
+          "test_select_tests.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "minimum_runner_checks": {
+      "minimum-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/",
+          "-p",
+          "test_minimal_package.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "differential_units": {
+      "selector": "test_lifecycle_differential.py -k test_setup",
+      "passed": 5
+    },
+    "logs_sha256": {
+      "baseline": {
+        "stdout": "07d9e79dbd0371f52954979f49adf5cf07a784035b5d9dedb15f46c1a93e8aa7",
+        "stderr": "d312432813d8b761911786b19eb0f5c9fb66225f9c0f19cef9ccfb73708d5185"
+      },
+      "workspace-all": {
+        "stdout": "617829e53887c631201ff6a4bb2ad5e0651131ec729dbb098ae5a74cf5012a27",
+        "stderr": "d2fc927d4a84be2d2a5ba862aa260705da3f5c693436af2e387b5bdf56656357"
+      },
+      "workspace-exact-admission": {
+        "stdout": "7d2130ae7d7f04f42e6af5f54ec6b752c99893d45958759bbf0595506ab0e5c1",
+        "stderr": "c64cf8bea806f442ab3d09e4092fc6cc89d950dc74edfb8df5e5b667c19b5c02"
+      },
+      "gate": {
+        "stdout": "2e9d680addf7f98ab2d75eadce33e906dc352c5ce2beeff6130b745f1bc02e31",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "gate-missing": {
+        "stdout": "bdfcfbf1c326cac0c1d329e5decfc52a45320de8b96e65738c07dad9299f7c0f",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "selector-unit": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "ab047fce1ed7a57e9fd2c7aac8210504860ec8ef6a8c7aa6b3990015b58f51e1"
+      },
+      "minimum-unit": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "43daf1d4018240a42169bb09ee7ca2a0858f0e61c2b72987d239a5e47aaf43f8"
+      },
+      "minimum-cli-negative": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "72510ce7e4ef5d55a920ca31417a226fcd84e62db437218a1fe5a3bdf8c17e19"
+      },
+      "clippy-strict": {
+        "stdout": "66451961dc9db976ef8b64ce113ed9c5828c200e455512db9a70bf419b4f3007",
+        "stderr": "a6c08ec6ae4253979a0c76399c41e550060d988be9d8b85c431cd6874caf8300"
+      },
+      "clippy-advisory": {
+        "stdout": "213c77cf10a1bfe2e9088089a88a86dd15dbc195edf67f9d572f59aecd616cf5",
+        "stderr": "f6ee5ca8e5aa5734a1adf368c6a140921e053e4521e6cb4d4bd276da27e02fc1"
+      },
+      "workspace-fmt": {
+        "stdout": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "scoped-fmt": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "archived-test": {
+        "stdout": "a287c1e4e1f4d0723585172161a8fa3fe095397ea61d5d695f6bfd5b5fe896c9",
+        "stderr": "52f5370ea5fe57217bab27cad3402324357af4d6e7301233f7b2897e92ba3c05"
+      },
+      "differential-unit": {
+        "stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr": "ee351f6ac5f48542c44e1c3200ac7afe5e1a8539f5bc47b2553178989dfb38a9"
+      },
+      "differential-build": {
+        "stdout": "aca6acb73980265341eb1f4a45bce000c95e133c53e25829db032fafc1cf6b60",
+        "stderr": "a7a494b647b4c34f63aa0e16477d8e93b92fe1f9c8696b81418edfe4c83e9028"
+      }
+    }
+  },
+  "package": {
+    "runner_receipt_sha256": "ad061084d6d9c2d00495ecd446fdded3d38dfff52b5e8ef5e70913fbab238972",
+    "run": {
+      "package-minimal": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/run_minimal_package.py",
+          "--scratch",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum",
+          "--target-dir",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--evidence-output",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum-proof.json"
+        ],
+        "exit": 0
+      },
+      "minimum-cli-negative": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/run_minimal_package.py",
+          "--scratch",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\negative-must-not-exist",
+          "--target-dir",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--evidence-output",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum-proof.json"
+        ],
+        "exit": 2
+      }
+    },
+    "consumer_verdict": "PASS",
+    "profile_steps": [
+      {
+        "name": "package",
+        "command": [
+          "cargo",
+          "package",
+          "-p",
+          "opi-telemetry",
+          "-p",
+          "opi-ai",
+          "--allow-dirty",
+          "--no-verify",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.73,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "93c321f576affad0d5e485dc37cdb84eda0ac6e400e5e4259c58d13252393b38"
+      },
+      {
+        "name": "core-clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+          "--offline",
+          "--locked",
+          "--tests",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 5.69,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "124ee96e0c67b990d92f7725445bf2d75f9883ad4999b817d7c18db2f07253ab"
+      },
+      {
+        "name": "core-custom_provider_registration",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+          "test",
+          "--offline",
+          "--locked",
+          "--test",
+          "custom_provider_registration",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.2,
+        "stdout_sha256": "3db1a41a1ae18822f07516c59e991eb68b861956c9481cc3f8214fb2d832acbd",
+        "stderr_sha256": "5b88d46c820bdfa411cae4605ff49243f809bda1f2105cfa1c05bf8789b289b0"
+      },
+      {
+        "name": "core-tracing-clippy",
+        "command": [
+          "cargo",
+          "clippy",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+          "--offline",
+          "--locked",
+          "--tests",
+          "--features",
+          "telemetry-tracing",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 3.44,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "0a77e9e997f890f9b9c2fc17e814b188a8fcb6a2ed93371d58f6799e29431641"
+      },
+      {
+        "name": "core-tracing-custom_provider_registration",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+          "test",
+          "--offline",
+          "--locked",
+          "--test",
+          "custom_provider_registration",
+          "--features",
+          "telemetry-tracing",
+          "--",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 4.42,
+        "stdout_sha256": "c055842acce4f0cd9e104918aaa370ce551a10104905e93b6c21a3cffa07568c",
+        "stderr_sha256": "ffac3f7e7b69ab612ebfc448c156fa969fcb6ffdc0e72c3e7d62215a5f762655"
+      },
+      {
+        "name": "builtin-catalog-absent",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+          "check",
+          "--offline",
+          "--locked",
+          "--bin",
+          "opi-minimum-consumer",
+          "--message-format=json"
+        ],
+        "exit": 101,
+        "elapsed_seconds": 0.38,
+        "stdout_sha256": "37604fef577d56b5beabff5a819f5bbd268e88d8ee84a64bf882adac0ede34b5",
+        "stderr_sha256": "5937f3da68b9507e7cd7ad476e6325fc4029b3e565b9548d3cb96b7550329d50"
+      },
+      {
+        "name": "sequence-probe-absent",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+          "check",
+          "--offline",
+          "--locked",
+          "--bin",
+          "opi-minimum-consumer",
+          "--message-format=json"
+        ],
+        "exit": 101,
+        "elapsed_seconds": 0.3,
+        "stdout_sha256": "3c72fefefbe22007fa9011c3938aab5ab6188e91117fdf52adea17f476da4ba8",
+        "stderr_sha256": "5937f3da68b9507e7cd7ad476e6325fc4029b3e565b9548d3cb96b7550329d50"
+      }
+    ],
+    "archive_and_consumer": {
+      "archive": "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\opi-ai-0.8.3.crate",
+      "archive_sha256": "4df35a3df1aed99b07541e6a48798811f40468abf9a09c4ed9bf6508e152878c",
+      "companion_archive": {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      },
+      "extracted_crate": "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\package\\opi-ai-0.8.3",
+      "cargo_configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "steps": [
+        {
+          "label": "archive-scratch-lock",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archive-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+            "metadata",
+            "--format-version",
+            "1",
+            "--locked",
+            "--offline",
+            "--no-default-features"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archived-test",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--test",
+            "custom_provider_registration"
+          ],
+          "exit": 0
+        }
+      ],
+      "comparison": {
+        "prior_archive": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\opi-ai-0.8.3.crate",
+        "prior_archive_sha256": "8dcac4fd5d3f8c9aab804bb6a17c5d4a44c5dd0df23ebc8b9085e855af8ab519",
+        "added": [
+          "tests/custom_provider_registration/chat_admission.rs",
+          "tests/custom_provider_registration/chat_dispatch.rs",
+          "tests/custom_provider_registration/chat_lifecycle.rs",
+          "tests/custom_provider_registration/chat_registration.rs",
+          "tests/custom_provider_registration/fixtures.rs",
+          "tests/custom_provider_registration/registry_models.rs",
+          "tests/custom_provider_registration/registry_providers.rs"
+        ],
+        "modified": [
+          "tests/README.md",
+          "tests/README.zh.md",
+          "tests/custom_provider_registration.rs",
+          "tests/targets.tsv"
+        ],
+        "removed": [],
+        "unchanged_files": 686,
+        "same_build_inputs": 257
+      },
+      "exact_suite_source_sha256": {
+        "tests/custom_provider_registration/chat_admission.rs": "5bb113d82d8761069085fb36594822d5bb97885127233caba43b0adb2d9115b5",
+        "tests/custom_provider_registration/chat_dispatch.rs": "b5bd670c3ec6c5e98dc6ac1415daa770110d8a7aebd1ab614fbddfa8477347b7",
+        "tests/custom_provider_registration/chat_lifecycle.rs": "6ca5b866858a6ae18744e1a0d9335dcf6d5e3af401c9190569a0b9f5737f0fa4",
+        "tests/custom_provider_registration/chat_registration.rs": "4a33ad5519200d4feddab869ae50f5aae73f9689aff32df7f68a4ee1f69df362",
+        "tests/custom_provider_registration/fixtures.rs": "94f862d1834bbd386e582f445cc16bdaf52f55b4a19f87b868a2c394a843c89f",
+        "tests/custom_provider_registration/registry_models.rs": "3eebabd98c439365352f9fc59e95a13049944ec0ec097ac3bce371de1030b125",
+        "tests/custom_provider_registration/registry_providers.rs": "6e995982f0124841df1a87c1fffcfff790fbd71df6b0dc2d417db5e5e136d9d0",
+        "tests/custom_provider_registration.rs": "8fa2ed0d96051da094809d3ed77ff56814866b3702a9e71ef8f8d8c7ba762c3d"
+      },
+      "external_profiles": [
+        {
+          "name": "core",
+          "features": [],
+          "sdk": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/package/opi-ai-0.8.3#opi-ai@0.8.3",
+          "telemetry": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+          "consumer": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/consumer#opi-minimum-consumer@0.0.0",
+          "passed_by_target": {
+            "core_profile": 4,
+            "custom_provider_registration": 35,
+            "streaming_json": 12,
+            "incremental_argument_preview": 3,
+            "final_numeric_decoding": 2
+          },
+          "total_passed": 56
+        },
+        {
+          "name": "core-tracing",
+          "features": [
+            "telemetry-tracing"
+          ],
+          "sdk": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/package/opi-ai-0.8.3#opi-ai@0.8.3",
+          "telemetry": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+          "consumer": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/consumer#opi-minimum-consumer@0.0.0",
+          "passed_by_target": {
+            "core_profile": 5,
+            "custom_provider_registration": 35,
+            "streaming_json": 12,
+            "incremental_argument_preview": 3,
+            "final_numeric_decoding": 2
+          },
+          "total_passed": 57
+        }
+      ],
+      "consumer_lock_sha256": "6b2a52f85d2b7536da3dd0a4b420c88c2f7e757ace5e0f296e7c308132b7e98f",
+      "toolchain": {
+        "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-pc-windows-msvc\nrelease: 1.99.1\nLLVM version: 23.1.1\n",
+        "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)\nrelease: 1.99.1\ncommit-hash: 5f94df4789f005f9a352888e8355ffc645b7ed0e\ncommit-date: 2026-08-27\nhost: x86_64-pc-windows-msvc\nlibgit2: 1.9.6 (sys:0.21.0 vendored)\nlibcurl: 8.21.0-DEV (sys:0.4.90+curl-8.21.0 vendored ssl:Schannel)\nos: Windows 10.0.22631 (Windows 11 Core) [64-bit]\n"
+      },
+      "scratch_lock": {
+        "archive_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "rebound_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "only_rebound": "opi-telemetry",
+        "version": "0.8.3"
+      },
+      "packaged_target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "custom_provider_registration",
+        "src_path": "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759\\minimum\\package\\opi-ai-0.8.3\\tests\\custom_provider_registration.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "active_features": [],
+      "telemetry": "path+file:///E:/opi/scratch/issue-268-custom-provider-registration-20261123-180759/minimum/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed_cases": [
+        "chat_admission::codex_wire_metadata_does_not_admit_unconsumed_simple_tool_selection",
+        "chat_admission::models_pre_cancelled_request_fails_before_auth",
+        "chat_admission::models_type_mismatch_and_unregistered_api_fail_before_auth",
+        "chat_dispatch::models_direct_entry_uses_injected_auth_without_models_auth",
+        "chat_dispatch::models_frozen_record_is_not_replaced_by_same_id_catalog_data",
+        "chat_dispatch::models_native_options_portable_across_instances",
+        "chat_dispatch::models_simple_entry_uses_neutral_options_and_same_binding",
+        "chat_lifecycle::models_auth_runs_without_consumption_and_call_is_send_static",
+        "chat_lifecycle::models_old_call_survives_provider_mutation",
+        "chat_lifecycle::models_six_ordinary_entries_freeze_binding_and_execute_before_consumption",
+        "chat_registration::chat_registration_preserves_arbitrary_exact_api_ids_without_auth",
+        "chat_registration::models_get_model_returns_owned_record_with_exact_wire",
+        "chat_registration::models_register_chat_api_keeps_record_out_of_catalog",
+        "registry_models::all_models_deduplicates_when_override_shadows_built_in",
+        "registry_models::all_models_includes_custom_providers",
+        "registry_models::all_models_includes_model_overrides",
+        "registry_models::all_models_lists_overrides_in_deterministic_order",
+        "registry_models::capabilities_for_custom_provider",
+        "registry_models::capabilities_for_model_override",
+        "registry_models::empty_registry_all_models_is_empty",
+        "registry_models::register_model_and_resolve",
+        "registry_models::register_model_duplicate_rejected",
+        "registry_models::register_model_empty_id_rejected",
+        "registry_models::register_model_override_duplicate_override_rejected",
+        "registry_models::register_model_rejects_zero_token_limits",
+        "registry_models::resolve_override_takes_precedence_over_provider_model",
+        "registry_models::resolve_unknown_model_returns_error",
+        "registry_models::resolve_unknown_provider_returns_error",
+        "registry_providers::empty_registry_provider_ids_is_empty",
+        "registry_providers::get_provider_returns_registered",
+        "registry_providers::register_custom_provider_and_resolve",
+        "registry_providers::register_provider_appears_in_provider_ids",
+        "registry_providers::register_provider_empty_id_rejected",
+        "registry_providers::register_provider_replaces_existing",
+        "registry_providers::stream_from_custom_provider"
+      ]
+    }
+  },
+  "differential": {
+    "frozen_pi_revision": "f9a26365568127461c47a07a37dcb42c140a3ac5",
+    "frozen_pi_receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-setup-failure-identity-differential.json",
+    "frozen_pi_receipt_sha256": "1ed994a7fdc068db18891534e844c0c0d8d4e545286c6248cb0fd9e4fe340d06",
+    "driver_sha256": "fd26724f71995fdb34da5554bbce678813473a4d45cfe10c2d6de858fad87927",
+    "comparator_sha256": "17c0069d239d1c90bf216a8260ef72150d495af123b43e4ab0c97a65bb3e1c1d",
+    "build": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "build",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--example",
+        "lifecycle_differential"
+      ],
+      "exit": 0,
+      "executable_sha256": "7b47e9dc8b376b7521f7e554543a0ae166afc0cf7c8fb7b9dd4b382035290037"
+    },
+    "cases": [
+      {
+        "scenario": "models-missing-provider",
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\examples\\lifecycle_differential.exe",
+          "models-missing-provider"
+        ],
+        "exit": 0,
+        "trace_sha256": "792a5326489c548854005e05d90f409a07ec3fae4265b3eb310173657045b2cb",
+        "shared_fields": 10,
+        "comparison": {
+          "status": "difference",
+          "shared_observations": "pass",
+          "compared_fields": [
+            "failure_phase",
+            "requested_provider",
+            "requested_model",
+            "message_provider",
+            "message_model",
+            "auth_calls",
+            "dispatch_calls",
+            "terminal_kind",
+            "terminal_count",
+            "result_matches_event"
+          ],
+          "mismatches": [],
+          "strict_alignment": false,
+          "difference": {
+            "id": "setup-error-channel",
+            "phase": "route-lookup",
+            "upstream": {
+              "auth_calls_at_construction": 0,
+              "event_delivery": "error-event",
+              "result_delivery": "fulfilled-message",
+              "error_message": "Unknown provider: missing-provider",
+              "typed_cause": null
+            },
+            "rust": {
+              "auth_calls_at_construction": 0,
+              "event_delivery": "stream-item-err",
+              "result_delivery": "typed-err",
+              "error_message": "invalid provider configuration: unknown provider: missing-provider",
+              "typed_cause": "Config"
+            }
+          },
+          "decision_status": "not-approved-by-this-probe"
+        }
+      },
+      {
+        "scenario": "models-auth-setup-failure",
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\examples\\lifecycle_differential.exe",
+          "models-auth-setup-failure"
+        ],
+        "exit": 0,
+        "trace_sha256": "455c21722989ab55780d974887bca736a4e65f5d5b668510882cecdf9926dd3a",
+        "shared_fields": 10,
+        "comparison": {
+          "status": "difference",
+          "shared_observations": "pass",
+          "compared_fields": [
+            "failure_phase",
+            "requested_provider",
+            "requested_model",
+            "message_provider",
+            "message_model",
+            "auth_calls",
+            "dispatch_calls",
+            "terminal_kind",
+            "terminal_count",
+            "result_matches_event"
+          ],
+          "mismatches": [],
+          "strict_alignment": false,
+          "difference": {
+            "id": "setup-error-channel",
+            "phase": "authentication",
+            "upstream": {
+              "auth_calls_at_construction": 1,
+              "event_delivery": "error-event",
+              "result_delivery": "fulfilled-message",
+              "error_message": "API key auth failed for provider lifecycle-differential: controlled-auth-setup-failure",
+              "typed_cause": null
+            },
+            "rust": {
+              "auth_calls_at_construction": 0,
+              "event_delivery": "stream-item-err",
+              "result_delivery": "typed-err",
+              "error_message": "authentication failed: controlled-auth-setup-failure",
+              "typed_cause": "AuthFailed"
+            }
+          },
+          "decision_status": "not-approved-by-this-probe"
+        }
+      }
+    ]
+  },
+  "known_wider_checks": {
+    "strict_clippy": {
+      "exit": 101,
+      "carried_in_files": [
+        "crates\\opi-ai\\src\\models\\auth_owner.rs:479",
+        "crates\\opi-ai\\src\\models\\prepared_call.rs:196"
+      ]
+    },
+    "workspace_format": {
+      "exit": 1,
+      "carried_in_test_files": [
+        "openai_responses_fixtures.rs",
+        "openai_responses_fixtures/fixtures.rs",
+        "openai_responses_fixtures/wire.rs"
+      ]
+    }
+  },
+  "scratch": "E:\\opi\\scratch\\issue-268-custom-provider-registration-20261123-180759",
+  "worktree": {
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "committed": "none for this task",
+    "staged": [],
+    "before": {
+      "unstaged": 204,
+      "untracked": 539
+    },
+    "after": {
+      "unstaged": 205,
+      "untracked": 547
+    },
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/README.md",
+      "scripts/pi-sdk-conformance/run_minimal_package.py",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only_unstaged": [
+      "crates/opi-ai/tests/custom_provider_registration.rs"
+    ],
+    "task_only_untracked": [
+      "crates/opi-ai/tests/custom_provider_registration/chat_admission.rs",
+      "crates/opi-ai/tests/custom_provider_registration/chat_dispatch.rs",
+      "crates/opi-ai/tests/custom_provider_registration/chat_lifecycle.rs",
+      "crates/opi-ai/tests/custom_provider_registration/chat_registration.rs",
+      "crates/opi-ai/tests/custom_provider_registration/fixtures.rs",
+      "crates/opi-ai/tests/custom_provider_registration/registry_models.rs",
+      "crates/opi-ai/tests/custom_provider_registration/registry_providers.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-custom-provider-registration-20261123.json"
+    ]
+  },
+  "files": [
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration.rs",
+      "bytes": 644,
+      "sha256": "8fa2ed0d96051da094809d3ed77ff56814866b3702a9e71ef8f8d8c7ba762c3d"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/chat_admission.rs",
+      "bytes": 8000,
+      "sha256": "5bb113d82d8761069085fb36594822d5bb97885127233caba43b0adb2d9115b5"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/chat_dispatch.rs",
+      "bytes": 7384,
+      "sha256": "b5bd670c3ec6c5e98dc6ac1415daa770110d8a7aebd1ab614fbddfa8477347b7"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/chat_lifecycle.rs",
+      "bytes": 8036,
+      "sha256": "6ca5b866858a6ae18744e1a0d9335dcf6d5e3af401c9190569a0b9f5737f0fa4"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/chat_registration.rs",
+      "bytes": 4299,
+      "sha256": "4a33ad5519200d4feddab869ae50f5aae73f9689aff32df7f68a4ee1f69df362"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/fixtures.rs",
+      "bytes": 7025,
+      "sha256": "94f862d1834bbd386e582f445cc16bdaf52f55b4a19f87b868a2c394a843c89f"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/registry_models.rs",
+      "bytes": 9776,
+      "sha256": "3eebabd98c439365352f9fc59e95a13049944ec0ec097ac3bce371de1030b125"
+    },
+    {
+      "path": "crates/opi-ai/tests/custom_provider_registration/registry_providers.rs",
+      "bytes": 4148,
+      "sha256": "6e995982f0124841df1a87c1fffcfff790fbd71df6b0dc2d417db5e5e136d9d0"
+    },
+    {
+      "path": "crates/opi-ai/tests/README.md",
+      "bytes": 51891,
+      "sha256": "6c3ffe14c2c1a620f508711cd2f6d88484db8a756c2feb407e4216c8f44b357c"
+    },
+    {
+      "path": "crates/opi-ai/tests/README.zh.md",
+      "bytes": 49434,
+      "sha256": "ffcd965c699e31cfd6493dbe2c2b355c21f63697b1efbf36a59d81b5445f13e4"
+    },
+    {
+      "path": "crates/opi-ai/tests/targets.tsv",
+      "bytes": 24188,
+      "sha256": "c66d766627ad2775ab8298e80725266b4d8f7c8f3a882c504d22f561c19b5e47"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/README.md",
+      "bytes": 11408,
+      "sha256": "6218bda19e2e4bd21b0455f0a33aeff5bf43b8ad4d493a433339a276ef915eb6"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/run_minimal_package.py",
+      "bytes": 9956,
+      "sha256": "835a3e887f801ed3b87ace70fdd165ff8395a3bb795686a4ca33415b614ce58a"
+    },
+    {
+      "path": "scripts/pi-sdk-conformance/test_select_tests.py",
+      "bytes": 32161,
+      "sha256": "2961da552eccbe96f6bad241e2c561b04e55ddafb0d60a82d8465e1e08e736cf"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "bytes": 141334,
+      "sha256": "73f618b1339d3a73207dc972a956028b222df5f7b115288b668024cec13e47c4"
+    },
+    {
+      "path": "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "bytes": 191273,
+      "sha256": "563f96920f0eb39cb83c9f21806630f3852a9c8f983eddf3fdc3aced5d1f80ce"
+    }
+  ]
+}

@@ -1,6 +1,9 @@
 //! Backend-neutral SDK behavior, also executed from the actual minimum package.
 use futures_util::StreamExt;
-use opi_ai::auth::{LoginPresenter, OAuthCredential, OAuthProvider};
+use opi_ai::auth::{
+    AuthProvenanceSource, AuthScheme, LoginPresenter, OAuthCredential, OAuthProvider,
+    StaticAuthResolver,
+};
 use opi_ai::credential::{
     BoxAuthFuture, Credential, CredentialSource, CredentialStore, CredentialStoreError,
 };
@@ -10,7 +13,8 @@ use opi_ai::mutation::InMemoryCredentialStore;
 use opi_ai::provider::{ProviderError, Request};
 use opi_ai::stream::StopReason;
 use opi_ai::test_support::{
-    MockProvider, single_route_collection, text_response, tool_call_response,
+    MockProvider, ScriptedDeferredBackend, single_route_collection, text_response,
+    tool_call_response,
 };
 use opi_ai::transcript::{Context, normalize_context};
 use std::sync::{
@@ -106,6 +110,59 @@ async fn scripted_faux_streams_and_replays_a_tool_result() {
     assert_eq!(log[1].context.messages(), messages);
     let policy = opi_ai::retry::smithy::SmithyRetryConfig::default().acquisition_policy();
     assert_eq!(policy.max_retries, 2);
+}
+
+#[tokio::test]
+async fn scripted_faux_submits_then_fetches_a_deferred_reply() {
+    let backend = Arc::new(ScriptedDeferredBackend::new("faux", "mock-model"));
+    let provider = MockProvider::new("faux", vec![text_response("ready")]).with_deferred(
+        backend.clone(),
+        1,
+        Some(25),
+    );
+    let mut models = single_route_collection(Box::new(provider));
+    models
+        .register_deferred_api(
+            backend.clone(),
+            Arc::new(StaticAuthResolver::new(
+                AuthScheme::ApiKey,
+                "test-key".into(),
+            )),
+            AuthProvenanceSource::Static,
+        )
+        .unwrap();
+
+    let prepared = models
+        .prepare_call("faux:mock-model", request(vec![]))
+        .await
+        .unwrap();
+    let submission = opi_ai::ChatStream::new(prepared.start_attempt().unwrap())
+        .result()
+        .await
+        .unwrap();
+    assert_eq!(submission.stop_reason, StopReason::Deferred);
+    let handle = submission.deferred.unwrap();
+    assert_eq!(handle.poll_after_ms, Some(25));
+    assert_eq!(backend.fetch_count(), 0);
+
+    let pending = models
+        .fetch_deferred(&handle, Default::default())
+        .await
+        .unwrap();
+    assert_eq!(pending.stop_reason, StopReason::Deferred);
+    assert_eq!(pending.deferred.as_deref(), Some(handle.as_ref()));
+
+    let ready = models
+        .fetch_deferred(&handle, Default::default())
+        .await
+        .unwrap();
+    assert_eq!(ready.stop_reason, StopReason::Stop);
+    assert!(ready.deferred.is_none());
+    assert_eq!(
+        opi_ai::message::assistant_content_text(&ready.content),
+        "ready"
+    );
+    assert_eq!(backend.fetch_count(), 2);
 }
 
 struct Flow;

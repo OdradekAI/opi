@@ -2,7 +2,7 @@
 //! legacy inline profiles, the standard SSO token cache, modern OIDC token
 //! refresh, and the GetRoleCredentials federation exchange.
 //!
-//! Wire contracts follow the fixed corpus (`pi-1.3.0-rust-backends.md` §3.3
+//! Wire contracts follow the reviewed Rust-backend corpus (§3.3
 //! and `sdk-target-proposal.md` B-1/B-2/B-3):
 //!
 //! * GetRoleCredentials: `GET /federation/credentials?role_name=…&account_id=…`

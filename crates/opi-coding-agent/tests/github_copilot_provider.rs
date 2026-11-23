@@ -1,24 +1,25 @@
 use std::collections::BTreeMap;
-use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures_util::StreamExt;
+use opi_ai::catalog::{Catalog, CatalogOperation};
 use opi_ai::credential::{Credential, CredentialStore};
 use opi_ai::message::{
     AssistantContent, ImageSource, InputContent, MediaType, Message, OutputContent, ToolCall,
     ToolResultMessage, UserMessage,
 };
 use opi_ai::provider::{CacheRetention, ProviderError, Request, ThinkingConfig};
-use opi_ai::{AuthProvenanceSource, CompatMetadata, Models, ThinkingLevel, WireApi, WireCompat};
+use opi_ai::{AuthProvenanceSource, CompatMetadata, Models, ThinkingLevel, WireApi};
 use opi_coding_agent::config::OpiConfig;
 use opi_coding_agent::credential_store::{
     AuthSource, CredentialResolver, FakeKeyringBackend, KeychainCredentialStore,
 };
-use opi_coding_agent::github_copilot::{
-    GITHUB_COPILOT_DEFAULT_BASE_URL, github_copilot_catalog, github_copilot_static_headers,
-};
+use opi_coding_agent::github_copilot::{github_copilot_catalog, github_copilot_static_headers};
 use opi_coding_agent::oauth::OAuthProviderRegistry;
-use opi_coding_agent::provider_factory::build_provider_with_oauth;
+use opi_coding_agent::provider_factory::{
+    build_collection_for_listing_with_store, build_provider_with_oauth,
+};
 use secrecy::SecretString;
 use tempfile::TempDir;
 use time::OffsetDateTime;
@@ -26,222 +27,80 @@ use tokio_util::sync::CancellationToken;
 use wiremock::matchers::{method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};
 
-fn fixture() -> serde_json::Value {
-    serde_json::from_str(include_str!(
-        "fixtures/pi-0.80.6/github-copilot.models.json"
-    ))
-    .expect("valid normalized fixture")
-}
+const PROVIDER: &str = "github-copilot";
+const RETIRED_MODELS: [&str; 20] = [
+    "claude-opus-4.5",
+    "claude-opus-4.6",
+    "claude-opus-4.7",
+    "claude-sonnet-4",
+    "claude-sonnet-4.5",
+    "gemini-2.5-pro",
+    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gpt-4.1",
+    "gpt-5-mini",
+    "gpt-5.2",
+    "gpt-5.2-codex",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.5",
+    "kimi-k2.7-code",
+    "mai-code-1-flash-picker",
+];
 
-#[test]
-fn github_copilot_tests_do_not_reference_ignored_repo() {
-    let test_source = include_str!("github_copilot_provider.rs");
-    let ignored_repo_reference = [".", "repo"].concat();
-    let filesystem_read = ["std::fs", "::read"].concat();
-    assert!(!test_source.contains(&ignored_repo_reference));
-    assert!(!test_source.contains(&filesystem_read));
-}
+#[tokio::test]
+async fn github_copilot_catalog_and_factory_match_the_published_chat_records() {
+    let catalog = Catalog::builtin().unwrap();
+    let reviewed: Vec<_> = catalog
+        .models("github-copilot", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    let listed = github_copilot_catalog();
+    assert_eq!(listed.len(), 27, "CLI Copilot catalog count");
+    assert_eq!(reviewed.len(), 27, "SDK Copilot catalog count");
+    assert_eq!(listed, reviewed);
 
-#[test]
-fn github_copilot_catalog_matches_pi_0806_fixture() {
-    let fixture = fixture();
-    assert_eq!(fixture["pi_version"], "0.80.6");
+    let mut by_wire = BTreeMap::new();
+    for model in &reviewed {
+        *by_wire.entry(model.wire_api).or_insert(0) += 1;
+    }
     assert_eq!(
-        fixture["source_path"],
-        "packages/ai/src/providers/github-copilot.models.ts"
-    );
-    assert_eq!(fixture["provider_id"], "github-copilot");
-    assert_eq!(fixture["default_base_url"], GITHUB_COPILOT_DEFAULT_BASE_URL);
-    assert_eq!(
-        fixture["source_sha256"],
-        "6FE91A9895552B56F882428F124466DFBB08CE27F4D4CE0ED0C5F23168517EFA"
+        by_wire,
+        BTreeMap::from([
+            (WireApi::OpenAiResponses, 14),
+            (WireApi::AnthropicMessages, 10),
+            (WireApi::OpenAiCompletions, 3),
+        ]),
     );
 
-    let fixture_models = fixture["models"].as_array().unwrap();
-    let catalog = github_copilot_catalog();
-    assert_eq!(fixture_models.len(), 25);
-    assert_eq!(catalog.len(), 25);
-    let expected_headers: BTreeMap<_, _> = github_copilot_static_headers().into_iter().collect();
-    for (actual, expected) in catalog.iter().zip(fixture_models) {
-        assert_eq!(actual.id, expected["id"]);
-        assert_eq!(actual.display_name, expected["display_name"]);
-        assert_eq!(actual.wire_api.as_str(), expected["wire"]);
-        assert_eq!(actual.base_url.as_deref(), expected["base_url"].as_str());
-        let capabilities = &expected["capabilities"];
+    let server = MockServer::start().await;
+    let (_dir, _store, runtime) =
+        factory_provider("gpt-6.1-terra", "fixture-token", server.uri()).await;
+    let builtin = sdk_models(server.uri(), None).await;
+    assert_eq!(runtime.get_models(Some(PROVIDER)), reviewed);
+    assert_eq!(builtin.get_models(Some(PROVIDER)), reviewed);
+    for model in reviewed {
         assert_eq!(
-            actual.capabilities.context_window,
-            capabilities["context_window"].as_u64().unwrap()
+            runtime.get_model(PROVIDER, &model.id).as_ref(),
+            Some(&model)
         );
         assert_eq!(
-            actual.capabilities.max_output_tokens,
-            capabilities["max_output_tokens"].as_u64().unwrap()
-        );
-        assert_eq!(
-            actual.capabilities.supports_images,
-            capabilities["supports_images"].as_bool().unwrap()
-        );
-        assert_eq!(
-            actual.capabilities.supports_streaming,
-            capabilities["supports_streaming"].as_bool().unwrap()
-        );
-        assert_eq!(
-            actual.capabilities.supports_thinking,
-            capabilities["supports_thinking"].as_bool().unwrap()
-        );
-        assert_eq!(
-            actual.capabilities.supports_cache_control,
-            capabilities["supports_cache_control"].as_bool().unwrap()
-        );
-        assert_eq!(
-            actual.capabilities.supports_long_cache_retention,
-            capabilities["supports_long_cache_retention"]
-                .as_bool()
-                .unwrap()
-        );
-        assert_eq!(
-            expected["input_modes"].as_array().unwrap().len(),
-            if actual.capabilities.supports_images {
-                2
-            } else {
-                1
-            }
-        );
-        for (level, mapped) in expected["thinking_map"].as_object().unwrap() {
-            let level = ThinkingLevel::from_str(level).unwrap();
-            match mapped.as_str() {
-                Some(value) => assert_eq!(
-                    actual.thinking_level_map.resolve(level).unwrap().as_deref(),
-                    Some(value)
-                ),
-                None => assert!(actual.thinking_level_map.resolve(level).is_err()),
-            }
-        }
-        match (&actual.compat, actual.wire_api) {
-            (WireCompat::AnthropicMessages(compat), WireApi::AnthropicMessages) => {
-                let source = expected["compat"].as_object().unwrap();
-                assert_eq!(
-                    compat.supports_eager_tool_input_streaming,
-                    source
-                        .get("supportsEagerToolInputStreaming")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(true)
-                );
-                assert_eq!(
-                    compat.force_adaptive_thinking,
-                    source
-                        .get("forceAdaptiveThinking")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(false)
-                );
-                assert_eq!(
-                    compat.supports_temperature,
-                    source
-                        .get("supportsTemperature")
-                        .and_then(serde_json::Value::as_bool)
-                        .unwrap_or(true)
-                );
-            }
-            (WireCompat::OpenAiCompletions(compat), WireApi::OpenAiCompletions) => {
-                assert_eq!(compat.store, None);
-                assert_eq!(compat.instruction_role, None);
-                assert_eq!(compat.supports_reasoning_effort, None);
-                assert_eq!(compat.chat_completions_path, "/chat/completions");
-            }
-            (WireCompat::OpenAiResponses(compat), WireApi::OpenAiResponses) => {
-                assert_eq!(compat.responses_path, "/responses");
-            }
-            other => panic!("fixture wire/compat mismatch: {other:?}"),
-        }
-        let headers: BTreeMap<_, _> = expected["headers"]
-            .as_object()
-            .unwrap()
-            .iter()
-            .map(|(name, value)| (name.clone(), value.as_str().unwrap().to_owned()))
-            .collect();
-        assert_eq!(headers, expected_headers);
-        let pricing = actual.pricing.as_ref().expect("embedded pricing").base;
-        assert_eq!(
-            pricing.input_cost_per_mtok,
-            expected["pricing"]["input"].as_f64().unwrap()
-        );
-        assert_eq!(
-            pricing.output_cost_per_mtok,
-            expected["pricing"]["output"].as_f64().unwrap()
-        );
-        assert_eq!(
-            pricing.cache_read_cost_per_mtok,
-            expected["pricing"]["cache_read"].as_f64().unwrap()
-        );
-        assert_eq!(
-            pricing.cache_write_cost_per_mtok,
-            expected["pricing"]["cache_write"].as_f64().unwrap()
+            builtin.get_model(PROVIDER, &model.id).as_ref(),
+            Some(&model)
         );
     }
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
-#[test]
-fn github_copilot_catalog_has_25_models_and_three_wires() {
-    let catalog = github_copilot_catalog();
-    let mut by_wire: BTreeMap<WireApi, Vec<&str>> = BTreeMap::new();
-    for model in &catalog {
-        by_wire.entry(model.wire_api).or_default().push(&model.id);
-    }
-    assert_eq!(catalog.len(), 25);
-    assert_eq!(
-        by_wire[&WireApi::OpenAiCompletions],
-        [
-            "claude-fable-5",
-            "gemini-2.5-pro",
-            "gemini-3-flash-preview",
-            "gemini-3.1-pro-preview",
-            "gemini-3.5-flash",
-            "gpt-4.1",
-            "kimi-k2.7-code",
-            "mai-code-1-flash-picker",
-        ]
-    );
-    assert_eq!(
-        by_wire[&WireApi::AnthropicMessages],
-        [
-            "claude-haiku-4.5",
-            "claude-opus-4.5",
-            "claude-opus-4.6",
-            "claude-opus-4.7",
-            "claude-opus-4.8",
-            "claude-sonnet-4",
-            "claude-sonnet-4.5",
-            "claude-sonnet-4.6",
-            "claude-sonnet-5",
-        ]
-    );
-    assert_eq!(
-        by_wire[&WireApi::OpenAiResponses],
-        [
-            "gpt-5-mini",
-            "gpt-5.2",
-            "gpt-5.2-codex",
-            "gpt-5.3-codex",
-            "gpt-5.4",
-            "gpt-5.4-mini",
-            "gpt-5.4-nano",
-            "gpt-5.5",
-        ]
-    );
-}
-
-#[test]
-fn github_copilot_model_listing_is_static_and_secret_free() {
-    let canary = "copilot-secret-DO-NOT-LEAK";
-    let rendered = format!(
-        "{:?}\n{}",
-        github_copilot_catalog(),
-        include_str!("fixtures/pi-0.80.6/github-copilot.models.json")
-    );
-    assert!(!rendered.contains(canary));
-    assert_eq!(github_copilot_catalog().len(), 25);
-}
-
-fn oauth_credential(access: &str, base_url: String) -> Credential {
+fn oauth_credential(
+    access: &str,
+    base_url: String,
+    available_model_ids: Option<Vec<String>>,
+) -> Credential {
     Credential::OAuthToken {
         access: SecretString::new(access.to_owned().into_boxed_str()),
         refresh: SecretString::new("offline-refresh".to_owned().into_boxed_str()),
@@ -250,9 +109,45 @@ fn oauth_credential(access: &str, base_url: String) -> Credential {
         account_id: None,
         client_id: None,
         enterprise_domain: None,
-        available_model_ids: None,
+        available_model_ids,
         scopes: None,
     }
+}
+
+async fn sdk_models(base_url: String, available_ids: Option<Vec<String>>) -> Models {
+    use opi_ai::auth::{AuthContext, AuthContextError};
+    use opi_ai::mutation::InMemoryCredentialStore;
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+
+    struct EmptySources;
+    impl AuthContext for EmptySources {
+        fn env(&self, _: &str) -> Result<Option<String>, AuthContextError> {
+            Ok(None)
+        }
+
+        fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+            Ok(false)
+        }
+    }
+
+    let store = Arc::new(InMemoryCredentialStore::new());
+    store
+        .write(
+            PROVIDER,
+            &oauth_credential("sdk-copilot-token", base_url, available_ids),
+        )
+        .await
+        .unwrap();
+    let mut models = Models::new();
+    models.set_credential_store(store);
+    register_builtin(
+        &mut models,
+        Arc::new(EmptySources),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    models
 }
 
 async fn factory_provider(
@@ -266,7 +161,7 @@ async fn factory_provider(
         dir.path().to_path_buf(),
     ));
     store
-        .write("github-copilot", &oauth_credential(access, base_url))
+        .write(PROVIDER, &oauth_credential(access, base_url, None))
         .await
         .unwrap();
     let resolver = CredentialResolver::new(store.clone(), Arc::new(|_: &str| None));
@@ -333,15 +228,188 @@ fn request(model: &str) -> Request {
 }
 
 async fn mount_stream(server: &MockServer, request_path: &str, status: u16) {
+    let body = if status != 200 {
+        ""
+    } else if request_path.ends_with("/chat/completions") {
+        concat!(
+            "data: {\"id\":\"x\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n\n",
+            "data: {\"id\":\"x\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n",
+            "data: [DONE]\n\n"
+        )
+    } else if request_path.ends_with("/responses") {
+        concat!(
+            "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hi\"}\n\n",
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"r\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"total_tokens\":2}}}\n\n"
+        )
+    } else {
+        assert!(request_path.ends_with("/v1/messages"));
+        concat!(
+            "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"m\",\"model\":\"fixture\",\"usage\":{\"input_tokens\":1,\"output_tokens\":0}}}\n\n",
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\n\n",
+            "event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+            "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+        )
+    };
     Mock::given(method("POST"))
         .and(path(request_path))
         .respond_with(
             ResponseTemplate::new(status)
-                .set_body_string("")
+                .set_body_string(body)
                 .insert_header("content-type", "text/event-stream"),
         )
         .mount(server)
         .await;
+}
+
+#[tokio::test]
+async fn github_copilot_published_models_drive_requests_through_both_factories() {
+    let sdk = MockServer::start().await;
+    let cli = MockServer::start().await;
+    let builtin = sdk_models(format!("{}/enterprise", sdk.uri()), None).await;
+    let (_dir, _store, runtime) = factory_provider(
+        "gpt-6.1-terra",
+        "cli-copilot-token",
+        format!("{}/enterprise", cli.uri()),
+    )
+    .await;
+
+    let cases = [
+        (
+            "gpt-6.1-terra",
+            "/responses",
+            Some(ThinkingLevel::Max),
+            Some("max"),
+        ),
+        (
+            "gpt-5.4-nano",
+            "/responses",
+            Some(ThinkingLevel::Minimal),
+            Some("low"),
+        ),
+        (
+            "gpt-5.4-nano",
+            "/responses",
+            Some(ThinkingLevel::Max),
+            Some("xhigh"),
+        ),
+        ("claude-sonnet-4.6", "/v1/messages", None, None),
+        ("gemini-4-argon", "/chat/completions", None, None),
+    ];
+    for (server, models, authorization) in [
+        (&sdk, &builtin, "Bearer sdk-copilot-token"),
+        (&cli, &runtime, "Bearer cli-copilot-token"),
+    ] {
+        for suffix in ["/responses", "/v1/messages", "/chat/completions"] {
+            mount_stream(server, &format!("/enterprise{suffix}"), 200).await;
+        }
+
+        for (model, _, thinking, _) in cases {
+            let mut call = request(model);
+            call.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
+                messages: vec![Message::User(UserMessage {
+                    content: vec![InputContent::Image {
+                        source: ImageSource::Base64 {
+                            data: "AA==".into(),
+                        },
+                        media_type: MediaType::Png,
+                    }],
+                    timestamp_ms: 0,
+                })],
+                ..Default::default()
+            })
+            .unwrap();
+            if let Some(level) = thinking {
+                call.thinking = ThinkingConfig {
+                    enabled: true,
+                    budget_tokens: None,
+                    level,
+                };
+            }
+            let record = models.get_model(PROVIDER, model).unwrap();
+            let result = models
+                .complete_simple(
+                    opi_ai::ChatModelRecord::new(PROVIDER, record),
+                    call,
+                    Default::default(),
+                )
+                .await
+                .unwrap_or_else(|error| panic!("{authorization} {model}: {error:?}"));
+            assert_eq!(result.stop_reason, opi_ai::stream::StopReason::Stop);
+        }
+
+        let sent = server.received_requests().await.unwrap();
+        assert_eq!(sent.len(), cases.len());
+        for (request, (model, suffix, _, effort)) in sent.iter().zip(cases) {
+            assert_eq!(request.url.path(), format!("/enterprise{suffix}"));
+            assert_eq!(request.headers["authorization"], authorization);
+            assert!(request.headers.get("x-api-key").is_none());
+            assert_eq!(
+                request
+                    .headers
+                    .get("x-initiator")
+                    .and_then(|value| value.to_str().ok()),
+                Some("user"),
+                "{authorization} {model}"
+            );
+            assert_eq!(request.headers["openai-intent"], "conversation-edits");
+            assert_eq!(request.headers["copilot-vision-request"], "true");
+            for (name, value) in github_copilot_static_headers() {
+                assert_eq!(request.headers[name.as_str()], value);
+            }
+            let body: serde_json::Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(body["model"], model);
+            assert_eq!(body["reasoning"]["effort"].as_str(), effort, "{model}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn github_copilot_retired_models_are_rejected_and_cannot_be_restored_by_account_metadata() {
+    let server = MockServer::start().await;
+    let (_dir, store, runtime) =
+        factory_provider("gpt-6.1-terra", "cli-copilot-token", server.uri()).await;
+    let listing = build_collection_for_listing_with_store(&OpiConfig::default(), store.as_ref())
+        .await
+        .unwrap();
+
+    let allowed = ["gpt-6.1-terra"].into_iter().chain(RETIRED_MODELS);
+    let builtin = sdk_models(server.uri(), Some(allowed.map(str::to_owned).collect())).await;
+    let available = builtin.get_available(Some(PROVIDER)).await.unwrap();
+    assert_eq!(available.len(), 1);
+    assert_eq!(available[0].0, PROVIDER);
+    assert_eq!(
+        available[0].1,
+        builtin.get_model(PROVIDER, "gpt-6.1-terra").unwrap()
+    );
+    assert_eq!(builtin.get_models(Some(PROVIDER)).len(), 27);
+
+    let catalog = Catalog::builtin().unwrap();
+    for id in RETIRED_MODELS {
+        assert!(
+            catalog
+                .model(PROVIDER, CatalogOperation::Chat, id)
+                .is_none(),
+            "{id}"
+        );
+        assert!(listing.get_model(PROVIDER, id).is_none(), "{id}");
+        for models in [&builtin, &runtime] {
+            let call = request(id);
+            let spec = call.model.clone();
+            assert!(models.get_model(PROVIDER, id).is_none(), "{id}");
+            assert!(
+                matches!(
+                    models.prepare_call(&spec, call).await,
+                    Err(opi_ai::ModelsError::Registry(opi_ai::RegistryError::UnknownModel {
+                        provider, model,
+                    })) if provider == PROVIDER && model == id
+                ),
+                "{spec} must fail during registry lookup"
+            );
+        }
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 async fn drain(collection: &Models, request: Request) -> Option<ProviderError> {
@@ -388,12 +456,12 @@ async fn assert_route(model: &str, request_path: &str) {
 
 #[tokio::test]
 async fn github_copilot_anthropic_model_posts_v1_messages_with_bearer() {
-    assert_route("claude-sonnet-4.5", "/v1/messages").await;
+    assert_route("claude-sonnet-4.6", "/v1/messages").await;
 }
 
 #[tokio::test]
 async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
-    for model in ["claude-opus-4.7", "claude-opus-4.8"] {
+    for model in ["claude-opus-5", "claude-opus-4.8"] {
         let server = MockServer::start().await;
         mount_stream(&server, "/v1/messages", 200).await;
         let (_dir, _store, collection) =
@@ -424,7 +492,7 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
 
     let server = MockServer::start().await;
     mount_stream(&server, "/v1/messages", 200).await;
-    let model = "claude-sonnet-4.5";
+    let model = "claude-haiku-4.5";
     let (_dir, _store, collection) =
         factory_provider(model, "copilot-compat-token", server.uri()).await;
     let mut captured = request(model);
@@ -453,20 +521,20 @@ async fn factory_built_copilot_anthropic_models_apply_catalog_compatibility() {
 
 #[tokio::test]
 async fn github_copilot_chat_model_posts_chat_completions() {
-    assert_route("gpt-4.1", "/chat/completions").await;
+    assert_route("gemini-4-argon", "/chat/completions").await;
 }
 
 #[tokio::test]
 async fn github_copilot_responses_model_posts_responses() {
-    assert_route("gpt-5.4", "/responses").await;
+    assert_route("gpt-6.1-terra", "/responses").await;
 }
 
 #[tokio::test]
 async fn github_copilot_headers_match_reviewed_static_contract() {
     for (model, request_path) in [
-        ("claude-sonnet-4.5", "/v1/messages"),
-        ("gpt-4.1", "/chat/completions"),
-        ("gpt-5.4", "/responses"),
+        ("claude-sonnet-4.6", "/v1/messages"),
+        ("gemini-4-argon", "/chat/completions"),
+        ("gpt-6.1-terra", "/responses"),
     ] {
         let server = MockServer::start().await;
         mount_stream(&server, request_path, 200).await;
@@ -487,36 +555,64 @@ async fn github_copilot_headers_match_reviewed_static_contract() {
             "conversation-edits"
         );
     }
+}
 
-    let server = MockServer::start().await;
-    mount_stream(&server, "/chat/completions", 200).await;
-    let (_dir, _store, collection) =
-        factory_provider("gpt-4.1", "copilot-header-token", server.uri()).await;
-    for name in [
-        "User-Agent",
-        "Editor-Version",
-        "Editor-Plugin-Version",
-        "Copilot-Integration-Id",
-        "X-Initiator",
-        "Openai-Intent",
-        "Copilot-Vision-Request",
+#[tokio::test]
+async fn github_copilot_managed_headers_are_rejected_before_callbacks_and_dispatch() {
+    for (model, request_path) in [
+        ("claude-sonnet-4.6", "/v1/messages"),
+        ("gemini-4-argon", "/chat/completions"),
+        ("gpt-6.1-terra", "/responses"),
     ] {
-        let mut overridden = request("gpt-4.1");
-        overridden
-            .extra_headers
-            .push((name.into(), "malicious-override".into()));
-        let error = drain(&collection, overridden)
-            .await
-            .expect("managed header refusal");
+        let server = MockServer::start().await;
+        mount_stream(&server, request_path, 200).await;
+        let (_dir, _store, collection) =
+            factory_provider(model, "copilot-header-token", server.uri()).await;
+        for name in [
+            "User-Agent",
+            "Editor-Version",
+            "Editor-Plugin-Version",
+            "Copilot-Integration-Id",
+            "X-Initiator",
+            "Openai-Intent",
+            "Copilot-Vision-Request",
+        ] {
+            let transforms = Arc::new(AtomicUsize::new(0));
+            let observed = transforms.clone();
+            let mut overridden = request(model);
+            overridden
+                .extra_headers
+                .push((name.into(), "override".into()));
+            overridden.callbacks =
+                overridden
+                    .callbacks
+                    .with_header_transform(Arc::new(move |headers| {
+                        observed.fetch_add(1, Ordering::Relaxed);
+                        Ok(headers.to_vec())
+                    }));
+
+            let error = drain(&collection, overridden)
+                .await
+                .expect("managed header refusal");
+            let ProviderError::RequestFailed(summary) = accepted_projection_cause(&error) else {
+                panic!("{model} {name}: expected a request failure, got {error:?}");
+            };
+            assert_eq!(
+                summary.to_string(),
+                format!("request header '{name}' is reserved for GitHub Copilot"),
+                "{model}"
+            );
+            assert_eq!(
+                transforms.load(Ordering::Relaxed),
+                0,
+                "{model} {name} must fail before the header transform"
+            );
+        }
         assert!(
-            matches!(
-                accepted_projection_cause(&error),
-                ProviderError::RequestFailed(_)
-            ),
-            "{name} must remain provider-managed"
+            server.received_requests().await.unwrap().is_empty(),
+            "{model}"
         );
     }
-    assert!(server.received_requests().await.unwrap().is_empty());
 }
 
 fn call_assistant(id: &str, name: &str) -> Message {
@@ -533,7 +629,7 @@ fn call_assistant(id: &str, name: &str) -> Message {
         }],
         api: opi_ai::ApiKind::OpenAi,
         provider: "github-copilot".into(),
-        model: "gpt-4.1".into(),
+        model: "gemini-4-argon".into(),
         response_model: None,
         wire: None,
         response_id: None,
@@ -557,10 +653,10 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
         mount_stream(&server, request_path, 200).await;
     }
     let (_dir, _store, collection) =
-        factory_provider("gpt-4.1", "copilot-initiator-token", server.uri()).await;
-    let _ = drain(&collection, request("claude-sonnet-4.5")).await;
+        factory_provider("gemini-4-argon", "copilot-initiator-token", server.uri()).await;
+    let _ = drain(&collection, request("claude-sonnet-4.6")).await;
 
-    let mut assistant = request("gpt-4.1");
+    let mut assistant = request("gemini-4-argon");
     let mut assistant_messages = assistant.context.into_messages();
     assistant_messages.push(Message::Assistant(opi_ai::test_support::base_assistant()));
     assistant.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
@@ -570,7 +666,7 @@ async fn github_copilot_initiator_tracks_last_user_or_agent_message() {
     .expect("valid context declarations");
     let _ = drain(&collection, assistant).await;
 
-    let mut tool = request("gpt-5.4");
+    let mut tool = request("gpt-6.1-terra");
     let mut tool_messages = tool.context.into_messages();
     tool_messages.push(call_assistant("call-1", "read"));
     tool_messages.push(Message::ToolResult(ToolResultMessage {
@@ -620,10 +716,10 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
         mount_stream(&server, request_path, 200).await;
     }
     let (_dir, _store, collection) =
-        factory_provider("gpt-4.1", "copilot-vision-token", server.uri()).await;
+        factory_provider("gemini-4-argon", "copilot-vision-token", server.uri()).await;
 
-    let _ = drain(&collection, request("claude-sonnet-4.5")).await;
-    let mut user_image = request("gpt-4.1");
+    let _ = drain(&collection, request("claude-sonnet-4.6")).await;
+    let mut user_image = request("gemini-4-argon");
     user_image.context = opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
         system_prompt: None,
         messages: vec![Message::User(UserMessage {
@@ -639,7 +735,7 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
     })
     .expect("valid context declarations");
     let _ = drain(&collection, user_image).await;
-    let mut tool_image = request("gpt-5.4");
+    let mut tool_image = request("gpt-6.1-terra");
     let mut tool_image_messages = tool_image.context.into_messages();
     tool_image_messages.push(call_assistant("call-image", "screenshot"));
     tool_image_messages.push(Message::ToolResult(ToolResultMessage {
@@ -694,12 +790,12 @@ async fn github_copilot_vision_header_covers_user_and_tool_result_images() {
     let anthropic_server = MockServer::start().await;
     mount_stream(&anthropic_server, "/v1/messages", 200).await;
     let (_dir, _store, anthropic_collection) = factory_provider(
-        "claude-sonnet-4.5",
+        "claude-sonnet-4.6",
         "copilot-vision-token",
         anthropic_server.uri(),
     )
     .await;
-    let mut anthropic_user_image = request("claude-sonnet-4.5");
+    let mut anthropic_user_image = request("claude-sonnet-4.6");
     anthropic_user_image.context =
         opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
@@ -736,16 +832,16 @@ async fn github_copilot_next_stream_observes_changed_token_and_enterprise_base_u
     mount_stream(&first_server, "/chat/completions", 200).await;
     mount_stream(&second_server, "/chat/completions", 200).await;
     let (_dir, store, collection) =
-        factory_provider("gpt-4.1", "old-token", first_server.uri()).await;
-    let _ = drain(&collection, request("gpt-4.1")).await;
+        factory_provider("gemini-4-argon", "old-token", first_server.uri()).await;
+    let _ = drain(&collection, request("gemini-4-argon")).await;
     store
         .write(
             "github-copilot",
-            &oauth_credential("new-token", second_server.uri()),
+            &oauth_credential("new-token", second_server.uri(), None),
         )
         .await
         .unwrap();
-    let _ = drain(&collection, request("gpt-4.1")).await;
+    let _ = drain(&collection, request("gemini-4-argon")).await;
 
     let first = first_server.received_requests().await.unwrap();
     let second = second_server.received_requests().await.unwrap();
@@ -775,9 +871,9 @@ async fn github_copilot_next_stream_observes_changed_token_and_enterprise_base_u
 async fn github_copilot_401_and_403_are_revoked_on_every_wire() {
     for status in [401, 403] {
         for (model, request_path) in [
-            ("claude-sonnet-4.5", "/v1/messages"),
-            ("gpt-4.1", "/chat/completions"),
-            ("gpt-5.4", "/responses"),
+            ("claude-sonnet-4.6", "/v1/messages"),
+            ("gemini-4-argon", "/chat/completions"),
+            ("gpt-6.1-terra", "/responses"),
         ] {
             let server = MockServer::start().await;
             mount_stream(&server, request_path, status).await;

@@ -1,0 +1,1018 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 46,
+  "date": "2026-11-23",
+  "scope": "Partition public schema compile/check tests and verify child execution, corpus and artifact consumers.",
+  "verdict": "PASS",
+  "owner": {
+    "target": "schema_engine",
+    "owner": "schema",
+    "layer": "public-contract",
+    "cost": "extended",
+    "cases": "Frozen corpus, value and container keywords, applicators, reference resolution, admission and child-process stack checks",
+    "runners": "archive@scripts/pi-sdk-conformance/run_early_package_proof.py",
+    "source": "tests/schema_engine.rs",
+    "required-features": "-"
+  },
+  "root_bytes": {
+    "before": 48502,
+    "after": 532
+  },
+  "test_impact": {
+    "retain": {
+      "rust_cases": 73
+    },
+    "update": {
+      "stack_harness_cases": 3
+    },
+    "add": {
+      "selector": 1
+    }
+  },
+  "cases": {
+    "original_sha256": "03c44f1d11da122d1566b37a74dbc44cab18f84ac51292646e02c6983873bb87",
+    "case_mapping": {
+      "frozen_differential_corpus_matches_expected_outcomes": "corpus::frozen_differential_corpus_matches_expected_outcomes",
+      "boolean_and_empty_schemas": "value_keywords::boolean_and_empty_schemas",
+      "malformed_limits_are_inert_not_errors": "value_keywords::malformed_limits_are_inert_not_errors",
+      "malformed_required_and_enum_stay_inert": "value_keywords::malformed_required_and_enum_stay_inert",
+      "const_compares_through_javascript_equality": "value_keywords::const_compares_through_javascript_equality",
+      "unknown_type_names_are_true_leaves": "value_keywords::unknown_type_names_are_true_leaves",
+      "integer_type_uses_js_number_semantics": "value_keywords::integer_type_uses_js_number_semantics",
+      "number_limits_compare_through_binary64": "value_keywords::number_limits_compare_through_binary64",
+      "multiple_of_uses_the_source_tolerance": "value_keywords::multiple_of_uses_the_source_tolerance",
+      "valid_engine_rejects_malformed_instance_without_errors": "value_keywords::valid_engine_rejects_malformed_instance_without_errors",
+      "cardinality_min_properties_boundaries": "container_keywords::cardinality_min_properties_boundaries",
+      "cardinality_max_properties_boundaries": "container_keywords::cardinality_max_properties_boundaries",
+      "cardinality_min_items_boundaries": "container_keywords::cardinality_min_items_boundaries",
+      "cardinality_max_items_boundaries": "container_keywords::cardinality_max_items_boundaries",
+      "unique_items_uses_hash_equality": "container_keywords::unique_items_uses_hash_equality",
+      "items_and_prefix_items_both_apply": "container_keywords::items_and_prefix_items_both_apply",
+      "unsized_items_respect_prefix_offset": "container_keywords::unsized_items_respect_prefix_offset",
+      "additional_items_apply_after_tuple_positions": "container_keywords::additional_items_apply_after_tuple_positions",
+      "contains_interacts_with_min_and_max": "container_keywords::contains_interacts_with_min_and_max",
+      "dependencies_support_both_forms": "container_keywords::dependencies_support_both_forms",
+      "dependent_required_and_dependent_schemas": "container_keywords::dependent_required_and_dependent_schemas",
+      "property_names_validates_key_strings": "container_keywords::property_names_validates_key_strings",
+      "pattern_properties_apply_per_matching_key": "container_keywords::pattern_properties_apply_per_matching_key",
+      "additional_properties_fast_path_accepts_required_superset_keys": "container_keywords::additional_properties_fast_path_accepts_required_superset_keys",
+      "additional_properties_schema_applies_to_uncovered_keys": "container_keywords::additional_properties_schema_applies_to_uncovered_keys",
+      "if_then_else_uses_default_true_branches": "applicators::if_then_else_uses_default_true_branches",
+      "one_of_requires_exactly_one": "applicators::one_of_requires_exactly_one",
+      "any_of_and_all_of_compose": "applicators::any_of_and_all_of_compose",
+      "not_negates_without_error_conversion": "applicators::not_negates_without_error_conversion",
+      "unevaluated_properties_tracks_all_of_successes": "applicators::unevaluated_properties_tracks_all_of_successes",
+      "unevaluated_properties_only_merges_successful_any_of_arms": "applicators::unevaluated_properties_only_merges_successful_any_of_arms",
+      "unevaluated_items_merges_successful_arms": "applicators::unevaluated_items_merges_successful_arms",
+      "not_never_contributes_evaluated_facts": "applicators::not_never_contributes_evaluated_facts",
+      "nested_containers_keep_their_own_evaluated_frames": "applicators::nested_containers_keep_their_own_evaluated_frames",
+      "ref_targets_merge_evaluated_facts_on_success": "applicators::ref_targets_merge_evaluated_facts_on_success",
+      "local_pointer_refs_and_sibling_keywords": "reference_resolution::local_pointer_refs_and_sibling_keywords",
+      "unresolved_refs_are_invalid_not_errors": "reference_resolution::unresolved_refs_are_invalid_not_errors",
+      "encoded_pointer_targets_preserve_selected_resource_identity": "reference_resolution::encoded_pointer_targets_preserve_selected_resource_identity",
+      "anchor_refs_resolve_by_url_identity": "reference_resolution::anchor_refs_resolve_by_url_identity",
+      "absolute_id_refs_reach_embedded_metadata_resources": "reference_resolution::absolute_id_refs_reach_embedded_metadata_resources",
+      "refs_index_into_arrays_by_numeric_pointer": "reference_resolution::refs_index_into_arrays_by_numeric_pointer",
+      "recursive_schema_walks_productive_instance_recursion": "reference_resolution::recursive_schema_walks_productive_instance_recursion",
+      "unchanged_instance_self_recursion_is_a_typed_failure": "reference_resolution::unchanged_instance_self_recursion_is_a_typed_failure",
+      "dynamic_ref_resolves_the_nearest_dynamic_anchor": "reference_resolution::dynamic_ref_resolves_the_nearest_dynamic_anchor",
+      "recursive_ref_uses_the_recursive_anchor_root": "reference_resolution::recursive_ref_uses_the_recursive_anchor_root",
+      "integer_index_keys_enumerate_first_in_numeric_order": "reference_resolution::integer_index_keys_enumerate_first_in_numeric_order",
+      "duplicate_ids_last_occurrence_wins_in_enumeration_order": "reference_resolution::duplicate_ids_last_occurrence_wins_in_enumeration_order",
+      "admission_rejects_primitive_roots_with_typed_errors": "admission::admission_rejects_primitive_roots_with_typed_errors",
+      "admission_retrieved_frames_preserve_consumed_resolved_resources": "admission::admission_retrieved_frames_preserve_consumed_resolved_resources",
+      "admission_reference_targets_preserve_null_boolean_and_array_guards": "admission::admission_reference_targets_preserve_null_boolean_and_array_guards",
+      "admission_rejects_primitive_reference_targets_with_typed_errors": "admission::admission_rejects_primitive_reference_targets_with_typed_errors",
+      "invalid_regexes_fail_admission_with_paths": "admission::invalid_regexes_fail_admission_with_paths",
+      "admission_structural_refs_precede_root_refs": "admission::admission_structural_refs_precede_root_refs",
+      "admission_relative_refs_ignore_regexes_at_other_bases": "admission::admission_relative_refs_ignore_regexes_at_other_bases",
+      "admission_refs_precede_later_applicators": "admission::admission_refs_precede_later_applicators",
+      "admission_object_keywords_preserve_sibling_resource_order": "admission::admission_object_keywords_preserve_sibling_resource_order",
+      "admission_shared_ref_targets_revisit_lexical_bases": "admission::admission_shared_ref_targets_revisit_lexical_bases",
+      "admission_follows_resolved_and_legacy_retrieved_resources": "admission::admission_follows_resolved_and_legacy_retrieved_resources",
+      "admission_keeps_unreferenced_annotations_as_data": "admission::admission_keeps_unreferenced_annotations_as_data",
+      "admission_preserves_uri_failures_at_check_time": "admission::admission_preserves_uri_failures_at_check_time",
+      "visited_applicators_propagate_uri_errors_and_unvisited_branches_do_not": "admission::visited_applicators_propagate_uri_errors_and_unvisited_branches_do_not",
+      "admission_growing_relative_id_recursion_is_a_typed_failure": "admission::admission_growing_relative_id_recursion_is_a_typed_failure",
+      "admission_non_http_resource_bases_detect_growing_recursion": "admission::admission_non_http_resource_bases_detect_growing_recursion",
+      "admission_file_resource_resets_keep_productive_recursion": "admission::admission_file_resource_resets_keep_productive_recursion",
+      "admission_absolute_resets_keep_finite_recursive_compilation": "admission::admission_absolute_resets_keep_finite_recursive_compilation",
+      "admission_recursive_frames_can_discover_later_regex_targets": "admission::admission_recursive_frames_can_discover_later_regex_targets",
+      "admission_resource_ids_compare_node_identity": "admission::admission_resource_ids_compare_node_identity",
+      "admission_overwritten_resolved_targets_preserve_the_sibling_base": "admission::admission_overwritten_resolved_targets_preserve_the_sibling_base",
+      "admission_dynamic_and_recursive_cycles_can_grow_different_bases": "admission::admission_dynamic_and_recursive_cycles_can_grow_different_bases",
+      "admission_growing_cycles_can_complete_auxiliary_ref_functions": "admission::admission_growing_cycles_can_complete_auxiliary_ref_functions",
+      "deep_schemas_do_not_exhaust_the_rust_stack": "stack_safety::deep_schemas_do_not_exhaust_the_rust_stack",
+      "deep_local_ref_search": "stack_safety::deep_local_ref_search",
+      "deep_compile_error_releases_owned_schema": "stack_safety::deep_compile_error_releases_owned_schema"
+    },
+    "identical_test_bodies": 72,
+    "corpus_body_only_include_path_changed": "frozen_differential_corpus_matches_expected_outcomes",
+    "shared_and_local_fixture_functions_preserved": [
+      "assert_admission_regex_path",
+      "check",
+      "nested_all_of",
+      "valid"
+    ],
+    "updated_subprocess_helper": "ordinary_stack_subprocess",
+    "updated_stack_cases": [
+      "stack_safety::deep_schemas_do_not_exhaust_the_rust_stack",
+      "stack_safety::deep_local_ref_search",
+      "stack_safety::deep_compile_error_releases_owned_schema"
+    ],
+    "data": {
+      "case_count": 64,
+      "expectation_count": 64,
+      "input_sha256": "e0cd5ace2c1d385b425b0c8a53a55909e6be43c0328872928c859bee92d56329",
+      "expectation_sha256": "8f98d8e0ad0bc149b7b644d17fda97944ef20063b62096ffde9053a87c7e5f8f"
+    },
+    "cross_target_support_unchanged": true
+  },
+  "runs": {
+    "baseline_passed": 73,
+    "workspace_passed": 73,
+    "topic_passes": {
+      "corpus": 1,
+      "value_keywords": 9,
+      "container_keywords": 15,
+      "applicators": 10,
+      "reference_resolution": 12,
+      "admission": 23,
+      "stack_safety": 3
+    },
+    "encoded_pointer_exact": "reference_resolution::encoded_pointer_targets_preserve_selected_resource_identity",
+    "stack_controls": [
+      {
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\schema_engine-c5a3824d17d2255d.exe",
+          "--exact",
+          "stack_safety::deep_compile_error_releases_owned_schema",
+          "--nocapture",
+          "--test-threads=1"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "completion_marker": true
+      },
+      {
+        "command": [
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958\\debug\\deps\\schema_engine-c5a3824d17d2255d.exe",
+          "--exact",
+          "deep_compile_error_releases_owned_schema",
+          "--nocapture",
+          "--test-threads=1"
+        ],
+        "exit": 0,
+        "passed": 0,
+        "completion_marker": false
+      }
+    ],
+    "binary_sha256": "7b26b67eb3cc32a073f3a80827a00f6c4f2b897189900a450c993e6c73238e7f"
+  },
+  "commands": {
+    "workspace": {
+      "workspace": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-all"
+        ],
+        "exit": 0
+      },
+      "focused-corpus": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-corpus",
+          "corpus::"
+        ],
+        "exit": 0
+      },
+      "focused-value_keywords": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-value_keywords",
+          "value_keywords::"
+        ],
+        "exit": 0
+      },
+      "focused-container_keywords": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-container_keywords",
+          "container_keywords::"
+        ],
+        "exit": 0
+      },
+      "focused-applicators": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-applicators",
+          "applicators::"
+        ],
+        "exit": 0
+      },
+      "focused-reference_resolution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-reference_resolution",
+          "reference_resolution::"
+        ],
+        "exit": 0
+      },
+      "focused-admission": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-admission",
+          "admission::"
+        ],
+        "exit": 0
+      },
+      "focused-stack_safety": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-stack_safety",
+          "stack_safety::"
+        ],
+        "exit": 0
+      },
+      "exact-reference": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\run-workspace.py",
+          "E:/opi/scratch/issue-268-schema-engine-20261123-172259",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "workspace-encoded-pointer",
+          "--exact",
+          "reference_resolution::encoded_pointer_targets_preserve_selected_resource_identity"
+        ],
+        "exit": 0
+      },
+      "clippy-strict": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--test",
+          "schema_engine",
+          "--",
+          "-D",
+          "warnings"
+        ],
+        "exit": 101
+      },
+      "clippy-advisory": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "clippy",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--test",
+          "schema_engine"
+        ],
+        "exit": 0
+      }
+    },
+    "selector": {
+      "selector-unit": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "-m",
+          "unittest",
+          "discover",
+          "-s",
+          "scripts/pi-sdk-conformance/",
+          "-p",
+          "test_select_tests.py",
+          "-v"
+        ],
+        "exit": 0
+      }
+    },
+    "structure": {
+      "scoped-fmt": {
+        "command": [
+          "rustfmt",
+          "--edition",
+          "2024",
+          "--check",
+          "crates/opi-ai/tests/schema_engine.rs"
+        ],
+        "exit": 0
+      },
+      "workspace-fmt": {
+        "command": [
+          "cargo",
+          "fmt",
+          "--all",
+          "--check"
+        ],
+        "exit": 1
+      },
+      "gate": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/schema_engine.rs",
+          "crates/opi-ai/tests/schema_engine/corpus.rs",
+          "crates/opi-ai/tests/schema_engine/value_keywords.rs",
+          "crates/opi-ai/tests/schema_engine/container_keywords.rs",
+          "crates/opi-ai/tests/schema_engine/applicators.rs",
+          "crates/opi-ai/tests/schema_engine/reference_resolution.rs",
+          "crates/opi-ai/tests/schema_engine/admission.rs",
+          "crates/opi-ai/tests/schema_engine/stack_safety.rs",
+          "crates/opi-ai/tests/schema_engine/fixtures.rs",
+          "crates/opi-ai/tests/targets.tsv"
+        ],
+        "exit": 0
+      },
+      "gate-missing": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/check_structure_gate.py",
+          "--json",
+          "--strict-selection",
+          "crates/opi-ai/tests/schema_engine/missing_topic.rs"
+        ],
+        "exit": 1
+      }
+    },
+    "archive": {
+      "package-schema": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/pi-sdk-conformance/run_early_package_proof.py",
+          "--scratch",
+          "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema",
+          "--target-dir",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958"
+        ],
+        "exit": 0
+      }
+    }
+  },
+  "selector": {
+    "targets": 124,
+    "sources": 380,
+    "support_helpers": 16,
+    "support_edges": 60,
+    "tests_passed": 34,
+    "gate": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\gate.stdout",
+      "bytes": 175036,
+      "sha256": "50aefaaa2b9b7a2dcbc465efb52315848e20121ad93fe2f4c4a6ba37f0fcce4a"
+    },
+    "plan": {
+      "paths": [
+        "crates/opi-ai/tests/schema_engine.rs",
+        "crates/opi-ai/tests/schema_engine/corpus.rs",
+        "crates/opi-ai/tests/schema_engine/value_keywords.rs",
+        "crates/opi-ai/tests/schema_engine/container_keywords.rs",
+        "crates/opi-ai/tests/schema_engine/applicators.rs",
+        "crates/opi-ai/tests/schema_engine/reference_resolution.rs",
+        "crates/opi-ai/tests/schema_engine/admission.rs",
+        "crates/opi-ai/tests/schema_engine/stack_safety.rs",
+        "crates/opi-ai/tests/schema_engine/fixtures.rs",
+        "crates/opi-ai/tests/targets.tsv"
+      ],
+      "scope": "focused",
+      "tests": [
+        {
+          "target": "schema_engine",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--test",
+            "schema_engine"
+          ],
+          "reasons": [
+            "tests/schema_engine.rs",
+            "tests/schema_engine/admission.rs",
+            "tests/schema_engine/applicators.rs",
+            "tests/schema_engine/container_keywords.rs",
+            "tests/schema_engine/corpus.rs",
+            "tests/schema_engine/fixtures.rs",
+            "tests/schema_engine/reference_resolution.rs",
+            "tests/schema_engine/stack_safety.rs",
+            "tests/schema_engine/value_keywords.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_early_package_proof.py",
+        "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+      ],
+      "expansion": []
+    },
+    "missing_path": {
+      "paths": [
+        "crates/opi-ai/tests/schema_engine/missing_topic.rs"
+      ],
+      "scope": "broader checks required",
+      "tests": [],
+      "runners": [],
+      "expansion": [
+        "tests/schema_engine/missing_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+        "tests/schema_engine/missing_topic.rs: no resolved Cargo test consumer"
+      ]
+    },
+    "frozen_data_plan": {
+      "scope": "broader checks required",
+      "expansion": [
+        "tests/data/schema-cases.jsonl: reviewed production or test mapping unavailable",
+        "tests/data/schema-expected.json: reviewed production or test mapping unavailable"
+      ],
+      "tests": [],
+      "runners": [],
+      "broad_commands": [
+        [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--all-targets"
+        ],
+        [
+          "cargo",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--tests"
+        ]
+      ],
+      "additional_checks": [
+        "For feature changes also verify each affected owner in isolation and its package consumer."
+      ]
+    }
+  },
+  "package": {
+    "external_consumer": "opi-sdk-conformance-consumer",
+    "external_boundary": "Public compile/check and tool argument validation and their supported dependency profiles.",
+    "profiles": {
+      "defaults-off": {
+        "named_checks": 73,
+        "report_log": {
+          "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\defaults-off-consumer.stdout",
+          "bytes": 5009,
+          "sha256": "5b7a796069a42b1d8c9e07e8fb5bf316e0c60516e6a25ae21d72217a224bfd54"
+        }
+      },
+      "caller-defaults-on": {
+        "named_checks": 73,
+        "report_log": {
+          "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\caller-defaults-on-consumer.stdout",
+          "bytes": 5009,
+          "sha256": "5b7a796069a42b1d8c9e07e8fb5bf316e0c60516e6a25ae21d72217a224bfd54"
+        }
+      }
+    },
+    "external_receipt": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\evidence.json",
+      "bytes": 25514,
+      "sha256": "1880a09d960e83dc36d36fe7c669a70e8d82f79b93ebc27f73d011562625f920"
+    },
+    "extracted_target": {
+      "archive": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\opi-ai-0.8.3.crate",
+      "archive_sha256": "8dcac4fd5d3f8c9aab804bb6a17c5d4a44c5dd0df23ebc8b9085e855af8ab519",
+      "companion_archive": {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      },
+      "extracted_crate": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\package\\opi-ai-0.8.3",
+      "cargo_configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "files": {
+        "tests/schema_engine.rs": {
+          "bytes": 532,
+          "sha256": "4b82576e510ad6b7eeec49dc70e057204e15ae8dce8bbc1f0c546df4d9c74223"
+        },
+        "tests/schema_engine/admission.rs": {
+          "bytes": 19702,
+          "sha256": "d5e131c5bc65c56b20afb780953801ab30f1d012492aa2ec6b96731e4d40737a"
+        },
+        "tests/schema_engine/applicators.rs": {
+          "bytes": 4262,
+          "sha256": "468cf9362b275407ab6a989be636fc3d6107c5f4dc8852198bbb84810a2bb803"
+        },
+        "tests/schema_engine/container_keywords.rs": {
+          "bytes": 6842,
+          "sha256": "44814c6997c19d5f85f68c04fca8ccebd1f5413e5a1d999eb62a467fc3745429"
+        },
+        "tests/schema_engine/corpus.rs": {
+          "bytes": 1455,
+          "sha256": "674bc39c281faa5e8b232dbf719e06506bb2993ec6d5d9b2ae83b940f33105d8"
+        },
+        "tests/schema_engine/fixtures.rs": {
+          "bytes": 366,
+          "sha256": "2851b56d38a2fb773f3a4a6f6bd6e9104c8d690a9d8e03870b011e3e18d3f530"
+        },
+        "tests/schema_engine/reference_resolution.rs": {
+          "bytes": 8827,
+          "sha256": "905cd39705559485906bd9273933cd20e53bf5e0d01db412de68135358131ff5"
+        },
+        "tests/schema_engine/stack_safety.rs": {
+          "bytes": 2994,
+          "sha256": "49502ab8b92563c48a750586a7b4ee63e2317dab274ab49332067e12cce60bec"
+        },
+        "tests/schema_engine/value_keywords.rs": {
+          "bytes": 3456,
+          "sha256": "fa51b893d9fb3654e43846ed1db7990ad3378c8899d6425bccf1a99bf173583c"
+        }
+      },
+      "steps": [
+        {
+          "label": "archive-scratch-lock",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archive-metadata",
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0
+        },
+        {
+          "label": "archived-test",
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "-B",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--test",
+            "schema_engine"
+          ],
+          "exit": 0
+        }
+      ],
+      "archive_comparison": {
+        "prior_archive": "E:\\opi\\scratch\\issue-268-public-utilities-20261123-162423\\protocol\\opi-ai-0.8.3.crate",
+        "prior_archive_sha256": "6e4562e1d66c90b6826c3482ee94213ded3bc37d28fb5fc2ad8dd26dcf250356",
+        "added": [
+          "tests/schema_engine/admission.rs",
+          "tests/schema_engine/applicators.rs",
+          "tests/schema_engine/container_keywords.rs",
+          "tests/schema_engine/corpus.rs",
+          "tests/schema_engine/fixtures.rs",
+          "tests/schema_engine/reference_resolution.rs",
+          "tests/schema_engine/stack_safety.rs",
+          "tests/schema_engine/value_keywords.rs"
+        ],
+        "modified": [
+          "tests/README.md",
+          "tests/README.zh.md",
+          "tests/schema_engine.rs",
+          "tests/targets.tsv"
+        ],
+        "removed": [],
+        "unchanged_files": 678,
+        "same_build_inputs": 257,
+        "retained_input_sha256": {
+          "src/schema/admission.rs": "adba8bcfa77a5852db9ec52a915906430443496c870ee765150844f6f998fd8e",
+          "src/schema/eval.rs": "60ae4e2aa91e85b28f3f5281fda05f9feb77a87729467ec586e7fb95e716fa75",
+          "src/schema/js.rs": "57b0b925d9778934531889e3c7d790cf19d95c44991cfb6f9cda9b326bf42459",
+          "src/schema/mod.rs": "180859cb93d57745f2c4f9e26a0c7822b0eec033d84177eb2e778e395feb64d8",
+          "src/schema/refs.rs": "44ddac33def9aac2561fda73971682d110a051294fc0abf3f8d2d1c0a01f2613",
+          "tests/data/schema-cases.jsonl": "e0cd5ace2c1d385b425b0c8a53a55909e6be43c0328872928c859bee92d56329",
+          "tests/data/schema-expected.json": "8f98d8e0ad0bc149b7b644d17fda97944ef20063b62096ffde9053a87c7e5f8f",
+          "tests/schema_public.rs": "ec659724ee84e1643fe166f2c578ff509a9475f93d3a0248ab2c8780a1cf29ac",
+          "tests/support/OWNERS.tsv": "ac46dab458f6c5a89f8e5e2cb0ad6e1edcdf5295ad67a4d1ed54824dfc4a97c2"
+        }
+      },
+      "scratch_lock": {
+        "archive": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "rebound": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "package": "opi-telemetry",
+        "version": "0.8.3"
+      },
+      "target": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "schema_engine",
+        "src_path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\schema\\package\\opi-ai-0.8.3\\tests\\schema_engine.rs",
+        "edition": "2024",
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-schema-engine-20261123-172259/schema/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "active_features": [],
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-schema-engine-20261123-172259/schema/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed_cases": [
+        "admission::admission_absolute_resets_keep_finite_recursive_compilation",
+        "admission::admission_dynamic_and_recursive_cycles_can_grow_different_bases",
+        "admission::admission_file_resource_resets_keep_productive_recursion",
+        "admission::admission_follows_resolved_and_legacy_retrieved_resources",
+        "admission::admission_growing_cycles_can_complete_auxiliary_ref_functions",
+        "admission::admission_growing_relative_id_recursion_is_a_typed_failure",
+        "admission::admission_keeps_unreferenced_annotations_as_data",
+        "admission::admission_non_http_resource_bases_detect_growing_recursion",
+        "admission::admission_object_keywords_preserve_sibling_resource_order",
+        "admission::admission_overwritten_resolved_targets_preserve_the_sibling_base",
+        "admission::admission_preserves_uri_failures_at_check_time",
+        "admission::admission_recursive_frames_can_discover_later_regex_targets",
+        "admission::admission_reference_targets_preserve_null_boolean_and_array_guards",
+        "admission::admission_refs_precede_later_applicators",
+        "admission::admission_rejects_primitive_reference_targets_with_typed_errors",
+        "admission::admission_rejects_primitive_roots_with_typed_errors",
+        "admission::admission_relative_refs_ignore_regexes_at_other_bases",
+        "admission::admission_resource_ids_compare_node_identity",
+        "admission::admission_retrieved_frames_preserve_consumed_resolved_resources",
+        "admission::admission_shared_ref_targets_revisit_lexical_bases",
+        "admission::admission_structural_refs_precede_root_refs",
+        "admission::invalid_regexes_fail_admission_with_paths",
+        "admission::visited_applicators_propagate_uri_errors_and_unvisited_branches_do_not",
+        "applicators::any_of_and_all_of_compose",
+        "applicators::if_then_else_uses_default_true_branches",
+        "applicators::nested_containers_keep_their_own_evaluated_frames",
+        "applicators::not_negates_without_error_conversion",
+        "applicators::not_never_contributes_evaluated_facts",
+        "applicators::one_of_requires_exactly_one",
+        "applicators::ref_targets_merge_evaluated_facts_on_success",
+        "applicators::unevaluated_items_merges_successful_arms",
+        "applicators::unevaluated_properties_only_merges_successful_any_of_arms",
+        "applicators::unevaluated_properties_tracks_all_of_successes",
+        "container_keywords::additional_items_apply_after_tuple_positions",
+        "container_keywords::additional_properties_fast_path_accepts_required_superset_keys",
+        "container_keywords::additional_properties_schema_applies_to_uncovered_keys",
+        "container_keywords::cardinality_max_items_boundaries",
+        "container_keywords::cardinality_max_properties_boundaries",
+        "container_keywords::cardinality_min_items_boundaries",
+        "container_keywords::cardinality_min_properties_boundaries",
+        "container_keywords::contains_interacts_with_min_and_max",
+        "container_keywords::dependencies_support_both_forms",
+        "container_keywords::dependent_required_and_dependent_schemas",
+        "container_keywords::items_and_prefix_items_both_apply",
+        "container_keywords::pattern_properties_apply_per_matching_key",
+        "container_keywords::property_names_validates_key_strings",
+        "container_keywords::unique_items_uses_hash_equality",
+        "container_keywords::unsized_items_respect_prefix_offset",
+        "corpus::frozen_differential_corpus_matches_expected_outcomes",
+        "reference_resolution::absolute_id_refs_reach_embedded_metadata_resources",
+        "reference_resolution::anchor_refs_resolve_by_url_identity",
+        "reference_resolution::duplicate_ids_last_occurrence_wins_in_enumeration_order",
+        "reference_resolution::dynamic_ref_resolves_the_nearest_dynamic_anchor",
+        "reference_resolution::encoded_pointer_targets_preserve_selected_resource_identity",
+        "reference_resolution::integer_index_keys_enumerate_first_in_numeric_order",
+        "reference_resolution::local_pointer_refs_and_sibling_keywords",
+        "reference_resolution::recursive_ref_uses_the_recursive_anchor_root",
+        "reference_resolution::recursive_schema_walks_productive_instance_recursion",
+        "reference_resolution::refs_index_into_arrays_by_numeric_pointer",
+        "reference_resolution::unchanged_instance_self_recursion_is_a_typed_failure",
+        "reference_resolution::unresolved_refs_are_invalid_not_errors",
+        "stack_safety::deep_compile_error_releases_owned_schema",
+        "stack_safety::deep_local_ref_search",
+        "stack_safety::deep_schemas_do_not_exhaust_the_rust_stack",
+        "value_keywords::boolean_and_empty_schemas",
+        "value_keywords::const_compares_through_javascript_equality",
+        "value_keywords::integer_type_uses_js_number_semantics",
+        "value_keywords::malformed_limits_are_inert_not_errors",
+        "value_keywords::malformed_required_and_enum_stay_inert",
+        "value_keywords::multiple_of_uses_the_source_tolerance",
+        "value_keywords::number_limits_compare_through_binary64",
+        "value_keywords::unknown_type_names_are_true_leaves",
+        "value_keywords::valid_engine_rejects_malformed_instance_without_errors"
+      ],
+      "depth_children_confirmed": 3
+    }
+  },
+  "known_wider_checks": {
+    "strict_clippy": {
+      "exit": 101,
+      "existing_diagnostics": [
+        "src/models/auth_owner.rs:479 needless_borrow",
+        "src/models/prepared_call.rs:196 too_many_arguments"
+      ]
+    },
+    "workspace_rustfmt": {
+      "exit": 1,
+      "existing_differences": "OpenAI Responses root, fixtures and wire"
+    }
+  },
+  "raw_logs": {
+    "cache-status.json": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\cache-status.json",
+      "bytes": 433,
+      "sha256": "0ecbb855b82aed48d43b42020a1f968ba2a10dae495d0cf3926be91af0c26944"
+    },
+    "baseline.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\baseline.stdout",
+      "bytes": 151858,
+      "sha256": "05aaf4858b447464aa7f05bd12c0f11fc388d7416f4a8d6a82be729f9d1dd82c"
+    },
+    "baseline.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\baseline.stderr",
+      "bytes": 426,
+      "sha256": "43a56b24f40a822c87a92af3ab7d6ad20945f15ae2cd094a342fdde51013a00e"
+    },
+    "workspace-all.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-all.stdout",
+      "bytes": 152994,
+      "sha256": "f7026574713293cc4905b799e361e2bf68374f5b3a4300b87999ef2d781980b9"
+    },
+    "workspace-corpus.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-corpus.stdout",
+      "bytes": 147664,
+      "sha256": "e5d458f09419ec359a726a886d042866ca0136375b2b18ad5830d4b680592c4f"
+    },
+    "workspace-value_keywords.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-value_keywords.stdout",
+      "bytes": 148194,
+      "sha256": "8701026fcb1790a895d2df5f2fb497a1177a08d409b41a122db99a75277bf50c"
+    },
+    "workspace-container_keywords.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-container_keywords.stdout",
+      "bytes": 148668,
+      "sha256": "26bb3af862d75ebabbc65ad953c3e6beb7fc30fa684ab43046afeac4b7bbe6b8"
+    },
+    "workspace-applicators.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-applicators.stdout",
+      "bytes": 148253,
+      "sha256": "d900fc25e151f225a2d994008e225fd4ab65ccd4e455a71a6a203bf8c7e542f2"
+    },
+    "workspace-reference_resolution.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-reference_resolution.stdout",
+      "bytes": 148576,
+      "sha256": "4c8306649cc41fc2097471e2f76bdf0a2a30812258b89550f7bf3457cc980fb5"
+    },
+    "workspace-admission.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-admission.stdout",
+      "bytes": 149415,
+      "sha256": "9bd06808eff5d5aba0f31af916c2ab45b6b9c9d2002244ab4136909ea49bd739"
+    },
+    "workspace-stack_safety.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-stack_safety.stdout",
+      "bytes": 147775,
+      "sha256": "6195bb05c469a72f338bc6df43d92eed14b06add32fe9fcca76d897675e6381b"
+    },
+    "workspace-encoded-pointer.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-encoded-pointer.stdout",
+      "bytes": 147684,
+      "sha256": "96cdca13ea1c3cfaeb75a7667601f5e620920196056ae416c9fe9d48ea87f375"
+    },
+    "stack-child-qualified.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\stack-child-qualified.stdout",
+      "bytes": 210,
+      "sha256": "83dc9d0851f84ca450554f59293c4f787a5d8bfa5e361be09fa487fc7205b9ad"
+    },
+    "stack-child-old-filter.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\stack-child-old-filter.stdout",
+      "bytes": 114,
+      "sha256": "12c66457e24b377159657e3acc3f24a8289011ae0acbdff77e172f1c1a583309"
+    },
+    "archived-test.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\archived-test.stdout",
+      "bytes": 153476,
+      "sha256": "aa7bb143f5f53526f41784adf509cb158eb9ace283a0728b1077cbdc0c7a0f8f"
+    },
+    "archive-metadata.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\archive-metadata.stdout",
+      "bytes": 958172,
+      "sha256": "1ec13774011297686456f34df4546df5ef14b2d9b59037a4220e8781324fae4a"
+    },
+    "selector-unit.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\selector-unit.stderr",
+      "bytes": 5646,
+      "sha256": "361e5820f397af59f8df2a7ece43081ba3516c57f95be88fe043b56d62b24a64"
+    },
+    "clippy-strict.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\clippy-strict.stderr",
+      "bytes": 1462,
+      "sha256": "a6c08ec6ae4253979a0c76399c41e550060d988be9d8b85c431cd6874caf8300"
+    },
+    "clippy-advisory.stderr": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\clippy-advisory.stderr",
+      "bytes": 1418,
+      "sha256": "61f758039575d524f05fc59228c481bc624ef4b542f01d3f9d559e332fe150be"
+    },
+    "workspace-fmt.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\workspace-fmt.stdout",
+      "bytes": 4160,
+      "sha256": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd"
+    },
+    "gate-missing.stdout": {
+      "path": "E:\\opi\\scratch\\issue-268-schema-engine-20261123-172259\\gate-missing.stdout",
+      "bytes": 173885,
+      "sha256": "6563b8657dc829b2ecd46c327b7bedfe655d5cf8c228b9d9a667576d58abb5e9"
+    }
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "staged": [],
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/targets.tsv",
+      "docs/iterations/opi-ai-1-5-alignment/decisions/08-test-boundaries.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only_tracked": [
+      "crates/opi-ai/tests/schema_engine.rs"
+    ],
+    "new_paths": [
+      "crates/opi-ai/tests/schema_engine/admission.rs",
+      "crates/opi-ai/tests/schema_engine/applicators.rs",
+      "crates/opi-ai/tests/schema_engine/container_keywords.rs",
+      "crates/opi-ai/tests/schema_engine/corpus.rs",
+      "crates/opi-ai/tests/schema_engine/fixtures.rs",
+      "crates/opi-ai/tests/schema_engine/reference_resolution.rs",
+      "crates/opi-ai/tests/schema_engine/stack_safety.rs",
+      "crates/opi-ai/tests/schema_engine/value_keywords.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-schema-engine-20261123.json"
+    ],
+    "before": {
+      "unstaged": 203,
+      "untracked": 530
+    },
+    "after": {
+      "unstaged": 204,
+      "untracked": 539
+    }
+  },
+  "files": [
+    {
+      "path": "crates\\opi-ai\\tests\\README.md",
+      "bytes": 50479,
+      "sha256": "33283719535e80fa971ea33d52a720d12278f6a68bc263c241ab708778a95541"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\README.zh.md",
+      "bytes": 48081,
+      "sha256": "7f4b78ee5d2a4ea7c3b8ec3e67b1f0be46a45157411622a6d662a125aaab967b"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine.rs",
+      "bytes": 532,
+      "sha256": "4b82576e510ad6b7eeec49dc70e057204e15ae8dce8bbc1f0c546df4d9c74223"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\admission.rs",
+      "bytes": 19702,
+      "sha256": "d5e131c5bc65c56b20afb780953801ab30f1d012492aa2ec6b96731e4d40737a"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\applicators.rs",
+      "bytes": 4262,
+      "sha256": "468cf9362b275407ab6a989be636fc3d6107c5f4dc8852198bbb84810a2bb803"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\container_keywords.rs",
+      "bytes": 6842,
+      "sha256": "44814c6997c19d5f85f68c04fca8ccebd1f5413e5a1d999eb62a467fc3745429"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\corpus.rs",
+      "bytes": 1455,
+      "sha256": "674bc39c281faa5e8b232dbf719e06506bb2993ec6d5d9b2ae83b940f33105d8"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\fixtures.rs",
+      "bytes": 366,
+      "sha256": "2851b56d38a2fb773f3a4a6f6bd6e9104c8d690a9d8e03870b011e3e18d3f530"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\reference_resolution.rs",
+      "bytes": 8827,
+      "sha256": "905cd39705559485906bd9273933cd20e53bf5e0d01db412de68135358131ff5"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\stack_safety.rs",
+      "bytes": 2994,
+      "sha256": "49502ab8b92563c48a750586a7b4ee63e2317dab274ab49332067e12cce60bec"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\schema_engine\\value_keywords.rs",
+      "bytes": 3456,
+      "sha256": "fa51b893d9fb3654e43846ed1db7990ad3378c8899d6425bccf1a99bf173583c"
+    },
+    {
+      "path": "crates\\opi-ai\\tests\\targets.tsv",
+      "bytes": 24114,
+      "sha256": "309b3068fd3308f5fba8984f144a283235c107923b54d80bb94d04198ba2cefa"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\decisions\\08-test-boundaries.md",
+      "bytes": 23124,
+      "sha256": "3e49d64c1d6ecad9cf2c59b50ee27136a3ccf5a0d2df8d6c622ebd2a0a4dd486"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\issues\\268-partition-oversized-protocol-fixtures.md",
+      "bytes": 138713,
+      "sha256": "69ea34f01b6a3ac3c99e083163c21b95dc1c9c6f5606e1369fd6ff420225b443"
+    },
+    {
+      "path": "docs\\iterations\\opi-ai-1-5-alignment\\spec.md",
+      "bytes": 190661,
+      "sha256": "1c12ae14a0b6a95f3ad51b9862cc431a51db7591c174f218eb3c786db54c8160"
+    },
+    {
+      "path": "scripts\\pi-sdk-conformance\\test_select_tests.py",
+      "bytes": 31008,
+      "sha256": "7ed0265d2e08864e4ef74444901696271f4049c0717c0036458888c2fefe53db"
+    }
+  ]
+}

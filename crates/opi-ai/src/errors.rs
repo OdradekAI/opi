@@ -188,13 +188,10 @@ pub enum ProviderError {
     /// retryable, never swallowed, and never triggering a new call.
     #[error("callback phase failed: {0}")]
     CallbackPhase(ProviderErrorSummary),
-    /// A source-qualified strict-limit rejection (task 20.11, V-34): the
-    /// Anthropic wire answered 400 `invalid_request_error` with one of the
-    /// documented strict-tool limit messages on a request that actually
-    /// carried prefer-strict tools. Never an ordinary transport retry: the
-    /// acquisition owner may admit exactly one rebuilt downgrade variant,
-    /// and a second occurrence (or one without prefer-strict tools) is a
-    /// terminal failure.
+    /// A preferred strict-tool payload was rejected before streaming with a
+    /// recognized strict-tool limit. Anthropic reports an `invalid_request_error`
+    /// and Bedrock reports a `ValidationException`. The acquisition owner may
+    /// admit one payload with `Prefer` strictness removed.
     #[error("strict tool limits exceeded: {detail}")]
     StrictToolLimits { detail: ProviderErrorSummary },
     #[error("stream error: {0}")]
@@ -468,8 +465,6 @@ pub enum ProviderErrorCategory {
 
 // ---------------------------------------------------------------------------
 // Public typed diagnostic extraction (task 20.53.3, P20-S53-3).
-// Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/diagnostics.ts`
-// (`DiagnosticErrorInfo`/`extractDiagnosticError`).
 
 /// Typed, secret-safe diagnostic details extracted from a [`ProviderError`]
 /// (pinned `DiagnosticErrorInfo`; task 20.53.3).

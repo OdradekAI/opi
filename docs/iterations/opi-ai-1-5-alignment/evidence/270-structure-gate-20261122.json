@@ -1,0 +1,70 @@
+{
+  "issue": 270,
+  "date": "2026-11-22",
+  "scope": "unified opi-ai architecture, target inventory, shared support and selector gate",
+  "gate": {
+    "command": "python -B scripts/pi-sdk-conformance/check_structure_gate.py --json",
+    "exit": 0,
+    "summary_sha256": "899df8868a5dd0a7ec70189cfd5ac945ed7259a33f28109b54cbb191a1a867a",
+    "targets": 124,
+    "support_helpers": 16,
+    "support_consumer_edges": 60,
+    "selector_sources": 229,
+    "zero_test_targets": 0,
+    "architecture_violations": 0,
+    "approved_exception_counts": {
+      "lower_layer_known_exceptions": 77,
+      "route_context_edges": 11,
+      "lower_layer_excluded_tests": 15
+    }
+  },
+  "checks": [
+    {
+      "name": "gate-unit-and-negative",
+      "command": "python scripts/pi-sdk-conformance/test_check_structure_gate.py",
+      "exit": 0,
+      "result": "3 passed"
+    },
+    {
+      "name": "selector-unit",
+      "command": "python scripts/pi-sdk-conformance/test_select_tests.py",
+      "exit": 0,
+      "result": "23 passed"
+    },
+    {
+      "name": "target-inventory",
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "exit": 0,
+      "result": "124 explicit targets, 124 test sources"
+    },
+    {
+      "name": "support-inventory",
+      "command": "python scripts/pi-sdk-conformance/check_support_inventory.py",
+      "exit": 0,
+      "result": "16 support helpers, 60 declared target edges"
+    },
+    {
+      "name": "architecture",
+      "command": "python scripts/pi-sdk-conformance/check_architecture_boundaries.py --enforce",
+      "exit": 0,
+      "result": "violations=[]"
+    },
+    {
+      "name": "selector-negative",
+      "command": "python -B scripts/pi-sdk-conformance/check_structure_gate.py --strict-selection crates/opi-ai/tests/missing.rs",
+      "exit": 1,
+      "result": "unmapped path is rejected"
+    },
+    {
+      "name": "documentation",
+      "command": "python scripts/opi-doc-check.py",
+      "exit": 0,
+      "result": "opi documentation contracts: PASS"
+    }
+  ],
+  "ci_entry": ".github/workflows/ci.yml product job uses the same gate command",
+  "full_regression": "cargo test --workspace --exclude opi-eval --all-targets --locked",
+  "production_behavior_changed": false,
+  "compatibility_behavior_added": false,
+  "verdict": "PASS"
+}

@@ -27,11 +27,43 @@ OWNERS = {
     },
     "provider-bedrock": {
         "features": {"cloud-auth", "http-transport", "provider-bedrock", "provider-protocol-common", "tls-backend"},
-        "source": 'assert!(opi_ai::providers::bedrock::is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com")); let _ = std::any::type_name::<opi_ai::providers::bedrock::BedrockProvider>(); let _ = std::any::type_name::<opi_ai::api::bedrock::BedrockOptions>();',
+        "source": """use opi_ai::providers::bedrock::{BedrockProvider, is_standard_bedrock_endpoint, model_catalog};
+    use opi_ai::provider::Provider;
+    assert!(is_standard_bedrock_endpoint("https://bedrock-runtime.us-east-1.amazonaws.com"));
+    let models = model_catalog();
+    let provider = BedrockProvider::new(None, std::sync::Arc::new(opi_ai::http::HttpClient::new()));
+    assert_eq!(provider.models(), models);
+    assert_eq!(models.len(), 197);
+    let terra = models.iter().find(|model| model.id == "global.openai.gpt-6.1-terra").unwrap();
+    assert!(terra.compat.as_bedrock_converse_stream().unwrap().supports_strict_tools);
+    for id in [
+        "anthropic.claude-sonnet-4-20250514-v2:0",
+        "anthropic.claude-opus-4-20250514-v1:0",
+        "anthropic.claude-haiku-4-5-20250514-v1:0",
+    ] {
+        assert!(models.iter().all(|model| model.id != id));
+    }
+    let _ = std::any::type_name::<opi_ai::api::bedrock::BedrockOptions>();""",
     },
     "provider-gemini": {
         "features": {"http-transport", "provider-gemini", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = std::any::type_name::<opi_ai::api::gemini::GoogleGenerativeAiOptions>(); let _ = std::any::type_name::<opi_ai::providers::gemini::GeminiProvider>();",
+        "source": """use opi_ai::provider::Provider;
+    use opi_ai::providers::gemini::{GeminiProvider, google_provider, model_catalog};
+    let _ = std::any::type_name::<opi_ai::api::gemini::GoogleGenerativeAiOptions>();
+    let models = model_catalog();
+    assert_eq!(models.len(), 23);
+    assert_eq!(GeminiProvider::new(None).models(), models);
+    let google = google_provider(None, std::sync::Arc::new(opi_ai::http::HttpClient::new()));
+    assert_eq!(google.models(), models);
+    assert_eq!(google.id(), "google");
+    for id in ["gemini-pro-latest", "gemini-robotics-er-2-preview"] {
+        let model = models.iter().find(|model| model.id == id).unwrap();
+        assert_eq!(model.wire_api, opi_ai::WireApi::GoogleGenerativeAi);
+        assert!(model.capabilities.supports_thinking);
+    }
+    for id in ["gemini-2.0-flash", "gemini-3.1-flash-lite-image", "gemini-3.1-flash-live-preview"] {
+        assert!(models.iter().all(|model| model.id != id));
+    }""",
     },
     "provider-mistral": {
         "features": {"http-transport", "provider-mistral", "provider-openai-chat", "provider-openai-responses-shared", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
@@ -39,7 +71,7 @@ OWNERS = {
     },
     "provider-openai-chat": {
         "features": {"http-transport", "provider-openai-chat", "provider-openai-responses-shared", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": 'let _ = opi_ai::api::openai::parse_sse_events(""); let _ = std::any::type_name::<opi_ai::api::openai::OpenAiCompletionsOptions>(); let _ = std::any::type_name::<opi_ai::providers::openai::OpenAiChatProvider>();',
+        "source": 'let _ = opi_ai::api::openai_completions::parse_sse_events(""); let _ = std::any::type_name::<opi_ai::api::openai_completions::OpenAiCompletionsOptions>(); let _ = std::any::type_name::<opi_ai::providers::openai::OpenAiChatProvider>();',
     },
     "provider-openai-codex-responses": {
         "features": {"http-transport", "provider-openai-codex-responses", "provider-openai-responses-shared", "provider-protocol-common", "tls-backend", "websocket-compression"},
@@ -51,7 +83,31 @@ OWNERS = {
     },
     "provider-openrouter": {
         "features": {"http-transport", "provider-openai-chat", "provider-openai-responses-shared", "provider-openrouter", "provider-openrouter-usage", "provider-protocol-common", "tls-backend"},
-        "source": "let _ = opi_ai::providers::openrouter::model_catalog(); let _ = std::any::type_name::<opi_ai::providers::openrouter::OpenRouterUsageAccounting>(); let _ = std::any::type_name::<opi_ai::providers::openrouter::OpenRouterCostDetails>();",
+        "source": """use opi_ai::providers::openrouter::{
+        OpenRouterCostDetails, OpenRouterUsageAccounting, apply_openrouter_reported_cost,
+        model_catalog,
+    };
+    let models = model_catalog();
+    let ids: Vec<_> = models.iter().map(|model| model.id.as_str()).collect();
+    assert_eq!(ids, ["openai/gpt-4o", "openai/gpt-4o-mini", "google/gemini-2.5-pro"]);
+    for model in &models {
+        assert!(model.capabilities.context_window >= model.capabilities.max_output_tokens);
+        assert!(model.base_url.is_none() && model.pricing.is_some());
+    }
+    let mut usage = opi_ai::types::usage::Usage::default();
+    let charge = OpenRouterUsageAccounting {
+        cost: Some(0.25),
+        is_byok: Some(true),
+        cost_details: Some(OpenRouterCostDetails {
+            upstream_inference_cost: Some(0.5),
+            upstream_inference_prompt_cost: None,
+            upstream_inference_completions_cost: None,
+            server_tool_cost: None,
+        }),
+    };
+    apply_openrouter_reported_cost(&mut usage, &charge);
+    assert_eq!(usage.cost.total, 0.75);
+    assert!(usage.cost.total_from_provider);""",
     },
     "provider-pi-messages": {
         "features": {"http-transport", "provider-pi-messages", "provider-protocol-common", "tls-backend"},
@@ -59,7 +115,23 @@ OWNERS = {
     },
     "provider-vertex": {
         "features": {"cloud-auth", "http-transport", "provider-gemini", "provider-protocol-common", "provider-vertex", "tls-backend"},
-        "source": "let _ = opi_ai::providers::vertex::VertexProvider::express(None); let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexOptions>(); let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexChatApi>();",
+        "source": """use opi_ai::provider::Provider;
+    use opi_ai::providers::vertex::{VertexProvider, google_vertex_provider, model_catalog};
+    let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexOptions>();
+    let _ = std::any::type_name::<opi_ai::api::vertex::GoogleVertexChatApi>();
+    let models = model_catalog();
+    assert_eq!(models.len(), 13);
+    assert_eq!(VertexProvider::express(None).models(), models);
+    let provider = google_vertex_provider(
+        Some(("fixture-project".into(), "eu".into())),
+        None,
+        std::sync::Arc::new(opi_ai::http::HttpClient::new()),
+    );
+    assert_eq!(provider.models(), models);
+    assert_eq!(provider.id(), "google-vertex");
+    assert!(models.iter().all(|model| {
+        model.wire_api == opi_ai::WireApi::GoogleVertex && model.id != "gemini-3.1-flash-lite-image"
+    }));""",
     },
 }
 
@@ -87,11 +159,16 @@ def check_canonical_operation_contract_layout(package: Path) -> dict:
 
 def check_openai_profile_layout(package: Path) -> dict:
     """Ensure OpenAI profiles do not retain API-native option state."""
+    api_dir = package / "src" / "api"
+    if (api_dir / "openai.rs").exists():
+        raise ValueError("archive still contains the ambiguous api/openai.rs module")
+    if not (api_dir / "openai_completions.rs").is_file():
+        raise ValueError("archive is missing api/openai_completions.rs")
     profile = package / "src" / "providers" / "openai.rs"
     source = profile.read_text(encoding="utf-8")
     if "native_options" in source:
         raise ValueError("OpenAI provider profile still stores native options")
-    if "api::openai::OpenAiCompletionsOptions" in source:
+    if "api::openai_completions::OpenAiCompletionsOptions" in source:
         raise ValueError("OpenAI provider profile still imports wire options")
     responses_profile = package / "src" / "providers" / "openai_responses.rs"
     responses_source = responses_profile.read_text(encoding="utf-8")
@@ -118,6 +195,7 @@ def check_openai_profile_layout(package: Path) -> dict:
     if "crate::api" in azure_source or "api::" in azure_source:
         raise ValueError("Azure OpenAI provider profile still depends on the API layer")
     return {
+        "openai_completions_wire_is_canonical": True,
         "openai_profile_has_no_native_options": True,
         "openai_responses_profile_has_no_native_options": True,
         "openai_codex_profile_has_no_native_options": True,

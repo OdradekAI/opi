@@ -931,6 +931,15 @@ where
         move |provider, auth_resolver, store, provider_diagnostics, extra_routes| async move {
             let mut runtime_startup = runtime_startup;
             merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
+            if let Err(message) = validate_startup_model(
+                &effective_model,
+                &*provider,
+                &extra_routes,
+                &runtime_startup.extension_registry.collect_model_overrides(),
+            ) {
+                output.write_stderr(&format!("opi: {message}"));
+                return ExitCode::ConfigError as i32;
+            }
             let mut runner = match NonInteractiveRunner::new_with_resume_runtime_packages_and_auth(
                 provider,
                 effective_model.clone(),
@@ -1128,6 +1137,15 @@ async fn run_rpc_core(
         move |provider, auth_resolver, store, provider_diagnostics, extra_routes| async move {
             let mut runtime_startup = runtime_startup;
             merge_provider_diagnostics(&mut runtime_startup, provider_diagnostics);
+            if let Err(message) = validate_startup_model(
+                &effective_model,
+                &*provider,
+                &extra_routes,
+                &runtime_startup.extension_registry.collect_model_overrides(),
+            ) {
+                output.write_stderr(&format!("opi: {message}"));
+                return ExitCode::ConfigError as i32;
+            }
             let mut runner = match RpcRunner::new_with_runtime_packages_and_auth(
                 provider,
                 effective_model.clone(),
@@ -2094,7 +2112,7 @@ mod tests {
                 .lines()
                 .filter(|line| line.contains("github-copilot"))
                 .count(),
-            25,
+            27,
             "{}",
             outcome.stdout
         );
@@ -2855,6 +2873,116 @@ mod tests {
         assert_eq!(remediation["remediation"], "/login anthropic");
         assert!(stdout.lock().expect("stdout capture").is_empty());
         assert!(stderr.lock().expect("stderr capture").is_empty());
+        assert!(session_blocker.is_file());
+    }
+
+    #[test]
+    fn retired_subscription_defaults_are_config_errors_in_noninteractive_and_rpc_modes() {
+        assert_retired_default_config_error("github-copilot", "gpt-4.1");
+        for model in ["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.4-mini", "gpt-5.5"] {
+            assert_retired_default_config_error("openai-codex", model);
+        }
+    }
+
+    #[test]
+    fn retired_openai_defaults_are_config_errors_in_noninteractive_and_rpc_modes() {
+        for provider in ["openai", "openai-responses"] {
+            for model in [
+                "gpt-5.2-chat-latest",
+                "gpt-5.3-chat-latest",
+                "gpt-realtime-2.1",
+            ] {
+                assert_retired_default_config_error(provider, model);
+            }
+        }
+    }
+
+    #[test]
+    fn retired_azure_defaults_are_config_errors_in_noninteractive_and_rpc_modes() {
+        for model in [
+            "gpt-5.2-chat-latest",
+            "gpt-5.3-chat-latest",
+            "gpt-realtime-2.1",
+        ] {
+            assert_retired_default_config_error("azure", model);
+        }
+    }
+
+    #[test]
+    fn retired_google_defaults_are_config_errors_in_noninteractive_and_rpc_modes() {
+        for model in [
+            "gemini-2.0-flash",
+            "gemini-3.1-flash-lite-image",
+            "gemini-3.1-flash-live-preview",
+        ] {
+            assert_retired_default_config_error("google", model);
+        }
+    }
+
+    #[test]
+    fn retired_vertex_default_is_a_config_error_in_noninteractive_and_rpc_modes() {
+        assert_retired_default_config_error("google-vertex", "gemini-3.1-flash-lite-image");
+    }
+
+    fn assert_retired_default_config_error(provider: &str, model: &str) {
+        use opi_coding_agent::policy::ToolSelection;
+        use opi_coding_agent::runner::ExitCode;
+
+        let _env_lock = PROVIDER_ENV_LOCK.lock().expect("provider env lock");
+        let workspace = tempfile::tempdir().unwrap();
+        let config_dir = tempfile::tempdir().unwrap();
+        let sessions = tempfile::tempdir().unwrap();
+        let session_blocker = session_blocker(&sessions);
+        let _env = ProviderEnvGuard::scoped(&[("OPI_SESSIONS_DIR", session_blocker.as_os_str())]);
+        let mut config = OpiConfig::default();
+        config.defaults.model = format!("{provider}:{model}");
+        let diagnostic = format!("unknown model '{model}' for provider '{provider}'");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let (output, stdout, stderr) = CommandOutput::capturing();
+        let exit = runtime.block_on(run_non_interactive_core(
+            &Cli::parse_from(["opi", "--json"]),
+            &config,
+            "hello",
+            None,
+            None,
+            ToolSelection::Default,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+            workspace.path().to_path_buf(),
+            config_dir.path().to_path_buf(),
+            empty_backend_factory(),
+            None,
+            output,
+            |_| panic!("a retired model cannot start a turn"),
+        ));
+        assert_eq!(exit, ExitCode::ConfigError as i32);
+        assert!(stdout.lock().unwrap().is_empty());
+        assert!(stderr.lock().unwrap().contains(&diagnostic));
+
+        let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(command_tx);
+        let (output_tx, mut output_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (output, stdout, stderr) = CommandOutput::capturing();
+        let exit = runtime.block_on(run_rpc_core(
+            &Cli::parse_from(["opi", "--rpc"]),
+            &config,
+            None,
+            None,
+            ToolSelection::Default,
+            opi_coding_agent::project_trust::TrustDecision::Trusted,
+            workspace.path().to_path_buf(),
+            config_dir.path().to_path_buf(),
+            empty_backend_factory(),
+            None,
+            output,
+            RpcTransport::Channels {
+                command_rx,
+                output_tx,
+            },
+        ));
+        assert_eq!(exit, ExitCode::ConfigError as i32);
+        assert!(stdout.lock().unwrap().is_empty());
+        assert!(output_rx.try_recv().is_err());
+        assert!(stderr.lock().unwrap().contains(&diagnostic));
         assert!(session_blocker.is_file());
     }
 

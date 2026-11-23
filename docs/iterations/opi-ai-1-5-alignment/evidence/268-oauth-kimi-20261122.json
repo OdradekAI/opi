@@ -1,0 +1,164 @@
+{
+  "issue": 268,
+  "batch": "oauth-kimi",
+  "date": "2026-11-22",
+  "status": "PASS",
+  "owner_table": [
+    {
+      "owner": "tests/support/oauth_fixtures.rs",
+      "scope": "shared scripted OAuth presenter, expiry checks, callback URL decoding and stored credential fixture",
+      "consumers": [
+        "oauth_flows",
+        "oauth_openrouter",
+        "oauth_radius",
+        "oauth_anthropic",
+        "oauth_codex",
+        "oauth_chatgpt",
+        "oauth_copilot",
+        "oauth_kimi"
+      ]
+    },
+    {
+      "owner": "tests/support/oauth_assembly.rs",
+      "scope": "shared Models OAuth route assembly, identity resolution and actual adapter request assertions",
+      "consumers": [
+        "oauth_flows",
+        "oauth_openrouter",
+        "oauth_radius",
+        "oauth_codex",
+        "oauth_chatgpt",
+        "oauth_copilot",
+        "oauth_kimi"
+      ]
+    },
+    {
+      "owner": "tests/support/oauth_kimi.rs",
+      "scope": "Kimi provider factory, device/token mounts, token request collector and stored credential fixture",
+      "consumers": [
+        "oauth_flows",
+        "oauth_kimi"
+      ]
+    },
+    {
+      "owner": "tests/oauth_kimi.rs",
+      "scope": "Kimi device authorization, polling, slow_down, strict token triple, refresh, cancellation, typed errors, expiry and Models store ACK",
+      "target": "oauth_kimi",
+      "required_features": [
+        "builtins"
+      ],
+      "package_consumer": "oauth-store"
+    },
+    {
+      "owner": "tests/oauth_flows.rs",
+      "scope": "Meta, xAI, Models store checks, cross-provider regressions and metadata",
+      "target": "oauth_flows",
+      "required_features": [
+        "builtins"
+      ],
+      "package_consumer": "oauth-store"
+    }
+  ],
+  "sizes": {
+    "oauth_flows_after_copilot_before_kimi_bytes": 129738,
+    "oauth_flows_after_kimi_bytes": 103895,
+    "oauth_kimi_bytes": 24556,
+    "oauth_support_fixtures_bytes": 6621,
+    "oauth_support_assembly_bytes": 7092,
+    "oauth_support_kimi_bytes": 2487
+  },
+  "acceptance": {
+    "target_selectable": {
+      "command": "python scripts/pi-sdk-conformance/select_tests.py --target oauth_kimi --json",
+      "result": "PASS",
+      "selected_target": "oauth_kimi"
+    },
+    "kimi_fixture_selector": {
+      "command": "python scripts/pi-sdk-conformance/select_tests.py crates/opi-ai/tests/support/oauth_kimi.rs --json",
+      "result": "PASS",
+      "selected_targets": [
+        "oauth_flows",
+        "oauth_kimi"
+      ]
+    },
+    "inventory_and_metadata": {
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 121,
+      "sources": 121,
+      "cargo_target": "oauth_kimi",
+      "required_features": [
+        "builtins"
+      ]
+    },
+    "tests": {
+      "oauth_kimi": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_kimi",
+        "passed": 24,
+        "failed": 0
+      },
+      "oauth_flows": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_flows",
+        "passed": 71,
+        "failed": 0
+      },
+      "oauth_store_profile": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features oauth-store --test oauth_store_profile",
+        "passed": 2,
+        "failed": 0
+      },
+      "oauth_store_integration": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_store_integration",
+        "passed": 10,
+        "failed": 0
+      },
+      "oauth_wire_shape": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_wire_shape",
+        "passed": 12,
+        "failed": 0
+      },
+      "oauth_kimi_clippy": {
+        "command": "cargo clippy --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_kimi --test oauth_flows -- -D warnings -A unreachable_patterns -A clippy::too_many_arguments -A clippy::needless_borrow",
+        "result": "PASS"
+      },
+      "shared_oauth_regressions": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_anthropic --test oauth_codex --test oauth_chatgpt --test oauth_copilot --test oauth_openrouter --test oauth_radius --test oauth_store_integration --test oauth_wire_shape",
+        "result": "PASS"
+      }
+    },
+    "package_consumers": {
+      "oauth_store": {
+        "runner": "scripts/pi-sdk-conformance/run_oauth_store_package.py",
+        "evidence": "C:/Temp/opi-268-oauth-kimi-package-r1.json",
+        "result": "PASS"
+      },
+      "websocket_compression_oauth_store": {
+        "runner": "scripts/pi-sdk-conformance/run_shared_owner_pairs.py --mode package --only websocket-compression+oauth-store",
+        "evidence": "C:/Temp/opi-268-oauth-kimi-pair-r1.json",
+        "result": "PASS"
+      }
+    },
+    "documentation": {
+      "cargo_fmt": "PASS",
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS",
+      "compatibility_behavior_added": false
+    }
+  },
+  "test_impact": {
+    "add": [
+      "oauth_kimi",
+      "support/oauth_kimi.rs"
+    ],
+    "update": [
+      "oauth_flows",
+      "support/oauth_fixtures.rs consumer mapping",
+      "support/oauth_assembly.rs consumer mapping",
+      "test inventory"
+    ],
+    "delete": [],
+    "retain": [
+      "all 24 moved Kimi assertions",
+      "all 71 remaining OAuth flow assertions"
+    ]
+  }
+}

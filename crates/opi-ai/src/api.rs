@@ -16,10 +16,10 @@
 pub mod contract;
 pub mod shared;
 
-#[cfg(feature = "provider-openai-chat")]
-pub mod openai;
 #[cfg(feature = "provider-openai-codex-responses")]
 pub mod openai_codex_responses;
+#[cfg(feature = "provider-openai-chat")]
+pub mod openai_completions;
 #[cfg(feature = "provider-openai-responses")]
 pub mod openai_responses;
 
@@ -161,15 +161,15 @@ pub mod azure_openai;
 #[cfg(feature = "provider-bedrock")]
 pub mod bedrock;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
-pub mod cloudflare;
-#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
-pub mod decisions;
+pub mod cloudflare_workers_ai_system_one;
 #[cfg(feature = "provider-gemini")]
 pub mod gemini;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
-pub mod llama;
+pub mod llama_cpp_classify;
 #[cfg(feature = "provider-mistral")]
 pub mod mistral;
+#[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
+pub mod openai_decisions;
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub mod openrouter_images;
 #[cfg(feature = "provider-pi-messages")]

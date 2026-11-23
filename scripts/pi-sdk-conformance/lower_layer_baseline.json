@@ -1,0 +1,203 @@
+[
+  {
+    "file": "auth/builtin.rs",
+    "feature": "provider-protocol-common (also enabled by builtins)",
+    "role": "exception",
+    "reason": "Builtin OAuth and key adapters return Models auth factory and check bindings",
+    "sites": [
+      ["use", "crate::models::AuthCheck", 1],
+      ["use", "crate::models::AuthCheckKind", 1],
+      ["use", "crate::models::BuiltinAuthBindings", 1],
+      ["use", "crate::models::BuiltinAuthFactory", 1],
+      ["use", "crate::models::BuiltinAuthStatus", 1]
+    ]
+  },
+  {
+    "file": "auth/builtin.rs",
+    "feature": "provider-protocol-common (also enabled by builtins)",
+    "role": "exception",
+    "reason": "Builtin auth source selection reads provider profile metadata",
+    "sites": [
+      ["use", "crate::providers::BuiltinProviderProfile", 1]
+    ]
+  },
+  {
+    "file": "auth/builtin_aws.rs",
+    "feature": "builtins",
+    "role": "exception",
+    "reason": "Builtin AWS auth factory returns Models auth checks and bindings",
+    "sites": [
+      ["use", "crate::models::AuthCheck", 1],
+      ["use", "crate::models::AuthCheckKind", 1],
+      ["use", "crate::models::BuiltinAuthBindings", 1],
+      ["use", "crate::models::BuiltinAuthFactory", 1],
+      ["use", "crate::models::BuiltinAuthStatus", 1]
+    ]
+  },
+  {
+    "file": "auth/builtin_vertex.rs",
+    "feature": "builtins",
+    "role": "exception",
+    "reason": "Builtin Google auth factory returns Models auth checks and bindings",
+    "sites": [
+      ["use", "crate::models::AuthCheck", 1],
+      ["use", "crate::models::AuthCheckKind", 1],
+      ["use", "crate::models::BuiltinAuthBindings", 1],
+      ["use", "crate::models::BuiltinAuthFactory", 1],
+      ["use", "crate::models::BuiltinAuthStatus", 1]
+    ]
+  },
+  {
+    "file": "auth/builtin_vertex.rs",
+    "feature": "builtins",
+    "role": "exception",
+    "reason": "Builtin Vertex auth and wire routes share the provider-owned collection endpoint",
+    "sites": [
+      ["use", "crate::providers::vertex::vertex_collection_url", 1]
+    ]
+  },
+  {
+    "file": "execution.rs",
+    "feature": "minimum",
+    "role": "contract",
+    "reason": "Execution drives the event and terminal contract and captures the producer snapshot",
+    "sites": [
+      ["use", "crate::stream::AssistantStreamEvent", 1],
+      ["use", "crate::stream::CallFailure", 1],
+      ["use", "crate::stream::ProducerSnapshot", 1]
+    ]
+  },
+  {
+    "file": "http.rs",
+    "feature": "http-transport",
+    "role": "exception",
+    "reason": "OpenAI-family 429 veto attaches a fixed stream failure diagnostic",
+    "sites": [
+      ["qualified", "crate::stream::setup_failure_with_detail", 1]
+    ]
+  },
+  {
+    "file": "provider.rs",
+    "feature": "minimum",
+    "role": "exception",
+    "reason": "EventStream exposes AssistantStreamEvent in the shared provider contract",
+    "sites": [
+      ["use", "crate::stream::AssistantStreamEvent", 1]
+    ]
+  },
+  {
+    "file": "provider.rs",
+    "feature": "minimum",
+    "role": "exception",
+    "reason": "Request owns transcript inputs and preflight calls the projection compiler",
+    "sites": [
+      ["qualified", "crate::transcript::ProjectionFacts", 1],
+      ["qualified", "crate::transcript::ProjectionOptions", 1],
+      ["qualified", "crate::transcript::TranscriptContext", 1],
+      ["qualified", "crate::transcript::compile_request_projection", 2]
+    ]
+  },
+  {
+    "file": "stream.rs",
+    "feature": "minimum",
+    "role": "contract",
+    "reason": "Public StartedChatStream export from the private execution owner",
+    "sites": [
+      ["pub use", "crate::execution::StartedChatStream", 1]
+    ]
+  },
+  {
+    "file": "stream.rs",
+    "feature": "minimum",
+    "role": "exception",
+    "reason": "Setup failures construct a stream outcome using the public ChatModelRecord",
+    "sites": [
+      ["qualified", "crate::models::ChatModelRecord", 1]
+    ]
+  },
+  {
+    "file": "stream.rs",
+    "feature": "minimum",
+    "role": "exception",
+    "reason": "Stream events and outcomes carry transcript projection facts",
+    "sites": [
+      ["qualified", "crate::transcript::ProjectionFacts", 8]
+    ]
+  },
+  {
+    "file": "telemetry.rs",
+    "feature": "minimum",
+    "role": "exception",
+    "reason": "AI request observers inspect event, terminal and failure fields",
+    "sites": [
+      ["qualified", "crate::stream::AssistantStreamEvent", 3],
+      ["qualified", "crate::stream::AssistantStreamEvent::TextEnd", 1],
+      ["qualified", "crate::stream::AssistantStreamEvent::ThinkingEnd", 1],
+      ["qualified", "crate::stream::AssistantStreamEvent::ToolCallDelta", 1],
+      ["qualified", "crate::stream::AssistantStreamEvent::ToolCallEnd", 1],
+      ["qualified", "crate::stream::CallFailure", 2],
+      ["qualified", "crate::stream::StopReason", 1],
+      ["qualified", "crate::stream::StopReason::Aborted", 1],
+      ["qualified", "crate::stream::StopReason::Deferred", 2],
+      ["qualified", "crate::stream::StopReason::Error", 2],
+      ["qualified", "crate::stream::StopReason::Length", 1],
+      ["qualified", "crate::stream::StopReason::Pending", 2],
+      ["qualified", "crate::stream::StopReason::Stop", 1],
+      ["qualified", "crate::stream::StopReason::ToolUse", 1],
+      ["use", "crate::stream::StopReason", 1]
+    ]
+  },
+  {
+    "file": "transcript.rs",
+    "feature": "minimum",
+    "role": "exception",
+    "reason": "Request projection reads Provider::Request and translates typed preflight errors",
+    "sites": [
+      ["qualified", "crate::provider::ProviderError", 2],
+      ["qualified", "crate::provider::ProviderError::Config", 1],
+      ["qualified", "crate::provider::ProviderErrorSummary::attested_static", 1],
+      ["qualified", "crate::provider::ProviderErrorSummary::sanitized", 1],
+      ["qualified", "crate::provider::ProviderErrorSummary::unsupported_temporal", 1],
+      ["qualified", "crate::provider::Request", 1]
+    ]
+  },
+  {
+    "file": "transport/codex.rs",
+    "feature": "provider-openai-codex-responses",
+    "role": "exception",
+    "reason": "Codex WebSocket continuation projects Requests and decodes Responses wire events",
+    "sites": [
+      ["qualified", "crate::api::shared::endpoint::join_endpoint", 1],
+      ["qualified", "crate::api::shared::openai_responses::convert_messages", 1],
+      ["use", "crate::api::shared::openai_responses::ParsedEvent", 1],
+      ["use", "crate::api::shared::openai_responses::ResponsesEvent", 1],
+      ["use", "crate::api::shared::openai_responses::ResponsesMapper", 1],
+      ["use", "crate::api::shared::openai_responses::ResponsesWireTools", 1],
+      ["use", "crate::api::shared::openai_responses::codex_stream_error", 1]
+    ]
+  },
+  {
+    "file": "transport/codex.rs",
+    "feature": "provider-openai-codex-responses",
+    "role": "exception",
+    "reason": "Codex WebSocket replay and mapping refer to the Codex profile identity",
+    "sites": [
+      ["use", "crate::providers::openai_codex::PROVIDER_ID", 1]
+    ]
+  },
+  {
+    "file": "transport/codex.rs",
+    "feature": "provider-openai-codex-responses",
+    "role": "exception",
+    "reason": "Codex WebSocket currently delivers and cancels AI stream items directly",
+    "sites": [
+      ["qualified", "crate::stream::ServiceTier", 2],
+      ["qualified", "crate::stream::StopReason::Length", 1],
+      ["qualified", "crate::stream::StopReason::Stop", 1],
+      ["qualified", "crate::stream::StopReason::ToolUse", 1],
+      ["use", "crate::stream::AssistantStreamEvent", 1],
+      ["use", "crate::stream::ProducerSnapshot", 1],
+      ["use", "crate::stream::send_or_cancel", 1]
+    ]
+  }
+]

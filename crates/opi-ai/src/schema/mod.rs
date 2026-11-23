@@ -1,7 +1,7 @@
 //! Private TypeBox JSON-dialect schema engine (DEL-04 substrate).
 //!
 //! This module implements the fixed private JSON dialect selected by
-//! `docs/research/pi-ai-opi-ai-alignment/pi-1.3.0-readiness-schema.md`: the
+//! current contract index: the
 //! semantics of the pinned TypeBox 1.3.27 `Compile` evaluation path over
 //! trusted JSON schemas, evaluated by an explicit work-stack machine with
 //! typed no-progress recursion failure and no implicit I/O or source-free

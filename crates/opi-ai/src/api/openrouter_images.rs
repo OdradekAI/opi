@@ -1,7 +1,7 @@
 //! OpenRouter image-generation direct adapter (task 20.45).
 //!
-//! Reproduces the pinned pi `openrouter-images` module: image generation
-//! over OpenRouter's nonstream Chat Completions endpoint. One POST of
+//! Image generation over OpenRouter's nonstream Chat Completions endpoint.
+//! One POST of
 //! `{model, messages, stream:false, modalities}` to `<base>/chat/completions`
 //! (trailing slashes stripped from the record's base URL), Bearer auth, a
 //! 600000 ms body-inclusive per-attempt timeout (the source OpenAI SDK
@@ -50,8 +50,7 @@ pub const OPENROUTER_IMAGES_MAX_RETRY_DELAY_MS: u64 = 60_000;
 ///
 /// The source `ImagesOptions` carries no protocol-native fields for this
 /// adapter: the wire body is fully determined by the record and context.
-/// Only the retry policy is adapter-configurable; the default performs zero
-/// extra retries, matching the pinned source.
+/// The adapter's retry policy defaults to zero extra attempts.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpenRouterImagesOptions {
     /// Extra retry attempts after the first failure. Defaults to `0`.
@@ -133,10 +132,9 @@ impl ImageApi<OpenRouterImagesOptions> for OpenRouterImagesApi {
 
 /// The curated default record for the OpenRouter image adapter.
 ///
-/// pi's generated catalog data (`data/openrouter.json`) is absent from the
-/// pinned source, so opi ships one documented baseline entry; a registrar
-/// replaces it wholesale through [`ImageApi::complete_record`] — the record
-/// never enters chat catalog reads. Unavailable catalog pricing stays unknown.
+/// Registration can supply the selected image record through
+/// [`ImageApi::complete_record`]. The fallback records unavailable pricing
+/// as unknown.
 pub fn default_openrouter_image_record() -> ImageModelRecord {
     ImageModelRecord {
         cost_tiers: Vec::new(),
@@ -659,8 +657,8 @@ fn parse_openrouter_images_response(
     result
 }
 
-/// `data:<mime>;base64,<payload>` parser: the pinned source regex, returning
-/// `(mime, payload)` or `None` for non-data URLs and malformed entries.
+/// Parse a `data:<mime>;base64,<payload>` URL into `(mime, payload)`.
+/// Non-data URLs and malformed entries return `None`.
 fn parse_data_url(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("data:")?;
     let separator = rest.find(";base64,")?;

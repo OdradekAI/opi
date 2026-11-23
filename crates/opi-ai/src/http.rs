@@ -132,7 +132,7 @@ pub(crate) async fn openai_rate_limit_detail(
 /// Read the bounded response prefix needed for provider-specific error
 /// classification.
 ///
-/// Only Gemini-compatible HTTP 400 bodies use this path. The read retains at
+/// Gemini-compatible and Bedrock HTTP 400 bodies use this path. The read retains at
 /// most 8 KiB, completes within one second when the request has no timeout,
 /// respects a stricter request timeout, and remains cancellation-aware. Errors
 /// never include provider-controlled response text. A declared or observed

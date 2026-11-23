@@ -1,5 +1,4 @@
-//! xAI (Grok/X subscription) OAuth device flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/xai.ts` (sdk-contracts row 146).
+//! xAI (Grok/X subscription) OAuth device flow.
 //!
 //! RFC 8628 device authorization grant against `https://auth.x.ai` with
 //! form-encoded requests and JSON responses; the access token authenticates

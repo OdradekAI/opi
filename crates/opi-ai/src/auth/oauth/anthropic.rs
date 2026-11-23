@@ -1,5 +1,4 @@
-//! Anthropic OAuth flow (Claude Pro/Max), pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/anthropic.ts`.
+//! Anthropic OAuth flow (Claude Pro/Max).
 //!
 //! Wire contract: JSON token requests with a 30-second per-request timeout,
 //! the fixed 53692 preferred callback port (`/callback` path, `localhost`

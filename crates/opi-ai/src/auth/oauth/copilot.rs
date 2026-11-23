@@ -1,5 +1,4 @@
-//! GitHub Copilot OAuth flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/github-copilot.ts`.
+//! GitHub Copilot OAuth flow.
 //!
 //! The flow is a GitHub device-code authorization (RFC 8628) against
 //! `github.com` or an explicit GitHub Enterprise domain, followed by the

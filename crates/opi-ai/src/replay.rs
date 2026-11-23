@@ -6,20 +6,14 @@
 //! permission, and never fabricates successful calls: every departure from
 //! the canonical facts is either a recorded projection fact (collapse
 //! mode) or a typed error raised before any request is built (strict
-//! mode). Pinned TypeScript reference:
-//! `.repo/pi-1.3.0/packages/ai/src/api/transform-messages.ts` (Pi AI
-//! 1.3.0); the association, missing-result and malformed-proposal
-//! semantics follow the reviewed replay contracts
-//! (`docs/research/pi-ai-opi-ai-alignment/replay-contracts.md`, RP-04/05/
-//! 06/08/09).
+//! mode).
 //!
 //! Contract boundaries:
 //! - Continuation identity is the exact wire, the provider and the
 //!   requested model (RP-02). A history record without a stored wire is
 //!   legacy-unknown and is never treated as same-identity (fail-closed).
 //! - Cross-identity thinking is dropped entirely - readable, signed and
-//!   redacted blocks alike - and is never converted into visible text
-//!   (Pi 1.3 semantics). Same-identity keeps redacted data and signed
+//!   redacted blocks alike. Same-identity replay keeps redacted data and signed
 //!   blocks (including signed-empty ones) and drops blank unsigned
 //!   thinking.
 //! - Association pairs tool results with calls by batch position and
@@ -435,9 +429,7 @@ impl<'a> ReplayState<'a> {
     }
 }
 
-/// Replace image runs in user content with explicit text placeholders
-/// (Pi 1.3 `downgradeUnsupportedImages` semantics: one placeholder per
-/// run of images, not one per block).
+/// Replace each contiguous run of user images with one text placeholder.
 fn downgrade_user_images(content: &[InputContent], placeholder: &str) -> Vec<InputContent> {
     let mut result = Vec::new();
     let mut previous_was_placeholder = false;

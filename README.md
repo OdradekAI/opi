@@ -157,14 +157,14 @@ Run `opi --list-models` after configuring credentials or provider settings.
 | Prefix | Backend | Default authentication |
 | --- | --- | --- |
 | `anthropic:` | Anthropic Messages | `ANTHROPIC_API_KEY` or `/login anthropic` |
-| `openai:` | OpenAI Chat Completions | `OPENAI_API_KEY` |
+| `openai:` | OpenAI Responses | `OPENAI_API_KEY` |
 | `openai-responses:` | OpenAI Responses | `OPENAI_API_KEY` |
 | `openrouter:` | OpenRouter | `OPENROUTER_API_KEY` |
 | `mistral:` | Mistral | `MISTRAL_API_KEY` |
-| `gemini:` | Gemini | `GEMINI_API_KEY` |
+| `google:` | Gemini | `GEMINI_API_KEY` |
 | `bedrock:` | AWS Bedrock Converse | AWS environment or shared profile credentials |
-| `azure:` | Azure OpenAI | `AZURE_OPENAI_API_KEY` plus endpoint configuration |
-| `vertex:` | Vertex AI Gemini | `VERTEX_ACCESS_TOKEN` plus project/location configuration |
+| `azure:` | Azure OpenAI Responses and Chat Completions | `AZURE_OPENAI_API_KEY` plus an endpoint or Azure resource name |
+| `google-vertex:` | Vertex AI Gemini | `GOOGLE_CLOUD_API_KEY` for Express, or ADC / `VERTEX_ACCESS_TOKEN` with project and location |
 | `github-copilot:` | GitHub Copilot | `/login github-copilot` and the OS keychain |
 | `openai-codex:` | OpenAI Codex Responses | `/login openai-codex` and the OS keychain |
 | Custom profile | OpenAI-compatible Chat Completions | Configured `api_key_env` |

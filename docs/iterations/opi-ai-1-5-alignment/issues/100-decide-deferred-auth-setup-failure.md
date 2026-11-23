@@ -82,7 +82,7 @@ policy classify the canonical message. The focused Rust test observes
 `ProviderError::is_retryable()` is false on both `AuthFailed` causes.
 An authentication cause alone therefore cannot substitute for the
 message-based retry decision in such a caller.
-[Rust contract test](../../../../crates/opi-ai/tests/deferred_contract.rs#L547) ·
+[Rust contract test](../../../../crates/opi-ai/tests/deferred_contract/submission_and_fetch.rs#L225) ·
 [Whole-call classifier](../../../../crates/opi-ai/src/retry.rs#L1032)
 
 Record the channel and text as intentional differences for #60. The

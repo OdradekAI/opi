@@ -76,7 +76,7 @@ owners; direct consumers should select the provider feature they call.
 | --- | --- | --- |
 | Default | `opi-ai = "0.8.3"` | Core, built-in adapters/authentication, bundled catalog and tracing carrier. |
 | Minimum | `default-features = false` | Core values, Models/custom APIs, credential stores/custom OAuth, neutral telemetry, utilities and scripted Faux test support. |
-| Bundled catalog only | `default-features = false, features = ["catalog-bundled"]` | Core catalog values plus the validated embedded Pi catalog, without network adapters or built-in authentication. |
+| Bundled catalog only | `default-features = false, features = ["catalog-bundled"]` | Core catalog values plus the validated embedded opi catalog, without network adapters or built-in authentication. |
 | Shared HTTP transport only | `default-features = false, features = ["http-transport"]` | The public `HttpClient`, proxy/redirect policy and source-scoped TLS wiring, without provider protocol adapters or built-in authentication. |
 | TLS backend only | `default-features = false, features = ["tls-backend"]` | The fixed rustls/AWS-LC/native-certs backend and public source-scoped `opi_ai::tls` configuration, without reqwest or provider transports. |
 | Cloud authentication only | `default-features = false, features = ["cloud-auth"]` | AWS source chains/STS, GCP ADC families, shared SigV4 and pinned cloud codecs over shared HTTP/TLS, without provider wire adapters or compression. |
@@ -137,7 +137,12 @@ WebSocket/compression dependency.
 The three onboarding examples require `builtins`. Add `telemetry-tracing` separately
 to a minimum consumer that needs `TelemetryContext::from_span`. Exporters,
 sampling, initialization and shutdown remain host-owned. Pair/high-order
-configuration coverage and native macOS remain pending in the capability V matrix.
+configuration evidence currently includes 55 provider-owner pairs, two selected
+high-order provider unions, two shared-owner pairs and a Windows all-features
+pass. Complete capability V remains open for the unenumerated higher-order
+unions, native macOS, live Deferred production evidence and performance/fuzz
+budgets. See the current capability-V receipt under
+`docs/iterations/opi-ai-1-5-alignment/evidence/`.
 
 ## API at a glance
 

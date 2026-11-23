@@ -1,0 +1,44 @@
+{
+  "issue": 241,
+  "status": "done",
+  "provider": "baseten",
+  "fixed_reference": {
+    "pi_version": "pi-1.5.0",
+    "sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+    "artifact": "docs/iterations/opi-ai-1-5-alignment/evidence/phase5-model-catalog.json"
+  },
+  "previous_artifact_sha256": "ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678",
+  "catalog": {
+    "provider_records": 14,
+    "previous_provider_records": 22,
+    "added": 2,
+    "removed": 10,
+    "updated": 10,
+    "source_sha256": "f48eb92f89b3546e91ed7855e1299bf7b32563c1080838541caf285f657bf54a",
+    "bundle_sha256": "051968d5e703d9b7a2859e5df048beef17b52bea3ef7e19c1fe7570f6fffeefe",
+    "providers_equal_after_sync": 19,
+    "providers_total": 42
+  },
+  "wire": {
+    "path": "/v1/chat/completions",
+    "auth": "Bearer",
+    "requests": 4,
+    "cases": {
+      "deepseek-ai/DeepSeek-V4-Flash-0731:xhigh": "reasoning_effort=max",
+      "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B:high": "reasoning_effort=high",
+      "zai-org/GLM-5.3-Fast:off": "reasoning_effort omitted",
+      "zai-org/GLM-5.2:high": "chat_template_args.enable_thinking=true and reasoning_effort=high"
+    }
+  },
+  "retired_request_count": 0,
+  "tests": {
+    "provider_collection_baseten": 3,
+    "build_catalog_example": 8,
+    "build_catalog_check": "pass"
+  },
+  "pi_source_sha256": {
+    "providers/baseten.ts": "c3833be0c64c4d5c96810403e23e966bb779bf2c045619b6fbac18ff27ac92f5",
+    "providers/baseten.models.ts": "3d322e618fa3999635218a4d38d3bb188470112b8413117a101962fbe15139bb",
+    "api/openai-completions.ts": "e765179e356b4828a38954cda4cec762a851bb1d3a8fa28cdaf05edd12ca5c8a"
+  }
+}

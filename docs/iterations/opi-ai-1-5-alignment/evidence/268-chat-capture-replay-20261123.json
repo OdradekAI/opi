@@ -1,0 +1,2055 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 40,
+  "date": "2026-11-23",
+  "baseline_head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "cargo_cache": "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+  "test_impact": {
+    "retain": "13 end-to-end integration cases",
+    "add": "two Rust tests isolating capture and JSON restore, and one selector regression"
+  },
+  "target": {
+    "target": "chat_capture_replay",
+    "owner": "replay",
+    "layer": "assembly",
+    "cost": "local-io",
+    "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+    "runners": "archive@scripts/pi-sdk-conformance/run_readme_examples.py",
+    "source": "tests/chat_capture_replay.rs",
+    "required-features": "builtins"
+  },
+  "source_before": {
+    "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/chat_capture_replay.before.rs",
+    "bytes": 60207,
+    "sha256": "679081522f471866afe75e8e759878f3f5c4d77fa157267c42b24d9a69823df4"
+  },
+  "sources_after": {
+    "tests/chat_capture_replay.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay.rs",
+      "bytes": 357,
+      "sha256": "ddeca45a530c3231e8ac2f8e83e3f755759e3a3e1d807b2d41b6276bad221ebb"
+    },
+    "tests/chat_capture_replay/producer_capture.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay/producer_capture.rs",
+      "bytes": 1786,
+      "sha256": "22e35525574a85d453d52348e3105df5cc13e68279d564a638a2d4aa63676c3a"
+    },
+    "tests/chat_capture_replay/persistence_restore.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay/persistence_restore.rs",
+      "bytes": 1064,
+      "sha256": "d193975abbb58813250aae9225fe754214cfc2fbabe8b90a066e17f7658d4c30"
+    },
+    "tests/chat_capture_replay/target_projection.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay/target_projection.rs",
+      "bytes": 11239,
+      "sha256": "59e44cf581deeebf298fc30819f4c4c67d6391df0379a106c4b1e784b2273caa"
+    },
+    "tests/chat_capture_replay/fixtures.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay/fixtures.rs",
+      "bytes": 8279,
+      "sha256": "7840182797515d4c5649f550ea825d793e841daa5345aa6d17873724dae5c177"
+    },
+    "tests/chat_capture_replay/target_projection/replay_boundaries.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay/target_projection/replay_boundaries.rs",
+      "bytes": 12182,
+      "sha256": "6dafb8fa29c5a5d6054384851dd991576bda29a2e2b13e099e976b84825122ee"
+    },
+    "tests/chat_capture_replay/target_projection/persisted_producers.rs": {
+      "path": "D:/Luiz/Odradek/opi/crates/opi-ai/tests/chat_capture_replay/target_projection/persisted_producers.rs",
+      "bytes": 25924,
+      "sha256": "7909a8979c2066bc7ae4a997077d93b13a958a8bba2a8defd6132a6cd0f7d9d1"
+    }
+  },
+  "fixture": {
+    "owner": "chat_capture_replay",
+    "roles": [
+      "builtin case inputs",
+      "local SSE peers",
+      "route setup",
+      "request builders",
+      "JSON reload"
+    ],
+    "consumers": [
+      "producer_capture",
+      "persistence_restore",
+      "target_projection"
+    ],
+    "source_requests_per_case_for_each_focused_stage": 1,
+    "builtin_cases_per_stage": 5,
+    "case_inputs": [
+      "Groq Chat reasoning",
+      "Groq Chat opaque details",
+      "OpenAI Responses",
+      "Azure Chat",
+      "Azure Responses"
+    ]
+  },
+  "workspace": {
+    "command": [
+      "D:\\Users\\Luiz\\anaconda3\\python.exe",
+      "-B",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "opi-ai",
+      "--no-default-features",
+      "--features",
+      "builtins",
+      "--test",
+      "chat_capture_replay"
+    ],
+    "full_before": {
+      "passed": 13,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/workspace-before.stdout",
+        "bytes": 197279,
+        "sha256": "3b5069ba44059eec3ee25e8995687e3b1ef06e83dfb83ae10fd5ffc2d8e8845a"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/workspace-before.stderr",
+        "bytes": 502,
+        "sha256": "e96af7926387fa1700e3ab4ac623b0c63ae5b56055398822fea512b12d45a30d"
+      },
+      "exit": 0
+    },
+    "full_after": {
+      "passed": 15,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/workspace-after.stdout",
+        "bytes": 197708,
+        "sha256": "7fb5a410b19de89822eb596cf957c21d95c5aa16824ec66f46baa1cc9e7c61eb"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/workspace-after.stderr",
+        "bytes": 274,
+        "sha256": "342579bd9e8109b50e2f8650bab853623bd4fb3e186d0c74f98c8270fb7aac93"
+      },
+      "exit": 0
+    },
+    "resolved_split_diagnostic": {
+      "action": "removed unneeded mut binding",
+      "log": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/workspace-first.stderr",
+        "bytes": 725,
+        "sha256": "5531a0ad5cd2b60b1b6a0e644d1847af2f80e418a54174d10caa9adc3007be14"
+      }
+    },
+    "topic_runs": {
+      "topic-producer_capture": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_capture_replay",
+          "--",
+          "producer_capture::"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "filtered_out": 14,
+        "cases": [
+          "producer_capture::builtin_producer_output_captures_identity_reasoning_and_terminal_facts"
+        ],
+        "stdout": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-producer_capture.stdout",
+          "bytes": 196186,
+          "sha256": "14d5e849d5dfd7d8256176d135dd39e1bcb68c2e5166cbac736212f50c90ab0c"
+        },
+        "stderr": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-producer_capture.stderr",
+          "bytes": 211,
+          "sha256": "ece4f9a518f7191896c511795e0a6418232934765c71e9c55ab02bf8a91d2ca0"
+        }
+      },
+      "topic-persistence_restore": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_capture_replay",
+          "--",
+          "persistence_restore::"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "filtered_out": 14,
+        "cases": [
+          "persistence_restore::builtin_capture_round_trips_canonical_assistant_message"
+        ],
+        "stdout": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-persistence_restore.stdout",
+          "bytes": 196174,
+          "sha256": "a97a09e6fc7ba3220fa8faaad7caf091136ab23a0e5cd7396a25e5a015c42113"
+        },
+        "stderr": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-persistence_restore.stderr",
+          "bytes": 211,
+          "sha256": "ece4f9a518f7191896c511795e0a6418232934765c71e9c55ab02bf8a91d2ca0"
+        }
+      },
+      "topic-target_projection": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_capture_replay",
+          "--",
+          "target_projection::"
+        ],
+        "exit": 0,
+        "passed": 13,
+        "filtered_out": 2,
+        "cases": [
+          "target_projection::azure_chat_capture_reload_preserves_azure_identity",
+          "target_projection::azure_responses_capture_reload_preserves_azure_identity_and_effort",
+          "target_projection::chat_opaque_details_capture_reload_preserves_delta_merging_and_order",
+          "target_projection::chat_reasoning_capture_reload_reaches_same_and_changed_model_requests",
+          "target_projection::chat_source_grammar_custom_input_survives_capture_store_and_replay",
+          "target_projection::persisted_producers::anthropic_opaque_only_producer_reload_preserves_empty_signed_block",
+          "target_projection::persisted_producers::anthropic_producer_persist_reload_same_changed_model_and_foreign_wire",
+          "target_projection::persisted_producers::codex_producer_persist_reload_same_changed_model_and_foreign_wire",
+          "target_projection::persisted_producers::codex_terminal_backfill_and_dual_tool_ids_survive_real_reload_request",
+          "target_projection::replay_boundaries::chat_opaque_only_details_survive_actual_capture_reload_and_next_send",
+          "target_projection::replay_boundaries::responses_and_azure_terminal_backfill_survives_reload_and_compat_change",
+          "target_projection::replay_boundaries::responses_invalid_and_unknown_metadata_projects_without_rewriting_capture",
+          "target_projection::responses_capture_reload_preserves_encrypted_reasoning_and_effort_history"
+        ],
+        "stdout": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-target_projection.stdout",
+          "bytes": 197517,
+          "sha256": "4b1c109c14a54b7146649f29d076782febf20a9630418e0ee1e3a625a3d63f49"
+        },
+        "stderr": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-target_projection.stderr",
+          "bytes": 211,
+          "sha256": "6c83cfb5d2ac8628a5e713a88252822da66a0eef0630bd67bb2f4943678dfd70"
+        }
+      },
+      "topic-target_projection-replay_boundaries": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_capture_replay",
+          "--",
+          "target_projection::replay_boundaries::"
+        ],
+        "exit": 0,
+        "passed": 3,
+        "filtered_out": 12,
+        "cases": [
+          "target_projection::replay_boundaries::chat_opaque_only_details_survive_actual_capture_reload_and_next_send",
+          "target_projection::replay_boundaries::responses_and_azure_terminal_backfill_survives_reload_and_compat_change",
+          "target_projection::replay_boundaries::responses_invalid_and_unknown_metadata_projects_without_rewriting_capture"
+        ],
+        "stdout": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-target_projection-replay_boundaries.stdout",
+          "bytes": 196451,
+          "sha256": "66a3c17fc96e919943da97a912a249b0c98fdb398d3287cb9fedb8c0a81fd4c1"
+        },
+        "stderr": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-target_projection-replay_boundaries.stderr",
+          "bytes": 211,
+          "sha256": "6c83cfb5d2ac8628a5e713a88252822da66a0eef0630bd67bb2f4943678dfd70"
+        }
+      },
+      "topic-target_projection-persisted_producers": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_capture_replay",
+          "--",
+          "target_projection::persisted_producers::"
+        ],
+        "exit": 0,
+        "passed": 4,
+        "filtered_out": 11,
+        "cases": [
+          "target_projection::persisted_producers::anthropic_opaque_only_producer_reload_preserves_empty_signed_block",
+          "target_projection::persisted_producers::anthropic_producer_persist_reload_same_changed_model_and_foreign_wire",
+          "target_projection::persisted_producers::codex_producer_persist_reload_same_changed_model_and_foreign_wire",
+          "target_projection::persisted_producers::codex_terminal_backfill_and_dual_tool_ids_survive_real_reload_request"
+        ],
+        "stdout": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-target_projection-persisted_producers.stdout",
+          "bytes": 196567,
+          "sha256": "b7705b17531dee7955f060b68582c88139e6c93accfefa3fbdfb94e9163e7bda"
+        },
+        "stderr": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/topic-target_projection-persisted_producers.stderr",
+          "bytes": 211,
+          "sha256": "6c83cfb5d2ac8628a5e713a88252822da66a0eef0630bd67bb2f4943678dfd70"
+        }
+      }
+    },
+    "case_moves": {
+      "old_to_new": {
+        "chat_reasoning_capture_reload_reaches_same_and_changed_model_requests": "target_projection::chat_reasoning_capture_reload_reaches_same_and_changed_model_requests",
+        "chat_opaque_details_capture_reload_preserves_delta_merging_and_order": "target_projection::chat_opaque_details_capture_reload_preserves_delta_merging_and_order",
+        "responses_capture_reload_preserves_encrypted_reasoning_and_effort_history": "target_projection::responses_capture_reload_preserves_encrypted_reasoning_and_effort_history",
+        "azure_chat_capture_reload_preserves_azure_identity": "target_projection::azure_chat_capture_reload_preserves_azure_identity",
+        "azure_responses_capture_reload_preserves_azure_identity_and_effort": "target_projection::azure_responses_capture_reload_preserves_azure_identity_and_effort",
+        "replay_boundaries::responses_and_azure_terminal_backfill_survives_reload_and_compat_change": "target_projection::replay_boundaries::responses_and_azure_terminal_backfill_survives_reload_and_compat_change",
+        "replay_boundaries::responses_invalid_and_unknown_metadata_projects_without_rewriting_capture": "target_projection::replay_boundaries::responses_invalid_and_unknown_metadata_projects_without_rewriting_capture",
+        "replay_boundaries::chat_opaque_only_details_survive_actual_capture_reload_and_next_send": "target_projection::replay_boundaries::chat_opaque_only_details_survive_actual_capture_reload_and_next_send",
+        "persisted_producers::codex_producer_persist_reload_same_changed_model_and_foreign_wire": "target_projection::persisted_producers::codex_producer_persist_reload_same_changed_model_and_foreign_wire",
+        "persisted_producers::anthropic_producer_persist_reload_same_changed_model_and_foreign_wire": "target_projection::persisted_producers::anthropic_producer_persist_reload_same_changed_model_and_foreign_wire",
+        "persisted_producers::anthropic_opaque_only_producer_reload_preserves_empty_signed_block": "target_projection::persisted_producers::anthropic_opaque_only_producer_reload_preserves_empty_signed_block",
+        "persisted_producers::codex_terminal_backfill_and_dual_tool_ids_survive_real_reload_request": "target_projection::persisted_producers::codex_terminal_backfill_and_dual_tool_ids_survive_real_reload_request",
+        "chat_source_grammar_custom_input_survives_capture_store_and_replay": "target_projection::chat_source_grammar_custom_input_survives_capture_store_and_replay"
+      },
+      "unchanged_reindented_cases": 8,
+      "equivalent_matrix_call_sites": {
+        "chat_reasoning_capture_reload_reaches_same_and_changed_model_requests": {
+          "fixture": "CHAT_REASONING",
+          "same_arguments": "\"groq\", WireApi::OpenAiCompletions, false"
+        },
+        "chat_opaque_details_capture_reload_preserves_delta_merging_and_order": {
+          "fixture": "CHAT_OPAQUE_DETAILS",
+          "same_arguments": "\"groq\", WireApi::OpenAiCompletions, true"
+        },
+        "responses_capture_reload_preserves_encrypted_reasoning_and_effort_history": {
+          "fixture": "OPENAI_RESPONSES",
+          "same_arguments": "\"openai\", WireApi::OpenAiResponses, false"
+        },
+        "azure_chat_capture_reload_preserves_azure_identity": {
+          "fixture": "AZURE_CHAT",
+          "same_arguments": "\"azure\", WireApi::OpenAiCompletions, false"
+        },
+        "azure_responses_capture_reload_preserves_azure_identity_and_effort": {
+          "fixture": "AZURE_RESPONSES",
+          "same_arguments": "\"azure\", WireApi::AzureOpenAiResponses, false"
+        }
+      },
+      "projection_tail_assertions_equal": true,
+      "source_assertions_moved": "capture verifies typed result, restore verifies canonical JSON finish field",
+      "new_cases": {
+        "builtin_capture_round_trips_canonical_assistant_message": "persistence_restore::builtin_capture_round_trips_canonical_assistant_message",
+        "builtin_producer_output_captures_identity_reasoning_and_terminal_facts": "producer_capture::builtin_producer_output_captures_identity_reasoning_and_terminal_facts"
+      },
+      "retained_canonical_import": "opi_ai::api::openai_completions"
+    }
+  },
+  "selector": {
+    "source_paths": {
+      "producer_capture": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay",
+              "--",
+              "producer_capture::"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay/producer_capture.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "persistence_restore": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay",
+              "--",
+              "persistence_restore::"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay/persistence_restore.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "target_projection": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay",
+              "--",
+              "target_projection::"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay/target_projection.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "target_projection-replay_boundaries": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay",
+              "--",
+              "target_projection::replay_boundaries::"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay/target_projection/replay_boundaries.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "target_projection-persisted_producers": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay",
+              "--",
+              "target_projection::persisted_producers::"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay/target_projection/persisted_producers.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "fixtures": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay/fixtures.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "index": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "chat_capture_replay",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins",
+              "--test",
+              "chat_capture_replay"
+            ],
+            "cases": "Producer capture, canonical AssistantMessage restore, and target-wire replay of thinking and tool calls",
+            "reasons": [
+              "tests/chat_capture_replay.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      }
+    },
+    "strict_missing_source": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "-B",
+        "scripts/pi-sdk-conformance/check_structure_gate.py",
+        "--json",
+        "--strict-selection",
+        "crates/opi-ai/tests/chat_capture_replay/__missing_topic__.rs"
+      ],
+      "exit": 1,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/strict-missing.stdout",
+        "bytes": 173316,
+        "sha256": "d48e186da4fc3a682f28ae1e6185383c810a5d4dce1475748e08e3fb966af331"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/strict-missing.stderr",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "unit_tests": {
+      "passed": 28,
+      "exit": 0,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/selector-unit.log",
+        "bytes": 4559,
+        "sha256": "3b0368ba2567d188ccd037a5b31d611c33eda733532ea7947b22516f5fe161b4"
+      },
+      "command": [
+        "python",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "scripts/pi-sdk-conformance",
+        "-p",
+        "test_select_tests.py",
+        "-v"
+      ]
+    }
+  },
+  "structure_gate": {
+    "cargo_targets": 124,
+    "rust_test_sources": 344,
+    "support_helpers": 16,
+    "support_consumer_edges": 60,
+    "summary_sha256": "6a9db47ff39c6a0e8d67ce09eb244d772c0345f7a90026b589c15d37a515b836",
+    "violations": [],
+    "selection": {
+      "paths": [
+        "crates/opi-ai/tests/chat_capture_replay.rs",
+        "crates/opi-ai/tests/targets.tsv",
+        "crates/opi-ai/tests/chat_capture_replay/target_projection.rs",
+        "crates/opi-ai/tests/chat_capture_replay/target_projection/replay_boundaries.rs",
+        "crates/opi-ai/tests/chat_capture_replay/target_projection/persisted_producers.rs",
+        "crates/opi-ai/tests/chat_capture_replay/producer_capture.rs",
+        "crates/opi-ai/tests/chat_capture_replay/persistence_restore.rs",
+        "crates/opi-ai/tests/chat_capture_replay/fixtures.rs"
+      ],
+      "scope": "focused",
+      "tests": [
+        {
+          "target": "chat_capture_replay",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "chat_capture_replay"
+          ],
+          "reasons": [
+            "tests/chat_capture_replay.rs",
+            "tests/chat_capture_replay/fixtures.rs",
+            "tests/chat_capture_replay/persistence_restore.rs",
+            "tests/chat_capture_replay/producer_capture.rs",
+            "tests/chat_capture_replay/target_projection.rs",
+            "tests/chat_capture_replay/target_projection/persisted_producers.rs",
+            "tests/chat_capture_replay/target_projection/replay_boundaries.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py",
+        "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+      ],
+      "expansion": []
+    },
+    "report": {
+      "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/structure-gate.json",
+      "bytes": 174473,
+      "sha256": "133588d5c12fcf74b2c93d25d2e772586eb93d0ade007c3f03a1f799a79c3d7d"
+    }
+  },
+  "external_consumer": {
+    "owner": "consumer-readme",
+    "command": [
+      "python",
+      "-B",
+      "scripts/pi-sdk-conformance/run_readme_examples.py",
+      "--offline",
+      "--scratch",
+      "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/readme",
+      "--target-dir",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--evidence-output",
+      "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/readme-proof.json"
+    ],
+    "package": {
+      "file": "opi-ai-0.8.3.crate",
+      "sha256": "808f9bf52539d72d6147b6b864cb67670d65bc7bc208410f90a4b382a196c900",
+      "dependencies": [
+        {
+          "file": "opi-telemetry-0.8.3.crate",
+          "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+          "source": "exact extracted candidate artifact; no workspace source patch"
+        }
+      ]
+    },
+    "verdict": "PASS",
+    "packaged_example_digests": {
+      "quick_start.rs": "5062fbe399c402182678503b4d421bbb8d8496fde95f5b84cbc79cb366d8c2a7",
+      "quick_start_stream.rs": "c6d2be8ee84af2b994356d6f9a48bb329b957fee69b1555b70ecd6fd63b4cf38",
+      "tool_loop.rs": "ceae2297967d4646eaec2886e2ff6d247ae2ad1a25107ce0543ac444b567d9a5"
+    },
+    "profiles": [
+      {
+        "name": "builtins-no-tracing",
+        "examples": {
+          "schema": "opi-readme-execution/2",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "before_consumption": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:5114",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "before_consumption": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:5116",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "before_consumption": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:5118",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:5118",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "delayed_peer_regression": 1
+      },
+      {
+        "name": "defaults-on",
+        "examples": {
+          "schema": "opi-readme-execution/2",
+          "verdict": "PASS",
+          "total": 3,
+          "failed": 0,
+          "checks": [
+            {
+              "name": "quick_start",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "before_consumption": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "288",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:13886",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "In one short sentence, say hello.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "quick_start_stream",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "before_consumption": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "observed": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "final_text": "Hello world",
+              "continuation": false,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "278",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:13888",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Count from one to five.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are concise.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024
+                  }
+                }
+              ]
+            },
+            {
+              "name": "tool_loop",
+              "passed": true,
+              "setup": {
+                "source_reads": 0,
+                "store_reads": 0,
+                "requests": 0
+              },
+              "before_consumption": {
+                "source_reads": 3,
+                "store_reads": 1,
+                "requests": 1
+              },
+              "observed": {
+                "source_reads": 6,
+                "store_reads": 2,
+                "requests": 2
+              },
+              "final_text": "Tokyo: 22 C, clear.",
+              "continuation": true,
+              "requests": [
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "519",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:13890",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "method": "POST",
+                  "target": "/v1/messages",
+                  "headers": {
+                    "accept": "*/*",
+                    "anthropic-version": "2023-06-01",
+                    "content-length": "736",
+                    "content-type": "application/json",
+                    "host": "127.0.0.1:13890",
+                    "x-api-key": "readme-synthetic-key"
+                  },
+                  "body": {
+                    "model": "claude-sonnet-4-5",
+                    "stream": true,
+                    "messages": [
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "What is the weather in Tokyo? Use the tool.",
+                            "cache_control": {
+                              "type": "ephemeral"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "type": "tool_use",
+                            "id": "weather-1",
+                            "name": "get_weather",
+                            "input": {
+                              "city": "Tokyo"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "role": "user",
+                        "content": [
+                          {
+                            "type": "tool_result",
+                            "tool_use_id": "weather-1",
+                            "content": "22 C, clear"
+                          }
+                        ]
+                      }
+                    ],
+                    "system": [
+                      {
+                        "type": "text",
+                        "text": "You are a concise assistant.",
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ],
+                    "max_tokens": 1024,
+                    "tools": [
+                      {
+                        "name": "get_weather",
+                        "description": "Current weather for one city.",
+                        "input_schema": {
+                          "type": "object",
+                          "properties": {
+                            "city": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "city"
+                          ]
+                        },
+                        "cache_control": {
+                          "type": "ephemeral"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "delayed_peer_regression": 1
+      }
+    ],
+    "steps": [
+      {
+        "name": "rustc-version",
+        "command": [
+          "rustc",
+          "-vV"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.03,
+        "stdout_sha256": "2a9ba90ddc1895fc7b4d94baee548ac7947533b6ef348fc9f010ab5d9f3d7898",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "cargo-version",
+        "command": [
+          "cargo",
+          "-vV"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.03,
+        "stdout_sha256": "f1bd358f06a9ce032236e2ba498f33d3c9449b1b4db9763b66d29081127798f9",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "lease-start",
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+          "lease",
+          "start",
+          "--target",
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+          "--pid",
+          "41088"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.19,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "package",
+        "command": [
+          "cargo",
+          "package",
+          "-p",
+          "opi-telemetry",
+          "-p",
+          "opi-ai",
+          "--allow-dirty",
+          "--no-verify",
+          "--offline",
+          "--locked"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.73,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "4999b111c4d0bda882bb33df13e511e1da4dcfc9b6633952ebe4b0f18c131f9b"
+      },
+      {
+        "name": "consumer-lock",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "generate-lockfile",
+          "--offline"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.48,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "fa7634eea6f8b165d801a96efa5979287335dd468d83f0ee2b8b2390eeb1e906"
+      },
+      {
+        "name": "builtins-no-tracing-metadata",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "metadata",
+          "--offline",
+          "--locked",
+          "--format-version",
+          "1"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.25,
+        "stdout_sha256": "75ac697d7650af1f57158a322320d9741d32a357f802b167871c16340f57cda2",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "builtins-no-tracing-consumer-check",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "check",
+          "--offline",
+          "--locked",
+          "--bins"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 12.17,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "a2b397fbaf871c512f662e4a1634f68891821658283d23e6938c2ce204493972"
+      },
+      {
+        "name": "builtins-no-tracing-consumer-peer-test",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "test",
+          "--offline",
+          "--locked",
+          "--bin",
+          "consumer-readme",
+          "controlled_peer_waits_for_bytes_after_accept",
+          "--",
+          "--exact"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 27.59,
+        "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
+        "stderr_sha256": "bbbc1b245251e173d5d14f1141db8788c25db7254996c49746f6731a35e27f32"
+      },
+      {
+        "name": "builtins-no-tracing-consumer-execute",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "run",
+          "--offline",
+          "--locked",
+          "--quiet",
+          "--bin",
+          "consumer-readme"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 7.55,
+        "stdout_sha256": "abc5171895ae33b86766aa87edb8f4a317bd14e718bd2f2e641c91e6a2e596d8",
+        "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
+      },
+      {
+        "name": "defaults-on-metadata",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "metadata",
+          "--offline",
+          "--locked",
+          "--format-version",
+          "1"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.22,
+        "stdout_sha256": "97c073d754b6ca18dce209f74afb2388a7b545c14a7294ce0899229a0e2b2a9f",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "name": "defaults-on-consumer-check",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "check",
+          "--offline",
+          "--locked",
+          "--bins"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 8.86,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "0e482afea87bdbd93b1a236137b4eff0e47691ad2f88153581a4d91e46497e5c"
+      },
+      {
+        "name": "defaults-on-consumer-peer-test",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "test",
+          "--offline",
+          "--locked",
+          "--bin",
+          "consumer-readme",
+          "controlled_peer_waits_for_bytes_after_accept",
+          "--",
+          "--exact"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 27.58,
+        "stdout_sha256": "70f805528714512620604f30d5ab2e0646a8eb62ddb61d4381eb3b38b159c10e",
+        "stderr_sha256": "55c8097a34fe22c98c5a2e26f51d2b66bbc7e17eb46382b3bb2ebacf70c0df94"
+      },
+      {
+        "name": "defaults-on-consumer-execute",
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "run",
+          "--offline",
+          "--locked",
+          "--quiet",
+          "--bin",
+          "consumer-readme"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 7.03,
+        "stdout_sha256": "957bc0cc842df28743da766ffc1d465ebc8ef6c3703abf115da712c507c38e52",
+        "stderr_sha256": "60efdf52a3c5cdea583b66ba08dd779a238b4f1e32bbd406c329c75b76950dc9"
+      },
+      {
+        "name": "lease-end",
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+          "lease",
+          "end",
+          "--target",
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+          "--pid",
+          "41088"
+        ],
+        "exit": 0,
+        "elapsed_seconds": 0.19,
+        "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ],
+    "raw_evidence": {
+      "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/readme-proof.json",
+      "bytes": 35379,
+      "sha256": "36b7d48943b655b7db324ca64c1dc8ec526c0f9862aa4db7db0a1d0573c41e51"
+    }
+  },
+  "extracted_target": {
+    "archive": "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\opi-ai-0.8.3.crate",
+    "package": "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\package\\opi-ai-0.8.3",
+    "cargo_configs": [
+      {
+        "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+        "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+      }
+    ],
+    "archive_sha256": "808f9bf52539d72d6147b6b864cb67670d65bc7bc208410f90a4b382a196c900",
+    "files": {
+      "tests/chat_capture_replay.rs": {
+        "bytes": 357,
+        "sha256": "ddeca45a530c3231e8ac2f8e83e3f755759e3a3e1d807b2d41b6276bad221ebb"
+      },
+      "tests/chat_capture_replay/producer_capture.rs": {
+        "bytes": 1786,
+        "sha256": "22e35525574a85d453d52348e3105df5cc13e68279d564a638a2d4aa63676c3a"
+      },
+      "tests/chat_capture_replay/persistence_restore.rs": {
+        "bytes": 1064,
+        "sha256": "d193975abbb58813250aae9225fe754214cfc2fbabe8b90a066e17f7658d4c30"
+      },
+      "tests/chat_capture_replay/target_projection.rs": {
+        "bytes": 11239,
+        "sha256": "59e44cf581deeebf298fc30819f4c4c67d6391df0379a106c4b1e784b2273caa"
+      },
+      "tests/chat_capture_replay/fixtures.rs": {
+        "bytes": 8279,
+        "sha256": "7840182797515d4c5649f550ea825d793e841daa5345aa6d17873724dae5c177"
+      },
+      "tests/chat_capture_replay/target_projection/replay_boundaries.rs": {
+        "bytes": 12182,
+        "sha256": "6dafb8fa29c5a5d6054384851dd991576bda29a2e2b13e099e976b84825122ee"
+      },
+      "tests/chat_capture_replay/target_projection/persisted_producers.rs": {
+        "bytes": 25924,
+        "sha256": "7909a8979c2066bc7ae4a997077d93b13a958a8bba2a8defd6132a6cd0f7d9d1"
+      }
+    },
+    "steps": [
+      {
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "update",
+          "-p",
+          "opi-telemetry",
+          "--offline"
+        ],
+        "exit": 0,
+        "label": "archive-scratch-lock"
+      },
+      {
+        "command": [
+          "cargo",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "metadata",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--format-version",
+          "1"
+        ],
+        "exit": 0,
+        "label": "archive-metadata"
+      },
+      {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "-B",
+          "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--config",
+          "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\candidate-telemetry.toml",
+          "--locked",
+          "--offline",
+          "--no-default-features",
+          "--features",
+          "builtins",
+          "--test",
+          "chat_capture_replay"
+        ],
+        "exit": 0,
+        "label": "archive-chat_capture_replay"
+      }
+    ],
+    "archive_comparison": {
+      "prior_archive": "E:\\opi\\scratch\\issue-268-http-acceptance-20261123-122524\\http-final\\opi-ai-0.8.3.crate",
+      "prior_sha256": "ce9b02bbc5851ee973019bb946c97498debcc2be1ad22930738b0802045942cc",
+      "added": [
+        "tests/chat_capture_replay/fixtures.rs",
+        "tests/chat_capture_replay/persistence_restore.rs",
+        "tests/chat_capture_replay/producer_capture.rs",
+        "tests/chat_capture_replay/target_projection.rs",
+        "tests/chat_capture_replay/target_projection/persisted_producers.rs",
+        "tests/chat_capture_replay/target_projection/replay_boundaries.rs"
+      ],
+      "modified": [
+        "tests/README.md",
+        "tests/README.zh.md",
+        "tests/chat_capture_replay.rs",
+        "tests/targets.tsv"
+      ],
+      "removed": [],
+      "unchanged_package_files": 644,
+      "unchanged_production_lock_and_example_input_count": 257,
+      "differential_driver_sha256": "fd26724f71995fdb34da5554bbce678813473a4d45cfe10c2d6de858fad87927",
+      "separate_chat_limit_target_sha256": "4f187708b31cdd3bd92386058c907ffacd57725e3dab35469f96c65c4f090772"
+    },
+    "scratch_lock": {
+      "archived_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+      "rebound_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+      "only_changed_package": "opi-telemetry"
+    },
+    "active_features": [
+      "builtins",
+      "catalog-bundled",
+      "cloud-auth",
+      "http-transport",
+      "oauth-store",
+      "protocol-adapters",
+      "provider-anthropic",
+      "provider-azure-openai",
+      "provider-bedrock",
+      "provider-gemini",
+      "provider-mistral",
+      "provider-openai-chat",
+      "provider-openai-codex-responses",
+      "provider-openai-responses",
+      "provider-openai-responses-shared",
+      "provider-openrouter",
+      "provider-openrouter-usage",
+      "provider-pi-messages",
+      "provider-protocol-common",
+      "provider-vertex",
+      "tls-backend",
+      "websocket-compression"
+    ],
+    "target": {
+      "kind": [
+        "test"
+      ],
+      "crate_types": [
+        "bin"
+      ],
+      "name": "chat_capture_replay",
+      "src_path": "E:\\opi\\scratch\\issue-268-chat-capture-replay-20261123-130155\\readme\\package\\opi-ai-0.8.3\\tests\\chat_capture_replay.rs",
+      "edition": "2024",
+      "required-features": [
+        "builtins"
+      ],
+      "doc": false,
+      "doctest": false,
+      "test": true
+    },
+    "sdk": "path+file:///E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/readme/package/opi-ai-0.8.3#opi-ai@0.8.3",
+    "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/readme/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+    "passed_cases": [
+      "persistence_restore::builtin_capture_round_trips_canonical_assistant_message",
+      "producer_capture::builtin_producer_output_captures_identity_reasoning_and_terminal_facts",
+      "target_projection::azure_chat_capture_reload_preserves_azure_identity",
+      "target_projection::azure_responses_capture_reload_preserves_azure_identity_and_effort",
+      "target_projection::chat_opaque_details_capture_reload_preserves_delta_merging_and_order",
+      "target_projection::chat_reasoning_capture_reload_reaches_same_and_changed_model_requests",
+      "target_projection::chat_source_grammar_custom_input_survives_capture_store_and_replay",
+      "target_projection::persisted_producers::anthropic_opaque_only_producer_reload_preserves_empty_signed_block",
+      "target_projection::persisted_producers::anthropic_producer_persist_reload_same_changed_model_and_foreign_wire",
+      "target_projection::persisted_producers::codex_producer_persist_reload_same_changed_model_and_foreign_wire",
+      "target_projection::persisted_producers::codex_terminal_backfill_and_dual_tool_ids_survive_real_reload_request",
+      "target_projection::replay_boundaries::chat_opaque_only_details_survive_actual_capture_reload_and_next_send",
+      "target_projection::replay_boundaries::responses_and_azure_terminal_backfill_survives_reload_and_compat_change",
+      "target_projection::replay_boundaries::responses_invalid_and_unknown_metadata_projects_without_rewriting_capture",
+      "target_projection::responses_capture_reload_preserves_encrypted_reasoning_and_effort_history"
+    ]
+  },
+  "differential": {
+    "driver": "crates/opi-ai/examples/lifecycle_differential.rs",
+    "existing_proof_applies": true,
+    "compared_archive_members": 644
+  },
+  "format_and_lint": {
+    "scoped_rustfmt_exit": 0,
+    "clippy_advisory": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "chat_capture_replay"
+      ],
+      "exit": 0,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/clippy-advisory.stdout",
+        "bytes": 180143,
+        "sha256": "a0d8ed1b961137651e70d0e8349e167cbb89584dc4591eaaf15f0f291a8a5ccc"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/clippy-advisory.stderr",
+        "bytes": 1980,
+        "sha256": "12971f20e8ccd50cf2687d7d3f20cf22c8b027acff52cc2b1ab238dac28ceda5"
+      }
+    },
+    "clippy_strict": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "-B",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "chat_capture_replay",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 101,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/clippy-strict.stdout",
+        "bytes": 177911,
+        "sha256": "b9b314a9c69dcbdd97ff9adaf1d087f0052fdb421bff536016058b63a87228d3"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/clippy-strict.stderr",
+        "bytes": 2022,
+        "sha256": "33a0c51f306c30eafc83e203c5e23eadee347ce3d6c01defeb39ccafedce963c"
+      },
+      "carried_in": [
+        "src/api/openai_responses.rs:706 too_many_arguments",
+        "src/models/auth_owner.rs:479 needless_borrow",
+        "src/models/prepared_call.rs:196 too_many_arguments"
+      ]
+    },
+    "workspace_fmt": {
+      "exit": 1,
+      "carried_in": "OpenAI Responses fixture formatting",
+      "log": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/fmt-all.log",
+        "bytes": 4160,
+        "sha256": "2ef9ec7391924d855ac2ef13d39ca28671486afbf8f274e3bb9fe9f8ada2cbfd"
+      }
+    }
+  },
+  "worktree_check": {
+    "committed": "none-for-this-task",
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "inventories": {
+      "head": {
+        "before": 1,
+        "after": 1,
+        "added_entries": [],
+        "removed_entries": [],
+        "before_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/head.before",
+          "sha256": "06d78a5432a3651d48a331dfa651d4b356a4f3ecf8e1a27304e37a879bbcd230"
+        },
+        "after_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/head.after",
+          "sha256": "4f5c96b1810af58e918e2480822731ae4d1581b5c67c21db50c27b2e5b7933a3"
+        }
+      },
+      "staged": {
+        "before": 0,
+        "after": 0,
+        "added_entries": [],
+        "removed_entries": [],
+        "before_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/staged.before",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "after_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/staged.after",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "unstaged": {
+        "before": 188,
+        "after": 188,
+        "added_entries": [],
+        "removed_entries": [],
+        "before_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/unstaged.before",
+          "sha256": "ff31d6ece1b35a93e3de485edf9e8c7d4bad9d54108d36f4ecc625aafd59619f"
+        },
+        "after_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/unstaged.after",
+          "sha256": "70e38d952fb2f29eb18ceb0efd19b8ab081c48d7b71a44830e2575420869f6fe"
+        }
+      },
+      "untracked": {
+        "before": 490,
+        "after": 497,
+        "added_entries": [
+          "crates/opi-ai/tests/chat_capture_replay/fixtures.rs",
+          "crates/opi-ai/tests/chat_capture_replay/persistence_restore.rs",
+          "crates/opi-ai/tests/chat_capture_replay/producer_capture.rs",
+          "crates/opi-ai/tests/chat_capture_replay/target_projection.rs",
+          "crates/opi-ai/tests/chat_capture_replay/target_projection/persisted_producers.rs",
+          "crates/opi-ai/tests/chat_capture_replay/target_projection/replay_boundaries.rs",
+          "docs/iterations/opi-ai-1-5-alignment/evidence/268-chat-capture-replay-20261123.json"
+        ],
+        "removed_entries": [],
+        "before_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/untracked.before",
+          "sha256": "9e3cc02a1e38956894c45b63eecd04a2418d2123d2b9a67a4e23aa4cc1b7c324"
+        },
+        "after_inventory": {
+          "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/untracked.after",
+          "sha256": "210d54f91521c922d5807463c4dc3e7ca9f3e091740c6c1f02232b0de381ca35"
+        }
+      }
+    }
+  },
+  "docs_and_whitespace": {
+    "documentation_check": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "-B",
+        "scripts/opi-doc-check.py"
+      ],
+      "exit": 0,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/final-doc-check.stdout",
+        "sha256": "058e14f4a41df91dec666fc9b4c8ab4df93998813c6c00245f71e34b50f92d32"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/final-doc-check.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "git_diff_check": {
+      "command": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit": 2,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/final-git-diff-check.stdout",
+        "sha256": "7d0d80467d9e335c3704a8a3bfd02673b4ce8cc2e55a8f35e58bd023d3fff1c1"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/final-git-diff-check.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "carried_in": "CRLF in files with text conversion unset"
+    },
+    "git_diff_check_cr_at_eol": {
+      "command": [
+        "git",
+        "-c",
+        "core.whitespace=cr-at-eol",
+        "diff",
+        "--check"
+      ],
+      "exit": 0,
+      "stdout": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/final-git-diff-cr-at-eol.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "E:/opi/scratch/issue-268-chat-capture-replay-20261123-130155/final-git-diff-cr-at-eol.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "explicit_file_checks_cr_at_eol": [
+      {
+        "path": "crates/opi-ai/tests/chat_capture_replay/fixtures.rs",
+        "no_findings": true
+      },
+      {
+        "path": "crates/opi-ai/tests/chat_capture_replay/producer_capture.rs",
+        "no_findings": true
+      },
+      {
+        "path": "crates/opi-ai/tests/chat_capture_replay/persistence_restore.rs",
+        "no_findings": true
+      },
+      {
+        "path": "crates/opi-ai/tests/chat_capture_replay/target_projection.rs",
+        "no_findings": true
+      },
+      {
+        "path": "crates/opi-ai/tests/chat_capture_replay/target_projection/replay_boundaries.rs",
+        "no_findings": true
+      },
+      {
+        "path": "crates/opi-ai/tests/chat_capture_replay/target_projection/persisted_producers.rs",
+        "no_findings": true
+      },
+      {
+        "path": "crates/opi-ai/tests/targets.tsv",
+        "no_findings": true
+      },
+      {
+        "path": "scripts/pi-sdk-conformance/test_select_tests.py",
+        "no_findings": true
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+        "no_findings": true
+      },
+      {
+        "path": "docs/iterations/opi-ai-1-5-alignment/evidence/268-chat-capture-replay-20261123.json",
+        "no_findings": true
+      }
+    ]
+  }
+}

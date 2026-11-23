@@ -1,0 +1,71 @@
+{
+  "issue": 268,
+  "phase": "oversized-fixture-first-batch",
+  "fixture_family": "bedrock",
+  "owner_table": [
+    {
+      "surface": "Converse request serialization, stream decoding, auth source and lifecycle fixtures",
+      "source": "crates/opi-ai/tests/bedrock_fixtures.rs",
+      "target": "bedrock_fixtures",
+      "package_consumer": "provider-bedrock package consumer"
+    },
+    {
+      "surface": "Smithy retry policy, strict-tool admission, bounded rebuilds, retry headers and cancellation",
+      "source": "crates/opi-ai/tests/bedrock_retry.rs",
+      "target": "bedrock_retry",
+      "required_features": ["provider-bedrock"],
+      "package_consumer": "provider-bedrock package consumer"
+    },
+    {
+      "surface": "Public provider feature construction and profile source boundary",
+      "source": "crates/opi-ai/tests/provider_protocol_profile/bedrock.rs",
+      "target": "provider_bedrock_profile",
+      "package_consumer": "provider-bedrock package consumer"
+    }
+  ],
+  "before": {
+    "bedrock_fixtures_bytes": 420281,
+    "bedrock_fixtures_lines": 10902,
+    "smithy_retry_tests_nested_in_bedrock_fixtures": 17
+  },
+  "after": {
+    "bedrock_fixtures_bytes": 377168,
+    "bedrock_fixtures_lines": 9819,
+    "bedrock_retry_bytes": 41313,
+    "bedrock_retry_lines": 1169,
+    "smithy_retry_tests_in_bedrock_retry": 17,
+    "cargo_targets": ["bedrock_fixtures", "bedrock_retry"]
+  },
+  "checks": {
+    "bedrock_retry": {"passed": 17, "failed": 0},
+    "bedrock_retry_exact_selector": {"passed": 1, "failed": 0},
+    "provider_bedrock_profile": {"passed": 1, "failed": 0},
+    "provider_bedrock_package_consumer": {
+      "verdict": "PASS",
+      "evidence": "C:/Temp/opi-268-bedrock-r4/provider-package-evidence.json"
+    },
+    "cargo_metadata_targets": {
+      "bedrock_fixtures": {"kind": "test", "required_features": ["builtins"]},
+      "bedrock_retry": {"kind": "test", "required_features": ["provider-bedrock"]}
+    },
+    "clippy_bedrock_retry": {
+      "verdict": "PASS",
+      "command_exceptions": [
+        "unreachable_patterns",
+        "clippy::too_many_arguments",
+        "clippy::needless_borrow"
+      ],
+      "reason": "pre-existing diagnostics in the shared crate were excluded from this target check"
+    }
+  },
+  "carried_in": {
+    "bedrock_fixtures": {
+      "passed": 168,
+      "failed": 1,
+      "test": "bedrock_42::persisted_redacted_bytes_follow_source_forgiving_base64_acceptance",
+      "reason": "existing fixture expectation mismatch, unrelated to target extraction"
+    }
+  },
+  "compatibility_behavior_added": false,
+  "public_protocol_assertions_deleted": false
+}

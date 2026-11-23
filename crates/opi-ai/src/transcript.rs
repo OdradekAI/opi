@@ -30,10 +30,7 @@
 //! deserialization observes the parser's first-position, last-value handling
 //! and cannot recover raw duplicate keys that the parser already discarded.
 //!
-//! The pinned TypeScript reference is
-//! `.repo/pi-1.3.0/packages/ai/src/utils/transcript.ts` (upstream-deprecated
-//! `hasToolRedefinitions` is deliberately not ported). Two documented Rust
-//! boundaries: system `content` is a plain string (sections carry the
+//! System `content` is a plain string (sections carry the
 //! structure), and [`declarations_equal`] uses structural `serde_json` value
 //! equality, which is key-order independent but distinguishes `1` from `1.0`
 //! where JavaScript's canonical serialization would not — the divergence only

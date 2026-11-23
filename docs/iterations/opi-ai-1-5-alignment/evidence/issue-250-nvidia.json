@@ -1,0 +1,74 @@
+{
+  "issue": 250,
+  "status": "done",
+  "provider": "nvidia",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 19,
+    "records_after": 21,
+    "added": 3,
+    "removed": 1,
+    "updated": 1,
+    "added_ids": [
+      "minimaxai/minimax-m3.1-flash",
+      "nvidia/nemotron-3.5-super-vl-120b-a12b",
+      "stepfun-ai/step-5-preview"
+    ],
+    "removed_ids": ["z-ai/glm-5.3"],
+    "updated_ids": ["nvidia/nemotron-3-ultra-550b-a55b"],
+    "author_source_sha256": "de0afd8bca38c648c1bbddf09160f6fa11e5865d0c8a376d9a4af2c207335616",
+    "bundle_sha256": "880849b43c2f77ff624101046f7d763ea099f56788c4c4eeb548afde0c4dc63c",
+    "manifest_sha256": "83cf36a99968561e9c0fbe9b48de721fce353778032bfdf295331b61613d94b9"
+  },
+  "global_after": {
+    "opi_records": 1711,
+    "reference_records": 1712,
+    "equal": 1692,
+    "only_opi": 9,
+    "only_reference": 10,
+    "changed": 10,
+    "providers_equal": 28,
+    "providers_with_differences": 14
+  },
+  "wire": {
+    "endpoint": "/v1/chat/completions",
+    "auth": "Bearer",
+    "models": [
+      "deepseek-ai/deepseek-v4.1-flash",
+      "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    ],
+    "max_tokens": 8192,
+    "reasoning_effort": false,
+    "max_completion_tokens": false,
+    "deepseek_thinking": "enabled",
+    "nemotron_new_model_thinking": false,
+    "nvcf_poll_seconds": "3600",
+    "requests": 2
+  },
+  "tests": {
+    "provider_collection_nvidia": 3,
+    "provider_collection_regression": 153,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "opi_ai_lib": 375,
+    "build_catalog_check": "PASS",
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "not run for this provider batch; known pre-existing ImageModelRecord.compat compile errors remain in unrelated targets",
+    "catalog_bundled_external_consumer": "PASS",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

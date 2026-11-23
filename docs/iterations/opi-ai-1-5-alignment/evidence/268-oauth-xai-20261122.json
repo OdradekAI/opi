@@ -1,0 +1,165 @@
+{
+  "issue": 268,
+  "batch": "oauth-xai",
+  "date": "2026-11-22",
+  "status": "PASS",
+  "owner_table": [
+    {
+      "owner": "tests/support/oauth_fixtures.rs",
+      "scope": "shared scripted OAuth presenter, expiry checks, callback URL decoding and stored credential fixture",
+      "consumers": [
+        "oauth_flows",
+        "oauth_openrouter",
+        "oauth_radius",
+        "oauth_anthropic",
+        "oauth_codex",
+        "oauth_chatgpt",
+        "oauth_copilot",
+        "oauth_kimi",
+        "oauth_meta",
+        "oauth_xai"
+      ]
+    },
+    {
+      "owner": "tests/support/oauth_assembly.rs",
+      "scope": "shared Models OAuth route assembly, identity resolution and actual adapter request assertions",
+      "consumers": [
+        "oauth_flows",
+        "oauth_openrouter",
+        "oauth_radius",
+        "oauth_codex",
+        "oauth_chatgpt",
+        "oauth_copilot",
+        "oauth_kimi",
+        "oauth_meta",
+        "oauth_xai"
+      ]
+    },
+    {
+      "owner": "tests/support/oauth_xai.rs",
+      "scope": "xAI provider factory, device/token wire mounts, token request collector, stored credential and xAI helper",
+      "consumers": [
+        "oauth_flows",
+        "oauth_xai"
+      ]
+    },
+    {
+      "owner": "tests/oauth_xai.rs",
+      "scope": "xAI device authorization, polling, slow_down, refresh, cancellation, typed errors, expiry and Models store ACK",
+      "target": "oauth_xai",
+      "required_features": [
+        "builtins"
+      ],
+      "package_consumer": "oauth-store"
+    },
+    {
+      "owner": "tests/oauth_flows.rs",
+      "scope": "Models store checks, cross-provider regressions and metadata",
+      "target": "oauth_flows",
+      "required_features": [
+        "builtins"
+      ],
+      "package_consumer": "oauth-store"
+    }
+  ],
+  "sizes": {
+    "oauth_flows_before_xai_bytes": 44392,
+    "oauth_xai_bytes": 28016,
+    "oauth_support_xai_bytes": 2797
+  },
+  "acceptance": {
+    "target_selectable": {
+      "command": "python scripts/pi-sdk-conformance/select_tests.py --target oauth_xai --json",
+      "result": "PASS",
+      "selected_target": "oauth_xai"
+    },
+    "xai_fixture_selector": {
+      "command": "python scripts/pi-sdk-conformance/select_tests.py crates/opi-ai/tests/support/oauth_xai.rs --json",
+      "result": "PASS",
+      "selected_targets": [
+        "oauth_flows",
+        "oauth_xai"
+      ]
+    },
+    "inventory_and_metadata": {
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 123,
+      "sources": 123,
+      "cargo_target": "oauth_xai",
+      "required_features": [
+        "builtins"
+      ]
+    },
+    "tests": {
+      "oauth_xai": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_xai",
+        "passed": 25,
+        "failed": 0
+      },
+      "oauth_flows": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_flows",
+        "passed": 21,
+        "failed": 0
+      },
+      "oauth_store_profile": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features oauth-store --test oauth_store_profile",
+        "passed": 2,
+        "failed": 0
+      },
+      "oauth_store_integration": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_store_integration",
+        "passed": 10,
+        "failed": 0
+      },
+      "oauth_wire_shape": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_wire_shape",
+        "passed": 12,
+        "failed": 0
+      },
+      "oauth_xai_clippy": {
+        "command": "cargo clippy --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_xai --test oauth_flows -- -D warnings -A unreachable_patterns -A clippy::too_many_arguments -A clippy::needless_borrow",
+        "result": "PASS"
+      },
+      "shared_oauth_regressions": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test oauth_anthropic --test oauth_codex --test oauth_chatgpt --test oauth_copilot --test oauth_kimi --test oauth_meta --test oauth_openrouter --test oauth_radius --test oauth_store_integration --test oauth_wire_shape",
+        "result": "PASS"
+      }
+    },
+    "package_consumers": {
+      "oauth_store": {
+        "runner": "scripts/pi-sdk-conformance/run_oauth_store_package.py",
+        "evidence": "C:/Temp/opi-268-oauth-xai-package-r1.json",
+        "result": "PASS"
+      },
+      "websocket_compression_oauth_store": {
+        "runner": "scripts/pi-sdk-conformance/run_shared_owner_pairs.py --mode package --only websocket-compression+oauth-store",
+        "evidence": "C:/Temp/opi-268-oauth-xai-pair-r1.json",
+        "result": "PASS"
+      }
+    },
+    "documentation": {
+      "cargo_fmt": "PASS",
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS",
+      "compatibility_behavior_added": false
+    }
+  },
+  "test_impact": {
+    "add": [
+      "oauth_xai",
+      "support/oauth_xai.rs"
+    ],
+    "update": [
+      "oauth_flows",
+      "support/oauth_fixtures.rs consumer mapping",
+      "support/oauth_assembly.rs consumer mapping",
+      "test inventory"
+    ],
+    "delete": [],
+    "retain": [
+      "all 25 moved xAI assertions",
+      "all 21 remaining OAuth flow assertions"
+    ]
+  }
+}

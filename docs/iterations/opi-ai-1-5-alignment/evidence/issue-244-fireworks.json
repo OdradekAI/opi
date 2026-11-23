@@ -1,0 +1,56 @@
+{
+  "issue": 244,
+  "status": "done",
+  "provider": "fireworks",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 22,
+    "records_after": 29,
+    "added": 7,
+    "removed": 0,
+    "updated": 1,
+    "updated_ids": ["accounts/fireworks/routers/qwen-max-latest"],
+    "updated_fields": ["compat.forceAdaptiveThinking", "thinkingLevelMap"],
+    "author_source_sha256": "9005b52ce1292c63cdb3aee24109fc99fb00069aae644988152b06b07fc17a85",
+    "bundle_sha256": "836038eef26191b334f87e9235170c5dd38ddcd6715679d2b3bf26ebf9534c8f",
+    "manifest_sha256": "0f1ecf1c60ac9048539273fb8314ee299dafc67693d89f264271e28ea20dc0b9",
+    "retired_ids": []
+  },
+  "global_after": {
+    "opi_records": 1707,
+    "reference_records": 1712,
+    "equal": 1649,
+    "only_opi": 22,
+    "only_reference": 27,
+    "changed": 36,
+    "providers_equal": 22,
+    "providers_with_differences": 20
+  },
+  "wire": {
+    "anthropic_endpoint": "/inference/v1/messages",
+    "anthropic_auth": "x-api-key",
+    "openai_endpoint": "/inference/v1/chat/completions",
+    "openai_auth": "Bearer",
+    "adaptive_model": "accounts/fireworks/routers/qwen-max-latest",
+    "adaptive_effort": "xhigh",
+    "session_id": "fireworks-session",
+    "requests": 2
+  },
+  "tests": {
+    "provider_collection_fireworks": 3,
+    "provider_collection_regression": 134,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "anthropic_fixtures": 155,
+    "openai_chat_fixtures": 116,
+    "catalog_bundled_external_consumer": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_reasoning_fallback": false
+  }
+}

@@ -1,12 +1,8 @@
-//! Offline bundled model catalog: authentic artifact, loader, and getters.
+//! Offline model catalog bundles and operation-qualified lookups.
 //!
-//! The builtin bundle is the authentic Pi published model catalog, packaged
-//! byte-for-byte by `scripts/pi-catalog/pack.py` from the revision pinned by
-//! the local Pi tree (see `resources/catalog/builtin/manifest.json`). Loading
-//! never performs network I/O, account probing, or generator runs: it parses
-//! the embedded bytes, re-verifies the artifact digest, structure digest,
-//! schema versions, and every entry, and fails closed with a typed
-//! [`CatalogError`] on any mismatch.
+//! The builtin bundle embeds opi's model records and manifest. Loading
+//! verifies both schemas, the artifact and structure digests, and every
+//! entry locally. [`Catalog::from_bytes`] also reads legacy Pi bundles.
 //!
 //! Callers hold an owned [`std::sync::Arc<Catalog>`]; installing a new
 //! revision through [`CatalogHandle`] swaps the handle atomically and never
@@ -38,25 +34,27 @@ pub(crate) mod wire;
 pub use document::{CatalogDocumentError, decode_document};
 #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
 pub use http_source::HttpCatalogSource;
+pub(crate) use source::AuthenticatedCatalog;
 pub use source::{CatalogRefreshContext, DynamicCatalogSource};
 pub use store::{
     ModelsStore, ModelsStoreError, RefreshGuard, StoreCommit, StoreCommitError, StoreSnapshot,
 };
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, RwLock};
 
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
-/// Bundle format version understood by this loader (wrong or newer versions
-/// are rejected with [`CatalogError::BundleSchemaVersion`]).
-pub const BUNDLE_SCHEMA_VERSION: u32 = 1;
+/// Current opi bundle format version. The reader also accepts legacy v1 bundles.
+pub const BUNDLE_SCHEMA_VERSION: u32 = 2;
 
-/// Pi model-data schema version of the packaged artifact layout
-/// (Pi `MODEL_DATA_SCHEMA_VERSION`).
-pub const DATA_SCHEMA_VERSION: u32 = 6;
+/// Model-data schema version carried by current opi bundles.
+pub const DATA_SCHEMA_VERSION: u32 = 1;
+
+const LEGACY_BUNDLE_SCHEMA_VERSION: u32 = 1;
+const LEGACY_DATA_SCHEMA_VERSION: u32 = 6;
 
 // ---------------------------------------------------------------------------
 // Operation identity
@@ -78,21 +76,20 @@ pub enum CatalogError {
         /// What failed to parse.
         detail: String,
     },
-    /// The manifest declares a bundle schema version this loader does not
-    /// support (stale or too new).
-    #[error("bundle schema version {found} is not supported (expected {supported})")]
+    /// The manifest declares an unknown bundle schema version.
+    #[error("bundle schema version {found} is not supported (current version: {supported})")]
     BundleSchemaVersion {
-        /// Version this loader supports.
+        /// Current version of this loader.
         supported: u32,
         /// Version declared by the manifest.
         found: u32,
     },
-    /// The artifact uses a hydration schema this reader does not support.
+    /// The artifact declares an unsupported model-data schema.
     #[error("model-data schema version {found} is not supported (expected {supported})")]
     DataSchemaVersion {
-        /// Hydration schema this reader supports.
+        /// Model-data schema expected for this bundle version.
         supported: u32,
-        /// Hydration schema declared by the manifest.
+        /// Model-data schema declared by the manifest.
         found: u32,
     },
     /// The bundle requires a newer reader than the installed bundle reader.
@@ -133,6 +130,12 @@ pub enum CatalogError {
         /// Unexpected provider id.
         provider: String,
     },
+    /// The manifest declares a provider more than once.
+    #[error("catalog has duplicate provider {provider:?}")]
+    DuplicateProvider {
+        /// Duplicated provider id.
+        provider: String,
+    },
     /// One provider lists the same `type:id` identity twice.
     #[error("provider {provider:?} has duplicate identity {identity:?}")]
     DuplicateIdentity {
@@ -158,14 +161,12 @@ pub enum CatalogError {
 // Provenance
 // ---------------------------------------------------------------------------
 
-/// Digests identifying how the bundled artifact was produced and validated.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Generator metadata recorded in legacy Pi catalog bundles.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct CatalogGeneratorDigests {
-    /// SHA-256 of Pi's `packages/ai/scripts/model-data.ts` (validator whose
-    /// rules this loader mirrors).
+    /// SHA-256 of the Pi model-data validator.
     pub pi_model_data_ts_sha256: String,
-    /// SHA-256 of Pi's `packages/ai/scripts/hydrate-model-catalog.ts`
-    /// (hydration contract this bundle follows).
+    /// SHA-256 of the Pi catalog hydrator.
     pub pi_hydrate_model_catalog_ts_sha256: String,
     /// Path of the opi packer that staged and emitted the bundle.
     pub packer: String,
@@ -173,7 +174,26 @@ pub struct CatalogGeneratorDigests {
     pub packer_sha256: String,
 }
 
-/// Entry counts by operation, as packaged and re-verified at load.
+/// Declared origin of a catalog bundle.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CatalogOrigin {
+    /// Bundle produced from opi model data.
+    Opi,
+    /// Catalog packaged from a Pi release using the legacy bundle format.
+    PiPublished {
+        /// Publication URL recorded in the legacy manifest.
+        source_url: String,
+        /// Pi package and version.
+        pi_package: String,
+        /// Local tree where the publication pin was read.
+        local_origin: String,
+        /// Tool paths and digests recorded at packaging time.
+        generator: CatalogGeneratorDigests,
+    },
+}
+
+/// Entry counts by operation, computed at load.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CatalogCounts {
     /// Number of providers in the bundle.
@@ -186,20 +206,16 @@ pub struct CatalogCounts {
     pub classifier: usize,
 }
 
-/// Authenticity and origin metadata of one packaged catalog revision.
+/// Content identity and source metadata of a loaded catalog.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogProvenance {
-    /// Published revision id (`sha256-…`) the artifact was fetched from.
+    /// SHA-256 revision of an opi bundle or the publication revision recorded in a legacy bundle.
     pub revision: String,
-    /// Hex SHA-256 of the artifact bytes (the revision id without prefix).
+    /// Verified hex SHA-256 of the artifact bytes.
     pub artifact_sha256: String,
-    /// Exact pi.dev URL the revision was published at.
-    pub source_url: String,
-    /// Pi package (and version) the local tree association is built on.
-    pub pi_package: String,
-    /// Local origin tree the revision pin was read from.
-    pub local_origin: String,
-    /// Pi model-data schema version of the artifact layout.
+    /// Source associated with this bundle.
+    pub origin: CatalogOrigin,
+    /// Model-data schema version declared by the bundle.
     pub data_schema_version: u32,
     /// Bundle format version of the packaged resources.
     pub bundle_schema_version: u32,
@@ -209,8 +225,6 @@ pub struct CatalogProvenance {
     pub providers: Vec<String>,
     /// Entry counts by operation.
     pub counts: CatalogCounts,
-    /// Generator identities (see [`CatalogGeneratorDigests`]).
-    pub generator: CatalogGeneratorDigests,
 }
 
 // ---------------------------------------------------------------------------
@@ -316,11 +330,8 @@ impl ProviderCatalog {
 
 /// An immutable, fully validated catalog revision.
 ///
-/// Built only through `Catalog::builtin` (with `catalog-bundled`) or
-/// [`Catalog::from_bytes`]; every
-/// construction re-verifies digest, schema, provider set, structure digest,
-/// and each entry, so a `Catalog` value always reflects authentic packaged
-/// data.
+/// Construction verifies the digest, schema, provider set, structure digest
+/// and model records. Use [`Catalog::from_bytes`] for a caller-supplied bundle.
 #[derive(Debug)]
 pub struct Catalog {
     provenance: CatalogProvenance,
@@ -328,7 +339,7 @@ pub struct Catalog {
 }
 
 impl Catalog {
-    /// Validate and build a catalog from raw bundle bytes.
+    /// Validate and build a catalog from current opi or legacy Pi bundle bytes.
     ///
     /// Checks, in order: manifest shape, bundle/data schema and reader versions, artifact
     /// digest, provider set, per-entry contract, duplicate `type:id`
@@ -338,19 +349,20 @@ impl Catalog {
         catalog_bytes: &[u8],
         manifest_bytes: &[u8],
     ) -> Result<Arc<Catalog>, CatalogError> {
-        let manifest: Manifest =
-            serde_json::from_slice(manifest_bytes).map_err(|error| CatalogError::Json {
-                detail: format!("manifest: {error}"),
-            })?;
-        if manifest.bundle_schema_version != BUNDLE_SCHEMA_VERSION {
-            return Err(CatalogError::BundleSchemaVersion {
-                supported: BUNDLE_SCHEMA_VERSION,
-                found: manifest.bundle_schema_version,
-            });
-        }
-        if manifest.data_schema_version != DATA_SCHEMA_VERSION {
+        let manifest: Manifest = parse_manifest(manifest_bytes)?;
+        let expected_data_version = match manifest.bundle_schema_version {
+            BUNDLE_SCHEMA_VERSION => DATA_SCHEMA_VERSION,
+            LEGACY_BUNDLE_SCHEMA_VERSION => LEGACY_DATA_SCHEMA_VERSION,
+            found => {
+                return Err(CatalogError::BundleSchemaVersion {
+                    supported: BUNDLE_SCHEMA_VERSION,
+                    found,
+                });
+            }
+        };
+        if manifest.data_schema_version != expected_data_version {
             return Err(CatalogError::DataSchemaVersion {
-                supported: DATA_SCHEMA_VERSION,
+                supported: expected_data_version,
                 found: manifest.data_schema_version,
             });
         }
@@ -369,20 +381,48 @@ impl Catalog {
             });
         }
 
+        let (revision, origin) = if manifest.bundle_schema_version == LEGACY_BUNDLE_SCHEMA_VERSION {
+            let LegacyManifest {
+                artifact,
+                source,
+                generator,
+            } = parse_manifest(manifest_bytes)?;
+            (
+                artifact.revision,
+                CatalogOrigin::PiPublished {
+                    source_url: artifact.url,
+                    pi_package: source.pi_package,
+                    local_origin: source.local_origin,
+                    generator,
+                },
+            )
+        } else {
+            let OpiManifest {
+                source: OpiSource::Opi,
+            } = parse_manifest(manifest_bytes)?;
+            (format!("sha256-{digest}"), CatalogOrigin::Opi)
+        };
+
         let entries: BTreeMap<String, Vec<Value>> =
             serde_json::from_slice(catalog_bytes).map_err(|error| CatalogError::Json {
                 detail: format!("catalog: {error}"),
             })?;
-        Catalog::build(manifest, entries)
+        Catalog::build(manifest, entries, revision, origin)
     }
 
     fn build(
         manifest: Manifest,
         entries: BTreeMap<String, Vec<Value>>,
+        revision: String,
+        origin: CatalogOrigin,
     ) -> Result<Arc<Catalog>, CatalogError> {
-        let expected: std::collections::BTreeSet<&str> =
-            manifest.providers.iter().map(String::as_str).collect();
+        let mut expected = BTreeSet::new();
         for provider in &manifest.providers {
+            if !expected.insert(provider.as_str()) {
+                return Err(CatalogError::DuplicateProvider {
+                    provider: provider.clone(),
+                });
+            }
             if !entries.contains_key(provider) {
                 return Err(CatalogError::MissingProvider {
                     provider: provider.clone(),
@@ -462,24 +502,14 @@ impl Catalog {
         }
 
         let provenance = CatalogProvenance {
-            revision: manifest.artifact.revision,
+            revision,
             artifact_sha256: manifest.artifact.sha256,
-            source_url: manifest.artifact.url,
-            pi_package: manifest.source.pi_package,
-            local_origin: manifest.source.local_origin,
+            origin,
             data_schema_version: manifest.data_schema_version,
             bundle_schema_version: manifest.bundle_schema_version,
             structure_sha256: manifest.structure_sha256,
             providers: manifest.providers,
             counts,
-            generator: CatalogGeneratorDigests {
-                pi_model_data_ts_sha256: manifest.generator.pi_model_data_ts_sha256,
-                pi_hydrate_model_catalog_ts_sha256: manifest
-                    .generator
-                    .pi_hydrate_model_catalog_ts_sha256,
-                packer: manifest.generator.packer,
-                packer_sha256: manifest.generator.packer_sha256,
-            },
         };
         Ok(Arc::new(Catalog {
             provenance,
@@ -487,7 +517,7 @@ impl Catalog {
         }))
     }
 
-    /// Authenticity and origin metadata of this revision.
+    /// Content identity and origin metadata of this revision.
     pub fn provenance(&self) -> &CatalogProvenance {
         &self.provenance
     }
@@ -572,12 +602,10 @@ impl CatalogHandle {
 struct Manifest {
     bundle_schema_version: u32,
     artifact: ManifestArtifact,
-    source: ManifestSource,
     data_schema_version: u32,
     min_reader: MinimumReader,
     structure_sha256: String,
     providers: Vec<String>,
-    generator: ManifestGenerator,
 }
 
 #[derive(Debug, Deserialize)]
@@ -587,27 +615,47 @@ struct MinimumReader {
 
 #[derive(Debug, Deserialize)]
 struct ManifestArtifact {
-    revision: String,
     sha256: String,
+}
+
+#[derive(Deserialize)]
+struct OpiManifest {
+    source: OpiSource,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum OpiSource {
+    Opi,
+}
+
+#[derive(Deserialize)]
+struct LegacyManifest {
+    artifact: LegacyArtifact,
+    source: LegacySource,
+    generator: CatalogGeneratorDigests,
+}
+
+#[derive(Deserialize)]
+struct LegacyArtifact {
+    revision: String,
     url: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct ManifestSource {
+struct LegacySource {
     pi_package: String,
     local_origin: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct ManifestGenerator {
-    pi_model_data_ts_sha256: String,
-    pi_hydrate_model_catalog_ts_sha256: String,
-    packer: String,
-    packer_sha256: String,
+fn parse_manifest<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, CatalogError> {
+    serde_json::from_slice(bytes).map_err(|error| CatalogError::Json {
+        detail: format!("manifest: {error}"),
+    })
 }
 
 impl CatalogModel {
-    fn parse(provider_id: &str, raw: &Value) -> Result<CatalogModel, CatalogError> {
+    pub(crate) fn parse(provider_id: &str, raw: &Value) -> Result<CatalogModel, CatalogError> {
         let invalid = |identity: String, detail: String| CatalogError::InvalidEntry {
             provider: provider_id.to_string(),
             identity,

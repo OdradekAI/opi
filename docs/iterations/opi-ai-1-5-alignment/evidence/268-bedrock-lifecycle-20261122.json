@@ -1,0 +1,150 @@
+{
+  "issue": 268,
+  "batch": "bedrock-lifecycle-credential-source-sso-login-fixture",
+  "date": "2026-11-22",
+  "status": "PASS_WITH_KNOWN_BASELINE_FAILURE",
+  "owner_table": [
+    {
+      "owner": "tests/bedrock_fixtures/lifecycle.rs",
+      "scope": "HTTP stream, Models route, request headers, prepared-call and callback lifecycle",
+      "target": "bedrock_fixtures::lifecycle",
+      "tests": 25,
+      "package_consumer": "provider-bedrock package consumer feature closure"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/aws_credentials.rs",
+      "scope": "AWS environment/profile/process, STS/ECS/IMDS, prepared credentials and cancellation",
+      "target": "bedrock_fixtures::lifecycle::aws_credentials",
+      "tests": 46,
+      "package_consumer": "provider-bedrock package consumer indirectly verifies production boundary"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/aws_sso.rs",
+      "scope": "SSO, login, refresh, expiry, cache rotation and DPoP",
+      "target": "bedrock_fixtures::lifecycle::aws_sso",
+      "tests": 31,
+      "package_consumer": "provider-bedrock package consumer indirectly verifies production boundary and reuses aws_credentials source fixtures"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/fixtures.rs",
+      "scope": "shared request, event-stream bytes, auth, response and lifecycle helpers",
+      "target": "bedrock_fixtures shared fixture owner",
+      "package_consumer": "consumed by lifecycle, aws_credentials, aws_sso and existing Bedrock topics"
+    },
+    {
+      "owner": "scripts/pi-sdk-conformance/select_tests.py",
+      "scope": "recursive nested module ownership and qualified selector generation",
+      "target": "selector tooling",
+      "package_consumer": "test inventory and focused Cargo commands"
+    },
+    {
+      "owner": "scripts/pi-sdk-conformance/run_provider_protocol_package.py",
+      "scope": "provider-bedrock feature graph, metadata, build/run and forbidden package checks",
+      "target": "provider-bedrock",
+      "package_consumer": "opi-ai package"
+    }
+  ],
+  "sizes": {
+    "crates/opi-ai/tests/bedrock_fixtures/lifecycle.rs": 49763,
+    "crates/opi-ai/tests/bedrock_fixtures/aws_credentials.rs": 106310,
+    "crates/opi-ai/tests/bedrock_fixtures/aws_sso.rs": 74805,
+    "crates/opi-ai/tests/bedrock_fixtures/fixtures.rs": 8974,
+    "crates/opi-ai/tests/bedrock_fixtures.rs": 2049
+  },
+  "acceptance": {
+    "target_selectable": [
+      {
+        "source": "tests/bedrock_fixtures/lifecycle.rs",
+        "result": "PASS",
+        "filter": "lifecycle::",
+        "tests": "full lifecycle target selection"
+      },
+      {
+        "source": "tests/bedrock_fixtures/aws_credentials.rs",
+        "result": "PASS",
+        "filter": "lifecycle::aws_credentials::",
+        "tests": 46
+      },
+      {
+        "source": "tests/bedrock_fixtures/aws_sso.rs",
+        "result": "PASS",
+        "filter": "lifecycle::aws_sso::",
+        "tests": 31
+      },
+      {
+        "source": "tests/bedrock_fixtures/fixtures.rs",
+        "result": "PASS",
+        "fixture_owner": "shared helper selects full target"
+      }
+    ],
+    "inventory_and_metadata": {
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 124,
+      "sources": 124,
+      "cargo_target": "bedrock_fixtures"
+    },
+    "tests": {
+      "aws_credentials": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test bedrock_fixtures -- lifecycle::aws_credentials::",
+        "passed": 46,
+        "failed": 0
+      },
+      "aws_sso": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test bedrock_fixtures -- lifecycle::aws_sso::",
+        "passed": 31,
+        "failed": 0
+      },
+      "full_target_excluding_known_baseline": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test bedrock_fixtures -- --skip persisted_redacted_bytes_follow_source_forgiving_base64_acceptance",
+        "passed": 167,
+        "failed": 0
+      },
+      "full_target_known_baseline": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test bedrock_fixtures",
+        "passed": 167,
+        "failed": 1,
+        "baseline_failure": "converse_adapter::persisted_redacted_bytes_follow_source_forgiving_base64_acceptance"
+      },
+      "selector_unit": {
+        "command": "Push-Location scripts/pi-sdk-conformance; python -m unittest -v test_select_tests.py test_check_test_inventory.py; Pop-Location",
+        "result": "PASS",
+        "cases": 24
+      },
+      "package_consumer": {
+        "runner": "scripts/pi-sdk-conformance/run_provider_protocol_package.py --owner provider-bedrock",
+        "evidence": "268-bedrock-lifecycle-package-20261122-r1.json",
+        "result": "PASS"
+      }
+    },
+    "documentation": {
+      "cargo_fmt": "PASS",
+      "compatibility_behavior_added": false,
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS",
+      "inventory": "PASS",
+      "architecture": "PASS"
+    }
+  },
+  "test_impact": {
+    "add": [
+      "tests/bedrock_fixtures/aws_credentials.rs",
+      "tests/bedrock_fixtures/aws_sso.rs",
+      "recursive nested-module selector coverage for Bedrock lifecycle topics"
+    ],
+    "update": [
+      "tests/bedrock_fixtures/lifecycle.rs nested module index",
+      "tests/targets.tsv Bedrock lifecycle owner text",
+      "test README English/Chinese",
+      "issue/spec/evidence records"
+    ],
+    "delete": [],
+    "retain": [
+      "all 102 prior lifecycle assertions",
+      "single bedrock_fixtures executable",
+      "shared fixtures without package copies",
+      "existing carried-in base64 fixture failure",
+      "no compatibility behavior"
+    ]
+  }
+}

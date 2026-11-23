@@ -1,8 +1,9 @@
 //! Unified multi-provider LLM API with streaming support.
 //!
-//! Provides a standardized interface for interacting with multiple LLM providers:
-//! Anthropic, OpenAI Chat Completions, OpenAI Responses, Google Gemini, plus
-//! OpenAI-compatible profiles for OpenRouter and Mistral.
+//! Provides provider-neutral chat, image, classifier and deferred-operation
+//! contracts, built-in provider profiles and explicit Models composition. Wire
+//! adapters, authentication, catalogs and transports are independently
+//! selectable through Cargo features.
 
 // A single provider owner intentionally leaves shared lifecycle helpers
 // unreferenced. Keep warnings-denied validation strict for the compatibility
@@ -59,7 +60,6 @@ pub mod schema;
 pub mod stream;
 pub mod streaming_json;
 pub mod telemetry;
-#[doc(hidden)]
 pub mod test_support;
 pub mod time;
 #[cfg(feature = "tls-backend")]

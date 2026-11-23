@@ -20,13 +20,13 @@ class OAuthStoreRunnerTests(unittest.TestCase):
                 {"id": "native-certs", "name": "rustls-native-certs", "version": "0.8", "source": "registry+fixture"},
                 {"id": "aws-lc", "name": "aws-lc-rs", "version": "1", "source": "registry+fixture"},
             ],
-            "resolve": {"root": "root", "nodes": [{"id": "sdk", "features": ["http-transport", "oauth-store"]}, {"id": "telemetry", "features": []}]},
+            "resolve": {"root": "root", "nodes": [{"id": "sdk", "features": ["http-transport", "oauth-store", "tls-backend"]}, {"id": "telemetry", "features": []}]},
         }, package
 
     def test_oauth_store_feature_is_admitted(self):
         metadata, package = self.metadata()
         result = runner.check_graph(metadata, package)
-        self.assertEqual(result["features"], ["http-transport", "oauth-store"])
+        self.assertEqual(result["features"], ["http-transport", "oauth-store", "tls-backend"])
         self.assertTrue(result["catalog_absent"])
 
     def test_protocol_or_catalog_owner_is_rejected(self):

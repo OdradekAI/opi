@@ -30,7 +30,7 @@ Pi transient predicate and takes Durable's overflow branch. Rust reports
 `Terminal` for whole-call retry and exposes the overflow predicate for
 compaction. An embedded `503` in a request ID and `524` in a byte count
 both take the terminal path in the new status controls.
-[Cross-runtime matrix](../../../../crates/opi-ai/tests/whole_call_retry.rs#L232)
+[Cross-runtime matrix](../../../../crates/opi-ai/tests/whole_call_retry/classification.rs#L171)
 
 ## Result and HTTP consumers
 
@@ -62,7 +62,7 @@ and a separate acquisition control with zero or one admitted retry and
 byte-identical payloads. Metadata and unrelated code values have negative
 controls.
 [HTTP mapping](../../../../crates/opi-ai/src/http.rs#L88) ·
-[Loopback checks](../../../../crates/opi-ai/tests/whole_call_retry.rs#L1017)
+[Loopback checks](../../../../crates/opi-ai/tests/whole_call_retry/call_and_callbacks/quota_transport.rs#L129)
 
 ## Verification
 

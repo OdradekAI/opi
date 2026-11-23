@@ -66,7 +66,7 @@ response ID. The loopback control continues from a `response.done`
 carrying `end_turn: false` and sends just the new input item on the same
 socket.
 [Accessor](../../../../crates/opi-ai/src/types/message.rs#L93) ·
-[Cached continuation](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L1993)
+[Cached continuation](../../../../crates/opi-ai/tests/openai_codex_responses/ws_continuation.rs#L198)
 
 Opi uses fixed error diagnostics and keeps the raw incomplete reason.
 The `incomplete.unknown_503` row exposes a retry difference. Pi's

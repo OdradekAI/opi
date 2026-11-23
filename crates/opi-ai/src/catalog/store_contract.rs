@@ -8,8 +8,14 @@ use std::collections::{BTreeSet, HashMap};
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum CatalogPublisher {
-    Native,
-    Source { id: String },
+    Native {
+        // Older native publications are unscoped.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        scope: Option<String>,
+    },
+    Source {
+        id: String,
+    },
 }
 
 /// Typed failure while opening or decoding a [`super::ModelsStore`] file.

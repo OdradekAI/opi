@@ -3,7 +3,7 @@ use std::any::type_name;
 #[test]
 fn protocol_adapters_are_available_without_catalog_bundle() {
     let _ = opi_ai::api::anthropic::parse_sse_events("");
-    let _ = opi_ai::api::openai::parse_sse_events("");
+    let _ = opi_ai::api::openai_completions::parse_sse_events("");
     let _ = opi_ai::providers::openai_responses::OpenAiResponsesProvider::new(None);
     let _ = opi_ai::providers::openrouter::model_catalog();
     let _ = opi_ai::providers::mistral::mistral_provider(None);

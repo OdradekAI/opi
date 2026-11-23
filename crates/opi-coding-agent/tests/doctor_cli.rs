@@ -518,6 +518,64 @@ fn provider_scope_credential_absent_is_warning() {
 }
 
 #[test]
+fn provider_scope_azure_accepts_configured_and_discovered_endpoints() {
+    let dir = tempfile::tempdir().unwrap();
+    for (endpoint, source, expect_warning) in [
+        (None, None, true),
+        (None, Some(("AZURE_OPENAI_BASE_URL", "  ")), true),
+        (
+            None,
+            Some(("AZURE_OPENAI_BASE_URL", "https://fixture.ai.azure.com")),
+            false,
+        ),
+        (None, Some(("AZURE_OPENAI_RESOURCE_NAME", "fixture")), false),
+        (Some("https://fixture.openai.azure.com"), None, false),
+    ] {
+        let mut config = test_config("azure:chat-latest");
+        config.providers.azure.endpoint = endpoint.map(str::to_owned);
+        let env = |name: &str| {
+            if name == "AZURE_OPENAI_API_KEY" {
+                return Some("fake-key".into());
+            }
+            source
+                .filter(|(key, _)| *key == name)
+                .map(|(_, value)| value.into())
+        };
+        let report = run_doctor(&[DoctorScope::Provider], &ctx(&config, dir.path(), &env));
+        assert_eq!(
+            report.entries.iter().any(|entry| {
+                entry.diagnostic.code == "doctor_provider_endpoint"
+                    && entry.diagnostic.severity == Severity::Warning
+            }),
+            expect_warning,
+            "{endpoint:?} {source:?}"
+        );
+    }
+}
+
+#[test]
+fn provider_scope_vertex_accepts_projectless_express_and_reports_incomplete_scope() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_config("google-vertex:gemini-3.1-pro-preview");
+    let env = |name: &str| (name == "GOOGLE_CLOUD_API_KEY").then(|| "fixture-key".into());
+    for (project, expect_warning) in [(None, false), (Some("fixture-project".into()), true)] {
+        config.providers.google_vertex.project = project;
+        let report = run_doctor(&[DoctorScope::Provider], &ctx(&config, dir.path(), &env));
+        assert_eq!(
+            report.entries.iter().any(|entry| {
+                entry.diagnostic.code == "doctor_provider_endpoint"
+                    && entry.diagnostic.severity == Severity::Warning
+            }),
+            expect_warning,
+        );
+        assert!(report.entries.iter().any(|entry| {
+            entry.diagnostic.code == "doctor_provider_credentials"
+                && entry.diagnostic.severity == Severity::Info
+        }));
+    }
+}
+
+#[test]
 fn provider_scope_uses_live_oauth_subscription_and_custom_availability() {
     use opi_ai::{AuthScheme, CredentialSource};
     use opi_coding_agent::config::CustomProviderConfig;
@@ -549,7 +607,7 @@ fn provider_scope_uses_live_oauth_subscription_and_custom_availability() {
             "env ANTHROPIC_OAUTH_TOKEN",
         ),
         (
-            test_config("github-copilot:gpt-4.1"),
+            test_config("github-copilot:gemini-4-argon"),
             HashMap::new(),
             HashMap::new(),
             "keychain opi:github-copilot",

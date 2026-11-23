@@ -1,7 +1,9 @@
-//! Shared test utilities for mock-provider testing.
+//! Credential-free scripted providers for tests.
 //!
-//! Provides `MockProvider` for deterministic, fixture-based provider simulation
-//! across all workspace crates. No live API calls.
+//! Use [`MockProvider`] to script prepared chat attempts and inspect the call
+//! history. [`ScriptedDeferredBackend`] supplies explicit fetch and cancel for
+//! deferred replies. [`single_route_collection`] registers the chat route with
+//! synthetic credentials. These fixtures also work with default features off.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -94,7 +96,7 @@ pub fn resolved_auth() -> ResolvedAuth {
 }
 
 /// Bearer-scheme sibling of [`resolved_auth`] for wires that attach the secret
-/// as an `Authorization: Bearer` header (openai_chat, openai_responses,
+/// as an `Authorization: Bearer` header (OpenAI Chat, OpenAI Responses,
 /// openai_codex_responses, vertex, and api-mapped routes onto those wires).
 /// Those adapters reject a prepared ApiKey scheme before the wire.
 #[doc(hidden)]
@@ -113,7 +115,6 @@ pub fn resolved_bearer_auth() -> ResolvedAuth {
 /// using a dummy static resolver. Mock providers ignore the resolved auth, so
 /// this lets tests dispatch through `prepare_call` without supplying real
 /// credentials.
-#[doc(hidden)]
 pub fn single_route_collection(provider: Box<dyn Provider>) -> Models {
     let mut collection = Models::new();
     collection
@@ -131,7 +132,6 @@ pub fn single_route_collection(provider: Box<dyn Provider>) -> Models {
 }
 
 /// A response that a mock provider can return for one prepared attempt.
-#[doc(hidden)]
 pub enum MockResponse {
     /// Successful stream of assistant events.
     Events(Vec<AssistantStreamEvent>),
@@ -147,28 +147,19 @@ pub enum MockResponse {
     /// would never be observed. Build the partial prefix only (e.g. `Start` +
     /// `TextDelta`).
     EventsThenError(Vec<AssistantStreamEvent>, ProviderError),
-    /// Successful stream events withheld for a number of prepared attempts
-    /// (task 20.53.8, pinned faux `pendingFetches`).
+    /// Stream events withheld for a configured number of prepared attempts.
     ///
     /// The first `pending_attempts` prepared attempts each fail with
-    /// [`ProviderError::RateLimited`] carrying `retry_after_ms` (the
-    /// chat-level analog of the pinned `pollAfterMs` hint, reusing the
-    /// existing retry mechanism instead of timers); the next attempt yields
-    /// `events`. `pending_attempts: 0` behaves exactly like
-    /// [`MockResponse::Events`]. One variant value spans those attempts,
-    /// mirroring the pinned per-entry countdown.
+    /// [`ProviderError::RateLimited`] with `retry_after_ms` for the caller's
+    /// retry policy. The next attempt yields `events`. A zero count yields
+    /// events on the first attempt.
     DelayedAfter {
         pending_attempts: usize,
         retry_after_ms: Option<u64>,
         events: Vec<AssistantStreamEvent>,
     },
-    /// No events until the request's cancellation token fires, then a
-    /// terminal [`ProviderError::Cancelled`] (task 20.53.8).
-    ///
-    /// Models a hanging attempt for deterministic cancellation tests: the
-    /// attempt-boundary form of the pinned signal-aborted-to-error behavior.
-    /// The stream never completes on its own; a pre-cancelled request fails
-    /// immediately.
+    /// Wait for cancellation, then yield [`ProviderError::Cancelled`].
+    /// A pre-cancelled request fails immediately.
     HangingUntilCancelled,
 }
 
@@ -176,7 +167,6 @@ pub enum MockResponse {
 ///
 /// Each `stream_prepared` attempt pops the next response from the queue.
 /// Tracks call history for assertions.
-#[doc(hidden)]
 pub struct MockProvider {
     id: String,
     models: Vec<ModelInfo>,
@@ -185,13 +175,8 @@ pub struct MockProvider {
     deferred_scripting: Option<DeferredScripting>,
 }
 
-/// Deferred-submission scripting attached to a [`MockProvider`] (task
-/// 20.50): every prepared attempt registers its scripted final events with
-/// the shared [`ScriptedDeferredBackend`] and returns a pending
-/// `StopReason::Deferred` terminal carrying the new handle (pi faux
-/// `options.deferred`).
-#[doc(hidden)]
-pub struct DeferredScripting {
+/// Settings shared by submissions from one mock provider.
+struct DeferredScripting {
     backend: Arc<ScriptedDeferredBackend>,
     pending_fetches: u64,
     poll_after_ms: Option<u64>,
@@ -260,12 +245,11 @@ impl MockProvider {
         }
     }
 
-    /// Attach deferred-submission scripting (task 20.50): every prepared
-    /// attempt registers its scripted final events with `backend` as a
-    /// deferred response and returns a pending terminal with the new
-    /// handle. `pending_fetches` fetches stay pending before the final
-    /// events become ready; `poll_after_ms` stamps the handle's poll
-    /// advice (caller-owned schedule, never an SDK polling default).
+    /// Deliver scripted response events through a deferred handle.
+    ///
+    /// A successful submission registers the events with `backend` and
+    /// returns a pending terminal. The first `pending_fetches` fetches stay
+    /// pending. The handle carries `poll_after_ms` as advice for the caller.
     pub fn with_deferred(
         mut self,
         backend: Arc<ScriptedDeferredBackend>,
@@ -571,133 +555,11 @@ impl Provider for MockProvider {
     }
 }
 
-/// Scriptable fake for the AWS auth-source HTTP transport.
-///
-/// Records every send (method/url/headers/body/timeout) and replays scripted
-/// responses in order; unscripted sends replay `default`. Header and body
-/// values stay out of `Debug` output — requests carry credential material.
-#[cfg(feature = "builtins")]
-#[derive(Default)]
-pub struct FakeSourceTransport {
-    sends: std::sync::Mutex<Vec<crate::auth::aws::source_http::SourceHttpRequest>>,
-    responses: std::sync::Mutex<
-        std::collections::VecDeque<
-            Result<
-                crate::auth::aws::source_http::SourceHttpResponse,
-                crate::auth::aws::source_http::SourceHttpError,
-            >,
-        >,
-    >,
-    default: std::sync::Mutex<
-        Option<
-            Result<
-                crate::auth::aws::source_http::SourceHttpResponse,
-                crate::auth::aws::source_http::SourceHttpError,
-            >,
-        >,
-    >,
-}
-
-#[cfg(feature = "builtins")]
-impl FakeSourceTransport {
-    /// Script the responses replayed in send order.
-    pub fn new(
-        responses: Vec<
-            Result<
-                crate::auth::aws::source_http::SourceHttpResponse,
-                crate::auth::aws::source_http::SourceHttpError,
-            >,
-        >,
-    ) -> Self {
-        Self {
-            responses: std::sync::Mutex::new(responses.into_iter().collect()),
-            ..Self::default()
-        }
-    }
-
-    /// A transport that fails every send with a transport error.
-    pub fn default_never() -> Self {
-        Self::default()
-    }
-
-    /// Number of sends observed so far.
-    pub fn send_count(&self) -> usize {
-        self.sends.lock().expect("send log").len()
-    }
-
-    /// One recorded send (panic-free assertions: index must exist).
-    pub fn send_at(&self, index: usize) -> crate::auth::aws::source_http::SourceHttpRequest {
-        self.sends.lock().expect("send log")[index].clone()
-    }
-
-    /// A snapshot of all recorded sends.
-    pub fn sends_snapshot(&self) -> Vec<crate::auth::aws::source_http::SourceHttpRequest> {
-        self.sends.lock().expect("send log").clone()
-    }
-}
-
-#[cfg(feature = "builtins")]
-impl crate::auth::aws::source_http::AwsSourceTransport for FakeSourceTransport {
-    fn send(
-        &self,
-        request: crate::auth::aws::source_http::SourceHttpRequest,
-    ) -> futures_util::future::BoxFuture<
-        '_,
-        Result<
-            crate::auth::aws::source_http::SourceHttpResponse,
-            crate::auth::aws::source_http::SourceHttpError,
-        >,
-    > {
-        use futures_util::FutureExt as _;
-        self.sends.lock().expect("send log").push(request);
-        let response = self
-            .responses
-            .lock()
-            .expect("response queue")
-            .pop_front()
-            .or_else(|| self.default.lock().expect("default").clone())
-            .unwrap_or(Err(
-                crate::auth::aws::source_http::SourceHttpError::Transport,
-            ));
-        async move { response }.boxed()
-    }
-}
-
-#[cfg(feature = "builtins")]
-impl std::fmt::Debug for FakeSourceTransport {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("FakeSourceTransport")
-            .field("sends", &self.send_count())
-            .finish()
-    }
-}
-
-/// A source transport that always fails (for fixtures that must never
-/// perform a real exchange).
-#[cfg(feature = "builtins")]
-pub struct NeverTransport;
-
-#[cfg(feature = "builtins")]
-impl crate::auth::aws::source_http::AwsSourceTransport for NeverTransport {
-    fn send(
-        &self,
-        _request: crate::auth::aws::source_http::SourceHttpRequest,
-    ) -> futures_util::future::BoxFuture<
-        '_,
-        Result<
-            crate::auth::aws::source_http::SourceHttpResponse,
-            crate::auth::aws::source_http::SourceHttpError,
-        >,
-    > {
-        use futures_util::FutureExt as _;
-        async { Err(crate::auth::aws::source_http::SourceHttpError::Transport) }.boxed()
-    }
-}
-
 /// Write a one-shot executable helper script for the current platform and
 /// return the ADC-executable command string (a quote-aware direct argv; the
 /// caller never parses it through a shell). Acceptance test sources stay
 /// platform-neutral by delegating the platform split to this helper.
+#[doc(hidden)]
 pub fn portable_executable_script(
     dir: &std::path::Path,
     name: &str,
@@ -721,16 +583,6 @@ pub fn portable_executable_script(
         let _ = (dir, name, unix_body, windows_body);
         unimplemented!("portable executable helpers support unix and windows");
     }
-}
-
-/// Force a [`crate::identity::UuidV7Generator`] sequence to its exhaustion
-/// boundary (test hook; production exhaustion needs `2^41` calls).
-///
-/// Task 20.53.4 / P20-S53-4: keeps
-/// [`crate::identity::UuidV7Error::SequenceExhausted`] observable in
-/// deterministic tests.
-pub fn force_sequence_exhausted(generator: &mut crate::identity::UuidV7Generator) {
-    generator.set_sequence_for_tests((1u64 << 41) - 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -759,11 +611,11 @@ struct ScriptedDeferredState {
     cancel_telemetry_present: Vec<bool>,
 }
 
-/// Deterministic scripted deferred backend (pi faux `fetchDeferred`/
-/// `cancelDeferred`): pending fetches return the original handle, the
-/// countdown then delivers the registered final events, unknown or
-/// cancelled handles fail typed, and cancel records every attempt while
-/// optionally reporting best-effort failure.
+/// In-memory backend for explicit fetch and cancel of scripted replies.
+///
+/// Pending fetches return the original handle. Fetches after the countdown
+/// deliver the scripted events. Unknown and cancelled handles return a
+/// typed error. Each cancel attempt is recorded.
 ///
 /// Shares entries with a [`MockProvider`] built through
 /// [`MockProvider::with_deferred`]; the same backend survives collection

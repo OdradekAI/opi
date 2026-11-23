@@ -279,6 +279,254 @@ fn openai_responses_model_catalog_matches_constructor() {
     );
 }
 
+#[tokio::test]
+async fn openai_builtin_catalog_dispatches_released_models_and_tool_capabilities() {
+    use opi_ai::auth::{AuthContext, AuthContextError};
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_ai::constrained_sampling::{ConstrainedSampling, StrictPreference};
+    use opi_ai::credential::{Credential, CredentialStore};
+    use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::transcript::{Context, SystemMessage, normalize_context};
+    use opi_ai::{Models, ModelsError, RegistryError};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::{build_harness_collection, build_provider_bundle};
+    use serde_json::{Value, json};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct FixtureAuth;
+    impl AuthContext for FixtureAuth {
+        fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+            Ok((name == "OPENAI_API_KEY").then(|| "sk-sdk-fixture".into()))
+        }
+
+        fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+            Ok(false)
+        }
+    }
+
+    let server = MockServer::start().await;
+    let api_base = format!("{}/v1", server.uri());
+    let mut sdk = Models::new();
+    let mut overrides = BuiltinOverrides::default();
+    overrides
+        .base_urls
+        .insert("openai".into(), api_base.clone());
+    register_builtin(
+        &mut sdk,
+        Arc::new(FixtureAuth),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = OpiConfig::default();
+    config.defaults.model = "openai:chat-latest".into();
+    config.providers.openai.base_url = Some(server.uri());
+    config.providers.openai_responses.base_url = Some(format!("{api_base}/"));
+    let bundle = build_provider_bundle(
+        &config,
+        dir.path().to_path_buf(),
+        Box::new(|| Box::new(FakeKeyringBackend::new())),
+    )
+    .await
+    .unwrap();
+    for provider in ["openai", "openai-responses"] {
+        bundle
+            .store
+            .write(provider, &Credential::ApiKey("sk-cli-fixture".into()))
+            .await
+            .unwrap();
+    }
+    let mut routes = vec![(bundle.provider, bundle.auth_resolver)];
+    routes.extend(bundle.extra_routes);
+    let runtime =
+        build_harness_collection(routes, Vec::new(), Vec::new(), "openai", Some(bundle.store));
+
+    let catalog = Catalog::builtin().unwrap();
+    assert_eq!(
+        catalog
+            .models("openai", CatalogOperation::Classifier)
+            .unwrap()
+            .count(),
+        1
+    );
+    sdk.classifier_model("openai", "gpt-6-luna").unwrap();
+    let published: Vec<_> = catalog
+        .models("openai", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| {
+            record
+                .to_chat_model_info()
+                .unwrap()
+                .with_base_url(api_base.clone())
+        })
+        .collect();
+    assert_eq!(published.len(), 44);
+    let routes = [
+        (&sdk, "openai", "Bearer sk-sdk-fixture"),
+        (runtime.as_ref(), "openai", "Bearer sk-cli-fixture"),
+        (
+            runtime.as_ref(),
+            "openai-responses",
+            "Bearer sk-cli-fixture",
+        ),
+    ];
+    for (models, provider, _) in routes {
+        assert_eq!(models.get_models(Some(provider)), published);
+        for retired in [
+            "gpt-5.2-chat-latest",
+            "gpt-5.3-chat-latest",
+            "gpt-realtime-2.1",
+        ] {
+            let spec = format!("{provider}:{retired}");
+            assert!(models.get_model(provider, retired).is_none());
+            assert!(matches!(
+                models.prepare_call(&spec, minimal_request(&spec)).await,
+                Err(ModelsError::Registry(RegistryError::UnknownModel { provider: actual, model }))
+                    if actual == provider && model == retired
+            ));
+        }
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+
+    let cases = [
+        ("chat-latest", false),
+        ("gpt-5.6-cyber", false),
+        ("gpt-6.1-terra", true),
+        ("gpt-5.4", true),
+        ("gpt-5.4-mini", true),
+        ("gpt-5.4-pro", true),
+        ("gpt-5.5", true),
+    ];
+    Mock::given(method("POST"))
+        .and(path("/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"fixture\",\"status\":\"completed\",\"output\":[]}}\n\n",
+            "text/event-stream",
+        ))
+        .expect((routes.len() * cases.len()) as u64)
+        .mount(&server)
+        .await;
+
+    let user = |text: &str| {
+        Message::User(UserMessage {
+            content: vec![InputContent::Text { text: text.into() }],
+            timestamp_ms: 0,
+        })
+    };
+    let strict = ToolDef {
+        name: "lookup".into(),
+        description: "Look up a path".into(),
+        input_schema: json!({"type":"object","properties":{"path":{"type":"string"}}}),
+        constrained_sampling: Some(ConstrainedSampling::JsonSchema {
+            strict: StrictPreference::Require,
+        }),
+    };
+    let grammar = ToolDef {
+        name: "parse".into(),
+        description: "Parse an expression".into(),
+        input_schema: json!({"type":"object","properties":{"input":{"type":"string"}},"required":["input"]}),
+        constrained_sampling: Some(ConstrainedSampling::Grammar {
+            openai_lark: Some("start: \"hello\"".into()),
+            openai_regex: None,
+        }),
+    };
+    let tool_context = normalize_context(Context {
+        system_prompt: Some("Initial instructions".into()),
+        tools: vec![strict],
+        messages: vec![
+            user("before"),
+            Message::System(SystemMessage {
+                content: "Later instruction".into(),
+                tools_added: vec![grammar],
+                ..Default::default()
+            }),
+            user("after"),
+        ],
+    })
+    .unwrap();
+    let text_context = normalize_context(Context {
+        messages: vec![user("hello")],
+        ..Default::default()
+    })
+    .unwrap();
+
+    for (models, provider, _) in routes {
+        for (id, with_tools) in cases {
+            let spec = format!("{provider}:{id}");
+            let mut request = minimal_request(&spec);
+            request.timeout = Some(std::time::Duration::from_secs(5));
+            request.context = if with_tools {
+                tool_context.clone()
+            } else {
+                text_context.clone()
+            };
+            let result = models
+                .prepare_call(&spec, request)
+                .await
+                .unwrap()
+                .start_attempt_with_telemetry()
+                .unwrap()
+                .result()
+                .await
+                .unwrap();
+            assert_eq!(
+                result.stop_reason,
+                opi_ai::stream::StopReason::Stop,
+                "{spec}"
+            );
+        }
+    }
+
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), routes.len() * cases.len());
+    for ((_, _, bearer), group) in routes.into_iter().zip(sent.chunks_exact(cases.len())) {
+        for ((id, with_tools), request) in cases.into_iter().zip(group) {
+            assert_eq!(request.url.path(), "/v1/responses");
+            assert_eq!(request.headers["authorization"], bearer);
+            let body: Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(body["model"], id);
+            assert_eq!(body["stream"], true);
+            if !with_tools {
+                continue;
+            }
+            let input = body["input"].as_array().unwrap();
+            let tools = body["tools"].as_array().unwrap();
+            assert!(
+                input
+                    .iter()
+                    .any(|item| item["role"] == "developer"
+                        && item["content"] == "Later instruction"),
+                "{id}: {input:?}"
+            );
+            assert!(
+                !input.iter().any(|item| matches!(
+                    item["type"].as_str(),
+                    Some("tool_search_call" | "tool_search_output")
+                )),
+                "{id}"
+            );
+            let inline = input.iter().find(|item| item["type"] == "additional_tools");
+            let grammar = if id == "gpt-6.1-terra" {
+                assert_eq!(tools.len(), 1);
+                &inline.unwrap()["tools"][0]
+            } else {
+                assert_eq!(tools.len(), 2, "{id}");
+                assert!(inline.is_none(), "{id}");
+                &tools[1]
+            };
+            assert_eq!(tools[0]["name"], "lookup");
+            assert_eq!(tools[0]["strict"], true);
+            assert_eq!(grammar["name"], "parse");
+            assert_eq!(grammar["type"], "custom");
+            assert_eq!(grammar["format"]["syntax"], "lark");
+        }
+    }
+}
+
 #[test]
 fn openrouter_model_catalog_matches_constructor() {
     let provider = opi_ai::providers::openrouter::openrouter_provider(None);
@@ -307,6 +555,237 @@ fn gemini_model_catalog_matches_constructor() {
 }
 
 #[test]
+fn google_catalog_is_shared_by_sdk_standalone_and_cli_factory() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::providers::gemini::{GeminiProvider, model_catalog};
+
+    let standalone = GeminiProvider::new(None);
+    assert_eq!(standalone.models().len(), 23);
+    let expected: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("google", CatalogOperation::Chat)
+        .unwrap()
+        .map(|row| row.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(expected.len(), 23);
+    assert_eq!(standalone.models(), expected);
+    assert_eq!(model_catalog(), expected);
+
+    let mut sdk = opi_ai::Models::new();
+    register_builtin(
+        &mut sdk,
+        Arc::new(opi_ai::auth::AmbientAuthContext),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    assert_eq!(sdk.get_models(Some("google")), expected);
+
+    let mut config = OpiConfig::default();
+    config.defaults.model = "google:gemini-pro-latest".into();
+    let cli = opi_coding_agent::provider_factory::build_provider(&config).unwrap();
+    assert_eq!(cli.id(), "google");
+    assert_eq!(cli.models(), expected);
+    for id in ["gemini-pro-latest", "gemini-robotics-er-2-preview"] {
+        assert!(sdk.get_model("google", id).is_some(), "{id}");
+        assert!(cli.models().iter().any(|model| model.id == id), "{id}");
+    }
+}
+
+#[tokio::test]
+async fn google_published_models_dispatch_through_sdk_and_cli() {
+    use futures_util::StreamExt;
+    use opi_ai::auth::{AuthContext, AuthContextError};
+    use opi_ai::credential::{Credential, CredentialStore};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::{ChatModelRecord, Models, ModelsError, RegistryError, ThinkingLevel};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::{
+        build_harness_collection, build_provider, build_provider_bundle,
+    };
+    use serde_json::{Value, json};
+    use wiremock::matchers::method;
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    struct GoogleFixtureAuth;
+    impl AuthContext for GoogleFixtureAuth {
+        fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+            Ok((name == "GEMINI_API_KEY").then(|| "sdk-gemini-key".into()))
+        }
+
+        fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+            Ok(false)
+        }
+    }
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(concat!(
+                    "data: {\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"ok\"}]},",
+                    "\"finishReason\":\"STOP\"}]}\n\n"
+                )),
+        )
+        .mount(&server)
+        .await;
+    let mut sdk = Models::new();
+    let mut overrides = BuiltinOverrides::default();
+    overrides
+        .base_urls
+        .insert("google".into(), format!("{}/sdk/v1beta", server.uri()));
+    register_builtin(
+        &mut sdk,
+        Arc::new(GoogleFixtureAuth),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &overrides,
+    )
+    .unwrap();
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = OpiConfig::default();
+    config.defaults.model = "google:gemini-pro-latest".into();
+    config.providers.google.base_url = Some(format!("{}/cli-proxy/", server.uri()));
+    config.providers.google.api_key_env = "OPI_TEST_GOOGLE_WIRE_API_KEY".into();
+    let bundle = build_provider_bundle(
+        &config,
+        dir.path().to_path_buf(),
+        Box::new(|| Box::new(FakeKeyringBackend::new())),
+    )
+    .await
+    .unwrap();
+    bundle
+        .store
+        .write("google", &Credential::ApiKey("cli-gemini-key".into()))
+        .await
+        .unwrap();
+    let mut routes = vec![(bundle.provider, bundle.auth_resolver)];
+    routes.extend(bundle.extra_routes);
+    let runtime =
+        build_harness_collection(routes, Vec::new(), Vec::new(), "google", Some(bundle.store));
+    let direct = build_provider(&config).unwrap();
+    let entries = [
+        (&sdk, "/sdk", "sdk-gemini-key"),
+        (runtime.as_ref(), "/cli-proxy", "cli-gemini-key"),
+    ];
+
+    let cases = [
+        ("gemini-pro-latest", ThinkingLevel::Low),
+        ("gemini-robotics-er-2-preview", ThinkingLevel::Minimal),
+    ];
+    let levels = [
+        ThinkingLevel::None,
+        ThinkingLevel::High,
+        ThinkingLevel::Minimal,
+        ThinkingLevel::Max,
+    ];
+    let mut expected_requests = Vec::new();
+    for (models, prefix, key) in entries {
+        for (id, minimum) in cases {
+            let model = models.get_model("google", id).unwrap();
+            let levels_map = &model.thinking_level_map;
+            assert_eq!(
+                levels_map.nearest_supported(ThinkingLevel::Minimal),
+                Some(minimum)
+            );
+            assert_eq!(
+                levels_map.nearest_supported(ThinkingLevel::Max),
+                Some(ThinkingLevel::High)
+            );
+            let record = ChatModelRecord::new("google", model);
+            let spec = format!("google:{id}");
+            for level in levels {
+                let mut request = minimal_request(&spec);
+                request.timeout = Some(std::time::Duration::from_secs(3));
+                if level != ThinkingLevel::None {
+                    request.thinking = ThinkingConfig {
+                        enabled: true,
+                        level,
+                        budget_tokens: None,
+                    };
+                }
+                let result = models
+                    .complete_simple(record.clone(), request, Default::default())
+                    .await
+                    .unwrap_or_else(|error| panic!("{prefix} {spec} {level:?}: {error:?}"));
+                assert_eq!(result.provider, "google", "{prefix}");
+                assert_eq!(result.model, id);
+                expected_requests.push((prefix, id, key, level));
+            }
+        }
+    }
+    let captured = server.received_requests().await.unwrap();
+    assert_eq!(captured.len(), 16);
+    for (request, (prefix, id, key, level)) in captured.iter().zip(expected_requests) {
+        assert_eq!(
+            request.url.path(),
+            format!("{prefix}/v1beta/models/{id}:streamGenerateContent")
+        );
+        assert_eq!(request.url.query(), Some("alt=sse"));
+        assert_eq!(request.headers["x-goog-api-key"], key);
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        let thinking = if level == ThinkingLevel::None {
+            json!({"thinkingBudget": 0})
+        } else {
+            json!({"includeThoughts": true, "thinkingBudget": -1})
+        };
+        assert_eq!(
+            body["generationConfig"]["thinkingConfig"], thinking,
+            "{id} {level:?}"
+        );
+    }
+
+    for retired in [
+        "gemini-2.0-flash",
+        "gemini-3.1-flash-lite-image",
+        "gemini-3.1-flash-live-preview",
+    ] {
+        let spec = format!("google:{retired}");
+        for (models, _, _) in entries {
+            assert!(models.get_model("google", retired).is_none());
+            assert!(matches!(
+                models.prepare_call(&spec, minimal_request(&spec)).await,
+                Err(ModelsError::Registry(RegistryError::UnknownModel { provider, model }))
+                    if provider == "google" && model == retired
+            ));
+        }
+        let error = direct
+            .stream_prepared(
+                minimal_request(&spec),
+                opi_ai::test_support::resolved_auth(),
+            )
+            .next()
+            .await
+            .expect("a typed error for a retired Google model")
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            opi_ai::provider::ProviderError::UnknownModel { provider_id, model_id }
+                if provider_id == "google" && model_id == retired
+        ));
+    }
+    let vertex_spec = "google-vertex:gemini-2.5-flash";
+    let result = direct
+        .stream_prepared(
+            minimal_request(vertex_spec),
+            opi_ai::test_support::resolved_auth(),
+        )
+        .next()
+        .await;
+    assert!(matches!(
+        result,
+        Some(Err(opi_ai::provider::ProviderError::UnknownModel { provider_id, model_id }))
+            if provider_id == "google" && model_id == vertex_spec
+    ));
+    assert_eq!(
+        server.received_requests().await.unwrap().len(),
+        captured.len()
+    );
+}
+
+#[test]
 fn bedrock_model_catalog_matches_constructor() {
     let provider = opi_ai::providers::bedrock::BedrockProvider::new(
         None,
@@ -319,16 +798,47 @@ fn bedrock_model_catalog_matches_constructor() {
 }
 
 #[test]
-fn vertex_model_catalog_matches_constructor() {
-    let provider = opi_ai::providers::vertex::VertexProvider::new(
-        "test-project".into(),
-        "us-central1".into(),
-        None,
-    );
-    assert_same_models(
-        provider.models(),
-        &opi_ai::providers::vertex::model_catalog(),
-    );
+fn vertex_catalog_is_shared_by_sdk_standalone_and_cli_factory() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::providers::vertex::{VertexProvider, model_catalog};
+    use opi_coding_agent::provider_factory::build_provider;
+
+    let express = VertexProvider::express(None);
+    let regional = VertexProvider::new("test-project".into(), "us-central1".into(), None);
+    assert_eq!(express.models().len(), 13);
+    let expected: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("google-vertex", CatalogOperation::Chat)
+        .unwrap()
+        .map(|row| row.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(expected.len(), 13);
+    assert_eq!(express.models(), expected);
+    assert_eq!(regional.models(), expected);
+    assert_eq!(model_catalog(), expected);
+
+    let mut sdk = opi_ai::Models::new();
+    register_builtin(
+        &mut sdk,
+        Arc::new(opi_ai::auth::AmbientAuthContext),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+    assert_eq!(sdk.get_models(Some("google-vertex")), expected);
+
+    let mut config = OpiConfig::default();
+    config.defaults.model = "google-vertex:gemini-3.1-pro-preview".into();
+    for project_location in [None, Some(("test-project", "us-central1"))] {
+        config.providers.google_vertex.project =
+            project_location.map(|(project, _)| project.into());
+        config.providers.google_vertex.location =
+            project_location.map(|(_, location)| location.into());
+        let cli = build_provider(&config).unwrap();
+        assert_eq!(cli.id(), "google-vertex");
+        assert_eq!(cli.models(), expected);
+    }
 }
 
 #[tokio::test]
@@ -563,7 +1073,7 @@ async fn github_copilot_factory_builds_one_three_wire_provider() {
     ));
     let resolver = CredentialResolver::new(store, Arc::new(|_: &str| None));
     let mut config = OpiConfig::default();
-    config.defaults.model = "github-copilot:gpt-4.1".into();
+    config.defaults.model = "github-copilot:gemini-4-argon".into();
 
     let provider = build_provider_with_oauth(
         &config,
@@ -574,7 +1084,7 @@ async fn github_copilot_factory_builds_one_three_wire_provider() {
     .expect("static GitHub Copilot factory");
 
     assert_eq!(provider.id(), "github-copilot");
-    assert_eq!(provider.models().len(), 25);
+    assert_eq!(provider.models().len(), 27);
     assert_eq!(
         provider
             .models()
@@ -616,7 +1126,7 @@ async fn openai_codex_factory_uses_dedicated_provider() {
     .expect("dedicated OpenAI Codex factory");
 
     assert_eq!(provider.id(), "openai-codex");
-    assert_eq!(provider.models().len(), 7);
+    assert_eq!(provider.models().len(), 8);
     assert!(
         provider
             .models()
@@ -1487,7 +1997,6 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
         Gemini,
         Vertex,
         Bedrock,
-        Azure,
     }
 
     struct RouteCase {
@@ -1504,8 +2013,8 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
         },
         RouteCase {
             provider_id: "openai",
-            expected_wire: WireApi::OpenAiCompletions,
-            route: Route::OpenAiChat,
+            expected_wire: WireApi::OpenAiResponses,
+            route: Route::OpenAiResponses,
         },
         RouteCase {
             provider_id: "openai-responses",
@@ -1536,11 +2045,6 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
             provider_id: "amazon-bedrock",
             expected_wire: WireApi::BedrockConverseStream,
             route: Route::Bedrock,
-        },
-        RouteCase {
-            provider_id: "azure",
-            expected_wire: WireApi::AzureOpenAiCompletions,
-            route: Route::Azure,
         },
     ];
 
@@ -1597,14 +2101,6 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                 config.providers.amazon_bedrock.region = Some("us-east-1".into());
                 config.providers.amazon_bedrock.base_url = Some(server.uri());
             }
-            "azure" => {
-                config.providers.azure.api_key_env = ROUTE_KEY_ENV.into();
-                config.providers.azure.endpoint = Some(server.uri());
-                assert!(
-                    config.providers.azure.deployments.is_empty(),
-                    "exercise the selected-model fallback branch"
-                );
-            }
             other => unreachable!("unhandled route case {other}"),
         }
 
@@ -1643,10 +2139,10 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
             )
         } else {
             // Each wire attaches only its accepted scheme: anthropic accepts
-            // ApiKey/Bearer, gemini and azure attach ApiKey, and every other
+            // ApiKey/Bearer, Gemini attaches ApiKey, and every other
             // built-in single-wire provider attaches Bearer.
             let scheme = match case.provider_id {
-                "anthropic" | "google" | "azure" => opi_ai::AuthScheme::ApiKey,
+                "anthropic" | "google" => opi_ai::AuthScheme::ApiKey,
                 _ => opi_ai::AuthScheme::Bearer,
             };
             opi_ai::auth::ResolvedAuth {
@@ -1687,9 +2183,6 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                 "/v1/projects/test-project/locations/us-central1/publishers/google/models/{model_id}:streamGenerateContent"
             ),
             Route::Bedrock => format!("/model/{model_id}/converse-stream"),
-            Route::Azure => {
-                format!("/openai/deployments/{model_id}/chat/completions")
-            }
         };
         assert_eq!(
             request.url.path(),
@@ -1700,15 +2193,6 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
         match case.route {
             Route::Gemini | Route::Vertex => {
                 assert_eq!(request.url.query(), Some("alt=sse"), "{}", case.provider_id);
-            }
-            Route::Azure => {
-                // Task 20.38: the default api-version follows the pinned
-                // source resolver (v1), replacing the old 2024-06-01.
-                assert_eq!(
-                    request.url.query(),
-                    Some("api-version=v1"),
-                    "azure API version route"
-                );
             }
             _ => assert!(request.url.query().is_none(), "{}", case.provider_id),
         }
@@ -1752,15 +2236,6 @@ async fn builtin_single_wire_models_route_by_declared_wire() {
                     "Bedrock must use SigV4 ConverseStream transport"
                 );
             }
-            Route::Azure => {
-                assert_eq!(
-                    request
-                        .headers
-                        .get("api-key")
-                        .and_then(|value| value.to_str().ok()),
-                    Some("test-secret")
-                );
-            }
         }
     }
 }
@@ -1795,24 +2270,323 @@ fn single_wire_factory_guard_rejects_mismatch_before_stream() {
 }
 
 #[test]
-fn azure_default_factory_catalog_uses_selected_deployment_wire() {
-    use opi_ai::model_info::WireApi;
+fn azure_default_factory_uses_the_catalog_even_for_an_unknown_default() {
+    use opi_ai::catalog::{Catalog, CatalogOperation};
     use opi_coding_agent::provider_factory::build_provider;
 
-    const KEY_ENV: &str = "OPI_TEST_AZURE_SELECTED_DEPLOYMENT_14_15";
     let mut config = OpiConfig::default();
-    config.defaults.model = "azure:selected-deployment".into();
-    config.providers.azure.api_key_env = KEY_ENV.into();
+    config.defaults.model = "azure:gpt-5.3-chat-latest".into();
     config.providers.azure.endpoint = Some("http://127.0.0.1:9".into());
-    assert!(config.providers.azure.deployments.is_empty());
 
-    let provider = with_env_var(KEY_ENV, "test-key", || build_provider(&config).unwrap());
-    assert_eq!(provider.models().len(), 1);
-    assert_eq!(provider.models()[0].id, "selected-deployment");
-    assert_eq!(
-        provider.models()[0].wire_api,
-        WireApi::AzureOpenAiCompletions
+    let provider = build_provider(&config).unwrap();
+    let published: Vec<_> = Catalog::builtin()
+        .unwrap()
+        .models("azure", CatalogOperation::Chat)
+        .unwrap()
+        .map(|record| record.to_chat_model_info().unwrap())
+        .collect();
+    assert_eq!(provider.models().len(), 45);
+    assert_eq!(provider.models(), published);
+    assert!(
+        !provider
+            .models()
+            .iter()
+            .any(|model| model.id == "gpt-5.3-chat-latest")
     );
+}
+
+#[tokio::test]
+#[allow(clippy::await_holding_lock)] // Serialize the test's Azure environment across requests.
+async fn azure_published_models_dispatch_through_sdk_and_cli() {
+    use futures_util::StreamExt;
+    use opi_ai::auth::{AuthContext, AuthContextError};
+    use opi_ai::constrained_sampling::ConstrainedSampling;
+    use opi_ai::credential::{Credential, CredentialStore};
+    use opi_ai::message::{InputContent, Message, ToolDef, UserMessage};
+    use opi_ai::providers::collection::{BuiltinOverrides, register_builtin};
+    use opi_ai::transcript::{Context, SystemMessage, normalize_context};
+    use opi_ai::{ChatModelRecord, Models, ModelsError, RegistryError, ThinkingLevel};
+    use opi_coding_agent::credential_store::FakeKeyringBackend;
+    use opi_coding_agent::provider_factory::{
+        build_harness_collection, build_provider, build_provider_bundle,
+    };
+    use serde_json::{Value, json};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    const MAP: &str = "gpt-5.6-cyber=cyber-prod, gpt-6.1-terra=terra-prod, deepseek-v4-pro=deepseek-prod, \
+        gpt-5.2-chat-latest=retired, gpt-5.3-chat-latest=retired, gpt-realtime-2.1=retired";
+    struct FixtureAuth(String);
+    impl AuthContext for FixtureAuth {
+        fn env(&self, name: &str) -> Result<Option<String>, AuthContextError> {
+            Ok(match name {
+                "AZURE_OPENAI_API_KEY" => Some("sdk-azure-key".into()),
+                "AZURE_OPENAI_BASE_URL" => Some(self.0.clone()),
+                "AZURE_OPENAI_DEPLOYMENT_NAME_MAP" => Some(MAP.into()),
+                _ => None,
+            })
+        }
+        fn file_exists(&self, _: &str) -> Result<bool, AuthContextError> {
+            Ok(false)
+        }
+    }
+
+    let server = MockServer::start().await;
+    let unused = MockServer::start().await;
+    let base = format!("{}/openai/v1", server.uri());
+    let mut sdk = Models::new();
+    register_builtin(
+        &mut sdk,
+        Arc::new(FixtureAuth(base.clone())),
+        Arc::new(opi_ai::http::HttpClient::new()),
+        &BuiltinOverrides::default(),
+    )
+    .unwrap();
+
+    let _lock = ENV_MUTEX.lock().unwrap();
+    let _deployment = EnvVarGuard::set("AZURE_OPENAI_DEPLOYMENT_NAME_MAP", MAP);
+    let _endpoint = EnvVarGuard::set("AZURE_OPENAI_BASE_URL", &unused.uri());
+    let _version = EnvVarGuard::set("AZURE_OPENAI_API_VERSION", "unused-version");
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = OpiConfig::default();
+    config.defaults.model = "azure:chat-latest".into();
+    config.providers.azure.endpoint = Some(base);
+    config.providers.azure.api_version = Some("fixture-version".into());
+    config.providers.azure.api_key_env = "OPI_TEST_AZURE_WIRE_API_KEY".into();
+    let bundle = build_provider_bundle(
+        &config,
+        dir.path().to_path_buf(),
+        Box::new(|| Box::new(FakeKeyringBackend::new())),
+    )
+    .await
+    .unwrap();
+    bundle
+        .store
+        .write("azure", &Credential::ApiKey("cli-azure-key".into()))
+        .await
+        .unwrap();
+    let mut routes = vec![(bundle.provider, bundle.auth_resolver)];
+    routes.extend(bundle.extra_routes);
+    let runtime =
+        build_harness_collection(routes, Vec::new(), Vec::new(), "azure", Some(bundle.store));
+    let direct = build_provider(&config).unwrap();
+
+    let published = sdk.get_models(Some("azure"));
+    assert_eq!(published.len(), 45);
+    assert_eq!(runtime.get_models(Some("azure")), published);
+    assert_eq!(direct.models(), published);
+    let entries = [
+        (&sdk, "v1", "sdk-azure-key"),
+        (runtime.as_ref(), "fixture-version", "cli-azure-key"),
+    ];
+    for id in [
+        "gpt-5.2-chat-latest",
+        "gpt-5.3-chat-latest",
+        "gpt-realtime-2.1",
+        "terra-prod",
+    ] {
+        let spec = format!("azure:{id}");
+        for (models, _, _) in entries {
+            assert!(models.get_model("azure", id).is_none());
+            assert!(
+                matches!(
+                    models.prepare_call(&spec, minimal_request(&spec)).await,
+                    Err(ModelsError::Registry(RegistryError::UnknownModel { provider, model }))
+                        if provider == "azure" && model == id
+                ),
+                "{spec}"
+            );
+        }
+        assert!(matches!(
+            direct.stream_prepared(minimal_request(&spec), opi_ai::test_support::resolved_auth()).next().await,
+            Some(Err(opi_ai::provider::ProviderError::UnknownModel { provider_id, model_id }))
+                if provider_id == "azure" && model_id == id
+        ));
+    }
+    assert!(server.received_requests().await.unwrap().is_empty());
+
+    let cases = [
+        (
+            "chat-latest",
+            "chat-latest",
+            ThinkingLevel::None,
+            Some("none"),
+        ),
+        ("gpt-5.6-cyber", "cyber-prod", ThinkingLevel::None, None),
+        (
+            "gpt-5.6-cyber",
+            "cyber-prod",
+            ThinkingLevel::Max,
+            Some("max"),
+        ),
+        (
+            "gpt-6.1-terra",
+            "terra-prod",
+            ThinkingLevel::None,
+            Some("none"),
+        ),
+        (
+            "gpt-6.1-terra",
+            "terra-prod",
+            ThinkingLevel::Minimal,
+            Some("low"),
+        ),
+        (
+            "gpt-6.1-terra",
+            "terra-prod",
+            ThinkingLevel::Max,
+            Some("max"),
+        ),
+        (
+            "deepseek-v4-pro",
+            "deepseek-prod",
+            ThinkingLevel::Max,
+            Some("high"),
+        ),
+    ];
+    Mock::given(method("POST"))
+        .and(path("/openai/v1/responses"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            concat!("data: ", r#"{"type":"response.completed","response":{"id":"fixture","status":"completed","output":[]}}"#, "\n\n"),
+            "text/event-stream",
+        ))
+        .expect(12)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/openai/v1/chat/completions"))
+        .respond_with(ResponseTemplate::new(200).set_body_raw(
+            concat!("data: ", r#"{"id":"chatcmpl-fixture","model":"deepseek-prod","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}"#, "\n\ndata: [DONE]\n\n"),
+            "text/event-stream",
+        ))
+        .expect(2)
+        .mount(&server)
+        .await;
+
+    let user_message = || {
+        Message::User(UserMessage {
+            content: vec![InputContent::Text {
+                text: "hello".into(),
+            }],
+            timestamp_ms: 0,
+        })
+    };
+    let grammar = ToolDef {
+        name: "parse".into(),
+        description: "Parse an expression".into(),
+        input_schema: json!({"type":"object","properties":{"input":{"type":"string"}},"required":["input"]}),
+        constrained_sampling: Some(ConstrainedSampling::Grammar {
+            openai_lark: Some("start: \"hello\"".into()),
+            openai_regex: None,
+        }),
+    };
+    for (models, _, _) in entries {
+        for (id, _, level, _) in cases {
+            let model = models.get_model("azure", id).unwrap();
+            let mut request = minimal_request(&format!("azure:{id}"));
+            request.thinking.enabled = level != ThinkingLevel::None;
+            request.thinking.level = level;
+            request.max_tokens = Some(8);
+            request.temperature = Some(0.125);
+            request.timeout = Some(std::time::Duration::from_secs(5));
+            request.cache_retention = CacheRetention::Long;
+            request.session_id = Some("azure-fixture-session".into());
+            let mut context = Context {
+                messages: vec![user_message()],
+                ..Default::default()
+            };
+            match id {
+                "deepseek-v4-pro" => context.messages.extend([
+                    Message::System(SystemMessage {
+                        content: "Later system instruction".into(),
+                        ..Default::default()
+                    }),
+                    user_message(),
+                ]),
+                "gpt-5.6-cyber" | "gpt-6.1-terra" => context.tools.push(grammar.clone()),
+                _ => {}
+            }
+            request.context = normalize_context(context).unwrap();
+            let result = if matches!(
+                (id, level),
+                ("gpt-6.1-terra", ThinkingLevel::Minimal) | ("deepseek-v4-pro", ThinkingLevel::Max)
+            ) {
+                models
+                    .complete_simple(
+                        ChatModelRecord::new("azure", model),
+                        request,
+                        Default::default(),
+                    )
+                    .await
+            } else {
+                let spec = request.model.clone();
+                models
+                    .prepare_call(&spec, request)
+                    .await
+                    .unwrap()
+                    .start_attempt_with_telemetry()
+                    .unwrap()
+                    .result()
+                    .await
+            }
+            .unwrap_or_else(|error| panic!("{id}/{level:?}: {error:?}"));
+            assert_eq!(result.model, id);
+            assert_eq!(result.stop_reason, opi_ai::stream::StopReason::Stop);
+        }
+    }
+
+    let sent = server.received_requests().await.unwrap();
+    assert_eq!(sent.len(), entries.len() * cases.len());
+    assert!(unused.received_requests().await.unwrap().is_empty());
+    for ((_, version, key), sent) in entries.into_iter().zip(sent.chunks_exact(cases.len())) {
+        for ((id, deployment, level, effort), request) in cases.into_iter().zip(sent) {
+            let body: Value = serde_json::from_slice(&request.body).unwrap();
+            assert_eq!(body["model"], deployment);
+            assert_eq!(body["stream"], true);
+            if id == "deepseek-v4-pro" {
+                assert_eq!(request.url.path(), "/openai/v1/chat/completions");
+                assert!(request.url.query().is_none());
+                assert_eq!(request.headers["authorization"], format!("Bearer {key}"));
+                assert!(request.headers.get("api-key").is_none());
+                assert_eq!(body["reasoning_effort"], effort.unwrap());
+                assert!(body.get("thinking").is_none());
+                assert!(
+                    body.as_object()
+                        .unwrap()
+                        .keys()
+                        .all(|name| !name.starts_with("prompt_cache"))
+                );
+                assert!(body["messages"].as_array().unwrap().iter().any(|item| {
+                    item["role"] == "system" && item["content"] == "Later system instruction"
+                }));
+            } else {
+                assert_eq!(request.url.path(), "/openai/v1/responses");
+                assert_eq!(
+                    request.url.query(),
+                    Some(format!("api-version={version}").as_str())
+                );
+                assert_eq!(request.headers["api-key"], key);
+                assert!(request.headers.get("authorization").is_none());
+                assert_eq!(body["store"], false);
+                assert_eq!(body["max_output_tokens"], 16);
+                assert_eq!(body["temperature"], 0.125);
+                let reasoning = effort.map(|effort| {
+                    if level == ThinkingLevel::None {
+                        json!({"effort": effort})
+                    } else {
+                        json!({"effort": effort, "summary": "auto"})
+                    }
+                });
+                assert_eq!(body.get("reasoning"), reasoning.as_ref(), "{id}/{level:?}");
+                let include =
+                    (level != ThinkingLevel::None).then(|| json!(["reasoning.encrypted_content"]));
+                assert_eq!(body.get("include"), include.as_ref(), "{id}/{level:?}");
+                if id != "chat-latest" {
+                    assert_eq!(body["tools"][0]["format"]["syntax"], "lark");
+                }
+            }
+        }
+    }
 }
 
 #[test]
@@ -1911,7 +2685,7 @@ fn build_provider_builds_all_credentials_lazily_including_bedrock() {
 /// with a remediation message. DoD: "invalid endpoints emit safe diagnostics
 /// with provider/error class and remediation". Covers the openai_compatible
 /// profile base_url requirement (runtime + listing arms), vertex missing
-/// project/location, and azure no-deployments on the listing path.
+/// project/location, and an invalid explicit Azure endpoint.
 #[test]
 fn build_provider_returns_config_error_for_invalid_endpoint_config() {
     use opi_coding_agent::config::load_config_file;
@@ -1994,47 +2768,13 @@ max_output_tokens = 4096
         }
     });
 
-    // Azure deployments-empty on the listing path -> Config. Other families
-    // are isolated (no creds) so azure is the only provider that does not
-    // skip, deterministically reaching the deployments check.
-    let dir2 = tempfile::tempdir().unwrap();
-    let ghost_credentials = dir2.path().join("no-aws-credentials");
-    let ghost_config = dir2.path().join("no-aws-config");
-    let gc = ghost_credentials.to_string_lossy().into_owned();
-    let gf = ghost_config.to_string_lossy().into_owned();
-    with_env_managed(
-        &[
-            "ANTHROPIC_API_KEY",
-            "OPENAI_API_KEY",
-            "OPENROUTER_API_KEY",
-            "MISTRAL_API_KEY",
-            "GEMINI_API_KEY",
-            "VERTEX_ACCESS_TOKEN",
-            "AWS_ACCESS_KEY_ID",
-            "AWS_SECRET_ACCESS_KEY",
-            "AWS_SESSION_TOKEN",
-            "AWS_REGION",
-            "AWS_DEFAULT_REGION",
-            "AWS_PROFILE",
-        ],
-        &[
-            ("AZURE_OPENAI_API_KEY", "test-key"),
-            ("AWS_SHARED_CREDENTIALS_FILE", &gc),
-            ("AWS_CONFIG_FILE", &gf),
-        ],
-        || {
-            let mut cfg = opi_coding_agent::config::OpiConfig::default();
-            cfg.providers.azure.endpoint = Some("https://test.openai.azure.com".into());
-            match build_collection_for_listing(&cfg, &std::collections::HashMap::new()) {
-                Err(ListModelsError::Config(msg)) => assert!(
-                    msg.contains("deployments"),
-                    "azure no-deployments Config should mention deployments, got: {msg:?}"
-                ),
-                Err(e) => panic!("azure no-deployments listing should be Config, got {e:?}"),
-                Ok(_) => panic!("azure no-deployments listing should be Config, got Ok collection"),
-            }
-        },
-    );
+    let mut azure = OpiConfig::default();
+    azure.defaults.model = "azure:chat-latest".into();
+    azure.providers.azure.endpoint = Some("invalid-url".into());
+    let Err(error) = build_provider(&azure) else {
+        panic!("invalid Azure endpoint was accepted");
+    };
+    assert!(error.to_string().contains("Invalid Azure OpenAI base URL"));
 }
 
 /// Model-level profile overrides must win over the provider-level default

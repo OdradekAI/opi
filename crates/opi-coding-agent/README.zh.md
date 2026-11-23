@@ -126,19 +126,42 @@ opi --allow-mutating "更新 README。"
 | 前缀 | 后端 | 默认凭据/配置 |
 |------|------|---------------|
 | `anthropic:` | `AnthropicProvider` | `ANTHROPIC_API_KEY` |
-| `openai:` | `OpenAiChatProvider` | `OPENAI_API_KEY` |
+| `openai:` | `OpenAiResponsesProvider` | `OPENAI_API_KEY` |
 | `openai-responses:` | `OpenAiResponsesProvider` | `OPENAI_API_KEY` |
 | `openrouter:` | OpenRouter profile | `OPENROUTER_API_KEY` |
 | `mistral:` | Mistral profile | `MISTRAL_API_KEY` |
-| `google:` | 以 canonical id 发布的 `GeminiProvider` | `GEMINI_API_KEY` |
+| `google:` | 使用内置 Google 聊天目录的 Gemini | `GEMINI_API_KEY` |
 | `amazon-bedrock:` | 以 canonical id 发布的 `BedrockProvider` | AWS 环境变量或共享 AWS profile/config |
-| `azure:` | `AzureOpenAIProvider` | `AZURE_OPENAI_API_KEY`；endpoint/deployments 在配置中 |
-| `google-vertex:` | 以 canonical id 发布的 `VertexProvider` | `VERTEX_ACCESS_TOKEN`；project/location 在配置中 |
-| `github-copilot:` | 一个经审计的静态 catalog，映射到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses | 通过 `/login github-copilot` 写入 OS keychain |
-| `openai-codex:` | 专用 `OpenAiCodexResponsesProvider` | 通过 `/login openai-codex` 写入 OS keychain |
+| `azure:` | `AzureCatalogProvider`，支持 Responses 和 Chat Completions | `AZURE_OPENAI_API_KEY`，以及配置的端点或 `AZURE_OPENAI_BASE_URL` / `AZURE_OPENAI_RESOURCE_NAME` |
+| `google-vertex:` | 使用内置聊天目录的 Vertex AI | Express 使用 `GOOGLE_CLOUD_API_KEY`；ADC 或 `VERTEX_ACCESS_TOKEN` 需要配置 project 和 location |
+| `github-copilot:` | opi 内置目录，映射到 Anthropic Messages、OpenAI Chat Completions 与 OpenAI Responses | 通过 `/login github-copilot` 写入 OS keychain |
+| `openai-codex:` | opi 内置目录，使用专用 Codex Responses 路由 | 通过 `/login openai-codex` 写入 OS keychain |
 | 已配置 profile | OpenAI-compatible profile | profile 自己的 `api_key_env`、`base_url` 和模型列表 |
 
-Provider 凭据环境变量名、base URL、模型列表和代理都可以在配置中覆盖。
+Provider 凭据环境变量名、base URL 和代理可以在配置中覆盖。
+
+`openai:` 与 `openai-responses:` 共用内置 OpenAI 聊天目录，并发送
+`POST /v1/responses`。两个入口各自读取对应的 provider 配置。`base_url`
+可以填写服务原点或以 `/v1` 结尾的 API 基址。使用 `openai:chat-latest`
+等带前缀的模型 ID 指定入口。
+
+按目录 ID 选择 Azure 模型，例如 `azure:gpt-6.1-terra`。 若资源上的部署名
+不同，可设置 `AZURE_OPENAI_DEPLOYMENT_NAME_MAP=gpt-6.1-terra=terra-prod`，
+多个映射以逗号分隔。把 `[providers.azure].deployments` 改为此映射，并将
+默认模型换成目录 ID。`[providers.azure].endpoint` 和 `api_version`
+的优先级高于对应的环境变量。
+
+Google 运行工厂和 `--list-models` 共用 23 条内置记录。可以选择
+`google:gemini-pro-latest` 等目录 ID。通过代理发送请求时，在
+`[providers.google].base_url` 填写代理原点或路径前缀。运行入口会追加
+`/v1beta/models/{id}:streamGenerateContent?alt=sse`。
+
+Vertex 运行工厂和 `--list-models` 共用 13 条内置记录。移除
+`[providers.google-vertex].models`，在 `[defaults].model` 选择当前模型，例如
+`google-vertex:gemini-3.1-pro-preview`。Express 使用 `GOOGLE_CLOUD_API_KEY` 和
+publisher 集合。使用 ADC 或 `VERTEX_ACCESS_TOKEN` 进行 Bearer 认证时，在
+`[providers.google-vertex]` 同时配置 `project` 和 `location`。两种模式都可通过
+`base_url` 指定代理主机或路径前缀。
 
 ### Canonical provider id 与旧引用迁移（任务 20.34）
 
@@ -196,10 +219,10 @@ subscription catalog 在列表时不执行凭据 probe。
 Credential Manager、在 macOS 上安装 macOS Keychain Services，或在 Linux 上安装
 Freedesktop Secret Service。
 
-`github-copilot` 使用一个经审计的静态 pi-0.80.6 catalog 与一个惰性已存储凭据，
-并路由到 Anthropic Messages、OpenAI Completions/Chat 与 OpenAI Responses。模型列表
-有意不调用在线 account entitlement/model-enable endpoint。`openai-codex` 在
-`/codex/responses` 使用专用 `openai-codex-responses` provider。
+`github-copilot` 的模型列表与运行时选择共用 opi-ai 内置目录，按记录路由到
+Anthropic Messages、OpenAI Chat Completions 与 OpenAI Responses。列表读取本地模型
+数据，请求使用已存储的 OAuth 凭据及账户端点。`openai-codex` 的列表和运行时选择
+都使用内置 Codex 目录，专用适配器将请求发送到 `/codex/responses`。
 
 `/login openai-codex` 提供 Browser（默认）和 Device Code。Anthropic 与 Codex
 Browser 是带 callback/manual-paste fallback 的 PKCE flow。GitHub Copilot 与 Codex
@@ -616,7 +639,7 @@ generation 预先 arm，使 awaited preflight 期间观察到的取消继续绑�
 - 生产级子 Agent、plan/todo、MCP，以及 `command.execute` 之外的通用 permission gate
   工作流是 examples/package 模式，不是内置核心工作流。
 - Anthropic、GitHub Copilot 与 OpenAI Codex 之外的 OAuth provider 仍被推迟。其它推迟的
-  产品决策包括经审计的静态 pi-0.80.6 Copilot/Codex snapshot 之外的 provider catalog、
+  产品决策包括已审核的 Copilot 与 Codex 目录之外的 provider catalog、
   大范围新增 first-class provider 列表（兼容
   provider 保持为 config-driven 的 OpenAI-compatible profile）、图像生成（图片支持仅为输入侧）、
   已获批的 Anthropic 与 OpenAI Codex OAuth 登录流程之外的浏览器自动化、面向 package 的 provider 流式 adapter 协议、默认测试中的付费实时

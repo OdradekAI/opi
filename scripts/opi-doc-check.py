@@ -31,6 +31,11 @@ CURRENT_CONTEXT_DOCS = (
     ".agents/skills/_shared/references/legacy-phase-workflows.md",
 )
 CONTEXT_ROOTS = ("docs/agents", "docs/engineering", "docs/iterations", "docs/adr")
+OPI_AI_SOURCE_PROVENANCE = re.compile(
+    r"\.repo[/\\]pi-|pinned\s+typescript\s+reference|packages[/\\]ai[/\\]src[/\\]|"
+    r"\bpi(?:-ai)?[- ]+v?(?:0\.\d+|1\.[0-4])(?:\.\d+)?\b",
+    re.IGNORECASE,
+)
 
 
 def read(rel: str) -> str:
@@ -294,6 +299,22 @@ def check_local_links(rel: str) -> None:
             ERRORS.append(f"{rel}: broken local link: {target}")
 
 
+def check_opi_ai_current_guidance() -> None:
+    """Keep source-comparison provenance in iteration evidence."""
+    crate = ROOT / "crates/opi-ai"
+    guides = [*crate.glob("README*.md"), *(crate / "docs").rglob("*.md")]
+    sources = (crate / "src").rglob("*.rs")
+    for path in sorted([*guides, *sources]):
+        rel = path.relative_to(ROOT).as_posix()
+        for line, text in enumerate(read(rel).splitlines(), start=1):
+            if match := OPI_AI_SOURCE_PROVENANCE.search(text):
+                ERRORS.append(
+                    f"{rel}:{line}: stale Pi source guidance {match[0]!r}, use iteration evidence"
+                )
+    for path in sorted(guides):
+        check_local_links(path.relative_to(ROOT).as_posix())
+
+
 def check_current_contracts(doc_paths: list[str]) -> None:
     # Check the declared values, not the surrounding English/Chinese wording.
     # Presence is not proof that every prose claim about a version is correct.
@@ -326,6 +347,7 @@ def main() -> int:
     skill_docs = check_skill_contracts()
     check_root_guidance_lockstep()
     check_context_docs()
+    check_opi_ai_current_guidance()
     check_current_contracts(docs)
     for rel in [*docs, *skill_docs, "AGENTS.md", "CLAUDE.md"]:
         check_local_links(rel)

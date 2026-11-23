@@ -170,8 +170,7 @@ pub enum ImageSource {
 // ---------------------------------------------------------------------------
 // Visible text extraction (task 20.53.1, P20-S53-1)
 //
-// Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/text.ts` `contentText`:
-// extract and join the text blocks of message content, in exact block order,
+// Extract and join visible text in exact block order,
 // joined by newlines. Everything else — images, thinking in both forms, tool
 // calls — is not visible text and never leaks into the rendered string.
 // These helpers are read-only: they borrow content and never mutate it.
@@ -335,8 +334,6 @@ pub fn finalize_tool_arguments(raw: String) -> (String, Option<String>) {
 
 // ---------------------------------------------------------------------------
 // Public JSON repair and partial-parse utilities (task 20.53.2, P20-S53-2)
-//
-// Pinned source: `.repo/pi-1.3.0/packages/ai/src/utils/json-parse.ts`.
 
 const VALID_JSON_ESCAPES: [char; 8] = ['"', '\\', '/', 'b', 'f', 'n', 'r', 't'];
 
@@ -696,7 +693,6 @@ pub fn string_enum(
 
 // ---------------------------------------------------------------------------
 // Public context-overflow and recoverable-Length predicates.
-// Pi 1.5.0 reference: `packages/ai/src/utils/overflow.ts`.
 
 /// Provider error message patterns merged into one case-insensitive
 /// alternation.

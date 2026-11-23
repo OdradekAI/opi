@@ -12,19 +12,44 @@ use futures_util::{StreamExt, stream};
 use secrecy::ExposeSecret;
 use tokio_util::sync::CancellationToken;
 
-use crate::api::openai::{OpenAiChatMapper, drain_sse_events};
+use crate::api::openai_completions::{OpenAiChatMapper, drain_sse_events};
 use crate::api::openai_responses::{
     OpenAiResponsesOptions, ResponsesReasoningSummary, ResponsesToolChoice,
 };
 use crate::api::shared::headers::ProviderHeaders;
 use crate::api::shared::openai_responses::{ResponsesMapper, drain_sse_frames};
 use crate::model_info::{ModelInfo, WireApi};
-use crate::provider::routes::{
-    AzureRouteContext, OpenAiResponsesRouteContext, parse_deployment_map, resolve_azure_base_url,
-    responses_url,
-};
+use crate::provider::routes::{AzureRouteContext, OpenAiResponsesConfiguredRoute};
 use crate::provider::{EventStream, Provider, ProviderError, ProviderErrorSummary, Request};
 use crate::stream::{AssistantStreamEvent, CancelAwareReceiverStream, send_or_cancel};
+
+const AZURE_HOST_SUFFIXES: [&str; 3] = [
+    ".openai.azure.com",
+    ".cognitiveservices.azure.com",
+    ".ai.azure.com",
+];
+const AZURE_ROOT_PATHS: [&str; 5] = ["", "/", "/openai", "/openai/v1", "/openai/v1/responses"];
+
+fn azure_responses_url(endpoint: &str, api_version: &str) -> String {
+    let mut url = url::Url::parse(endpoint).expect("Azure endpoint was validated at resolution");
+    let path = url.path().trim_end_matches('/');
+    let standard_resource = url.host_str().is_some_and(|host| {
+        AZURE_HOST_SUFFIXES
+            .iter()
+            .any(|suffix| host.ends_with(suffix))
+    }) && AZURE_ROOT_PATHS.contains(&path);
+    let path = if standard_resource {
+        "/openai/v1/responses".to_owned()
+    } else if path.ends_with("/responses") {
+        path.to_owned()
+    } else {
+        format!("{path}/responses")
+    };
+    url.set_path(&path);
+    url.query_pairs_mut()
+        .append_pair("api-version", api_version);
+    url.into()
+}
 
 /// Azure OpenAI wire adapter.
 ///
@@ -118,19 +143,11 @@ impl AzureOpenAIWireAdapter {
             let deployment = native
                 .azure_deployment_name
                 .clone()
-                .or_else(|| {
-                    parse_deployment_map(self.provider.deployment_map.as_deref())
-                        .get(&requested_model)
-                        .cloned()
-                })
-                .unwrap_or_else(|| requested_model.clone());
-            let endpoint = match resolve_azure_base_url(
+                .unwrap_or_else(|| self.provider.deployment_for(None, &requested_model));
+            let endpoint = match self.provider.resolve_endpoint(
                 native.azure_base_url.as_deref(),
                 native.azure_resource_name.as_deref(),
-                record
-                    .base_url
-                    .as_deref()
-                    .or(Some(self.provider.endpoint.as_str())),
+                record.base_url.as_deref(),
             ) {
                 Ok(endpoint) => endpoint,
                 Err(error) => return Box::pin(stream::once(async move { Err(error) })),
@@ -139,7 +156,7 @@ impl AzureOpenAIWireAdapter {
                 .azure_api_version
                 .clone()
                 .unwrap_or_else(|| self.provider.api_version.clone());
-            let url = responses_url(&endpoint, &api_version);
+            let url = azure_responses_url(&endpoint, &api_version);
 
             // Shared 20.37 parameter assembly under the azure identity: the
             // record keeps its own wire so same-identity replay works
@@ -151,7 +168,7 @@ impl AzureOpenAIWireAdapter {
                 service_tier: None,
                 simple: native.simple,
             };
-            let inner = OpenAiResponsesRouteContext::for_route(
+            let inner = OpenAiResponsesConfiguredRoute::for_route(
                 None,
                 "azure".into(),
                 ProviderHeaders::default(),
@@ -249,7 +266,7 @@ impl AzureOpenAIWireAdapter {
             .resolve_compat_for("", None)
             .supports_finish_reason
             .unwrap_or(true);
-        for (parsed, _raw) in crate::api::openai::parse_sse_events_with_raw(sse_body) {
+        for (parsed, _raw) in crate::api::openai_completions::parse_sse_events_with_raw(sse_body) {
             let items = mapper.process_frame(parsed, supports_finish_reason);
             let terminal = items
                 .iter()
@@ -468,6 +485,19 @@ impl Provider for AzureOpenAIWireAdapter {
     }
 }
 impl AzureRouteContext {
+    /// Build the Azure Chat deployment URL for a selected deployment.
+    pub fn build_azure_url(&self, deployment: &str) -> String {
+        format!(
+            "{}/openai/deployments/{}/chat/completions?api-version={}",
+            self.endpoint, deployment, self.api_version
+        )
+    }
+
+    /// Build the Azure Responses URL. Deployment belongs in `body.model`.
+    pub fn build_azure_responses_url(&self, _deployment: &str) -> String {
+        azure_responses_url(&self.endpoint, &self.api_version)
+    }
+
     /// Compile a neutral Azure Chat request through the canonical wire adapter.
     pub fn build_request_body(
         &self,
@@ -850,7 +880,7 @@ async fn stream_azure_responses_http(
                 match mapper.decode_frame(&frame) {
                     crate::api::shared::openai_responses::ParsedEvent::Valid(event) => {
                         for item in mapper.process(event) {
-                            let item = OpenAiResponsesRouteContext::stamp_done_duration(
+                            let item = OpenAiResponsesConfiguredRoute::stamp_done_duration(
                                 item,
                                 response_activated_at,
                             );
@@ -886,8 +916,10 @@ async fn stream_azure_responses_http(
         buffer.push_str(&eof_tail);
         if mapper.has_pending_terminal() {
             for item in mapper.flush_pending_terminal() {
-                let item =
-                    OpenAiResponsesRouteContext::stamp_done_duration(item, response_activated_at);
+                let item = OpenAiResponsesConfiguredRoute::stamp_done_duration(
+                    item,
+                    response_activated_at,
+                );
                 if !send_or_cancel(&cancel, tx, item).await? {
                     return Ok(());
                 }
@@ -1048,13 +1080,10 @@ impl crate::api::contract::ChatApi<AzureOpenAIOptions> for AzureOpenAIResponsesC
         options: &AzureOpenAIOptions,
     ) -> Result<(), ProviderError> {
         validate_complete_azure_responses_record(model)?;
-        resolve_azure_base_url(
+        self.provider.resolve_endpoint(
             options.azure_base_url.as_deref(),
             options.azure_resource_name.as_deref(),
-            model
-                .base_url
-                .as_deref()
-                .or(Some(self.provider.endpoint.as_str())),
+            model.base_url.as_deref(),
         )?;
         // Native/exact effort fails typed preflight on unsupported levels;
         // the neutral entry clamps instead.

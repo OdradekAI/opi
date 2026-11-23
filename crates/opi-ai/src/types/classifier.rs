@@ -252,6 +252,26 @@ pub enum ClassifierStopReason {
     Aborted,
 }
 
+/// Image transport metadata for a System One classifier.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClassifierImageInput {
+    /// TypeSafe's asset map and named state entries.
+    Assets,
+    /// Cloudflare's data-URL image array.
+    Images,
+    /// OpenRouter's ordered `image_url` state parts.
+    StateImageUrls,
+}
+
+/// Provider-specific classifier transport metadata from the published catalog.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClassifierCompat {
+    /// How a System One route accepts image input.
+    pub image_input: Option<ClassifierImageInput>,
+    /// Whether image requests require TypeSafe's opt-in header.
+    pub send_image_opt_in_header: Option<bool>,
+}
+
 /// The complete classifier-model record one classify call binds to.
 ///
 /// The record carries the exact classifier API identity (pi string, e.g.
@@ -278,6 +298,8 @@ pub struct ClassifierModelRecord {
     pub headers: Vec<(String, Option<String>)>,
     /// Source input-limit metadata; it does not impose SDK resize policy.
     pub input_limits: Option<serde_json::Value>,
+    /// Provider-specific classifier transport metadata from the catalog.
+    pub compat: Option<ClassifierCompat>,
     /// Accepted input modalities.
     pub input: Vec<ClassifierInputModality>,
     /// Context window in tokens.

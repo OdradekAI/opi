@@ -470,6 +470,13 @@ impl AcquisitionCore {
             inner.ready_at = None;
             inner.admission = None;
             inner.variant_dispatches = 0;
+            if let Some(state) = inner.smithy.as_mut() {
+                // A new payload starts a new Smithy episode with the same
+                // quota and adaptive limiter.
+                state.completed_retries = 0;
+                state.spent = None;
+                state.refunded = false;
+            }
         }
         if let Some(ready_at) = inner.ready_at {
             let now = Instant::now();
@@ -489,17 +496,26 @@ impl AcquisitionCore {
     /// The wire-visible attempt context for the reserved attempt: 1-based
     /// attempt number, the frozen total budget, and the episode's invocation
     /// id (task 20.20, `amz-sdk-request`/`amz-sdk-invocation-id`).
-    pub(crate) fn attempt_context(&self, invocation_id: &str) -> crate::provider::AttemptContext {
+    pub(crate) fn attempt_context(
+        &self,
+        invocation_id: &str,
+        wire_api: crate::model_info::WireApi,
+    ) -> crate::provider::AttemptContext {
+        use crate::provider::{AttemptContext, PayloadVariant};
+
         let inner = self.inner.lock().expect("acquisition core poisoned");
         let max_attempts = match &inner.policy.source {
             RetrySourcePolicy::Helper => inner.policy.max_retries.saturating_add(1),
             RetrySourcePolicy::Smithy(config) => config.max_attempts,
         };
         let payload_variant = match inner.variant_index {
-            0 => crate::provider::PayloadVariant::Ordinary,
-            _ => crate::provider::PayloadVariant::AnthropicStrictDowngrade,
+            0 => PayloadVariant::Ordinary,
+            _ if wire_api == crate::model_info::WireApi::BedrockConverseStream => {
+                PayloadVariant::BedrockStrictDowngrade
+            }
+            _ => PayloadVariant::AnthropicStrictDowngrade,
         };
-        crate::provider::AttemptContext {
+        AttemptContext {
             invocation_id: invocation_id.to_owned(),
             attempt: inner.variant_dispatches.max(1),
             max_attempts,
@@ -574,10 +590,6 @@ impl AcquisitionCore {
             inner.admission = None;
             return;
         }
-        if inner.smithy.is_some() {
-            Self::note_smithy_failure(&mut inner, cause);
-            return;
-        }
         if matches!(cause, ProviderError::StrictToolLimits { .. }) {
             // The source-qualified strict-limit rejection: on the first
             // variant it admits exactly one rebuilt downgrade variant
@@ -589,6 +601,10 @@ impl AcquisitionCore {
             } else {
                 inner.sealed = Some(AcquisitionSeal::Finished);
             }
+            return;
+        }
+        if inner.smithy.is_some() {
+            Self::note_smithy_failure(&mut inner, cause);
             return;
         }
         if !cause.is_retryable() {
@@ -863,7 +879,7 @@ mod acquisition_tests {
 // helper never re-dispatches an old one, never mutates transcripts, never
 // re-executes tools and never resets a prepared call's budget); omission or
 // a disabled policy means exactly one call. Classification follows the
-// Pi 1.5.0 provider-error patterns: quota, billing, usage limits and context
+// provider-error categories: quota, billing, usage limits and context
 // overflow veto first, then provider load, gateway forwarding, transport,
 // premature stream endings and explicit retry guidance.
 

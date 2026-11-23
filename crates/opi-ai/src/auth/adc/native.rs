@@ -1,8 +1,4 @@
-//! ADC native credential families for Vertex generation auth (task 20.21.1).
-//!
-//! The pinned sources are `google-auth-library@10.6.2` (via pi 1.3.0's
-//! `@google/genai@2.21.0` lock), `gaxios@7.1.4`, and `gcp-metadata@8.1.2`,
-//! restored read-only during corpus research. opi owns the algorithm:
+//! Native ADC credential sources for Vertex generation requests.
 //!
 //! * A `service_account` file signs an RS256 JWT (header `{"alg":"RS256"}`
 //!   only; claims `iss`/`scope`/`aud`/`iat`/`exp = iat + 3600`) through the

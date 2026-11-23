@@ -23,7 +23,7 @@ impl Catalog {
     /// The embedded builtin bundle bytes: `(catalog, manifest)`.
     ///
     /// Exposed so callers (and tests) can revalidate, copy, or derive
-    /// mutated candidates from the authentic bytes without new I/O.
+    /// mutated candidates from the embedded revision without new I/O.
     pub fn builtin_bundle_bytes() -> (&'static [u8], &'static [u8]) {
         (BUILTIN_CATALOG_BYTES, BUILTIN_MANIFEST_BYTES)
     }

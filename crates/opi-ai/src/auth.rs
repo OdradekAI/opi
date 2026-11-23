@@ -53,8 +53,7 @@ pub mod builtin_aws;
 #[cfg(feature = "builtins")]
 pub mod builtin_vertex;
 
-/// SDK OAuth flows (Anthropic first): injectable presenter + HTTP + store,
-/// pinned to pi 1.3.0 wire shapes.
+/// OAuth flows with an injected presenter, HTTP client and credential store.
 #[cfg(any(feature = "builtins", feature = "oauth-store"))]
 pub mod oauth;
 

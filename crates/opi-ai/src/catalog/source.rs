@@ -44,3 +44,15 @@ pub trait DynamicCatalogSource: Send + Sync {
         context: CatalogRefreshContext,
     ) -> BoxFuture<'static, Result<HashMap<String, ModelsStoreEntry>, ProviderError>>;
 }
+
+/// A registered route's catalog fetch using the same effective auth as calls.
+/// Models owns cancellation of the fetch, validation and publication. The
+/// scope identifies the endpoint whose acknowledged catalogs can be restored.
+pub(crate) trait AuthenticatedCatalog: Send + Sync {
+    fn scope(&self) -> &str;
+
+    fn fetch(
+        &self,
+        auth: crate::auth::ResolvedAuth,
+    ) -> crate::credential::BoxAuthFuture<'_, Result<Vec<crate::ModelInfo>, ProviderError>>;
+}

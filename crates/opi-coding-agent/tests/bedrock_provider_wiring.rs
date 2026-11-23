@@ -269,8 +269,10 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
         .mount(&server)
         .await;
 
+    let id = "us.anthropic.claude-sonnet-4-20250514-v1:0";
+    let spec = format!("amazon-bedrock:{id}");
     let mut config = OpiConfig::default();
-    config.defaults.model = "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0".to_owned();
+    config.defaults.model = spec.clone();
     config.providers.amazon_bedrock.base_url = Some(server.uri());
     let user_dir = tempfile::tempdir().unwrap();
     let bundle = opi_coding_agent::provider_factory::build_provider_bundle(
@@ -304,10 +306,11 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
         }
     ));
 
-    let mut request = opi_ai::provider::Request {
+    assert!(collection.get_model("amazon-bedrock", id).is_some());
+    let request = opi_ai::provider::Request {
         projection: Default::default(),
         transport: Default::default(),
-        model: "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0".into(),
+        model: spec.clone(),
         context: opi_ai::transcript::normalize_context(opi_ai::transcript::Context {
             system_prompt: None,
             messages: vec![opi_ai::message::Message::User(
@@ -335,12 +338,8 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
         telemetry_context: None,
         callbacks: Default::default(),
     };
-    let _ = &mut request;
     let prepared = collection
-        .prepare_call(
-            "amazon-bedrock:anthropic.claude-sonnet-4-20250514-v2:0",
-            request,
-        )
+        .prepare_call(&spec, request)
         .await
         .expect("prepare factory bedrock call");
     let mut attempt = prepared.start_attempt().expect("start factory attempt");
@@ -354,6 +353,11 @@ async fn factory_bedrock_route_resolves_local_credentials_and_streams() {
     assert!(saw_done, "factory route must stream the lifecycle");
 
     let received = server.received_requests().await.expect("recorded requests");
+    assert_eq!(received.len(), 1);
+    assert_eq!(
+        received[0].url.path(),
+        format!("/model/{id}/converse-stream")
+    );
     let authorization = received[0]
         .headers
         .get("authorization")

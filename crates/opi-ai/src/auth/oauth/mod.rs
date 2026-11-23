@@ -8,9 +8,8 @@
 //! browser is opened, no ambient
 //! environment is consulted, and no keychain is read here.
 //!
-//! Wire shapes are pinned to pi 1.3.0
-//! (`packages/ai/src/auth/oauth/{anthropic,pkce}.ts`): 32-byte base64url
-//! PKCE verifiers with S256 challenges, a preferred callback port that falls
+//! The loopback PKCE flow uses 32-byte random verifiers encoded as base64url
+//! with S256 challenges and a preferred callback port that falls
 //! back to a free loopback port and finally to paste-back only, JSON token
 //! requests with a 30-second per-request timeout, and real service expiry
 //! (the single five-minute near-expiry correction lives in
@@ -154,9 +153,7 @@ pub fn generate_state() -> String {
 // Shared PKCE authorization-code runner
 // ---------------------------------------------------------------------------
 
-/// How the token endpoint receives its request body. Pi 1.3.0 sends JSON
-/// (`anthropic.ts` `postJson`); flows not yet migrated keep form encoding
-/// until their own cutover.
+/// Request body encoding selected for the token endpoint by each OAuth flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenRequestEncoding {
     /// `Content-Type`/`Accept: application/json` with a JSON body and a

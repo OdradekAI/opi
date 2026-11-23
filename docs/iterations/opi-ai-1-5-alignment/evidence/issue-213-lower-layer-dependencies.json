@@ -1,0 +1,66 @@
+{
+  "date": "2026-11-20",
+  "base": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "host": "x86_64-pc-windows-msvc",
+  "baseline": "scripts/pi-sdk-conformance/lower_layer_baseline.json",
+  "baseline_sha256": "f198d26e8d0e5365d341f394095c5ffd60099f23fb7a77b2c87462ef1c804208",
+  "counts": {
+    "lower_layer_reviewed_contracts": 4,
+    "lower_layer_known_exceptions": 76,
+    "lower_layer_new_dependencies": 0,
+    "lower_layer_unused_baseline_sites": 0,
+    "lower_layer_excluded_test_sites": 15
+  },
+  "known_exceptions_by_direction": {
+    "auth -> models": 15,
+    "auth -> providers": 1,
+    "http -> stream": 1,
+    "provider -> stream": 1,
+    "provider -> transcript": 5,
+    "stream -> models": 1,
+    "stream -> transcript": 8,
+    "telemetry -> stream": 21,
+    "transcript -> provider": 7,
+    "transport -> api": 7,
+    "transport -> providers": 1,
+    "transport -> stream": 8
+  },
+  "contract_exports_and_consumers": [
+    {
+      "file": "crates/opi-ai/src/execution.rs",
+      "kind": "use",
+      "path": "crate::stream::AssistantStreamEvent"
+    },
+    {
+      "file": "crates/opi-ai/src/execution.rs",
+      "kind": "use",
+      "path": "crate::stream::CallFailure"
+    },
+    {
+      "file": "crates/opi-ai/src/execution.rs",
+      "kind": "use",
+      "path": "crate::stream::ProducerSnapshot"
+    },
+    {
+      "file": "crates/opi-ai/src/stream.rs",
+      "kind": "pub use",
+      "path": "crate::execution::StartedChatStream"
+    }
+  ],
+  "architecture_enforce_exit": 0,
+  "negative_control": {
+    "test": "test_enforce_rejects_new_lower_edges_but_excludes_test_modules",
+    "exit": 1,
+    "reported_production_sites": 3,
+    "excluded_test_sites": 1
+  },
+  "cargo_default_passed": {
+    "ai_telemetry": 21,
+    "execution_lifecycle": 41,
+    "provider_trait": 17,
+    "replay_contract": 22,
+    "transcript_contract": 29,
+    "whole_call_retry": 23
+  }
+}

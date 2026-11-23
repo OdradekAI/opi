@@ -1,0 +1,361 @@
+{
+  "family": "catalog-bundled-package",
+  "scope": "external consumer of the catalog-bundled feature from the actual opi-ai archive",
+  "target": "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+  "cargo_configs": [
+    {
+      "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+      "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+    }
+  ],
+  "runner_sha256": "674617b226df661323fd729c3ba41f5101adc4bfc8feb6937de5d549ca1d176f",
+  "steps": [
+    {
+      "name": "rustc-version",
+      "command": [
+        "rustc",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.03,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\rustc-version.stdout",
+        "sha256": "341fed434cf52bd9ba5ab2f3507dbd943a2062212028574e529fc3e7e5ecd7a8"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\rustc-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "cargo-version",
+      "command": [
+        "cargo",
+        "-vV"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.03,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\cargo-version.stdout",
+        "sha256": "84445e744167922091c9748ce36174218c437b2e04d3336e1fb7bce93a31011a"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\cargo-version.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "lease-start",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "start",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "46924"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.22,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\lease-start.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\lease-start.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "package",
+      "command": [
+        "cargo",
+        "package",
+        "-p",
+        "opi-telemetry",
+        "-p",
+        "opi-ai",
+        "--allow-dirty",
+        "--no-verify",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.73,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\package.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\package.stderr",
+        "sha256": "2a21bffff089edb625e6efe5e73d9b34e1b50ab0a650d3c4238fc4b76b6fecb5"
+      }
+    },
+    {
+      "name": "consumer-lock",
+      "command": [
+        "cargo",
+        "--config",
+        "E:\\opi\\scratch\\issue-268-provider-collection-r1\\candidate-telemetry.toml",
+        "generate-lockfile",
+        "--offline"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.28,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\consumer-lock.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\consumer-lock.stderr",
+        "sha256": "346613c3f61c194c92f692407e1ae35dfba19696ad0a931cd7573e281b24f7a2"
+      }
+    },
+    {
+      "name": "catalog-bundled-metadata",
+      "command": [
+        "cargo",
+        "--config",
+        "E:\\opi\\scratch\\issue-268-provider-collection-r1\\candidate-telemetry.toml",
+        "metadata",
+        "--format-version",
+        "1",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.16,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\catalog-bundled-metadata.stdout",
+        "sha256": "f985eda3623db3732384aaefcd9c49ffb1363fa33cbce32ce79dbb71c8de9cee"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\catalog-bundled-metadata.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "name": "catalog-bundled-build",
+      "command": [
+        "cargo",
+        "--config",
+        "E:\\opi\\scratch\\issue-268-provider-collection-r1\\candidate-telemetry.toml",
+        "build",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 15.08,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\catalog-bundled-build.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\catalog-bundled-build.stderr",
+        "sha256": "04a582d5917079d894b5312f34460f97e329249dfdbbf4ee48fba90ae9a87aaa"
+      }
+    },
+    {
+      "name": "catalog-bundled-run",
+      "command": [
+        "cargo",
+        "--config",
+        "E:\\opi\\scratch\\issue-268-provider-collection-r1\\candidate-telemetry.toml",
+        "run",
+        "--offline",
+        "--locked"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 1.44,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\catalog-bundled-run.stdout",
+        "sha256": "3276004114bebf853c007969862e3778da907aadd26414f1572ffbc2bffeb461"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\catalog-bundled-run.stderr",
+        "sha256": "b42c2ca3ba69bccf2430b4dd5b7bbc084ac3832fb0384a9d9d29d79c8a1ddcb7"
+      }
+    },
+    {
+      "name": "lease-end",
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+        "lease",
+        "end",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--pid",
+        "46924"
+      ],
+      "exit": 0,
+      "elapsed_seconds": 0.2,
+      "stdout": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\lease-end.stdout",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "E:\\opi\\scratch\\issue-268-provider-collection-r1\\lease-end.stderr",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "verdict": "PASS",
+  "package": {
+    "file": "opi-ai-0.8.3.crate",
+    "sha256": "9aa7b5da6974dbd4a0c5924447b036771ee37c982e0339de612c06aa7a27d7d0",
+    "dependencies": [
+      {
+        "file": "opi-telemetry-0.8.3.crate",
+        "sha256": "b2e38174ffdf518ded0b058109a9d55e0dc94a57aafc1df9383661458cb17e2c",
+        "source": "exact extracted candidate artifact; no workspace source patch"
+      }
+    ]
+  },
+  "graph": {
+    "features": [
+      "catalog-bundled"
+    ],
+    "forbidden_absent": [
+      "aws-lc-rs",
+      "aws-lc-sys",
+      "aws-smithy-query",
+      "aws-smithy-xml",
+      "flate2",
+      "hmac",
+      "libz-rs-sys",
+      "p256",
+      "reqwest",
+      "rustls",
+      "rustls-native-certs",
+      "sha1",
+      "xmlparser"
+    ],
+    "packages": [
+      "aho-corasick@1.1.5",
+      "base64@0.22.1",
+      "block-buffer@0.10.4",
+      "bumpalo@3.20.3",
+      "bytes@1.12.1",
+      "cfg-if@1.0.5",
+      "cpufeatures@0.2.17",
+      "crypto-common@0.1.7",
+      "deranged@0.5.8",
+      "digest@0.10.7",
+      "displaydoc@0.2.7",
+      "equivalent@1.0.3",
+      "errno@0.3.14",
+      "foldhash@0.2.0",
+      "form_urlencoded@1.2.2",
+      "futures-core@0.3.34",
+      "futures-macro@0.3.34",
+      "futures-sink@0.3.34",
+      "futures-task@0.3.34",
+      "futures-util@0.3.34",
+      "generic-array@0.14.7",
+      "getrandom@0.2.17",
+      "getrandom@0.4.3",
+      "hashbrown@0.17.1",
+      "hex@0.4.3",
+      "http@1.5.0",
+      "icu_collections@2.3.0",
+      "icu_locale_core@2.3.0",
+      "icu_normalizer@2.3.0",
+      "icu_normalizer_data@2.3.0",
+      "icu_properties@2.3.0",
+      "icu_properties_data@2.3.0",
+      "icu_provider@2.3.1",
+      "idna@1.1.0",
+      "idna_adapter@1.2.2",
+      "indexmap@2.14.2",
+      "itoa@1.0.18",
+      "js-sys@0.3.106",
+      "libc@0.2.191",
+      "litemap@0.8.3",
+      "memchr@2.8.3",
+      "mio@1.2.4",
+      "num-conv@0.2.2",
+      "once_cell@1.21.4",
+      "opi-ai@0.8.3",
+      "opi-catalog-bundled-consumer@0.0.0",
+      "opi-telemetry@0.8.3",
+      "percent-encoding@2.3.2",
+      "pin-project-lite@0.2.17",
+      "potential_utf@0.1.6",
+      "powerfmt@0.2.0",
+      "ppv-lite86@0.2.21",
+      "proc-macro2@1.0.107",
+      "quote@1.0.47",
+      "r-efi@6.0.0",
+      "rand@0.8.8",
+      "rand_chacha@0.3.1",
+      "rand_core@0.6.4",
+      "regex-automata@0.4.18",
+      "regex-syntax@0.8.11",
+      "regex@1.13.1",
+      "regress@0.12.0",
+      "rustversion@1.0.23",
+      "ryu-js@1.0.2",
+      "secrecy@0.10.3",
+      "serde@1.0.229",
+      "serde_core@1.0.229",
+      "serde_derive@1.0.229",
+      "serde_json@1.0.154",
+      "sha2@0.10.9",
+      "signal-hook-registry@1.4.8",
+      "slab@0.4.12",
+      "smallvec@1.16.3",
+      "socket2@0.6.5",
+      "stable_deref_trait@1.2.1",
+      "syn@2.0.119",
+      "syn@3.0.9",
+      "synstructure@0.14.0",
+      "thiserror-impl@2.0.21",
+      "thiserror@2.0.21",
+      "time-core@0.1.8",
+      "time-macros@0.2.27",
+      "time@0.3.47",
+      "tinystr@0.8.4",
+      "tinyvec@1.13.3",
+      "tokio-macros@2.7.2",
+      "tokio-util@0.7.20",
+      "tokio@1.53.3",
+      "tracing-attributes@0.1.31",
+      "tracing-core@0.1.36",
+      "tracing@0.1.44",
+      "typenum@1.20.1",
+      "unicode-ident@1.0.27",
+      "unicode-normalization@0.1.26",
+      "url@2.5.8",
+      "utf8_iter@1.0.4",
+      "uuid@1.26.1",
+      "version_check@0.9.5",
+      "wasi@0.11.1+wasi-snapshot-preview1",
+      "wasm-bindgen-macro-support@0.2.129",
+      "wasm-bindgen-macro@0.2.129",
+      "wasm-bindgen-shared@0.2.129",
+      "wasm-bindgen@0.2.129",
+      "windows-link@0.2.1",
+      "windows-sys@0.61.2",
+      "writeable@0.6.4",
+      "yoke-derive@0.8.4",
+      "yoke@0.8.3",
+      "zerocopy-derive@0.8.63",
+      "zerocopy@0.8.63",
+      "zerofrom-derive@0.1.8",
+      "zerofrom@0.1.8",
+      "zeroize@1.9.1",
+      "zerotrie@0.2.5",
+      "zerovec-derive@0.11.6",
+      "zerovec@0.11.8",
+      "zmij@1.0.23"
+    ]
+  },
+  "bundle_summary": "catalog=sha256-3b2481f38cf5e0532d12962b25617aee9458ea7463c83aaf8a34af99c5af277e providers=42 chat=1592 image=64 classifier=56",
+  "consumer_sources": {
+    "Cargo.toml": "a1dc090060547924424f090487cf90773f284b73d2aadf29222fc385c8c9e9f3",
+    "src/main.rs": "2b84c2fcda2faf014f5d28183f5f720b386137dd90578f8939bcd95df3f7634e",
+    "Cargo.lock": "0fdc9a53f2ca8ea6c4127439b5caac56998d6e3f5a7651bd6717a6a93ef9d686"
+  }
+}

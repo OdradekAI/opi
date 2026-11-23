@@ -78,26 +78,15 @@ impl VertexRouteContext {
 }
 
 impl VertexRouteContext {
-    /// Build the Vertex AI streaming URL for a given model.
+    /// Build the Vertex AI streaming URL using the configured project scope.
     ///
     /// Express (API-key) mode drops the project/location resource prefix and
     /// routes to the collection endpoint; `location = "global"` keeps the
     /// project prefix on the global domain.
     pub fn build_vertex_url(&self, model_id: &str) -> String {
-        if self.express {
-            return format!(
-                "{base}/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse",
-                base = self.base_url,
-                model = model_id,
-            );
-        }
-        format!(
-            "{base}/v1/projects/{project}/locations/{location}/publishers/google/models/{model}:streamGenerateContent?alt=sse",
-            base = self.base_url,
-            project = self.project,
-            location = self.location,
-            model = model_id,
-        )
+        let scope = (!self.express).then_some((self.project.as_str(), self.location.as_str()));
+        let collection = self.collection_url(scope);
+        format!("{collection}/{model_id}:streamGenerateContent?alt=sse")
     }
 
     /// Build the request body (delegates to inner Gemini provider).
@@ -120,7 +109,7 @@ impl VertexRouteContext {
 
     /// Stream events from a raw SSE response body (for testing).
     pub fn stream_from_sse(&self, sse_body: &str, cancel: CancellationToken) -> EventStream {
-        let mut mapper = GeminiMapper::new("vertex", crate::model_info::WireApi::GoogleVertex, "");
+        let mut mapper = GeminiMapper::new(self.id(), crate::model_info::WireApi::GoogleVertex, "");
         let mut stream_events: Vec<Result<AssistantStreamEvent, ProviderError>> = Vec::new();
         let mut terminal_error = false;
 
@@ -178,11 +167,11 @@ impl Provider for VertexRouteContext {
     }
 
     fn id(&self) -> &str {
-        "vertex"
+        self.inner.id()
     }
 
     fn models(&self) -> &[ModelInfo] {
-        &self.models
+        self.inner.models()
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
@@ -200,6 +189,18 @@ impl VertexRouteContext {
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::GoogleVertex) {
             Ok(facts) => facts,
             Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
+        };
+        let model_id = request
+            .model
+            .strip_prefix(self.id())
+            .and_then(|rest| rest.strip_prefix(':'))
+            .unwrap_or(&request.model);
+        let Some(model) = self.models().iter().find(|model| model.id == model_id) else {
+            let error = ProviderError::UnknownModel {
+                provider_id: self.id().to_owned(),
+                model_id: model_id.to_owned(),
+            };
+            return Box::pin(stream::once(async move { Err(error) }));
         };
         let event_projection = projection.clone();
         crate::stream::project_call(event_projection, || -> EventStream {
@@ -232,11 +233,9 @@ impl VertexRouteContext {
                     ))]));
                 }
             };
-            // ADC routing owns the project/location resource prefix: a Bearer
-            // dispatch without either is a typed setup failure, never a silently
-            // degraded URL (pi resolveProject/resolveLocation throw).
-            if !self.express
-                && auth.base_url.is_none()
+            // Without a prepared collection, Bearer dispatch resolves the
+            // resource scope from the configured project and location.
+            if auth.base_url.is_none()
                 && matches!(auth_mode, VertexAuthMode::Bearer { .. })
                 && self.project.trim().is_empty()
             {
@@ -246,8 +245,7 @@ impl VertexRouteContext {
                     ),
                 ))]));
             }
-            if !self.express
-                && auth.base_url.is_none()
+            if auth.base_url.is_none()
                 && matches!(auth_mode, VertexAuthMode::Bearer { .. })
                 && self.location.trim().is_empty()
             {
@@ -257,51 +255,37 @@ impl VertexRouteContext {
                     ),
                 ))]));
             }
-            let model_id = request
-                .model
-                .split_once(':')
-                .map(|(_, id)| id)
-                .unwrap_or(&request.model)
-                .to_string();
-
             // An explicit complete model base owns the collection scope. The
             // catalog's location template remains an instruction to use the
             // resolved Express/ADC endpoint instead.
-            let model_base = self
-                .models
-                .iter()
-                .find(|model| model.id == model_id)
-                .and_then(|model| model.base_url.as_deref())
+            let model_base = model
+                .base_url
+                .as_deref()
                 .map(str::trim)
                 .filter(|base| !base.is_empty() && !base.contains("{location}"));
-            let url = if let Some(base) = model_base {
+            let collection = if let Some(base) = model_base {
                 let version = if vertex_base_has_api_version(base) {
                     ""
                 } else {
                     "/v1"
                 };
                 format!(
-                    "{}{version}/publishers/google/models/{model_id}:streamGenerateContent?alt=sse",
-                    base.strip_suffix('/').unwrap_or(base)
+                    "{}{version}/publishers/google/models",
+                    base.trim_end_matches('/')
                 )
-            } else if let Some(collection) = auth.base_url.as_deref() {
-                format!(
-                    "{}/{model_id}:streamGenerateContent?alt=sse",
-                    collection.trim_end_matches('/')
-                )
-            } else if self.express {
-                self.build_vertex_url(&model_id)
             } else {
-                match &auth_mode {
-                    VertexAuthMode::Express { .. } => format!(
-                        "{base}/v1/publishers/google/models/{model}:streamGenerateContent?alt=sse",
-                        base = self.base_url,
-                        model = model_id,
-                    ),
-                    VertexAuthMode::Bearer { .. } => self.build_vertex_url(&model_id),
-                }
+                auth.base_url.unwrap_or_else(|| {
+                    let scope = matches!(auth_mode, VertexAuthMode::Bearer { .. })
+                        .then_some((self.project.as_str(), self.location.as_str()));
+                    self.collection_url(scope)
+                })
             };
-            let requested_model = model_id;
+            let url = format!(
+                "{}/{}:streamGenerateContent?alt=sse",
+                collection.trim_end_matches('/'),
+                model.id,
+            );
+            let requested_model = model.id.clone();
             let body = match self.build_request_body_with_options(&request, native_options.as_ref())
             {
                 Ok(body) => body,
@@ -311,15 +295,10 @@ impl VertexRouteContext {
             let callbacks = request.callbacks.clone();
             let cancel = request.cancel;
             let timeout = request.timeout;
-            let model_headers = self
-                .models
-                .iter()
-                .find(|model| model.id == requested_model)
-                .map(|model| model.headers.clone())
-                .unwrap_or_default();
+            let model_headers = model.headers.clone();
             let extra_headers = request.extra_headers;
-            let http_client = self.client.client().clone();
-            let provider_identity = self.provider_identity.clone();
+            let http_client = self.inner.client.client().clone();
+            let provider_identity = self.id().to_owned();
 
             let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
             snapshot.record(&crate::api::gemini::empty_assistant_message(
@@ -818,7 +797,7 @@ impl crate::api::contract::ChatApi<GoogleVertexOptions> for GoogleVertexChatApi 
     }
 
     fn provider_id(&self) -> &str {
-        "vertex"
+        self.provider.id()
     }
 
     fn complete_record(&self) -> ModelInfo {

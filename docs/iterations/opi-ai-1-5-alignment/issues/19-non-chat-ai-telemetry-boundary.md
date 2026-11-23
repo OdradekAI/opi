@@ -43,7 +43,7 @@ creation for deferred cancellation, image generation and classification.
 - Pi source: `.pi/pi-1.5.0/packages/ai/src/telemetry.ts:123-153` defines the
   request/poll observer and its `poll` switch.
 - Rust regression: `crates/opi-ai/tests/ai_telemetry.rs`.
-- Carrier regressions: `crates/opi-ai/tests/deferred_contract.rs`,
+- Carrier regressions: `crates/opi-ai/tests/deferred_contract/telemetry.rs`,
   `crates/opi-ai/tests/openrouter_fixtures.rs`,
   `crates/opi-ai/tests/classifier_contract.rs`.
 

@@ -285,7 +285,10 @@ fn independent_adapters_project_current_prompt_and_complete_tool_schemas() {
         &context,
         "openai-responses:gpt-4o",
         |request| OpenAiResponsesProvider::new(None).build_request_body(request),
-        RESPONSES,
+        WireView {
+            strict: Some(Value::Bool(false)),
+            ..RESPONSES
+        },
     );
     let codex = OpenAiCodexResponsesProvider::new(
         None,

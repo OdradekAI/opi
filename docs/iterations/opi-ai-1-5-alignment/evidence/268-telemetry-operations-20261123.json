@@ -1,0 +1,1257 @@
+{
+  "schema": 1,
+  "issue": 268,
+  "batch": 34,
+  "date": "2026-11-23",
+  "baseline_head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+  "test_impact": {
+    "retain": 12,
+    "update": 1
+  },
+  "target": {
+    "target": "telemetry_operations",
+    "owner": "telemetry",
+    "layer": "assembly",
+    "cost": "local-io",
+    "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+    "runners": "archive@scripts/pi-sdk-conformance/run_readme_examples.py",
+    "source": "tests/telemetry_operations.rs",
+    "required-features": "builtins,telemetry-tracing"
+  },
+  "source_before": {
+    "path": "E:/opi/scratch/issue-268-telemetry-operations-20261123-105116/original.rs",
+    "bytes": 69128,
+    "sha256": "33eb8a56ca313baed174a5e47ddd7ba4f5a207a9bc05aac2a717abbf04605378"
+  },
+  "index": {
+    "path": "crates/opi-ai/tests/telemetry_operations.rs",
+    "bytes": 416,
+    "sha256": "95d764c3111257b1cfaabe9240d94cbe8897a337631a8f1dae7055e3cc763255"
+  },
+  "topics": {
+    "chat": {
+      "passed": 8,
+      "contract": "Native, simple, and direct Chat, Drop, poll and context-free paths",
+      "source": {
+        "path": "crates/opi-ai/tests/telemetry_operations/chat.rs",
+        "bytes": 22530,
+        "sha256": "f6140e52cfd2c4653d6251c01b138bbd794936eb5513bf57a232f998c6cb92d0"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "telemetry_operations",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins,telemetry-tracing",
+              "--test",
+              "telemetry_operations",
+              "--",
+              "chat::"
+            ],
+            "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+            "reasons": [
+              "tests/telemetry_operations/chat.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins,telemetry-tracing",
+          "--test",
+          "telemetry_operations",
+          "--",
+          "chat::"
+        ],
+        "exit": 0,
+        "passed": 8,
+        "filtered_out": 4,
+        "cases": [
+          "chat::abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent",
+          "chat::constructed_unpolled_event_stream_scopes_drop",
+          "chat::default_and_noop_contexts_run_business_once_without_sdk_observation",
+          "chat::dropped_unpolled_models_call_completes_in_its_frozen_scope",
+          "chat::native_simple_and_direct_entries_attribute_adapters_to_the_frozen_parent",
+          "chat::noop_pending_stream_restores_ambient_and_preserves_business",
+          "chat::ordinary_chat_keeps_frozen_parent_on_the_execution_task",
+          "chat::pending_chat_stream_preserves_frozen_context_across_threads"
+        ]
+      }
+    },
+    "prepared": {
+      "passed": 1,
+      "contract": "Prepared Anthropic attempt, strict-tool rebuild, retry, callback scopes",
+      "source": {
+        "path": "crates/opi-ai/tests/telemetry_operations/prepared.rs",
+        "bytes": 11726,
+        "sha256": "0fa3c136792ee006a2e119eda25d1533abdec2e8b93b5de5b949816fcdb62c97"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "telemetry_operations",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins,telemetry-tracing",
+              "--test",
+              "telemetry_operations",
+              "--",
+              "prepared::"
+            ],
+            "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+            "reasons": [
+              "tests/telemetry_operations/prepared.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins,telemetry-tracing",
+          "--test",
+          "telemetry_operations",
+          "--",
+          "prepared::"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "filtered_out": 11,
+        "cases": [
+          "prepared::advanced_prepare_retries_and_strict_variants_keep_the_frozen_context"
+        ]
+      }
+    },
+    "images": {
+      "passed": 1,
+      "contract": "OpenRouter Images parent, callbacks and wire invariance",
+      "source": {
+        "path": "crates/opi-ai/tests/telemetry_operations/images.rs",
+        "bytes": 6788,
+        "sha256": "a4a70ee4e31a82a41982bdb920e39fe3fd3ca2dc0cf1679362879613367aa8f4"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "telemetry_operations",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins,telemetry-tracing",
+              "--test",
+              "telemetry_operations",
+              "--",
+              "images::"
+            ],
+            "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+            "reasons": [
+              "tests/telemetry_operations/images.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins,telemetry-tracing",
+          "--test",
+          "telemetry_operations",
+          "--",
+          "images::"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "filtered_out": 11,
+        "cases": [
+          "images::image_generation_freezes_context_off_wire_and_keeps_business_identical"
+        ]
+      }
+    },
+    "classifier": {
+      "passed": 1,
+      "contract": "System One classification parent, callbacks and wire invariance",
+      "source": {
+        "path": "crates/opi-ai/tests/telemetry_operations/classifier.rs",
+        "bytes": 6322,
+        "sha256": "4f282dc81c8462ba18bb99620fab3d01803b0a7d9baf032f39bc8d3d34eaee04"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "telemetry_operations",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins,telemetry-tracing",
+              "--test",
+              "telemetry_operations",
+              "--",
+              "classifier::"
+            ],
+            "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+            "reasons": [
+              "tests/telemetry_operations/classifier.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins,telemetry-tracing",
+          "--test",
+          "telemetry_operations",
+          "--",
+          "classifier::"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "filtered_out": 11,
+        "cases": [
+          "classifier::classifier_calls_freeze_context_off_wire_and_keep_business_identical"
+        ]
+      }
+    },
+    "deferred": {
+      "passed": 1,
+      "contract": "Deferred submit, fetch, cancel, drop, and serialized result",
+      "source": {
+        "path": "crates/opi-ai/tests/telemetry_operations/deferred.rs",
+        "bytes": 6523,
+        "sha256": "318f5293c27c5b74bed9265e69d23154c0b599e5e774b939d1af6d7b9c968e22"
+      },
+      "selector": {
+        "scope": "focused",
+        "expansion": [],
+        "tests": [
+          {
+            "target": "telemetry_operations",
+            "args": [
+              "cargo",
+              "test",
+              "--locked",
+              "--offline",
+              "-p",
+              "opi-ai",
+              "--no-default-features",
+              "--features",
+              "builtins,telemetry-tracing",
+              "--test",
+              "telemetry_operations",
+              "--",
+              "deferred::"
+            ],
+            "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+            "reasons": [
+              "tests/telemetry_operations/deferred.rs"
+            ]
+          }
+        ],
+        "runners": [
+          "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+        ],
+        "broad_commands": [],
+        "additional_checks": []
+      },
+      "execution": {
+        "command": [
+          "D:\\Users\\Luiz\\anaconda3\\python.exe",
+          "scripts/opi-cargo-cache.py",
+          "run",
+          "--target",
+          "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+          "--",
+          "test",
+          "--locked",
+          "--offline",
+          "-p",
+          "opi-ai",
+          "--no-default-features",
+          "--features",
+          "builtins,telemetry-tracing",
+          "--test",
+          "telemetry_operations",
+          "--",
+          "deferred::"
+        ],
+        "exit": 0,
+        "passed": 1,
+        "filtered_out": 11,
+        "cases": [
+          "deferred::deferred_submit_fetch_and_cancel_freeze_the_context_and_the_handle_stays_serializable"
+        ]
+      }
+    }
+  },
+  "fixture": {
+    "source": {
+      "path": "crates/opi-ai/tests/telemetry_operations/fixtures.rs",
+      "bytes": 15144,
+      "sha256": "25c742ea6fd6eac6fa18ed52fe50d3ece1f5e8c68bf6b5c2924b06c40544cb70"
+    },
+    "owner": "telemetry",
+    "scope": "within telemetry_operations",
+    "purpose": "Recording subscriber, ambient polling, redaction canaries, wire/serialized key assertions and Chat/Deferred marker"
+  },
+  "full_selection_from": {
+    "index": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "telemetry_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--test",
+            "telemetry_operations"
+          ],
+          "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+          "reasons": [
+            "tests/telemetry_operations.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    },
+    "fixtures": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "telemetry_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--test",
+            "telemetry_operations"
+          ],
+          "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+          "reasons": [
+            "tests/telemetry_operations/fixtures.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    }
+  },
+  "missing_source": {
+    "scope": "broader checks required",
+    "expansion": [
+      "tests/telemetry_operations/__missing_topic__.rs: missing or moved path; verify the replacement and remaining consumers",
+      "tests/telemetry_operations/__missing_topic__.rs: no resolved Cargo test consumer"
+    ],
+    "tests": [],
+    "runners": [],
+    "broad_commands": [
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--all-targets"
+      ],
+      [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--tests"
+      ]
+    ],
+    "additional_checks": [
+      "For feature changes also verify each affected owner in isolation and its package consumer."
+    ]
+  },
+  "workspace_test": {
+    "command": [
+      "python",
+      "scripts/opi-cargo-cache.py",
+      "run",
+      "--target",
+      "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+      "--",
+      "test",
+      "--locked",
+      "--offline",
+      "-p",
+      "opi-ai",
+      "--no-default-features",
+      "--features",
+      "builtins,telemetry-tracing",
+      "--test",
+      "telemetry_operations"
+    ],
+    "before": {
+      "passed": 12,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-telemetry-operations-20261123-105116/baseline.stdout",
+        "bytes": 197086,
+        "sha256": "2c251a6cbf937f31827f9d4c74e59e0f235657656d9e2656e728768232283ca7"
+      }
+    },
+    "after": {
+      "passed": 12,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-telemetry-operations-20261123-105116/workspace.stdout",
+        "bytes": 197173,
+        "sha256": "7c06cce67e9c96b9e058b885d4dabd6ae111c58def4e8496a09b8ed698e714b9"
+      }
+    },
+    "test_bodies_identical": true,
+    "old_to_new_case": {
+      "abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent": "chat::abandoned_chat_call_scopes_poll_and_drop_to_the_frozen_parent",
+      "advanced_prepare_retries_and_strict_variants_keep_the_frozen_context": "prepared::advanced_prepare_retries_and_strict_variants_keep_the_frozen_context",
+      "classifier_calls_freeze_context_off_wire_and_keep_business_identical": "classifier::classifier_calls_freeze_context_off_wire_and_keep_business_identical",
+      "constructed_unpolled_event_stream_scopes_drop": "chat::constructed_unpolled_event_stream_scopes_drop",
+      "default_and_noop_contexts_run_business_once_without_sdk_observation": "chat::default_and_noop_contexts_run_business_once_without_sdk_observation",
+      "deferred_submit_fetch_and_cancel_freeze_the_context_and_the_handle_stays_serializable": "deferred::deferred_submit_fetch_and_cancel_freeze_the_context_and_the_handle_stays_serializable",
+      "dropped_unpolled_models_call_completes_in_its_frozen_scope": "chat::dropped_unpolled_models_call_completes_in_its_frozen_scope",
+      "image_generation_freezes_context_off_wire_and_keeps_business_identical": "images::image_generation_freezes_context_off_wire_and_keeps_business_identical",
+      "native_simple_and_direct_entries_attribute_adapters_to_the_frozen_parent": "chat::native_simple_and_direct_entries_attribute_adapters_to_the_frozen_parent",
+      "noop_pending_stream_restores_ambient_and_preserves_business": "chat::noop_pending_stream_restores_ambient_and_preserves_business",
+      "ordinary_chat_keeps_frozen_parent_on_the_execution_task": "chat::ordinary_chat_keeps_frozen_parent_on_the_execution_task",
+      "pending_chat_stream_preserves_frozen_context_across_threads": "chat::pending_chat_stream_preserves_frozen_context_across_threads"
+    }
+  },
+  "system_one": {
+    "selected_commands_and_runners_equal": true,
+    "before_selector": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "builtin_auth_ownership",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "builtin_auth_ownership",
+            "--",
+            "custom_classifier_survives_store"
+          ],
+          "cases": "Builtin auth rebinding, explicit operation replacement and scoped candidate precedence",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "catalog_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "catalog_operations",
+            "--",
+            "complete_nonchat_record_protected_header",
+            "custom_classifier_availability",
+            "dynamic_unknown_prices",
+            "finite_fractional_thresholds",
+            "management_lists_actual_operation_owners",
+            "mixed_operation_catalog_reopens",
+            "removal_preserves_captured_image_and_classifier",
+            "source_unknown_base"
+          ],
+          "cases": "Operation-qualified publication, adapter selection and dispatch, and persisted pricing; the external catalog-bundled consumer verifies packaged catalog bytes",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "classifier_contract",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "classifier_contract"
+          ],
+          "cases": "Four classifier wire modules, Models lifecycle, declaration order and shared dispatch and acquisition",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "external_sdk",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "external_sdk",
+            "--",
+            "classifier_and_image_apis_answer_typed_through_one_instance"
+          ],
+          "cases": "Consumer-shaped Models instance across chat, classifier, image, auth and deferred operations",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "provider_collection",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "provider_collection",
+            "--",
+            "builtin_classifier_profiles_send",
+            "builtin_nonstream_operations_reuse",
+            "builtin_openrouter_classifier_sends_images_before_state",
+            "classifier_and_image_builtins_register",
+            "classifier_same_api_keeps"
+          ],
+          "cases": "Builtin registration, auth, chat and non-chat routes; collection dispatch, registry refresh, catalog store publication, retry and selected-owner management",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "telemetry_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--test",
+            "telemetry_operations",
+            "--",
+            "classifier_calls_freeze_context"
+          ],
+          "cases": "Cross-operation calls and callbacks retain the source parent with tracing or no-op context",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py",
+        "archive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py",
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    },
+    "after_selector": {
+      "scope": "focused",
+      "expansion": [],
+      "tests": [
+        {
+          "target": "builtin_auth_ownership",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "builtin_auth_ownership",
+            "--",
+            "custom_classifier_survives_store"
+          ],
+          "cases": "Builtin auth rebinding, explicit operation replacement and scoped candidate precedence",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "catalog_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "catalog_operations",
+            "--",
+            "complete_nonchat_record_protected_header",
+            "custom_classifier_availability",
+            "dynamic_unknown_prices",
+            "finite_fractional_thresholds",
+            "management_lists_actual_operation_owners",
+            "mixed_operation_catalog_reopens",
+            "removal_preserves_captured_image_and_classifier",
+            "source_unknown_base"
+          ],
+          "cases": "Operation-qualified publication, adapter selection and dispatch, and persisted pricing; the external catalog-bundled consumer verifies packaged catalog bytes",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "classifier_contract",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "classifier_contract"
+          ],
+          "cases": "Four classifier wire modules, Models lifecycle, declaration order and shared dispatch and acquisition",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "external_sdk",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "external_sdk",
+            "--",
+            "classifier_and_image_apis_answer_typed_through_one_instance"
+          ],
+          "cases": "Consumer-shaped Models instance across chat, classifier, image, auth and deferred operations",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "provider_collection",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins",
+            "--test",
+            "provider_collection",
+            "--",
+            "builtin_classifier_profiles_send",
+            "builtin_nonstream_operations_reuse",
+            "builtin_openrouter_classifier_sends_images_before_state",
+            "classifier_and_image_builtins_register",
+            "classifier_same_api_keeps"
+          ],
+          "cases": "Builtin registration, auth, chat and non-chat routes; collection dispatch, registry refresh, catalog store publication, retry and selected-owner management",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        },
+        {
+          "target": "telemetry_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--test",
+            "telemetry_operations",
+            "--",
+            "classifier_calls_freeze_context"
+          ],
+          "cases": "Frozen Chat, prepared, image, classifier and Deferred context; the external README consumer verifies builtins with and without tracing",
+          "reasons": [
+            "src/api/system_one.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_catalog_bundled_package.py",
+        "archive@scripts/pi-sdk-conformance/run_protocol_adapters_package.py",
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py"
+      ],
+      "broad_commands": [],
+      "additional_checks": []
+    },
+    "telemetry_test": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins,telemetry-tracing",
+        "--test",
+        "telemetry_operations",
+        "--",
+        "classifier_calls_freeze_context"
+      ],
+      "exit": 0,
+      "passed": 1,
+      "filtered_out": 11,
+      "cases": [
+        "classifier::classifier_calls_freeze_context_off_wire_and_keep_business_identical"
+      ]
+    },
+    "unit_test": {
+      "test": "SelectionTests.test_system_one_and_shared_test_source_override_narrow_filters",
+      "passed": 1,
+      "log": {
+        "path": "E:/opi/scratch/issue-268-telemetry-operations-20261123-105116/selector-unit.stderr",
+        "bytes": 263,
+        "sha256": "fcfb6c4c41d33a49c1eadc16ea3618cab22c117ca4713661d092f9eca133c08d"
+      }
+    }
+  },
+  "archive": {
+    "consumer": "run_readme_examples.py; packaged builtin feature matrix and public SDK onboarding",
+    "consumer_receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/268-telemetry-operations-readme-package-20261123.json",
+    "consumer_receipt_sha256": "ccd47bc2962442b6007251872d20e3dcfc348d7edef521c5d7d269274eb8d884",
+    "profiles": {
+      "builtins-no-tracing": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "defaults-on": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "default",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "telemetry-tracing",
+        "tls-backend",
+        "websocket-compression"
+      ]
+    },
+    "test_from_extracted_package": {
+      "archive": "E:\\opi\\scratch\\issue-268-telemetry-operations-20261123-105116\\readme\\opi-ai-0.8.3.crate",
+      "package": "E:\\opi\\scratch\\issue-268-telemetry-operations-20261123-105116\\readme\\package\\opi-ai-0.8.3",
+      "configs": [
+        {
+          "file": "C:\\Users\\Luiz\\.cargo\\config.toml",
+          "sha256": "121433fda1d6f1bc97e1684c94b8f6f246202845a3662ed57b61123242e2e775"
+        }
+      ],
+      "archive_sha256": "3d2f9502f7588cb52a0bc3f1c11ddb486ba15a0b0506a8c63b80b42e1ab275d4",
+      "files": {
+        "tests/telemetry_operations.rs": {
+          "bytes": 416,
+          "sha256": "95d764c3111257b1cfaabe9240d94cbe8897a337631a8f1dae7055e3cc763255"
+        },
+        "tests/telemetry_operations/chat.rs": {
+          "bytes": 22530,
+          "sha256": "f6140e52cfd2c4653d6251c01b138bbd794936eb5513bf57a232f998c6cb92d0"
+        },
+        "tests/telemetry_operations/prepared.rs": {
+          "bytes": 11726,
+          "sha256": "0fa3c136792ee006a2e119eda25d1533abdec2e8b93b5de5b949816fcdb62c97"
+        },
+        "tests/telemetry_operations/images.rs": {
+          "bytes": 6788,
+          "sha256": "a4a70ee4e31a82a41982bdb920e39fe3fd3ca2dc0cf1679362879613367aa8f4"
+        },
+        "tests/telemetry_operations/classifier.rs": {
+          "bytes": 6322,
+          "sha256": "4f282dc81c8462ba18bb99620fab3d01803b0a7d9baf032f39bc8d3d34eaee04"
+        },
+        "tests/telemetry_operations/deferred.rs": {
+          "bytes": 6523,
+          "sha256": "318f5293c27c5b74bed9265e69d23154c0b599e5e774b939d1af6d7b9c968e22"
+        },
+        "tests/telemetry_operations/fixtures.rs": {
+          "bytes": 15144,
+          "sha256": "25c742ea6fd6eac6fa18ed52fe50d3ece1f5e8c68bf6b5c2924b06c40544cb70"
+        }
+      },
+      "steps": [
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-telemetry-operations-20261123-105116\\readme\\candidate-telemetry.toml",
+            "update",
+            "-p",
+            "opi-telemetry",
+            "--offline"
+          ],
+          "exit": 0,
+          "label": "archive-scratch-lock"
+        },
+        {
+          "command": [
+            "cargo",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-telemetry-operations-20261123-105116\\readme\\candidate-telemetry.toml",
+            "metadata",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--format-version",
+            "1"
+          ],
+          "exit": 0,
+          "label": "archive-metadata"
+        },
+        {
+          "command": [
+            "D:\\Users\\Luiz\\anaconda3\\python.exe",
+            "D:\\Luiz\\Odradek\\opi\\scripts\\opi-cargo-cache.py",
+            "run",
+            "--target",
+            "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+            "--",
+            "test",
+            "--config",
+            "E:\\opi\\scratch\\issue-268-telemetry-operations-20261123-105116\\readme\\candidate-telemetry.toml",
+            "--locked",
+            "--offline",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--test",
+            "telemetry_operations"
+          ],
+          "exit": 0,
+          "label": "archive-telemetry-operations"
+        }
+      ],
+      "scratch_lock": {
+        "archived_sha256": "855873eecfd170310b5a2a8c48699e896945ee803b6fe42f70144676af54bc77",
+        "updated_sha256": "df4e146922e31df47892ed506522bc19a2ab3f844500f07567117528a702e6c9",
+        "only_changed_package": "opi-telemetry"
+      },
+      "active_features": [
+        "builtins",
+        "catalog-bundled",
+        "cloud-auth",
+        "http-transport",
+        "oauth-store",
+        "protocol-adapters",
+        "provider-anthropic",
+        "provider-azure-openai",
+        "provider-bedrock",
+        "provider-gemini",
+        "provider-mistral",
+        "provider-openai-chat",
+        "provider-openai-codex-responses",
+        "provider-openai-responses",
+        "provider-openai-responses-shared",
+        "provider-openrouter",
+        "provider-openrouter-usage",
+        "provider-pi-messages",
+        "provider-protocol-common",
+        "provider-vertex",
+        "telemetry-tracing",
+        "tls-backend",
+        "websocket-compression"
+      ],
+      "suite": {
+        "kind": [
+          "test"
+        ],
+        "crate_types": [
+          "bin"
+        ],
+        "name": "telemetry_operations",
+        "src_path": "E:\\opi\\scratch\\issue-268-telemetry-operations-20261123-105116\\readme\\package\\opi-ai-0.8.3\\tests\\telemetry_operations.rs",
+        "edition": "2024",
+        "required-features": [
+          "builtins",
+          "telemetry-tracing"
+        ],
+        "doc": false,
+        "doctest": false,
+        "test": true
+      },
+      "sdk": "path+file:///E:/opi/scratch/issue-268-telemetry-operations-20261123-105116/readme/package/opi-ai-0.8.3#opi-ai@0.8.3",
+      "companion_telemetry": "path+file:///E:/opi/scratch/issue-268-telemetry-operations-20261123-105116/readme/package/opi-telemetry-0.8.3#opi-telemetry@0.8.3",
+      "passed": 12
+    }
+  },
+  "differential": {
+    "owner": "examples/lifecycle_differential.rs and differential/test_rust_driver.py",
+    "direct_test_source_inputs": [],
+    "scope": "Execution timing and settlement; archived telemetry operation contract checked by telemetry_operations",
+    "applicable_prior_receipt": "docs/iterations/opi-ai-1-5-alignment/evidence/268-execution-lifecycle-20261123.json",
+    "identical_package_differential_inputs": 249,
+    "changed_package_inputs": []
+  },
+  "structure_gate": {
+    "exit": 0,
+    "targets": 124,
+    "rust_test_sources": 316,
+    "support_helpers": 16,
+    "support_consumer_edges": 60,
+    "summary_sha256": "10f905efd3985656e0723ed71cfb73dcd76220a5ddd9323d0ba649b21a58ae93",
+    "violations": [],
+    "changed_selection": {
+      "paths": [
+        "crates/opi-ai/tests/telemetry_operations.rs",
+        "crates/opi-ai/tests/telemetry_operations/chat.rs",
+        "crates/opi-ai/tests/telemetry_operations/prepared.rs",
+        "crates/opi-ai/tests/telemetry_operations/images.rs",
+        "crates/opi-ai/tests/telemetry_operations/classifier.rs",
+        "crates/opi-ai/tests/telemetry_operations/deferred.rs",
+        "crates/opi-ai/tests/telemetry_operations/fixtures.rs",
+        "crates/opi-ai/tests/targets.tsv"
+      ],
+      "scope": "focused",
+      "tests": [
+        {
+          "target": "telemetry_operations",
+          "args": [
+            "cargo",
+            "test",
+            "--locked",
+            "--offline",
+            "-p",
+            "opi-ai",
+            "--no-default-features",
+            "--features",
+            "builtins,telemetry-tracing",
+            "--test",
+            "telemetry_operations"
+          ],
+          "reasons": [
+            "tests/telemetry_operations.rs",
+            "tests/telemetry_operations/chat.rs",
+            "tests/telemetry_operations/classifier.rs",
+            "tests/telemetry_operations/deferred.rs",
+            "tests/telemetry_operations/fixtures.rs",
+            "tests/telemetry_operations/images.rs",
+            "tests/telemetry_operations/prepared.rs"
+          ]
+        }
+      ],
+      "runners": [
+        "archive@scripts/pi-sdk-conformance/run_readme_examples.py",
+        "inventory@scripts/pi-sdk-conformance/check_test_inventory.py"
+      ],
+      "expansion": []
+    }
+  },
+  "lint": {
+    "strict": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins,telemetry-tracing",
+        "--test",
+        "telemetry_operations",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "exit": 101
+    },
+    "advisory": {
+      "command": [
+        "D:\\Users\\Luiz\\anaconda3\\python.exe",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:/opi/cargo-targets/opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins,telemetry-tracing",
+        "--test",
+        "telemetry_operations"
+      ],
+      "exit": 0
+    },
+    "carried_in_diagnostics": [
+      "src/api/openai_responses.rs:706 clippy::too_many_arguments",
+      "src/models/auth_owner.rs:479 clippy::needless_borrow",
+      "src/models/prepared_call.rs:196 clippy::too_many_arguments"
+    ],
+    "workspace_format_files": [
+      "crates/opi-ai/tests/openai_responses_fixtures.rs",
+      "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+      "crates/opi-ai/tests/openai_responses_fixtures/wire.rs"
+    ],
+    "scoped_format_exit": 0,
+    "whitespace": {
+      "crlf_aware": 0,
+      "raw": 2
+    }
+  },
+  "worktree": {
+    "committed": "none-for-this-task",
+    "staged": {
+      "before": 0,
+      "after": 0
+    },
+    "unstaged": {
+      "before": 185,
+      "after": 185
+    },
+    "untracked": {
+      "before": 451,
+      "after": 459
+    },
+    "carried_in_and_touched": [
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "crates/opi-ai/tests/targets.tsv",
+      "crates/opi-ai/tests/telemetry_operations.rs",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md",
+      "scripts/pi-sdk-conformance/test_select_tests.py"
+    ],
+    "task_only": [
+      "crates/opi-ai/tests/telemetry_operations/chat.rs",
+      "crates/opi-ai/tests/telemetry_operations/classifier.rs",
+      "crates/opi-ai/tests/telemetry_operations/deferred.rs",
+      "crates/opi-ai/tests/telemetry_operations/fixtures.rs",
+      "crates/opi-ai/tests/telemetry_operations/images.rs",
+      "crates/opi-ai/tests/telemetry_operations/prepared.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-telemetry-operations-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-telemetry-operations-readme-package-20261123.json"
+    ]
+  }
+}

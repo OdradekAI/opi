@@ -498,9 +498,8 @@ impl std::str::FromStr for ChatThinkingFormat {
         })
     }
 }
-/// Declared Chat reasoning wire formats (task 20.36, AIR-022/V-11). The
-/// closed set is frozen from the pinned Pi 1.3.0 compat schema; each variant
-/// owns its on/off/null/omission wire projection in the Chat adapter.
+/// Chat reasoning wire formats. Each variant selects which on, off, null
+/// or omitted representation the Chat adapter sends.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub enum ChatThinkingFormat {
     #[default]

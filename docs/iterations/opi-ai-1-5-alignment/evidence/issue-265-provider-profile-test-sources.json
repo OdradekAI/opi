@@ -1,0 +1,39 @@
+{
+  "date": "2026-11-22",
+  "inventory": "crates/opi-ai/tests/targets.tsv",
+  "cargo_targets_before": 113,
+  "cargo_targets_after": 113,
+  "distinct_sources_before": 103,
+  "distinct_sources_after": 113,
+  "shared_source_removed": "tests/provider_protocol_profile.rs",
+  "profile_targets": {
+    "provider_anthropic_profile": "tests/provider_protocol_profile/anthropic.rs",
+    "provider_azure_openai_profile": "tests/provider_protocol_profile/azure_openai.rs",
+    "provider_bedrock_profile": "tests/provider_protocol_profile/bedrock.rs",
+    "provider_gemini_profile": "tests/provider_protocol_profile/gemini.rs",
+    "provider_mistral_profile": "tests/provider_protocol_profile/mistral.rs",
+    "provider_openai_chat_profile": "tests/provider_protocol_profile/openai_chat.rs",
+    "provider_openai_codex_responses_profile": "tests/provider_protocol_profile/openai_codex_responses.rs",
+    "provider_openai_responses_profile": "tests/provider_protocol_profile/openai_responses.rs",
+    "provider_openrouter_profile": "tests/provider_protocol_profile/openrouter.rs",
+    "provider_pi_messages_profile": "tests/provider_protocol_profile/pi_messages.rs",
+    "provider_vertex_profile": "tests/provider_protocol_profile/vertex.rs"
+  },
+  "selector": {
+    "focused_plans": 11,
+    "each_plan_has_one_target": true,
+    "each_plan_has_matching_feature": true
+  },
+  "checks": {
+    "inventory": "PASS",
+    "inventory_and_selector_tests": "15 passed",
+    "provider_profile_targets": "11 passed",
+    "all_features_test_clippy": "PASS with 3 pre-existing production warnings",
+    "affected_fixture_targets": {
+      "telemetry_operations": "12 passed",
+      "openrouter_fixtures": "55 passed"
+    },
+    "cargo_fmt": "PASS"
+  },
+  "verdict": "PASS"
+}

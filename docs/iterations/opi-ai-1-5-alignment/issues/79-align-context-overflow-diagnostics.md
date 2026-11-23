@@ -22,14 +22,14 @@ The status pattern preserves the JavaScript ASCII word class and whitespace
 boundary. Throttling and rate-limit exclusions take precedence. The
 Cerebras fallback covers bodyless 400 and compact `413(no body)` forms.
 [Predicate](../../../../crates/opi-ai/src/types/message.rs#L781) ·
-[Status controls](../../../../crates/opi-ai/tests/public_utilities.rs#L578)
+[Status controls](../../../../crates/opi-ai/tests/public_utilities/context_overflow.rs#L93)
 
 The whole-call helper already consults the predicate before matching
 transient diagnostics. The test for `custom-provider API error (413):
 upstream returned 503` returns the failed message after one producer
 invocation and zero retry callbacks. A 503 that merely mentions 413 in
 its body classifies as transient, as does the rate-limit control.
-[Whole-call test](../../../../crates/opi-ai/tests/whole_call_retry.rs#L464)
+[Whole-call test](../../../../crates/opi-ai/tests/whole_call_retry/call_and_callbacks.rs#L173)
 
 ## Verification
 

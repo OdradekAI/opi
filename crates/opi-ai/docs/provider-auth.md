@@ -57,20 +57,33 @@ the historical provider collection and credential factories.
 | Module | Provider id | Backend |
 |--------|-------------|---------|
 | `providers::anthropic` + `api::anthropic` | `anthropic` | Anthropic Messages streaming |
-| `providers::openai` + `api::openai` | `openai` | OpenAI Chat Completions streaming |
+| `providers::openai` + `api::openai_completions` | `openai` | OpenAI Chat Completions streaming |
 | `providers::openai_responses` + `api::openai_responses` | `openai-responses` | OpenAI Responses streaming |
 | `providers::openai_codex` + `api::openai_codex_responses` | `openai-codex` | Subscription-specific OpenAI Codex Responses streaming |
 | `providers::mapped` | caller-defined | One provider identity/catalog routed across checked concrete wires |
 | `providers::openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
 | `providers::mistral` + `api::mistral` | `mistral` | OpenAI-compatible Mistral profile |
-| `providers::gemini` + `api::gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
+| `providers::gemini` + `api::gemini` | `google` via `google_provider`, `gemini` via `GeminiProvider::new` | Gemini `streamGenerateContent?alt=sse` |
 | `providers::bedrock` + `api::bedrock` | `bedrock` | AWS Bedrock Converse streaming with SigV4 or Bearer authentication |
 | `providers::azure_openai` + `api::azure_openai` | `azure` | Azure OpenAI deployment-specific Chat **and** Responses wires |
-| `providers::vertex` + `api::vertex` | `vertex` | Google Vertex AI Gemini streaming |
+| `providers::vertex` + `api::vertex` | `google-vertex` via `google_vertex_provider`, `vertex` via `VertexProvider::new` or `express` | Google Vertex AI Gemini streaming |
 
 Built-in model lists are finite and intended for capability checks and model
 listing. Site-specific models, fine-tuned models, and deployments should be
 added through registry overrides or configured OpenAI-compatible profiles.
+
+The standalone Gemini factories and the SDK's built-in Google route draw from
+the same reviewed catalog. Direct dispatch returns `UnknownModel` for an ID
+absent from the provider's model list. Use `with_models` to bind explicit custom
+records. A factory host or proxy prefix supplies the default `/v1beta` endpoint,
+and a complete endpoint on a custom record takes precedence.
+
+Vertex's standalone and built-in routes use the same reviewed 13-model catalog.
+API keys use the Express publisher collection with `x-goog-api-key`. Bearer
+tokens use the project and location in the resource path. With the SDK builtin,
+`BuiltinVertexConfig::base_url` supplies the generation host or proxy prefix
+for either mode. A complete endpoint in an explicit SDK model record selects
+the publisher collection and can supply its own API version.
 
 ## Credentials, Request Enrichment, and Refresh
 
@@ -334,7 +347,7 @@ or Gemini path; "—" means not produced.
 | `openrouter` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `mistral` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `gemini` | thinking | PNG/JPEG/GIF/WebP | `cached_content` | — |
-| `bedrock` | `supports_thinking` models advertise thinking, but Converse-stream `reasoningContent` blocks are not parsed as thinking (parser limitation) | byte/base64 only; URL images rejected | `cache_read` / `cache_write` | — |
+| `bedrock` | ConverseStream parses `reasoningContent` into thinking events, preserves text signatures and retains redacted payloads as opaque thinking blocks | byte/base64 only; URL images rejected | `cache_read` / `cache_write` | — |
 | `azure_openai` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `vertex` | inherited | PNG/JPEG/GIF/WebP | `cached_content` | — |
 
@@ -408,8 +421,8 @@ product TOML profile and model compat) — they are never silently ignored.
 Request thinking intent and the selected `ModelInfo::thinking_level_map` are
 the only sources of reasoning wire output.
 
-Tool results project per the pinned source: text (or the `(see attached
-image)` / `(no tool output)` placeholders) rides the `role: "tool"` message,
+Tool results put text (or the `(see attached image)` and `(no tool output)`
+placeholders) in the `role: "tool"` message,
 and image parts ride one trailing user message labeled
 `Attached image(s) from tool result:` when the model accepts images; error
 results keep the deterministic `[tool_error]` prefix.
@@ -469,19 +482,21 @@ as Chat-Completions analogues, so server-side response chaining is not wired.
 
 ### Azure OpenAI dual wires
 
-Azure keeps both wires with explicit deployment/resource/api-version
-mapping (pinned source `azure-openai-config.ts`):
+SDK builtin registration and coding-agent use the same Azure chat catalog and
+`AzureCatalogProvider` route. Each selected record determines the protocol,
+model limits and request capabilities. The standalone factory is available
+with `provider-azure-openai`.
 
 | Mapping | Precedence | Wire effect |
 |---|---|---|
-| Base URL | explicit `azure_base_url` → selected base configuration → resource name → model `baseUrl` → typed `Config` failure | Source Chat/Responses use `/openai/v1` for a standard Azure resource host. Custom API bases keep their path; Responses appends `/responses` only if absent. |
-| API version | explicit `azure_api_version` → selected environment configuration → `v1` | Responses sends `?api-version=…`. Builtin Chat uses the OpenAI Chat path without this query; legacy direct Chat retains its versioned deployment URL. |
-| Deployment | explicit `azure_deployment_name` → provider `modelId=deployment` map → model id | Source wires send the deployment in body `model`, preserving catalog identity. Only legacy direct Chat also puts it in its URL. |
+| Base URL | native `azure_base_url` or CLI `endpoint` → `AZURE_OPENAI_BASE_URL` → `AZURE_OPENAI_RESOURCE_NAME` → model `baseUrl` → typed `Config` failure | Catalog Chat and Responses use `/openai/v1` for a standard Azure resource host. Custom API bases keep their path. |
+| API version | native `azure_api_version` or CLI `api_version` → `AZURE_OPENAI_API_VERSION` → `v1` | Responses sends `?api-version=…`. |
+| Deployment | native `azure_deployment_name` → `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` → catalog model ID | Comma-separated `model-id=deployment` pairs set body `model`. Lookup and results use the catalog ID. |
 
 The Responses wire (`WireApi::AzureOpenAiResponses`, `azure-openai-responses`
 records, public `AzureOpenAIResponsesChatApi` registered through
 `Models::register_chat_api`) reuses the exact Responses parameter assembly —
-`store: false`, off-effort `{"effort":"none"}`, summary default `auto`,
+`store: false`, catalog effort mapping, summary default `auto`,
 encrypted-reasoning include/signature/replay, the 16-token output floor —
 under Azure transport (`api-key` header, API-base `/responses` URL, azure status
 mapping, terminal duration, frozen telemetry producer). `AzureOpenAIOptions`
@@ -498,36 +513,77 @@ deployment and API-version values freeze once before acquisition attempts.
 
 ## Offline Bundled Model Catalog
 
-The `catalog` module embeds one authentic, versioned model catalog as offline
-crate resources: `resources/catalog/builtin/catalog.json` is byte-for-byte
-the validated bundled artifact, and `manifest.json` records the
-delivery-input provenance — source URL and revision, artifact SHA-256,
-Pi package/local-origin association, data schema version 6, bundle schema
-version, the full provider list with per-operation entry counts, and the
-digests of Pi's own validator/hydrator plus the opi packer. The bundle is
-produced by the explicit delivery-input tool `scripts/pi-catalog/pack.py`
-(verify with `--check`); nothing ever synthesizes catalog data from tests,
-defaults, or a generator run, and a missing authentic artifact is a blocking
-input rather than a reconstruction trigger.
+The `catalog` module embeds opi's model data as offline crate resources.
+Edit the model lists in [`resources/catalog/providers/`](../resources/catalog/providers).
+Each filename identifies the provider. The pair `(type, id)` identifies a record
+within that list. A chat model and an image model can share an ID.
 
-`Catalog::builtin()` parses and validates the embedded bytes once per
-process — no network I/O, account probing, or generator execution —
-re-verifying the artifact digest, bundle/data schema and minimum-reader versions, provider set,
-every entry's data contract (identity, modalities, capabilities, cost),
-`type:id` uniqueness per provider, and the structure digest. Any mismatch
-is a typed, fail-closed `CatalogError`; no partial catalog exists.
-Operation-qualified getters (`models(provider, operation)`,
-`model(provider, operation, id)`) expose chat/image/classifier entries with
-typed core fields plus the complete raw entry, ready for the store/refresh
-and profile/catalog integration owners. `CatalogHandle` owns the active
-revision: `try_install` validates a candidate completely and swaps
-atomically, so tampered, stale, wrong-version, missing-provider, duplicate,
-or contract-violating candidates are rejected while the last-known revision
-stays readable, and already-held `Arc<Catalog>` values are never rebound.
-Explicit complete custom records (`ChatModelRecord`) remain usable
-independently of any catalog state. Image entries are catalog metadata for
-selection/pricing only; the SDK's own image operation paths are owned by the
-typed image API task.
+From the repository root, build a candidate in a fresh directory and review
+the generated files before copying them to `crates/opi-ai/resources/catalog/builtin`.
+Use `check` to verify that the committed resources match the source lists.
+
+```sh
+cargo run -p opi-ai --no-default-features --example build_catalog -- build crates/opi-ai/resources/catalog/providers catalog-candidate
+cargo run -p opi-ai --no-default-features --example build_catalog -- check crates/opi-ai/resources/catalog/providers crates/opi-ai/resources/catalog/builtin
+```
+
+The builder rejects duplicate JSON keys, unresolved builtin routes, incompatible
+protocol fields and invalid typed model values. Use a top-level `x-<name>` for
+opaque metadata. The persistence codec reserves `x-opi`. A capability change
+also needs a fixture at the requesting adapter. The public bundle consists of
+`catalog.json` and `manifest.json`. The builder also derives
+`openrouter-profile.json` from selected Chat Completions records in
+`providers/openrouter.json`. Removing a record from that source drops it
+from the direct factory and the coding-agent listing on the next build.
+The direct factory applies its configured endpoint to every selected record.
+Selecting only `provider-openrouter` loads the small resource.
+The v2 manifest records the opi format, the artifact and structure digests, and
+the provider list. `Catalog::builtin()` validates the embedded pair once per
+process. Consumers get a content-derived revision and counts by operation.
+Use `scripts/pi-catalog/pack.py` for a read-only comparison. To follow a Pi
+release, use the last upstream snapshot adopted for that provider, the target
+release snapshot, and a trusted revision pin for each. The optional offline
+sync tool merges those snapshots with the current opi source.
+
+```sh
+python scripts/pi-catalog/sync.py --provider mistral --old-artifact old-catalog.json --old-pin old-pin.json --new-artifact new-catalog.json --new-pin new-pin.json --opi-sources crates/opi-ai/resources/catalog/providers --output-dir sync-candidate
+cargo run -p opi-ai --no-default-features --example build_catalog -- build sync-candidate/providers bundle-candidate
+```
+
+Upstream additions, removals and field changes apply by default. Apply a
+retirement to every built-in entry point for that provider and operation.
+Keeping an upstream-retired ID or adding a fallback requires the project
+owner's explicit approval before implementation. Local
+models, local deletions and independent field edits survive subsequent
+upgrades. Objects merge by field and arrays are ordered values. Exit 2
+reports conflicting identities and field paths to stdout and produces no
+candidate. Exit 1 reports invalid input or output. On success, review the
+JSON report, apply the selected provider file and generated resources, run
+`check` and the affected listing or wire tests, and record the adopted
+upstream digest for the next comparison. Normal crate builds use the checked-in resources.
+
+`Catalog::from_bytes` still reads v1 bundles. Code that used
+`provenance().pi_package`, `source_url`, `local_origin` or `generator` can
+read those values from `CatalogOrigin::PiPublished` through `origin`. New
+bundles from the opi builder use `CatalogOrigin::Opi`.
+
+```rust
+use opi_ai::catalog::{Catalog, CatalogOrigin};
+
+fn legacy_pi_package(catalog: &Catalog) -> Option<&str> {
+    if let CatalogOrigin::PiPublished { pi_package, .. } = &catalog.provenance().origin {
+        Some(pi_package)
+    } else {
+        None
+    }
+}
+```
+
+Operation-qualified getters (`models(provider, operation)` and
+`model(provider, operation, id)`) expose typed core fields and the complete
+raw record. `CatalogHandle::try_install` validates the candidate before an
+atomic swap. On error the last-known revision stays readable. Already-held
+`Arc<Catalog>` values refer to the revision originally returned.
 
 ## Dynamic Catalog Store and Refresh
 
@@ -627,33 +683,44 @@ a previous subset already observed that store revision. Deleted owners cannot
 expose cached records; explicit re-registration permits compatible restore.
 `refresh_with(options, &token)` observes cancellation and the same store ACK
 and stale-revision guard. Superseded or cancelled work cannot publish late;
-source invalidation cannot resurrect unselected stale memory. The SDK registers
-no dynamic catalog source, attaches no persistent `ModelsStore`, and has no
-pi.dev/default startup fetch policy. Its local memory credential store is
-independent of catalog persistence.
+source invalidation cannot resurrect unselected stale memory. Hosts attach
+`ModelsStore` explicitly and register custom catalog sources as needed.
+Construction and lookup do no catalog I/O.
+
+### Radius gateway catalog
+
+Builtin Radius starts with opi's bundled chat catalog for the default
+gateway. For a custom gateway in `BuiltinOverrides::base_urls`, it starts
+empty. An offline refresh restores a previous builtin catalog publication
+from the attached store when the configured gateway origin matches. Clones
+of one `ModelsStore` share its publication revision.
+
+A network-enabled refresh of `radius` resolves the route's current API key
+or OAuth token and requests `GET /v1/config` at that gateway. The
+gateway's advertised chat base URL must have the same origin. A valid catalog
+replaces the prior catalog in full, including an empty model list. Missing
+credentials and refresh failures retain the last-known catalog. Network
+refresh checks the gateway on each call.
 
 ## Builtin Provider Factory Layer: 42 Canonical Profiles
 
-`providers::builtin_provider_profiles` carries the 42-entry source-qualified
-profile table from the pi 1.3.0 capability inventory: canonical ids
+`providers::builtin_provider_profiles` exposes 42 builtin profiles with canonical ids
 (`google`, `google-vertex`, `amazon-bedrock`, …), display names, default
 base URLs, env API-key names, auth schemes, OAuth availability and endpoint
-semantics (Azure deployments, Vertex location templates, Bedrock regions,
-dynamic radius). Legacy opi ids (`gemini`, `vertex`, `bedrock`,
+semantics (Azure deployments, Vertex location templates, Bedrock regions
+and Radius gateway URLs). Legacy opi ids (`gemini`, `vertex`, `bedrock`,
 `openai-responses`) are not aliases — the table never registers them.
 Provider display names include Amazon Bedrock, Anthropic and Google Vertex AI;
 credential labels remain separate metadata.
 `providers::collection::register_builtin` turns the table plus the bundled
-catalog into registered providers over the completed wire adapters: one
-mapped provider per profile (Azure and google-vertex stay config-gated with
-typed skip reasons, bedrock registers lookup-only behind its AWS-chain
-descriptor), a canonical-route wrapper republishing fixed-id adapters under
+catalog into registered providers over the completed wire adapters. Multi-wire
+profiles use a mapped provider. Radius keeps its Pi Messages route available
+while its catalog loads. A canonical-route wrapper republishes fixed-id adapters under
 canonical ids (including the model-spec prefix rewrite prefix-sensitive
 adapters need), catalog entries converted with their tiered pricing into
 `ModelInfo::pricing`, and the classifier/image protocols registered through
-the typed seams with catalog records. Environment keys resolve at dispatch
-through an injected `AuthContext` — construction reads no environment,
-store, or network.
+the typed seams with catalog records. Environment keys resolve via the
+injected `AuthContext` when a call or an authenticated refresh needs them.
 
 ## Public entry points
 

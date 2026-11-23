@@ -1,0 +1,500 @@
+{
+  "issue": 268,
+  "batch": "provider-collection-root",
+  "date": "2026-11-23",
+  "acceptance": "PASS",
+  "worktree": {
+    "head": "980b7524c1b52d4bc95fd0a0c56c6e2fd7db36a0",
+    "committed": "none-for-this-task",
+    "staged": 0,
+    "before_unstaged": 184,
+    "after_unstaged": 184,
+    "before_untracked": 424,
+    "proof_dir": "E:\\opi\\scratch\\issue-268-boundaries-20261123-093943",
+    "after_untracked": 438,
+    "new_paths": [
+      "crates/opi-ai/tests/provider_collection/auth_resolution.rs",
+      "crates/opi-ai/tests/provider_collection/azure.rs",
+      "crates/opi-ai/tests/provider_collection/builtin_auth.rs",
+      "crates/opi-ai/tests/provider_collection/builtin_chat.rs",
+      "crates/opi-ai/tests/provider_collection/builtin_operations.rs",
+      "crates/opi-ai/tests/provider_collection/builtin_registration.rs",
+      "crates/opi-ai/tests/provider_collection/dispatch.rs",
+      "crates/opi-ai/tests/provider_collection/fixtures.rs",
+      "crates/opi-ai/tests/provider_collection/opencode.rs",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-auth-shared-fixture-cloud-package-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-auth-shared-fixture-oauth-package-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-collection-root-and-auth-selection-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-provider-collection-catalog-package-20261123.json",
+      "docs/iterations/opi-ai-1-5-alignment/evidence/268-provider-collection-readme-package-20261123.json"
+    ]
+  },
+  "provider_collection": {
+    "root_source_bytes_before": 159610,
+    "root_source_bytes_after": 3715,
+    "cargo_targets": 1,
+    "named_test_inventory": {
+      "before": 194,
+      "after": 194,
+      "moved": 69,
+      "qualified_names_unchanged": 125,
+      "tests_with_unchanged_moved_bodies": 69,
+      "before_qualified_names_sha256": "e4b1df4412317d300d025f4f501d7402d652be3a9c8601bc0f5987bcb63e2de8",
+      "after_qualified_names_sha256": "293006a1284b506d2c3f229fc56a9b00409e40e8cbd3934a18fecef60a08547b",
+      "mapping": {
+        "auth_descriptor_env_key_checks_through_the_context_on_demand": "auth_resolution::auth_descriptor_env_key_checks_through_the_context_on_demand",
+        "auth_descriptor_resolved_label_checks_configured": "auth_resolution::auth_descriptor_resolved_label_checks_configured",
+        "auth_descriptor_static_key_checks_configured_and_missing": "auth_resolution::auth_descriptor_static_key_checks_configured_and_missing",
+        "auth_descriptor_store_credential_checks_via_probe_snapshot": "auth_resolution::auth_descriptor_store_credential_checks_via_probe_snapshot",
+        "azure_builtin_registers_with_configured_endpoint": "azure::azure_builtin_registers_with_configured_endpoint",
+        "builtin_all_operation_records_are_available_for_selection": "builtin_operations::builtin_all_operation_records_are_available_for_selection",
+        "builtin_anthropic_header_owned_token_is_not_an_oauth_identity": "builtin_auth::builtin_anthropic_header_owned_token_is_not_an_oauth_identity",
+        "builtin_azure_chat_and_responses_resolve_source_endpoint_and_deployment": "azure::builtin_azure_chat_and_responses_resolve_source_endpoint_and_deployment",
+        "builtin_azure_freezes_endpoint_deployment_and_payload_across_retries": "azure::builtin_azure_freezes_endpoint_deployment_and_payload_across_retries",
+        "builtin_classifier_profiles_send_the_selected_record_with_stored_auth": "builtin_operations::builtin_classifier_profiles_send_the_selected_record_with_stored_auth",
+        "builtin_construction_and_static_selection_need_no_runtime_or_source_reads": "builtin_registration::builtin_construction_and_static_selection_need_no_runtime_or_source_reads",
+        "builtin_env_resolver_reads_through_injected_context": "builtin_auth::builtin_env_resolver_reads_through_injected_context",
+        "builtin_full_record_keeps_pinned_model_compatibility": "opencode::builtin_full_record_keeps_pinned_model_compatibility",
+        "builtin_gateway_all_three_wires_use_only_source_auth_header": "builtin_chat::builtin_gateway_all_three_wires_use_only_source_auth_header",
+        "builtin_mapped_calls_use_owned_custom_records_and_header_precedence": "builtin_chat::builtin_mapped_calls_use_owned_custom_records_and_header_precedence",
+        "builtin_mistral_projects_catalog_effort_on_the_public_simple_route": "builtin_chat::builtin_mistral_projects_catalog_effort_on_the_public_simple_route",
+        "builtin_nonstream_operations_reuse_the_injected_redirect_policy": "builtin_operations::builtin_nonstream_operations_reuse_the_injected_redirect_policy",
+        "builtin_oauth_flow_replacement_changes_future_calls_only": "builtin_auth::builtin_oauth_flow_replacement_changes_future_calls_only",
+        "builtin_openai_oauth_excludes_decisions_without_falling_back_to_env_key": "builtin_auth::builtin_openai_oauth_excludes_decisions_without_falling_back_to_env_key",
+        "builtin_opencode_go_dispatches_published_routes_and_efforts": "opencode::builtin_opencode_go_dispatches_published_routes_and_efforts",
+        "builtin_opencode_go_retires_models_removed_from_the_catalog": "opencode::builtin_opencode_go_retires_models_removed_from_the_catalog",
+        "builtin_opencode_zen_dispatches_published_routes_and_efforts": "opencode::builtin_opencode_zen_dispatches_published_routes_and_efforts",
+        "builtin_opencode_zen_retires_models_removed_from_the_catalog": "opencode::builtin_opencode_zen_retires_models_removed_from_the_catalog",
+        "builtin_openrouter_classifier_sends_images_before_state": "builtin_operations::builtin_openrouter_classifier_sends_images_before_state",
+        "builtin_openrouter_uses_synced_chat_and_image_routes": "builtin_operations::builtin_openrouter_uses_synced_chat_and_image_routes",
+        "builtin_prepared_opencode_keeps_session_headers_and_caller_precedence": "opencode::builtin_prepared_opencode_keeps_session_headers_and_caller_precedence",
+        "builtin_profile_api_base_paths_reach_exact_endpoints": "builtin_chat::builtin_profile_api_base_paths_reach_exact_endpoints",
+        "builtin_profiles_cover_exactly_the_42_canonical_providers": "builtin_registration::builtin_profiles_cover_exactly_the_42_canonical_providers",
+        "builtin_profiles_pin_source_qualified_metadata": "builtin_registration::builtin_profiles_pin_source_qualified_metadata",
+        "builtin_registration_keeps_custom_record_upsert": "builtin_registration::builtin_registration_keeps_custom_record_upsert",
+        "builtin_simple_tool_choice_reaches_each_chat_wire": "builtin_chat::builtin_simple_tool_choice_reaches_each_chat_wire",
+        "builtin_source_profiles_reach_their_registered_wires": "builtin_chat::builtin_source_profiles_reach_their_registered_wires",
+        "builtin_stored_key_wins_and_store_replacement_only_changes_future_calls": "builtin_auth::builtin_stored_key_wins_and_store_replacement_only_changes_future_calls",
+        "catalog_tiered_pricing_flows_into_registered_models": "builtin_registration::catalog_tiered_pricing_flows_into_registered_models",
+        "classifier_and_image_builtins_register_from_the_catalog": "builtin_operations::classifier_and_image_builtins_register_from_the_catalog",
+        "classifier_model_modality_is_rejected_before_authentication": "builtin_operations::classifier_model_modality_is_rejected_before_authentication",
+        "classifier_same_api_keeps_provider_auth_bindings": "builtin_operations::classifier_same_api_keeps_provider_auth_bindings",
+        "collection_error_match_is_exhaustive_for_current_public_surface": "dispatch::collection_error_match_is_exhaustive_for_current_public_surface",
+        "collection_refresh_is_a_documented_noop_extension_point": "registry_preflight_and_refresh::collection_refresh_is_a_documented_noop_extension_point",
+        "collection_supports_provider_correctness_fixtures": "dispatch::collection_supports_provider_correctness_fixtures",
+        "collection_wraps_existing_registry_via_from_registry": "registry_preflight_and_refresh::collection_wraps_existing_registry_via_from_registry",
+        "credential_api_key_redacts_in_debug": "auth_resolution::credential_api_key_redacts_in_debug",
+        "credential_oauth_token_redacts_secrets_but_keeps_base_url": "auth_resolution::credential_oauth_token_redacts_secrets_but_keeps_base_url",
+        "credential_source_display_label_and_presence": "auth_resolution::credential_source_display_label_and_presence",
+        "credential_store_is_object_safe_and_round_trips": "auth_resolution::credential_store_is_object_safe_and_round_trips",
+        "dispatch_complete_propagates_mid_stream_provider_error": "dispatch::dispatch_complete_propagates_mid_stream_provider_error",
+        "dispatch_complete_rejects_empty_stream": "dispatch::dispatch_complete_rejects_empty_stream",
+        "dispatch_complete_returns_terminal_error_event": "dispatch::dispatch_complete_returns_terminal_error_event",
+        "dropping_chat_stream_without_draining_releases_the_attempt_slot": "dispatch::dropping_chat_stream_without_draining_releases_the_attempt_slot",
+        "ecs_full_uri_parsed_host_guard_runs_before_token_file_or_send": "builtin_auth::ecs_full_uri_parsed_host_guard_runs_before_token_file_or_send",
+        "enabled_none_thinking_on_non_thinking_model_is_rejected_before_auth": "dispatch::enabled_none_thinking_on_non_thinking_model_is_rejected_before_auth",
+        "models_simple_and_advanced_observe_same_route_and_outcome": "dispatch::models_simple_and_advanced_observe_same_route_and_outcome",
+        "provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnostic": "dispatch::provider_collection_dispatch_rejects_missing_auth_with_redacted_diagnostic",
+        "provider_collection_dispatches_with_redacted_auth": "dispatch::provider_collection_dispatches_with_redacted_auth",
+        "real_public_call_through_a_groq_completions_builtin_profile": "builtin_chat::real_public_call_through_a_groq_completions_builtin_profile",
+        "real_public_call_through_openai_defaults_to_responses_wire": "builtin_chat::real_public_call_through_openai_defaults_to_responses_wire",
+        "refresh_models_deterministic_ordering": "registry_preflight_and_refresh::refresh_models_deterministic_ordering",
+        "refresh_models_empty_catalog_is_valid": "registry_preflight_and_refresh::refresh_models_empty_catalog_is_valid",
+        "refresh_models_is_atomic_substrate": "registry_preflight_and_refresh::refresh_models_is_atomic_substrate",
+        "refresh_models_none_clears_prior_dynamic_snapshot": "registry_preflight_and_refresh::refresh_models_none_clears_prior_dynamic_snapshot",
+        "refresh_models_repeated_refresh_replaces": "registry_preflight_and_refresh::refresh_models_repeated_refresh_replaces",
+        "refresh_models_reports_per_provider_and_publishes_successes": "registry_preflight_and_refresh::refresh_models_reports_per_provider_and_publishes_successes",
+        "register_builtin_registers_the_canonical_collection": "builtin_registration::register_builtin_registers_the_canonical_collection",
+        "secret_key_empty_is_not_present": "auth_resolution::secret_key_empty_is_not_present",
+        "secret_key_redacts_in_debug_and_display": "auth_resolution::secret_key_redacts_in_debug_and_display",
+        "store_credential_dispatch_proceeds_when_backend_unavailable": "auth_resolution::store_credential_dispatch_proceeds_when_backend_unavailable",
+        "store_credential_dispatch_proceeds_when_no_probe_injected": "auth_resolution::store_credential_dispatch_proceeds_when_no_probe_injected",
+        "store_credential_dispatch_proceeds_when_probe_present": "auth_resolution::store_credential_dispatch_proceeds_when_probe_present",
+        "store_credential_dispatch_rejects_when_probe_absent_with_redacted_detail": "auth_resolution::store_credential_dispatch_rejects_when_probe_absent_with_redacted_detail"
+      }
+    },
+    "selector": [
+      {
+        "source": "tests/provider_collection/auth_resolution.rs",
+        "filter": "auth_resolution::",
+        "passed": 14,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/azure.rs",
+        "filter": "azure::",
+        "passed": 3,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/builtin_auth.rs",
+        "filter": "builtin_auth::",
+        "passed": 6,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/builtin_chat.rs",
+        "filter": "builtin_chat::",
+        "passed": 8,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/builtin_operations.rs",
+        "filter": "builtin_operations::",
+        "passed": 8,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/builtin_registration.rs",
+        "filter": "builtin_registration::",
+        "passed": 6,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/dispatch.rs",
+        "filter": "dispatch::",
+        "passed": 10,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/fixtures.rs",
+        "filter": null,
+        "passed": 194,
+        "execution": "full Cargo target"
+      },
+      {
+        "source": "tests/provider_collection/opencode.rs",
+        "filter": "opencode::",
+        "passed": 6,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/provider_collection/registry_preflight_and_refresh.rs",
+        "filter": "registry_preflight_and_refresh::",
+        "passed": 10,
+        "execution": "libtest binary from recorded Cargo run"
+      }
+    ],
+    "production_route_bindings": {
+      "src/api/cloudflare_workers_ai_system_one.rs": {
+        "filters": [
+          "builtin_classifier_profiles_send",
+          "classifier_and_image_builtins_register"
+        ],
+        "cases": [
+          "builtin_operations::builtin_classifier_profiles_send_the_selected_record_with_stored_auth",
+          "builtin_operations::classifier_and_image_builtins_register_from_the_catalog"
+        ]
+      },
+      "src/api/openai_decisions.rs": {
+        "filters": [
+          "builtin_classifier_profiles_send",
+          "builtin_openai_oauth_excludes_decisions",
+          "classifier_and_image_builtins_register",
+          "classifier_model_modality_is_rejected"
+        ],
+        "cases": [
+          "builtin_auth::builtin_openai_oauth_excludes_decisions_without_falling_back_to_env_key",
+          "builtin_operations::builtin_classifier_profiles_send_the_selected_record_with_stored_auth",
+          "builtin_operations::classifier_and_image_builtins_register_from_the_catalog",
+          "builtin_operations::classifier_model_modality_is_rejected_before_authentication"
+        ]
+      },
+      "src/api/system_one.rs": {
+        "filters": [
+          "builtin_classifier_profiles_send",
+          "builtin_nonstream_operations_reuse",
+          "builtin_openrouter_classifier_sends_images_before_state",
+          "classifier_and_image_builtins_register",
+          "classifier_same_api_keeps"
+        ],
+        "cases": [
+          "builtin_operations::builtin_classifier_profiles_send_the_selected_record_with_stored_auth",
+          "builtin_operations::builtin_nonstream_operations_reuse_the_injected_redirect_policy",
+          "builtin_operations::builtin_openrouter_classifier_sends_images_before_state",
+          "builtin_operations::classifier_and_image_builtins_register_from_the_catalog",
+          "builtin_operations::classifier_same_api_keeps_provider_auth_bindings"
+        ]
+      },
+      "src/providers/mapped.rs": {
+        "filters": [
+          "mapped_"
+        ],
+        "cases": [
+          "builtin_chat::builtin_mapped_calls_use_owned_custom_records_and_header_precedence",
+          "selected_owner_management::restored_chat_requires_a_current_mapped_wire_without_using_seed_membership",
+          "selected_owner_management::source_chat_requires_a_current_mapped_wire_before_publication"
+        ]
+      },
+      "src/providers/openai.rs": {
+        "filters": [
+          "builtin_mapped_calls"
+        ],
+        "cases": [
+          "builtin_chat::builtin_mapped_calls_use_owned_custom_records_and_header_precedence"
+        ]
+      },
+      "src/providers/openai_responses.rs": {
+        "filters": [
+          "builtin_mapped_calls"
+        ],
+        "cases": [
+          "builtin_chat::builtin_mapped_calls_use_owned_custom_records_and_header_precedence"
+        ]
+      },
+      "src/providers/pi_messages.rs": {
+        "filters": [
+          "builtin_source_profiles_reach_their_registered_wires"
+        ],
+        "cases": [
+          "builtin_chat::builtin_source_profiles_reach_their_registered_wires"
+        ]
+      }
+    },
+    "package_owner": "run_readme_examples.py verifies built-in assembly from the packaged examples",
+    "direct_differential_bindings": []
+  },
+  "auth_contracts": {
+    "cargo_targets": 1,
+    "named_test_inventory": {
+      "qualified_names_unchanged": 108,
+      "qualified_names_sha256": "f3722413fcd52e030f0b2494382efb3a58df4bc7f5664ce8ab15bbc7b20efa05",
+      "synthetic_pem_unchanged": true,
+      "only_test_body_change": "adc_impersonation::impersonated_service_account_source_flows_identity uses the shared fixture import"
+    },
+    "original_selection_gaps": [
+      {
+        "fixture": "stored_api_key",
+        "former_topic": "mutations",
+        "other_consumer": "resolution"
+      },
+      {
+        "fixture": "SERVICE_ACCOUNT_PEM",
+        "former_topic": "adc_native",
+        "other_consumer": "adc_impersonation"
+      }
+    ],
+    "shared_owner": "tests/auth_contracts/fixtures.rs",
+    "selector": [
+      {
+        "source": "tests/auth_contracts/adc_external.rs",
+        "filter": "adc_external::",
+        "passed": 32,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/auth_contracts/adc_impersonation.rs",
+        "filter": "adc_impersonation::",
+        "passed": 19,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/auth_contracts/adc_native.rs",
+        "filter": "adc_native::",
+        "passed": 20,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/auth_contracts/errors.rs",
+        "filter": "errors::",
+        "passed": 7,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/auth_contracts/fixtures.rs",
+        "filter": null,
+        "passed": 108,
+        "execution": "full Cargo target"
+      },
+      {
+        "source": "tests/auth_contracts/mutations.rs",
+        "filter": "mutations::",
+        "passed": 14,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/auth_contracts/resolution.rs",
+        "filter": "resolution::",
+        "passed": 15,
+        "execution": "libtest binary from recorded Cargo run"
+      },
+      {
+        "source": "tests/auth_contracts/scoped.rs",
+        "filter": "scoped::",
+        "passed": 1,
+        "execution": "libtest binary from recorded Cargo run"
+      }
+    ]
+  },
+  "cargo_tests": [
+    {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "provider_collection"
+      ],
+      "before": "test result: ok. 194 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.14s",
+      "after": "test result: ok. 194 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.16s"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "test",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "auth_contracts"
+      ],
+      "after": "test result: ok. 108 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.80s"
+    }
+  ],
+  "package_consumers": [
+    {
+      "evidence": "268-provider-collection-readme-package-20261123.json",
+      "family": "readme-examples",
+      "verdict": "PASS",
+      "owns": "built-in registration and local requests from the three examples in both profiles",
+      "evidence_sha256": "75ccd3dbb83da73227d567609672d33a61c464995884dd26a15a47620db88c5f",
+      "profiles": [
+        {
+          "name": "builtins-no-tracing",
+          "verdict": "PASS",
+          "passed": 3
+        },
+        {
+          "name": "defaults-on",
+          "verdict": "PASS",
+          "passed": 3
+        }
+      ]
+    },
+    {
+      "evidence": "268-provider-collection-catalog-package-20261123.json",
+      "family": "catalog-bundled-package",
+      "verdict": "PASS",
+      "owns": "embedded catalog and isolated catalog-only feature graph",
+      "evidence_sha256": "e13c0653af64653b19b05924029641268fb839ea1ddccca6c5d904a68baf660e"
+    },
+    {
+      "evidence": "268-auth-shared-fixture-oauth-package-20261123.json",
+      "family": "oauth-store-package",
+      "verdict": "PASS",
+      "owns": "public OAuth and credential-store entry points",
+      "evidence_sha256": "3543542b7112a327fd66bd59a6c6221ac3a0d6fad33b04f275fded58c8070fc3"
+    },
+    {
+      "evidence": "268-auth-shared-fixture-cloud-package-20261123.json",
+      "family": "cloud-auth-package",
+      "verdict": "PASS",
+      "owns": "public cloud auth entry points",
+      "evidence_sha256": "dd2d7a334bce58fdc08a8c80fb0853deae733a48579334864d59504b13d66bef"
+    }
+  ],
+  "structure_gate": {
+    "command": "python scripts/pi-sdk-conformance/check_structure_gate.py --json --strict-selection <changed crate paths>",
+    "verdict": "PASS",
+    "summary_sha256": "a00000fc2ccf06725d53c8dda45fb875e3ed6323816a3d886b9e1fb9498e3231",
+    "violations": [],
+    "cargo_targets": 124,
+    "entry_sources": 124,
+    "shared_support_helpers": 16,
+    "shared_support_edges": 60,
+    "negative": {
+      "path": "crates/opi-ai/tests/provider_collection/absent_topic.rs",
+      "exit": 1,
+      "expansion": [
+        "tests/provider_collection/absent_topic.rs: missing or moved path; verify the replacement and remaining consumers",
+        "tests/provider_collection/absent_topic.rs: no resolved Cargo test consumer"
+      ]
+    }
+  },
+  "additional_checks": {
+    "rustfmt_touched_files": "PASS",
+    "namespace_guard_unittests": {
+      "passed": 36,
+      "negative_nested_stale_namespaces": 2
+    },
+    "selector_unittests": {
+      "passed": 24
+    },
+    "clippy": {
+      "command": [
+        "python",
+        "scripts/opi-cargo-cache.py",
+        "run",
+        "--target",
+        "E:\\opi\\cargo-targets\\opi-72fa37a0fa044958",
+        "--",
+        "clippy",
+        "--locked",
+        "--offline",
+        "-p",
+        "opi-ai",
+        "--no-default-features",
+        "--features",
+        "builtins",
+        "--test",
+        "auth_contracts",
+        "--test",
+        "provider_collection"
+      ],
+      "advisory_exit": 0,
+      "strict_args": [
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "strict_exit": 101,
+      "carried_in_production_lints": [
+        "crates/opi-ai/src/api/openai_responses.rs:706 too_many_arguments",
+        "crates/opi-ai/src/models/auth_owner.rs:479 needless_borrow",
+        "crates/opi-ai/src/models/prepared_call.rs:196 too_many_arguments"
+      ],
+      "integration_target_warnings": 0
+    },
+    "workspace_rustfmt": {
+      "exit": 1,
+      "carried_in_source_paths": [
+        "crates/opi-ai/tests/openai_responses_fixtures.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+        "crates/opi-ai/tests/openai_responses_fixtures/wire.rs"
+      ]
+    },
+    "documentation": {
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS with core.whitespace=cr-at-eol for existing working-tree line endings"
+    }
+  },
+  "test_impact": {
+    "retain_rust_cases": 302,
+    "add_python_regressions": 1,
+    "update": [
+      "namespace guards",
+      "selector coverage"
+    ],
+    "delete": 0
+  }
+}

@@ -61,6 +61,22 @@ def check_graph(metadata: dict, package: Path) -> dict:
     }
 
 
+def packaged_bundle_summary(package: Path) -> str:
+    resources = Path("resources/catalog/builtin")
+    source = REPO / "crates/opi-ai" / resources
+    for name in ("catalog.json", "manifest.json"):
+        if (package / resources / name).read_bytes() != (source / name).read_bytes():
+            raise ValueError(f"archived catalog resource differs from workspace: {name}")
+    raw = (source / "catalog.json").read_bytes()
+    providers = json.loads(raw)
+    counts = {"chat": 0, "image": 0, "classifier": 0}
+    for entries in providers.values():
+        for entry in entries:
+            counts[entry["type"]] += 1
+    operations = " ".join(f"{name}={count}" for name, count in counts.items())
+    return f"catalog=sha256-{hashlib.sha256(raw).hexdigest()} providers={len(providers)} {operations}"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scratch", required=True)
@@ -141,6 +157,7 @@ def main() -> int:
         run("lease-start", lease + ["start", "--target", str(target), "--pid", str(os.getpid())], REPO)
         leased = True
         package, evidence["package"], candidate = shared.package_sdk(run, scratch, target)
+        summary = packaged_bundle_summary(package)
         consumer = scratch / "consumer"
         (consumer / "src").mkdir(parents=True)
         manifest = (
@@ -151,14 +168,18 @@ def main() -> int:
         )
         (consumer / "Cargo.toml").write_text(manifest, encoding="utf-8", newline="\n")
         (consumer / "src/main.rs").write_text(
-            """fn main() {
-    let catalog = opi_ai::catalog::Catalog::builtin().expect("embedded catalog loads");
-    assert_eq!(catalog.provenance().counts.chat, 1608);
-    let (catalog_bytes, manifest_bytes) = opi_ai::catalog::Catalog::builtin_bundle_bytes();
-    let reparsed = opi_ai::catalog::Catalog::from_bytes(catalog_bytes, manifest_bytes)
+            """use opi_ai::catalog::{Catalog, CatalogOrigin};
+
+fn main() {
+    let catalog = Catalog::builtin().expect("embedded catalog loads");
+    assert_eq!(catalog.provenance().origin, CatalogOrigin::Opi);
+    let (catalog_bytes, manifest_bytes) = Catalog::builtin_bundle_bytes();
+    let reparsed = Catalog::from_bytes(catalog_bytes, manifest_bytes)
         .expect("embedded bytes revalidate");
-    assert_eq!(reparsed.provenance().revision, catalog.provenance().revision);
-    println!("catalog={} chat={}", catalog.provenance().revision, catalog.provenance().counts.chat);
+    assert_eq!(reparsed.provenance(), catalog.provenance());
+    let counts = catalog.provenance().counts;
+    println!("catalog={} providers={} chat={} image={} classifier={}",
+        catalog.provenance().revision, counts.providers, counts.chat, counts.image, counts.classifier);
 }
 """,
             encoding="utf-8",
@@ -173,8 +194,9 @@ def main() -> int:
         evidence["graph"] = check_graph(metadata, package)
         run("catalog-bundled-build", ["cargo", "build", "--offline", "--locked"], consumer)
         output_text = run("catalog-bundled-run", ["cargo", "run", "--offline", "--locked"], consumer)
-        if "chat=1608" not in output_text:
-            raise ValueError("external consumer did not observe the pinned catalog count")
+        if output_text.strip() != summary:
+            raise ValueError("external consumer did not observe the packaged revision and operation counts")
+        evidence["bundle_summary"] = summary
         evidence["consumer_sources"] = {
             "Cargo.toml": hashlib.sha256((consumer / "Cargo.toml").read_bytes()).hexdigest(),
             "src/main.rs": hashlib.sha256((consumer / "src/main.rs").read_bytes()).hexdigest(),

@@ -1,0 +1,135 @@
+{
+  "issue": 268,
+  "batch": "chat-pi-messages-protocol-fixture",
+  "date": "2026-11-23",
+  "status": "PASS",
+  "scope": {
+    "target": "chat_pi_messages",
+    "single_executable": true,
+    "root_before_bytes": 81369,
+    "root_after_bytes": 1732,
+    "test_declarations_before": 42,
+    "test_declarations_after": 42,
+    "package_consumer": "provider-pi-messages",
+    "modules": {
+      "fixtures.rs": "shared Pi Messages model, request, SSE, local-peer and projection helpers, no assertions",
+      "gateway.rs": "Radius gateway baseline/catalog and curated catalog assertions",
+      "wire.rs": "endpoint, option whitelist, cache retention and context projection assertions",
+      "stream.rs": "SSE blocks, sparse indices, terminal markers and typed stream failures",
+      "lifecycle.rs": "HTTP failures, cancellation, auth/model admission, simple bypass, wire mismatch and Models completion assertions",
+      "callbacks.rs": "callback ordering assertion",
+      "node5.rs": "Node 5 replay topic index and child-module registration, no assertions",
+      "node5/fixtures.rs": "Node 5 replay builders and terminal/complete helpers, no assertions",
+      "node5/replay.rs": "producer/reload, UTF-8, terminal accounting, tool-call and simple replay regressions"
+    }
+  },
+  "acceptance": {
+    "focused_selectors": {
+      "gateway::": {
+        "passed": 6,
+        "failed": 0,
+        "filtered": 36
+      },
+      "wire::": {
+        "passed": 10,
+        "failed": 0,
+        "filtered": 32
+      },
+      "stream::": {
+        "passed": 10,
+        "failed": 0,
+        "filtered": 32
+      },
+      "lifecycle::": {
+        "passed": 10,
+        "failed": 0,
+        "filtered": 32
+      },
+      "callbacks::": {
+        "passed": 1,
+        "failed": 0,
+        "filtered": 41
+      },
+      "node5::replay::": {
+        "passed": 5,
+        "failed": 0,
+        "filtered": 37
+      }
+    },
+    "focused_total": {
+      "passed": 42,
+      "failed": 0
+    },
+    "full_target": {
+      "passed": 42,
+      "failed": 0,
+      "ignored": 0,
+      "filtered": 0
+    },
+    "compile_no_run": "PASS",
+    "test_inventory": {
+      "explicit_targets": 124,
+      "test_sources": 124,
+      "result": "PASS"
+    },
+    "support_inventory": {
+      "helpers": 16,
+      "declared_target_edges": 60,
+      "result": "PASS"
+    },
+    "architecture_gate": {
+      "result": "PASS",
+      "violations": [],
+      "summary_sha256": "6307d4ddddf31d849f8c5b9697cee050654970d8a41f73e583005a2e480bfe40"
+    },
+    "package_consumer": {
+      "owner": "provider-pi-messages",
+      "result": "PASS",
+      "evidence": "268-chat-pi-messages-package-20261123.json"
+    },
+    "format": {
+      "pi_messages_rustfmt_edition_2024": "PASS"
+    },
+    "documentation": {
+      "result": "PASS",
+      "opi_doc_check": "PASS",
+      "scoped_diff_check": "PASS",
+      "trailing_whitespace": "PASS"
+    }
+  },
+  "test_impact": {
+    "add": [
+      "crates/opi-ai/tests/chat_pi_messages/fixtures.rs",
+      "crates/opi-ai/tests/chat_pi_messages/gateway.rs",
+      "crates/opi-ai/tests/chat_pi_messages/wire.rs",
+      "crates/opi-ai/tests/chat_pi_messages/stream.rs",
+      "crates/opi-ai/tests/chat_pi_messages/lifecycle.rs",
+      "crates/opi-ai/tests/chat_pi_messages/callbacks.rs",
+      "crates/opi-ai/tests/chat_pi_messages/node5.rs",
+      "crates/opi-ai/tests/chat_pi_messages/node5/fixtures.rs",
+      "crates/opi-ai/tests/chat_pi_messages/node5/replay.rs"
+    ],
+    "update": [
+      "crates/opi-ai/tests/chat_pi_messages.rs",
+      "crates/opi-ai/tests/targets.tsv",
+      "crates/opi-ai/tests/README.md",
+      "crates/opi-ai/tests/README.zh.md",
+      "docs/iterations/opi-ai-1-5-alignment/issues/268-partition-oversized-protocol-fixtures.md",
+      "docs/iterations/opi-ai-1-5-alignment/spec.md"
+    ],
+    "delete": [],
+    "retain": [
+      "all 42 original assertions",
+      "one Cargo executable",
+      "provider-pi-messages package owner",
+      "no compatibility behavior",
+      "no production source or runtime behavior changes"
+    ]
+  },
+  "notes": [
+    "Original fixture was preserved at E:/opi/scratch/issue-268-chat-pi-original.rs for declaration comparison.",
+    "The root index no longer carries stale Pi 1.3 source-reference comments.",
+    "No shared tests/support helper or package consumer owner was changed.",
+    "Workspace-wide cargo fmt --all --check remains outside this batch because of the earlier OpenAI Responses format diff."
+  ]
+}

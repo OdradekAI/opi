@@ -44,8 +44,10 @@ existing explicit output before creating scratch or starting Cargo.
   fresh workspace-external consumer in both caller build profiles: Cargo's
   default dependency features and `default-features = false`. The
   consumer uses only `opi-ai` plus ordinary Tokio/Serde/stream dependencies,
-  offline under an isolated controlled environment. The controlled-peer
-  execution of the same flows lives in `crates/opi-ai/tests/external_sdk.rs`.
+  running offline against its own controlled peer. The `models` integration
+  target `external_sdk` separately owns the Chat matrix, classifier and image
+  dispatch, and public Models contracts. Run this target with `builtins` in the
+  workspace or from the extracted Cargo archive.
 - `consumer-readme/` is that consumer's template; its `src/bin/*.rs` are
   injected by the runner from the extracted package, never authored here.
 - `evidence/readme-examples-proof.json` records each executed run: package
@@ -54,10 +56,37 @@ existing explicit output before creating scratch or starting Cargo.
 - `test_package_proof.py` covers scratch/cache safety, package extraction,
   metadata/feature validation, failure evidence, lease release and the CLI
   negative path.
+- `run_minimal_package.py` verifies packaged core functionality in an external
+  `opi-minimum-consumer` with and without `telemetry-tracing`. Its
+  `custom_provider_registration` tests use the exact root and modules from the
+  archive to exercise provider lookup, typed Chat dispatch and pre-auth rejection.
+  The receipt records the module hashes and test results for each profile.
 
 The former vendor source-integrity, table regeneration, namespace packaging,
 dual-backend/dual-ICU coexistence and sparse-registry gates are retired. Ordinary
 consumer and public Schema validation remain active.
+
+## Daily structure gate
+
+Run the daily opi-ai structure gate before selecting or running focused tests.
+It joins architecture boundaries, Cargo target/source inventory, shared-support
+ownership and selector coverage in one read-only report. The JSON output includes
+the stable summary hash, approved exceptions, zero-test findings and paths that
+need broader checks:
+
+```powershell
+python -B scripts/pi-sdk-conformance/check_structure_gate.py --json
+python -B scripts/pi-sdk-conformance/check_structure_gate.py --json --strict-selection `
+  crates/opi-ai/src/providers/openai.rs
+```
+
+The second form is for a changed crate path and fails when the selector asks for
+an unreviewed broader check. Documentation and script-only changes keep their
+own smallest checks. The complete workspace regression remains explicit:
+
+```powershell
+cargo test --workspace --exclude opi-eval --all-targets --locked
+```
 
 ## Run
 
@@ -126,11 +155,16 @@ graph:
   Upgrade interface and detached raw stream.
 
 `ws_package_files` records the packaged implementation, both test layers, shared
-test helper, fixtures and notices. Counts verify complete execution of the
-selected regression batteries; neither private codec tests nor public raw
-Upgrade tests establish the pending real Models → Codex → Upgrade → codec
-path. The crypto family retains its public Models → Chat → HttpClient → TLS
-consumer; key/signing state-machine tests remain local to `src/crypto`.
+test helper, fixtures and notices. The runner checks test counts and strict
+Clippy for each graph and builds packaged rustdoc. The external `consumer-ws`
+also exercises Models → Codex → Upgrade → codec against a controlled peer.
+The crypto family exercises Models → Chat → HttpClient → TLS through its public
+consumer. Key and signing state-machine tests live under `src/crypto`.
+
+The HTTP family executes `consumer-http` in ordinary and caller-union graphs
+through Models, Chat and HttpClient, including local HTTP proxy routing and
+bypass. The extracted SDK's `http_acceptance` target uses `builtins` for the
+response-parser boundaries, redirect and disconnect cases, and HTTPS tunnels.
 
 Shared TLS constants live in `tests/support/tls_fixtures.rs`, alongside the
 shared peer. They are imported by the public integration targets and remain

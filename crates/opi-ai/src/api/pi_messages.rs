@@ -1,7 +1,6 @@
 //! pi-messages wire adapter (task 20.44, DEL-11).
 //!
-//! Pins `.repo/pi-1.3.0/packages/ai/src/api/pi-messages.ts`: pi's own
-//! message protocol spoken by the Radius gateway. One POST of
+//! The Radius gateway accepts one POST of
 //! `{ model, context, options }` to `<base>/messages`, answered by an SSE
 //! stream of serialized assistant-message events plus a terminal
 //! `done`/`error` event. The options object is an exact six-field whitelist
@@ -102,9 +101,9 @@ impl PiMessagesOptions {
         }
     }
 
-    /// The neutral mapping (pi `streamSimple` base): only tool choice
-    /// carries; reasoning resolves from the request's thinking config in
-    /// [`PiMessagesProvider::stream_prepared`].
+    /// Carry the neutral tool choice into the wire options.
+    /// [`PiMessagesWireAdapter::stream_simple`] resolves reasoning from the
+    /// request's thinking configuration.
     pub fn from_simple(options: &crate::api::contract::SimpleOptions) -> Self {
         Self {
             reasoning: None,

@@ -43,7 +43,7 @@ setting Pi's SSE budget to one sends a second POST. Opi's advanced
 acquisition policy continues to observe `PostHandoff`.
 [WS decision](../../../../crates/opi-ai/src/transport/codex.rs#L557) ·
 [SSE owner](../../../../crates/opi-ai/src/api/openai_codex_responses.rs#L854) ·
-[Acquisition test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L4706)
+[Acquisition test](../../../../crates/opi-ai/tests/openai_codex_responses/ws_branches.rs#L479)
 
 ## Observed outcomes
 
@@ -78,8 +78,8 @@ the fixed `codex_websocket_fallback` diagnostic and reports
 the raw error canary.
 [Start mapping](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L1095) ·
 [Text projection](../../../../crates/opi-ai/src/api/shared/openai_responses.rs#L1990) ·
-[Send and result test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L2697) ·
-[Cleanup test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L3774) ·
+[Send and result test](../../../../crates/opi-ai/tests/openai_codex_responses/ws_branches.rs#L161) ·
+[Cleanup test](../../../../crates/opi-ai/tests/openai_codex_responses/ws_resources.rs#L339) ·
 [Paired observations](../evidence/phase5-codex-connection-limit-observations.json)
 
 ## Verification

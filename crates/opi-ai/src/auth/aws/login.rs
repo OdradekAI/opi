@@ -2,7 +2,7 @@
 //! login cache, the SignIn `CreateOAuth2Token` refresh, and an owned ES256
 //! DPoP proof (RFC 9449).
 //!
-//! Fixed corpus contracts (`pi-1.3.0-rust-backends.md` §3.3,
+//! Fixed Rust-backend contracts (§3.3 in the reviewed corpus,
 //! `sdk-target-proposal.md` B-2/B-3):
 //!
 //! * The cache file name is the SHA-256 hex of the trimmed session name.

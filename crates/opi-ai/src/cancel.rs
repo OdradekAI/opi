@@ -1,13 +1,9 @@
-//! Cancellable waits over shared cancellation tokens (pinned sources:
-//! `.repo/pi-1.3.0/packages/ai/src/utils/sleep.ts` and `utils/abort.ts`;
-//! task 20.53.6).
+//! Cancellable waits over shared cancellation tokens.
 //!
 //! These helpers reuse [`tokio_util::sync::CancellationToken`] and the
 //! caller's runtime: no executor, timer pool, or global state is created.
-//! Dropping the losing side of each wait releases its timer and listeners on
-//! cancel, completion, and drop — the Rust-native form of the pinned
-//! "keep observing the abandoned promise" rule, since a dropped future is
-//! cancelled and cannot reject later.
+//! Each wait releases its timer and listeners on cancellation, completion
+//! or drop.
 
 use std::future::Future;
 

@@ -1,0 +1,54 @@
+{
+  "issue": 243,
+  "status": "done",
+  "provider": "xai",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 4,
+    "records_after": 4,
+    "added": 0,
+    "removed": 0,
+    "updated": 2,
+    "updated_ids": ["grok-4.3", "grok-4.5"],
+    "updated_field": "thinkingLevelMap.xhigh",
+    "author_source_sha256": "a50749af1cff8fd1f68f1b7e20a124220ab739b3cfff97cb4fba65768590fcc3",
+    "bundle_sha256": "57304daf0dccc4cce4e8ab9f24b9114c88a3d86ee5682da13f11b40a51e6a296",
+    "manifest_sha256": "c4a70c05cd3332ed61c0c07cb06974bf99e6db8c535d06a516e41e1ec33e0d80",
+    "ids": ["grok-4.3", "grok-4.5", "grok-4.6", "grok-4.7"],
+    "retired_ids": []
+  },
+  "global_after": {
+    "opi_records": 1700,
+    "reference_records": 1712,
+    "equal": 1641,
+    "only_opi": 22,
+    "only_reference": 34,
+    "changed": 37,
+    "providers_equal": 21,
+    "providers_with_differences": 21
+  },
+  "wire": {
+    "endpoint": "/v1/responses",
+    "auth": "Bearer",
+    "models": ["grok-4.3", "grok-4.5"],
+    "reasoning_effort": "xhigh",
+    "include": ["reasoning.encrypted_content"],
+    "requests": 2
+  },
+  "tests": {
+    "provider_collection_xai": 3,
+    "provider_collection_regression": 131,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_responses_fixtures": 84,
+    "catalog_bundled_external_consumer": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_reasoning_fallback": false
+  }
+}

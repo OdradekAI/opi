@@ -4,9 +4,8 @@
 //! by `crate::catalog::HttpCatalogSource` (with `builtins`) speak the Pi *distribution* schema
 //! (`https://pi.dev/schemas/models.schema.json`, schema 1): a `providers` map
 //! whose entries carry a `models` array of `{ id, name, api, contextWindow,
-//! maxTokens, input, reasoning, cost, ... }` records. This is deliberately a
-//! different artifact from the hydration data the builtin bundle embeds
-//! (`DATA_SCHEMA_VERSION` 6), and the two must not be conflated.
+//! maxTokens, input, reasoning, cost, ... }` records. Static offline bundles
+//! use the format read by [`crate::catalog::Catalog::from_bytes`].
 //!
 //! `ModelInfo` carries opi-only fidelity that distribution schema 1 cannot
 //! express (streaming support, cache-control flags, pricing tiers, exact
@@ -22,6 +21,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde_json::{Map, Value, json};
 
+use crate::types::classifier::{ClassifierCompat, ClassifierImageInput};
 use crate::types::model::{
     AnthropicAllowedFallbackModel, AnthropicMessagesCompat, ModelCapabilities, ModelInfo,
     OpenAiCodexResponsesCompat, OpenAiResponsesCompat, ThinkingLevel, ThinkingLevelMap,
@@ -1340,9 +1340,67 @@ fn encode_catalog_record(record: &CatalogRecord) -> Value {
                 "provider": model.provider_id, "api": model.api.as_str(), "baseUrl": model.base_url,
                 "input": input, "contextWindow": model.context_window, "cost": cost});
             encode_record_headers(&mut entry, &model.headers, &model.input_limits);
+            if let Some(compat) = &model.compat {
+                let mut value = Map::new();
+                if let Some(image_input) = compat.image_input {
+                    value.insert(
+                        "imageInput".to_owned(),
+                        Value::String(
+                            match image_input {
+                                ClassifierImageInput::Assets => "assets",
+                                ClassifierImageInput::Images => "images",
+                                ClassifierImageInput::StateImageUrls => "state-image-urls",
+                            }
+                            .to_owned(),
+                        ),
+                    );
+                }
+                if let Some(send) = compat.send_image_opt_in_header {
+                    value.insert("sendImageOptInHeader".to_owned(), Value::Bool(send));
+                }
+                if !value.is_empty() {
+                    entry["compat"] = Value::Object(value);
+                }
+            }
             entry
         }
     }
+}
+
+pub(crate) fn decode_classifier_compat(entry: &Value) -> Result<Option<ClassifierCompat>, String> {
+    let Some(value) = entry.get("compat") else {
+        return Ok(None);
+    };
+    let object = value
+        .as_object()
+        .ok_or("classifier compat must be an object")?;
+    let mut compat = ClassifierCompat::default();
+    for (key, value) in object {
+        match key.as_str() {
+            "imageInput" => {
+                compat.image_input = Some(match value.as_str() {
+                    Some("assets") => ClassifierImageInput::Assets,
+                    Some("images") => ClassifierImageInput::Images,
+                    Some("state-image-urls") => ClassifierImageInput::StateImageUrls,
+                    _ => {
+                        return Err(
+                            "classifier compat.imageInput must be assets, images, or state-image-urls"
+                                .into(),
+                        );
+                    }
+                });
+            }
+            "sendImageOptInHeader" => {
+                compat.send_image_opt_in_header = Some(
+                    value
+                        .as_bool()
+                        .ok_or("classifier compat.sendImageOptInHeader must be a boolean")?,
+                );
+            }
+            _ => return Err(format!("classifier compat has unknown field '{key}'")),
+        }
+    }
+    Ok(Some(compat))
 }
 
 fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord, String> {
@@ -1389,6 +1447,11 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
         })
         .collect::<Result<Vec<_>, _>>()?;
     let headers = decode_record_headers(entry)?;
+    let classifier_compat = if kind == "classifier" {
+        decode_classifier_compat(entry)?
+    } else {
+        None
+    };
     let input_limits = entry
         .get("inputLimits")
         .filter(|value| !value.is_null())
@@ -1476,6 +1539,7 @@ fn decode_catalog_record(provider: &str, entry: &Value) -> Result<CatalogRecord,
                 base_url,
                 headers,
                 input_limits,
+                compat: classifier_compat,
                 input: input
                     .into_iter()
                     .map(|value| match value {
@@ -2066,7 +2130,7 @@ mod projection_compat_tests {
             }
             assert_absent(&decode_model_entry(&old_snapshot).unwrap());
         }
-        #[cfg(any(feature = "builtins", feature = "provider-protocol-common"))]
+        #[cfg(feature = "provider-openai-responses")]
         assert_eq!(
             crate::providers::openai_responses::ResponsesConfig::default().source,
             crate::types::model::OpenAiResponsesSourceCompat::default()

@@ -5,23 +5,54 @@
 //! signing, event-stream decoding and the direct Chat API live in
 //! [`crate::api::bedrock`].
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use secrecy::SecretString;
 
 use crate::auth::aws::sigv4::AwsCredentials;
+use crate::catalog::CatalogModel;
 use crate::http::HttpClient;
 use crate::model_info::WireApi;
 use crate::provider::routes::BedrockRouteContext;
 use crate::provider::{ModelInfo, ProviderError, ProviderErrorSummary};
-use crate::registry::ModelCapabilities;
 use crate::retry::smithy as retry;
 
-pub use crate::provider::routes::{
-    is_standard_bedrock_endpoint, validate_proxy_placeholder_endpoint,
-};
+/// Whether `base_url` is a standard AWS Bedrock runtime endpoint.
+pub fn is_standard_bedrock_endpoint(base_url: &str) -> bool {
+    let Ok(url) = url::Url::parse(base_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let host = host.to_ascii_lowercase();
+    let Some(rest) = host.strip_prefix("bedrock-runtime") else {
+        return false;
+    };
+    let rest = rest.strip_prefix("-fips").unwrap_or(rest);
+    let Some(rest) = rest.strip_prefix('.') else {
+        return false;
+    };
+    let Some((region, suffix)) = rest.split_once('.') else {
+        return false;
+    };
+    !region.is_empty()
+        && !region.contains('.')
+        && (suffix == "amazonaws.com" || suffix == "amazonaws.com.cn")
+}
 
-/// Model families supported by this provider. `openai` exists for the
+/// Reject the explicit placeholder-signing mode for standard AWS endpoints.
+pub fn validate_proxy_placeholder_endpoint(base_url: &str) -> Result<(), ProviderError> {
+    if is_standard_bedrock_endpoint(base_url) {
+        return Err(ProviderError::Config(ProviderErrorSummary::sanitized(
+            "Bedrock ProxyPlaceholderSigning requires a caller-supplied nonstandard endpoint; \
+                 standard AWS endpoints reject this mode",
+        )));
+    }
+    Ok(())
+}
+
+/// Model families accepted for IDs outside the route catalog. `openai` covers
 /// Bedrock-hosted GPT-OSS/GPT models (pi's effort engine carries dedicated
 /// `gpt-oss`/`gpt-` arms keyed on the model id).
 pub(crate) const SUPPORTED_FAMILIES: &[&str] =
@@ -78,9 +109,26 @@ pub fn proxy_placeholder_auth(
 pub type BedrockProvider = BedrockRouteContext;
 
 impl BedrockRouteContext {
+    /// Classify a candidate endpoint before wire selection.
+    pub(crate) fn is_standard_endpoint(base_url: &str) -> bool {
+        is_standard_bedrock_endpoint(base_url)
+    }
+
+    /// Validate the endpoint selected for placeholder signing.
+    pub(crate) fn validate_placeholder_endpoint(base_url: &str) -> Result<(), ProviderError> {
+        validate_proxy_placeholder_endpoint(base_url)
+    }
+
     /// Construct a credential-free Bedrock provider profile.
     pub fn new(base_url: Option<String>, client: Arc<HttpClient>) -> Self {
-        let models = model_catalog();
+        Self::from_models(base_url, client, model_catalog())
+    }
+
+    pub(crate) fn from_models(
+        base_url: Option<String>,
+        client: Arc<HttpClient>,
+        models: Vec<ModelInfo>,
+    ) -> Self {
         Self {
             provider_identity: "bedrock".into(),
             base_url,
@@ -127,15 +175,25 @@ impl BedrockRouteContext {
         &self.client
     }
 
-    /// Return supported model families.
+    /// Return model families accepted for unlisted IDs.
     pub fn supported_model_families(&self) -> Vec<&str> {
         SUPPORTED_FAMILIES.to_vec()
     }
 
-    /// Validate that a model ID belongs to a supported family.
+    /// Validate a registered Converse model ID or an unlisted ID in a supported family.
     pub fn validate_model_id(&self, model_id: &str) -> Result<(), ProviderError> {
         let family = model_id.split('.').next().unwrap_or("");
-        if SUPPORTED_FAMILIES.contains(&family) {
+        // A registered ID can name a regional inference profile or a family
+        // outside the unlisted-model set. It still occupies one URL segment.
+        if SUPPORTED_FAMILIES.contains(&family)
+            || (model_id.starts_with(|ch: char| ch.is_ascii_alphanumeric())
+                && model_id.bytes().all(|ch| {
+                    ch.is_ascii_alphanumeric() || matches!(ch, b'.' | b'-' | b'_' | b':')
+                })
+                && self.models.iter().any(|model| {
+                    model.id == model_id && model.wire_api == WireApi::BedrockConverseStream
+                }))
+        {
             Ok(())
         } else {
             Err(ProviderError::Config(ProviderErrorSummary::sanitized(
@@ -153,35 +211,34 @@ pub fn redact_credentials(_access_key_id: &str, _secret_key: &str) -> String {
     "***".to_string()
 }
 
-/// Built-in Bedrock model metadata without credentials or HTTP construction.
+/// Model metadata from the reviewed Amazon Bedrock catalog.
+///
+/// The standalone route resolves standard AWS endpoints through its
+/// configured endpoint and authentication region.
 pub fn model_catalog() -> Vec<ModelInfo> {
-    vec![
-        ModelInfo::new(
-            "anthropic.claude-sonnet-4-20250514-v2:0",
-            "Claude Sonnet 4 (Bedrock)",
-            WireApi::BedrockConverseStream,
-            ModelCapabilities::new(200000, 8192)
-                .with_images(true)
-                .with_streaming(true)
-                .with_thinking(true),
-        ),
-        ModelInfo::new(
-            "anthropic.claude-opus-4-20250514-v1:0",
-            "Claude Opus 4 (Bedrock)",
-            WireApi::BedrockConverseStream,
-            ModelCapabilities::new(200000, 8192)
-                .with_images(true)
-                .with_streaming(true)
-                .with_thinking(true),
-        ),
-        ModelInfo::new(
-            "anthropic.claude-haiku-4-5-20250514-v1:0",
-            "Claude Haiku 4.5 (Bedrock)",
-            WireApi::BedrockConverseStream,
-            ModelCapabilities::new(200000, 8192)
-                .with_images(true)
-                .with_streaming(true)
-                .with_thinking(true),
-        ),
-    ]
+    static MODELS: OnceLock<Vec<ModelInfo>> = OnceLock::new();
+    MODELS
+        .get_or_init(|| {
+            let entries: Vec<serde_json::Value> = serde_json::from_slice(include_bytes!(
+                "../../resources/catalog/providers/amazon-bedrock.json"
+            ))
+            .expect("validated Amazon Bedrock provider catalog");
+            entries
+                .iter()
+                .map(|entry| {
+                    let mut model = CatalogModel::parse("amazon-bedrock", entry)
+                        .and_then(|row| row.to_chat_model_info())
+                        .expect("validated Amazon Bedrock chat record");
+                    if model
+                        .base_url
+                        .as_deref()
+                        .is_some_and(is_standard_bedrock_endpoint)
+                    {
+                        model.base_url = None;
+                    }
+                    model
+                })
+                .collect()
+        })
+        .clone()
 }

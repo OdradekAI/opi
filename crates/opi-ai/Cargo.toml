@@ -82,7 +82,7 @@ cloud-auth = [
 oauth-store = [
     "http-transport",
 ]
-# The embedded Pi model catalog is independently selectable. `builtins` keeps
+# The embedded opi model catalog is independently selectable. `builtins` keeps
 # depending on this feature so existing explicit-builtins consumers retain the
 # same public registration surface and default behavior.
 catalog-bundled = []
@@ -167,6 +167,65 @@ http-body-util = { workspace = true }
 h2 = { workspace = true }
 rustls = { workspace = true, features = ["ring"] }
 
+# Integration targets exercised by the minimum SDK.
+
+[[test]]
+name = "ai_telemetry"
+
+[[test]]
+name = "context_budget"
+
+[[test]]
+name = "core_profile"
+
+[[test]]
+name = "custom_provider_registration"
+
+[[test]]
+name = "deferred_contract"
+
+[[test]]
+name = "execution_lifecycle"
+
+[[test]]
+name = "final_numeric_decoding"
+
+[[test]]
+name = "image_input"
+
+[[test]]
+name = "incremental_argument_preview"
+
+[[test]]
+name = "output_content_image"
+
+[[test]]
+name = "platform_delivery"
+
+[[test]]
+name = "provider_diagnostics"
+
+[[test]]
+name = "provider_trait"
+
+[[test]]
+name = "schema_engine"
+
+[[test]]
+name = "schema_public"
+
+[[test]]
+name = "stream_events"
+
+[[test]]
+name = "streaming_json"
+
+[[test]]
+name = "test_support_tests"
+
+[[test]]
+name = "usage_cost"
+
 # Built-in integration targets are excluded from the minimum SDK profile.
 
 [[test]]
@@ -200,6 +259,10 @@ required-features = ["builtins"]
 [[test]]
 name = "bedrock_fixtures"
 required-features = ["builtins"]
+
+[[test]]
+name = "bedrock_retry"
+required-features = ["provider-bedrock"]
 
 [[test]]
 name = "builtin_auth_ownership"
@@ -303,57 +366,57 @@ required-features = ["protocol-adapters"]
 
 [[test]]
 name = "provider_anthropic_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/anthropic.rs"
 required-features = ["provider-anthropic"]
 
 [[test]]
 name = "provider_azure_openai_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/azure_openai.rs"
 required-features = ["provider-azure-openai"]
 
 [[test]]
 name = "provider_bedrock_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/bedrock.rs"
 required-features = ["provider-bedrock"]
 
 [[test]]
 name = "provider_gemini_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/gemini.rs"
 required-features = ["provider-gemini"]
 
 [[test]]
 name = "provider_mistral_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/mistral.rs"
 required-features = ["provider-mistral"]
 
 [[test]]
 name = "provider_openai_chat_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/openai_chat.rs"
 required-features = ["provider-openai-chat"]
 
 [[test]]
 name = "provider_openai_codex_responses_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/openai_codex_responses.rs"
 required-features = ["provider-openai-codex-responses"]
 
 [[test]]
 name = "provider_openai_responses_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/openai_responses.rs"
 required-features = ["provider-openai-responses"]
 
 [[test]]
 name = "provider_openrouter_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/openrouter.rs"
 required-features = ["provider-openrouter"]
 
 [[test]]
 name = "provider_pi_messages_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/pi_messages.rs"
 required-features = ["provider-pi-messages"]
 
 [[test]]
 name = "provider_vertex_profile"
-path = "tests/provider_protocol_profile.rs"
+path = "tests/provider_protocol_profile/vertex.rs"
 required-features = ["provider-vertex"]
 
 [[test]]
@@ -381,7 +444,47 @@ name = "node4_preparation"
 required-features = ["builtins"]
 
 [[test]]
-name = "oauth_flows"
+name = "oauth_anthropic"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_codex"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_chatgpt"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_copilot"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_kimi"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_meta"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_xai"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_models_store"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_regressions"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_openrouter"
+required-features = ["builtins"]
+
+[[test]]
+name = "oauth_radius"
 required-features = ["builtins"]
 
 [[test]]
@@ -462,6 +565,10 @@ required-features = ["builtins"]
 
 [[test]]
 name = "proxy_support"
+required-features = ["builtins"]
+
+[[test]]
+name = "radius_builtin_catalog"
 required-features = ["builtins"]
 
 [[test]]

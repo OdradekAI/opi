@@ -48,20 +48,29 @@ Bedrock 与 Vertex 传递保留 `cloud-auth`，Codex Responses 传递保留
 | 模块 | Provider id | 后端 |
 |------|-------------|------|
 | `providers::anthropic` + `api::anthropic` | `anthropic` | Anthropic Messages streaming |
-| `providers::openai` + `api::openai` | `openai` | OpenAI Chat Completions streaming |
+| `providers::openai` + `api::openai_completions` | `openai` | OpenAI Chat Completions streaming |
 | `providers::openai_responses` + `api::openai_responses` | `openai-responses` | OpenAI Responses streaming |
 | `providers::openai_codex` + `api::openai_codex_responses` | `openai-codex` | subscription-specific OpenAI Codex Responses streaming |
 | `providers::mapped` | 调用方定义 | 把一个 Provider identity/catalog 路由到 checked 具体 wire |
 | `providers::openrouter` | `openrouter` | OpenAI-compatible OpenRouter profile |
 | `providers::mistral` + `api::mistral` | `mistral` | OpenAI-compatible Mistral profile |
-| `providers::gemini` + `api::gemini` | `gemini` | Gemini `streamGenerateContent?alt=sse` |
+| `providers::gemini` + `api::gemini` | `google_provider` 使用 `google`，`GeminiProvider::new` 使用 `gemini` | Gemini `streamGenerateContent?alt=sse` |
 | `providers::bedrock` + `api::bedrock` | `bedrock` | AWS Bedrock Converse streaming，支持 SigV4 或 Bearer 认证 |
 | `providers::azure_openai` + `api::azure_openai` | `azure` | Azure OpenAI deployment 专用 Chat **与** Responses 双 wire |
-| `providers::vertex` + `api::vertex` | `vertex` | Google Vertex AI Gemini streaming |
+| `providers::vertex` + `api::vertex` | `google_vertex_provider` 使用 `google-vertex`，`VertexProvider::new` 或 `express` 使用 `vertex` | Google Vertex AI Gemini streaming |
 
 内置模型列表刻意保持有限，主要用于能力校验和模型列表输出。站点专用模型、
 fine-tuned 模型和 deployment 应通过 registry override 或配置的
 OpenAI-compatible profile 加入。
+
+Gemini 独立工厂和 SDK 内置 Google 路由使用同一份审核目录。直接派发时，模型列表
+之外的 ID 返回 `UnknownModel`。通过 `with_models` 可显式绑定自定义记录。工厂传入
+主机或代理前缀后使用默认的 `/v1beta` 端点，自定义记录声明的完整端点优先。
+
+Vertex 的独立工厂和内置路由共用 13 条审核记录。API key 使用 Express publisher
+集合与 `x-goog-api-key` 请求头。Bearer 将项目和区域写入资源路径。SDK 内置路由
+通过 `BuiltinVertexConfig::base_url` 给两种模式设置生成服务主机或代理前缀。
+SDK 显式模型记录的完整端点直接选择 publisher 集合，也可指定 API 版本。
 
 ## 凭据、Request 扩充与 Refresh
 
@@ -261,7 +270,7 @@ HTTP 响应的 `model` 保留请求模型，`response_model` 保存服务端报�
 | `openrouter` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `mistral` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `gemini` | thinking | PNG/JPEG/GIF/WebP | `cached_content` | — |
-| `bedrock` | `supports_thinking` 模型声明 thinking，但 Converse 流的 `reasoningContent` 块不会被解析为 thinking（parser 限制） | 仅 byte/base64；拒绝 URL 图片 | `cache_read` / `cache_write` | — |
+| `bedrock` | ConverseStream 将 `reasoningContent` 解析为 thinking 事件，保留文本签名，并将 redacted 数据保留为不透明的 thinking 块 | 仅 byte/base64；拒绝 URL 图片 | `cache_read` / `cache_write` | — |
 | `azure_openai` | inherited | PNG/JPEG/GIF/WebP | inherited | `chatcmpl-*` |
 | `vertex` | inherited | PNG/JPEG/GIF/WebP | `cached_content` | — |
 
@@ -328,8 +337,8 @@ TOML profile 与模型 compat）都会报出显式迁移错误——绝不静默
 thinking 意图与所选 `ModelInfo::thinking_level_map` 是 reasoning wire 输出的
 唯一来源。
 
-工具结果按锁定来源投影：文本（或 `(see attached image)` / `(no tool output)`
-占位符）承载于 `role: "tool"` 消息；当模型接受图片时，图像部分承载于一条尾随
+工具结果的文本或占位符（`(see attached image)`、`(no tool output)`）
+写入 `role: "tool"` 消息。当模型接受图片时，图像部分承载于一条尾随
 的 user 消息（标签 `Attached image(s) from tool result:`）；错误结果保留确定的
 `[tool_error]` 前缀。
 
@@ -386,19 +395,19 @@ Chat-Completions 类比构造，因此服务端响应链未被接入。
 
 ### Azure OpenAI 双 wire
 
-Azure 同时保留两条 wire，并按钉住的源 `azure-openai-config.ts` 显式映射
-deployment/resource/api-version：
+SDK 内置注册与 coding-agent 共用 Azure 聊天目录和 `AzureCatalogProvider` 路由。
+所选记录决定协议、模型上限和请求能力。独立工厂可通过 `provider-azure-openai` 使用。
 
 | 映射 | 优先级 | wire 效果 |
 |---|---|---|
-| Base URL | 显式 `azure_base_url` → 所选 base 配置 → 资源名 → 模型 `baseUrl` → 类型化 `Config` 失败 | 标准 Azure 资源主机的源 Chat/Responses 使用 `/openai/v1`；custom API base 保留路径，Responses 仅在尚未包含 `/responses` 时追加它。 |
-| API 版本 | 显式 `azure_api_version` → 所选环境配置 → `v1` | Responses 携带 `?api-version=…`；builtin Chat 不带此 query，legacy direct Chat 保留 versioned deployment URL。 |
-| Deployment | 显式 `azure_deployment_name` → provider `modelId=deployment` 映射 → 模型 id | 源 wire 将 deployment 放入 body `model`，保留 catalog 身份；只有 legacy direct Chat 同时放入 URL。 |
+| Base URL | native `azure_base_url` 或 CLI `endpoint` → `AZURE_OPENAI_BASE_URL` → `AZURE_OPENAI_RESOURCE_NAME` → 模型 `baseUrl` → 类型化 `Config` 失败 | 标准 Azure 资源主机的目录路由使用 `/openai/v1`。自定义 API 基址保留路径。 |
+| API 版本 | native `azure_api_version` 或 CLI `api_version` → `AZURE_OPENAI_API_VERSION` → `v1` | Responses 携带 `?api-version=…`。 |
+| 部署 | native `azure_deployment_name` → `AZURE_OPENAI_DEPLOYMENT_NAME_MAP` → 目录模型 ID | 用逗号分隔的 `model-id=deployment` 映射决定请求体的 `model`。查询和结果使用目录 ID。 |
 
 Responses wire（`WireApi::AzureOpenAiResponses`、`azure-openai-responses`
 记录、经 `Models::register_chat_api` 注册的公开 `AzureOpenAIResponsesChatApi`）
-复用完整的 Responses 参数装配——`store: false`、off-effort
-`{"effort":"none"}`、summary 默认 `auto`、加密推理 include/签名/回放、
+复用 Responses 参数装配——`store: false`、目录中的 effort 映射、
+summary 默认 `auto`、加密推理 include/签名/回放、
 16-token 输出下限——运行在 Azure 传输（`api-key` 头、API-base `/responses` URL、
 azure 状态映射、终态 duration、冻结 telemetry producer）之上。
 `AzureOpenAIOptions` 携带 native 清单：`reasoning_effort`（类型化预检；
@@ -412,29 +421,68 @@ provider 均为 `azure`，endpoint、deployment 和 API-version 在 acquisition 
 
 ## 离线内置 Model Catalog
 
-`catalog` 模块把一份真实、带版本的 model catalog 作为离线 crate 资源嵌入：
-`resources/catalog/builtin/catalog.json` 与已验证的发布产物逐字节一致，
-`manifest.json` 记录交付输入溯源——来源 URL 与 revision、artifact SHA-256、
-Pi 包/本地来源关联、data schema 版本 6、bundle schema 版本、完整 provider
-列表与逐操作条目计数，以及 Pi 自有 validator/hydrator 与 opi packer 的摘要。
-Bundle 由显式交付输入工具 `scripts/pi-catalog/pack.py` 生成（`--check` 校验）；
-任何路径都不会从测试、defaults 或 generator 运行合成 catalog 数据，真实
-artifact 缺失是阻断性输入而不是重建触发条件。
+`catalog` 模块把 opi 自己的模型数据作为离线 crate 资源嵌入。在
+[`resources/catalog/providers/`](../resources/catalog/providers) 编辑各 provider
+的模型列表。文件名标识 provider，同一文件中的 `(type, id)` 标识记录。
+同一个 ID 可以同时用于 chat 和 image。
 
-`Catalog::builtin()` 每进程解析并校验一次内嵌字节——无网络 I/O、无账户探测、
-不运行 generator——重新校验 artifact 摘要、bundle/data schema 版本、
-最低 reader 版本、provider 集合、每个条目的数据合同（identity、模态、能力、cost）、每 provider
-的 `type:id` 唯一性与结构摘要。任一不匹配都是 typed、fail-closed 的
-`CatalogError`；不存在部分可用的 catalog。按操作限定的 getter
-（`models(provider, operation)`、`model(provider, operation, id)`）公开
-chat/image/classifier 条目的 typed 核心字段与完整原始条目，供后续
-store/refresh 与 profile/catalog 集成 owner 消费。`CatalogHandle` 持有活动
-revision：`try_install` 完整校验候选后原子换入，因此篡改、过期、错误版本、
-缺 provider、重复 identity 或违反合同的候选被拒绝时，最后已知 revision
-保持可读，已持有的 `Arc<Catalog>` 永不被重新绑定。显式完整 custom 记录
-（`ChatModelRecord`）独立于任何 catalog 状态保持可用。Image 条目仅是用于
-选择/计价的 catalog 元数据；SDK 自身的 image 操作路径归 typed image API
-任务所有。
+在仓库根目录将候选产物写入新目录。审查生成的文件后，将它们复制到
+`crates/opi-ai/resources/catalog/builtin`。`check` 验证发行资源与源数据一致。
+
+```sh
+cargo run -p opi-ai --no-default-features --example build_catalog -- build crates/opi-ai/resources/catalog/providers catalog-candidate
+cargo run -p opi-ai --no-default-features --example build_catalog -- check crates/opi-ai/resources/catalog/providers crates/opi-ai/resources/catalog/builtin
+```
+
+生成器会拒绝重复 JSON 键、无法装配的内置路由、不匹配的协议字段和无效的模型参数。
+不参与运行时行为的元数据使用顶层 `x-<名称>`，持久化编解码器保留 `x-opi`。
+能力变更还需通过对应适配器的请求 fixture。公开 bundle 由 `catalog.json` 和
+`manifest.json` 组成。生成器从 `providers/openrouter.json` 取选定的 Chat Completions
+记录，写入 `openrouter-profile.json`。源目录删除一条记录后，重新生成即可同时从
+独立工厂和 coding-agent 列表撤下它。独立工厂对每条记录使用调用方配置的端点。
+单独启用 `provider-openrouter` 只需加载这份小文件。
+v2 manifest 记录 opi 格式版本、文件和
+结构摘要及 provider 列表。`Catalog::builtin()` 每进程校验一次内嵌文件，
+返回由内容确定的 revision 及各类操作的计数。
+
+`scripts/pi-catalog/pack.py` 用于只读比较。跟进 Pi 发布时，取该 provider 上次采纳的
+上游快照、目标发布快照及各自可信的 revision pin。可选的离线工具将这两个快照
+与当前 opi 源进行三方合并。
+
+```sh
+python scripts/pi-catalog/sync.py --provider mistral --old-artifact old-catalog.json --old-pin old-pin.json --new-artifact new-catalog.json --new-pin new-pin.json --opi-sources crates/opi-ai/resources/catalog/providers --output-dir sync-candidate
+cargo run -p opi-ai --no-default-features --example build_catalog -- build sync-candidate/providers bundle-candidate
+```
+
+默认跟随上游的新增、删除及字段更新。上游下线某个模型时，该 provider 和操作下的
+所有内置入口都要同步下线。若认为需要保留旧 ID 或增加回退，须在实施前征得项目所有者明确同意。
+opi 自有模型、本地删除和彼此独立的字段编辑
+会在后续升级中保留。对象逐字段合并，数组按有序整体比较。冲突时以退出码 2 返回
+涉及的模型和字段路径，并停止生成候选。输入输出错误返回 1。成功后审查 JSON 报告，
+采纳涉及的 provider 源文件与生成物，运行 `check` 及受影响的列表或协议测试，
+并记录本次采纳的上游摘要供下次比较。普通 crate 构建直接读取仓库中的资源。
+
+`Catalog::from_bytes` 仍可读取 v1 bundle。此前从 `provenance()` 直接读取
+`pi_package`、`source_url`、`local_origin` 或 `generator` 的调用方可从
+`origin` 的 `CatalogOrigin::PiPublished` 变体读取这些字段。opi 打包入口
+生成的资源使用 `CatalogOrigin::Opi`。
+
+```rust
+use opi_ai::catalog::{Catalog, CatalogOrigin};
+
+fn legacy_pi_package(catalog: &Catalog) -> Option<&str> {
+    if let CatalogOrigin::PiPublished { pi_package, .. } = &catalog.provenance().origin {
+        Some(pi_package)
+    } else {
+        None
+    }
+}
+```
+
+通过 `models(provider, operation)` 和 `model(provider, operation, id)` 可
+取得类型化的核心字段与完整原始记录。`CatalogHandle::try_install` 验证候选
+后原子换入。校验失败时上一个有效 revision 仍可读，已持有的 `Arc<Catalog>`
+继续指向最初返回的 revision。
 
 ## 动态 Catalog Store 与 Refresh
 
@@ -511,27 +559,35 @@ native `Ok(None)` 恢复内置回退，除非该 provider 注册的显式 source
 删除 owner 后不能暴露缓存；显式重新注册允许恢复兼容记录。
 `refresh_with(options, &token)` 保持取消检查、store ACK 和旧 revision guard。
 被取代或取消的工作不能迟到发布；source 失效不能从未选中的旧内存复活数据。
-SDK 不注册动态目录 source、不附加持久化 `ModelsStore`，没有 pi.dev／默认启动
-抓取策略。本地内存凭据存储与目录持久化相互独立。
+宿主按需附加 `ModelsStore` 并注册自定义目录来源。构造与查询均不执行目录 I/O。
+
+### Radius 网关目录
+
+默认 gateway 的 builtin Radius 使用 opi 内置 chat 目录作为初始列表。
+通过 `BuiltinOverrides::base_urls` 指定自定义 gateway 时，初始列表为空。
+离线刷新从附加的 store 恢复与当前 gateway 同源的 builtin 目录发布结果。
+同一个 `ModelsStore` 的 clone 共享发布 revision。
+
+允许联网刷新 `radius` 时，SDK 解析该路由当前的 API key 或 OAuth token，并向
+该 gateway 请求 `GET /v1/config`。返回的 chat base URL 必须与 gateway 同源。
+有效目录会完整替换上一份目录，空模型列表也有效。缺少凭据或刷新失败时保留
+最后已知目录。每次联网刷新都向 gateway 检查最新配置。
 
 ## 内置 Provider 工厂层：42 个 canonical profile
 
-`providers::builtin_provider_profiles` 携带 pi 1.3.0 能力清单中逐字提
-取的 42 条 profile 表：canonical id（`google`、`google-vertex`、
+`providers::builtin_provider_profiles` 提供 42 个内置 profile，包含 canonical id（`google`、`google-vertex`、
 `amazon-bedrock` 等）、显示名、默认 base URL、env API-key 名、auth
 scheme、OAuth 可用性与端点语义（Azure 部署、Vertex location 模板、
-Bedrock 区域、动态 radius）。旧的 opi id（`gemini`、`vertex`、
+Bedrock 区域、Radius 网关 URL）。旧的 opi id（`gemini`、`vertex`、
 `bedrock`、`openai-responses`）不是别名——表从不注册它们。
 provider 显示名包括 Amazon Bedrock、Anthropic 与 Google Vertex AI；凭证标签
 作为独立元数据保留。
-`providers::collection::register_builtin` 把该表与内置目录转成基于已完
-成 wire 适配器的注册 provider：每 profile 一个 mapped provider（Azure
-与 google-vertex 受配置门控并给出类型化跳过原因，bedrock 以 AWS 链
-描述符 lookup-only 注册），canonical-route 包装器把固定 id 适配器重发
-布为 canonical id（含前缀敏感适配器所需的 model-spec 前缀重写），目
-录条目连同分层计价转换进 `ModelInfo::pricing`，classifier/image 协议
-经类型化缝以目录记录注册。环境 key 在派发时经注入的 `AuthContext`
-解析——构造不读环境、存储或网络。
+`providers::collection::register_builtin` 使用该表、内置目录与 wire 适配器
+注册 provider。多协议 profile 使用 mapped provider。Radius 在目录加载期间
+仍保有 Pi Messages 路由。canonical-route 包装器为固定 id 适配器提供
+canonical id，并按需重写 model-spec 前缀。目录条目的分层计价传入
+`ModelInfo::pricing`，classifier 与 image 走各自的类型化注册入口。
+调用或认证刷新需要环境 key 时，通过注入的 `AuthContext` 解析。
 
 ## 公共入口
 

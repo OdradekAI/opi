@@ -1,0 +1,69 @@
+{
+  "issue": 256,
+  "status": "done",
+  "provider": "moonshotai",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 4,
+    "records_after": 6,
+    "added": 2,
+    "removed": 0,
+    "updated": 0,
+    "added_ids": [
+      "kimi-k3.1-pro",
+      "kimi-k3.1-pro-highspeed"
+    ],
+    "removed_ids": [],
+    "updated_ids": [],
+    "updated_fields": [],
+    "retired_ids": [],
+    "author_source_sha256": "82eaba8206b40e2de476625e35a41d2bd0a73a3898bbe3979fcfcd7b5e91c047",
+    "bundle_sha256": "3441f9e32f8307288c33cfc2c4519f2fa923960892b18289ef2d300f7f6acb8b",
+    "manifest_sha256": "cf2c8498afbb2acb103c49bd05ecae7d3956b1ca18bedaf1ebad9b7fe588f34c"
+  },
+  "global_after": {
+    "opi_records": 1718,
+    "reference_records": 1712,
+    "equal": 1707,
+    "only_opi": 9,
+    "only_reference": 3,
+    "changed": 2,
+    "providers_equal": 34,
+    "providers_with_differences": 8
+  },
+  "wire": {
+    "endpoint": "/v1/chat/completions",
+    "auth": "Bearer MOONSHOT_API_KEY",
+    "models": [
+      "kimi-k3.1-pro",
+      "kimi-k3.1-pro-highspeed"
+    ],
+    "max_tokens_field": "max_tokens",
+    "reasoning_effort": "high",
+    "requests": 2
+  },
+  "tests": {
+    "provider_collection_moonshotai": 3,
+    "provider_collection_regression": 171,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "build_catalog_example": 9,
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "not run for this provider batch; known pre-existing ImageModelRecord.compat compile errors remain in unrelated targets",
+    "build_catalog_check": "PASS",
+    "catalog_bundled_external_consumer": "PASS (catalog=sha256-3441f9e32f8307288c33cfc2c4519f2fa923960892b18289ef2d300f7f6acb8b providers=42 chat=1598 image=64 classifier=56)",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

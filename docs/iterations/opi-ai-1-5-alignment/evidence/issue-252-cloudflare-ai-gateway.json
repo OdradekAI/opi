@@ -1,0 +1,81 @@
+{
+  "issue": 252,
+  "status": "done",
+  "provider": "cloudflare-ai-gateway",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 57,
+    "records_after": 59,
+    "added": 2,
+    "removed": 0,
+    "updated": 1,
+    "added_ids": [
+      "gpt-6.1-terra",
+      "workers-ai/@cf/deepseek-ai/deepseek-v4.1-flash-1017"
+    ],
+    "removed_ids": [],
+    "updated_ids": ["claude-sonnet-5-5"],
+    "author_source_sha256": "71173aff37abe3e3c02e5eba8e97f48a6f834e4eda2b1e747a1b55ea4879c869",
+    "bundle_sha256": "36b74f8a812872c0578229621758d53b798d1c2591fdd0c33149a23c3e168a1e",
+    "manifest_sha256": "38b21667128e8dfa210020a6972134eae5ffb645c996672cd591d072e30ef711"
+  },
+  "global_after": {
+    "opi_records": 1714,
+    "reference_records": 1712,
+    "equal": 1699,
+    "only_opi": 9,
+    "only_reference": 7,
+    "changed": 6,
+    "providers_equal": 30,
+    "providers_with_differences": 12
+  },
+  "wire": {
+    "auth_header": "cf-aig-authorization",
+    "anthropic": {
+      "endpoint": "/anthropic/v1/messages",
+      "model": "claude-sonnet-5-5",
+      "thinking_type": "adaptive",
+      "effort": "xhigh"
+    },
+    "openai_completions": {
+      "endpoint": "/compat/chat/completions",
+      "model": "workers-ai/@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "max_tokens": 54321,
+      "max_completion_tokens": false,
+      "reasoning_effort": false
+    },
+    "openai_responses": {
+      "endpoint": "/openai/responses",
+      "model": "gpt-6.1-terra",
+      "effort": "xhigh"
+    },
+    "requests": 3
+  },
+  "tests": {
+    "provider_collection_cloudflare_ai_gateway": 3,
+    "provider_collection_regression": 159,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "anthropic_fixtures": 155,
+    "openai_chat_fixtures": 116,
+    "openai_responses_fixtures": 84,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "not run for this provider batch; known pre-existing ImageModelRecord.compat compile errors remain in unrelated targets",
+    "build_catalog_check": "PASS",
+    "catalog_bundled_external_consumer": "PASS",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

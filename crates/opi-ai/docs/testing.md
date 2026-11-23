@@ -5,12 +5,18 @@ use to prove the packaged crate. It is not a runtime API reference.
 
 ## Faux Provider for External Tests
 
-Use `test_support::MockProvider` and the public Faux registration helpers when a
+Use `test_support::MockProvider` and `test_support::single_route_collection` when a
 consumer needs deterministic responses without credentials or a live service.
 Script the final message, stream events, tool calls, delayed/pending results and
 provider failures explicitly. The test owns the response script and the
 cancellation token; the SDK still owns request construction, event ordering
 and typed terminal settlement.
+
+Use `test_support::ScriptedDeferredBackend` to share a scripted submission with
+the explicit fetch and cancel operations. These Faux interfaces are available
+in the minimum configuration. The UUID sequence boundary is exercised in the
+`identity` module test. Scripted AWS source transports live in the Bedrock
+fixtures.
 
 Faux is suitable for unit and integration tests of caller behavior. It does not
 prove a real provider's authentication, wire serialization, rate limits or
@@ -61,8 +67,9 @@ README examples. It records a JSON verdict under
 For the minimum, run `scripts/pi-sdk-conformance/run_minimal_package.py` with
 fresh `--scratch`, the shared `--target-dir` and a new `--evidence-output` path.
 It verifies the actual archive graph with tracing off/on, executes core Faux
-tool continuation, custom login Store ACK and argument/numeric contracts, and
-rejects accidental backend dependencies. This is a core profile proof, not a
+tool continuation, deferred submission and fetch, custom login Store ACK and
+argument/numeric contracts. It checks that the old UUID sequence probe fails to
+import from the archive and that backend dependencies are absent. This is a core profile proof, not a
 claim that every Pi Faux behavior or supported feature/platform row is closed.
 Use `--evidence-output` with the README runner as well to preserve prior receipts.
 

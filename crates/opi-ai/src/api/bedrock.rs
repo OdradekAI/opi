@@ -15,16 +15,16 @@ use tokio_util::sync::CancellationToken;
 
 use crate::api::shared::headers::ProviderHeaders;
 use crate::auth::aws::sigv4::{self, AwsCredentials, sign_request};
+use crate::constrained_sampling::{ConstrainedSampling, StrictPreference};
 use crate::message::{AssistantContent, AssistantMessage, ToolCall};
 use crate::model_info::{
     bedrock_model_candidates as model_candidates,
     supports_bedrock_adaptive_thinking as supports_adaptive_thinking,
 };
-use crate::provider::routes::{
-    BedrockRouteContext, is_standard_bedrock_endpoint, validate_proxy_placeholder_endpoint,
-};
+use crate::provider::routes::BedrockRouteContext;
 use crate::provider::{
-    AttemptContext, EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
+    AttemptContext, EventStream, ModelInfo, PayloadVariant, Provider, ProviderError,
+    ProviderErrorSummary, Request,
 };
 use crate::retry::smithy as retry;
 use crate::stream::{
@@ -39,6 +39,11 @@ use crate::stream::{
 pub struct BedrockWireAdapter {
     provider: BedrockRouteContext,
     native_options: Option<BedrockOptions>,
+}
+
+struct ConversePayload {
+    body: serde_json::Value,
+    has_preferred_strict_tools: bool,
 }
 
 /// Shared body-builder surface used by direct adapter tests and integrations
@@ -65,9 +70,11 @@ impl BedrockWireAdapter {
         }
     }
 
+    /// Dispatch one simple Converse attempt with resolved authentication.
+    /// Use [`crate::Models`] for whole-call retry and downgrade handling.
     pub fn stream_simple(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
         self.provider
-            .stream_prepared_with_options(request, auth, self.native_options.clone())
+            .stream_prepared_with_options(request, auth, self.native_options.clone(), None)
     }
 
     pub fn build_converse_body(
@@ -75,7 +82,8 @@ impl BedrockWireAdapter {
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
         self.provider
-            .build_converse_body_inner(request, None, self.native_options.as_ref())
+            .build_converse_payload(request, None, self.native_options.as_ref(), false)
+            .map(|payload| payload.body)
     }
 }
 
@@ -93,18 +101,20 @@ impl BedrockRouteContext {
         &self,
         request: &Request,
     ) -> Result<serde_json::Value, crate::provider::ProviderError> {
-        self.build_converse_body_inner(request, None, None)
+        self.build_converse_payload(request, None, None, false)
+            .map(|payload| payload.body)
     }
 
     /// Body assembly with the dispatch region (task 20.42): GovCloud
     /// regions omit Claude `thinking.display`/binding controls until the
     /// GovCloud Converse schema catches up (pi pins the same omissions).
-    fn build_converse_body_inner(
+    fn build_converse_payload(
         &self,
         request: &Request,
         gov_region: Option<&str>,
         native_options: Option<&BedrockOptions>,
-    ) -> Result<serde_json::Value, crate::provider::ProviderError> {
+        disable_preferred_strict: bool,
+    ) -> Result<ConversePayload, ProviderError> {
         let model_id = request
             .model
             .strip_prefix("bedrock:")
@@ -189,21 +199,31 @@ impl BedrockRouteContext {
         }
         body["inferenceConfig"] = inference_config;
 
+        let mut has_preferred_strict_tools = false;
         if !current_tools.is_empty() {
             let tools = current_tools
                 .iter()
                 .map(|tool| {
-                    let strict = crate::constrained_sampling::resolve_json_schema_strict_sampling(
-                        tool,
-                        supports_strict,
-                        &crate::constrained_sampling::NoRejectedKeywords,
-                    )
-                    .map_err(|error| {
-                        crate::provider::ProviderError::Config(
-                            crate::provider::ProviderErrorSummary::sanitized(error.detail()),
+                    let preferred = matches!(
+                        tool.constrained_sampling,
+                        Some(ConstrainedSampling::JsonSchema {
+                            strict: StrictPreference::Prefer,
+                        })
+                    );
+                    let strict = if disable_preferred_strict && preferred {
+                        None
+                    } else {
+                        crate::constrained_sampling::resolve_json_schema_strict_sampling(
+                            tool,
+                            supports_strict,
+                            &crate::constrained_sampling::NoRejectedKeywords,
                         )
-                    })?;
+                        .map_err(|error| {
+                            ProviderError::Config(ProviderErrorSummary::sanitized(error.detail()))
+                        })?
+                    };
                     let schema = if strict == Some(true) {
+                        has_preferred_strict_tools |= preferred;
                         crate::constrained_sampling::make_strict_json_schema(
                             &tool.input_schema,
                             &crate::constrained_sampling::NoRejectedKeywords,
@@ -281,7 +301,11 @@ impl BedrockRouteContext {
             body["requestMetadata"] = serde_json::json!(metadata);
         }
 
-        Ok(body)
+        Ok(ConversePayload {
+            has_preferred_strict_tools: has_preferred_strict_tools
+                && body.get("toolConfig").is_some(),
+            body,
+        })
     }
 
     /// Parse event-stream bytes and emit stream events from fixture data.
@@ -396,26 +420,15 @@ impl Provider for BedrockRouteContext {
 
     fn stream_attempt(
         &self,
-        mut request: Request,
+        request: Request,
         auth: crate::auth::ResolvedAuth,
         attempt: AttemptContext,
     ) -> EventStream {
-        // The source stamps its retry-observability headers on every send:
-        // one stable invocation id per logical call and the per-attempt
-        // `attempt=N; max=M` counter. They join the signed header set like
-        // any other request header.
-        request
-            .extra_headers
-            .push(("amz-sdk-invocation-id".to_owned(), attempt.invocation_id));
-        request.extra_headers.push((
-            "amz-sdk-request".to_owned(),
-            format!("attempt={}; max={}", attempt.attempt, attempt.max_attempts),
-        ));
-        self.stream_prepared_with_options(request, auth, None)
+        self.stream_prepared_with_options(request, auth, None, Some(attempt))
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        self.stream_prepared_with_options(request, auth, None)
+        self.stream_prepared_with_options(request, auth, None, None)
     }
 }
 
@@ -425,7 +438,20 @@ impl BedrockRouteContext {
         mut request: Request,
         auth: crate::auth::ResolvedAuth,
         native_options: Option<BedrockOptions>,
+        attempt: Option<AttemptContext>,
     ) -> EventStream {
+        let variant = attempt.map_or(PayloadVariant::Ordinary, |attempt| {
+            // The invocation and per-send counter join the signed headers.
+            request
+                .extra_headers
+                .push(("amz-sdk-invocation-id".to_owned(), attempt.invocation_id));
+            request.extra_headers.push((
+                "amz-sdk-request".to_owned(),
+                format!("attempt={}; max={}", attempt.attempt, attempt.max_attempts),
+            ));
+            attempt.payload_variant
+        });
+        let disable_preferred_strict = variant == PayloadVariant::BedrockStrictDowngrade;
         let projection = /* frozen call */ match crate::provider::request_projection(self, &request, crate::WireApi::BedrockConverseStream) {
             Ok(facts) => facts,
             Err(error) => return Box::pin(futures_util::stream::once(async move { Err(error) })),
@@ -476,7 +502,7 @@ impl BedrockRouteContext {
             if placeholder_mode {
                 let endpoint = self.base_url.as_deref().or(auth.base_url.as_deref());
                 if let Some(endpoint) = endpoint
-                    && let Err(error) = validate_proxy_placeholder_endpoint(endpoint)
+                    && let Err(error) = BedrockRouteContext::validate_placeholder_endpoint(endpoint)
                 {
                     return Box::pin(stream::iter(vec![Err(error)]));
                 }
@@ -500,12 +526,15 @@ impl BedrockRouteContext {
             // Body assembly needs the dispatch region (task 20.42): GovCloud
             // regions omit Claude thinking display/binding fields.
             let gov_region = credentials.as_ref().map(|c| c.region.as_str());
-            let body =
-                match self.build_converse_body_inner(&request, gov_region, native_options.as_ref())
-                {
-                    Ok(body) => body,
-                    Err(error) => return Box::pin(stream::once(async move { Err(error) })),
-                };
+            let mut payload = match self.build_converse_payload(
+                &request,
+                gov_region,
+                native_options.as_ref(),
+                disable_preferred_strict,
+            ) {
+                Ok(payload) => payload,
+                Err(error) => return Box::pin(stream::once(async move { Err(error) })),
+            };
 
             let model_base = self
                 .models
@@ -514,13 +543,13 @@ impl BedrockRouteContext {
                 .and_then(|model| model.base_url.clone());
             // A standard catalog endpoint must not replace the already resolved
             // signing region. Custom/VPC/proxy endpoints remain authoritative.
-            let custom_base = model_base
-                .clone()
-                .filter(|base| placeholder_mode || !is_standard_bedrock_endpoint(base));
+            let custom_base = model_base.clone().filter(|base| {
+                placeholder_mode || !BedrockRouteContext::is_standard_endpoint(base)
+            });
             let resolved_custom_base = auth
                 .base_url
                 .clone()
-                .filter(|base| !is_standard_bedrock_endpoint(base));
+                .filter(|base| !BedrockRouteContext::is_standard_endpoint(base));
             let base_url = match (&credentials, &bearer_token) {
                 (Some(credentials), _) => custom_base
                     .or(resolved_custom_base)
@@ -548,7 +577,9 @@ impl BedrockRouteContext {
             // Validate the endpoint actually selected from the frozen record and
             // resolved authentication; neither may redirect placeholder signing
             // to a standard AWS endpoint after an earlier host was checked.
-            if placeholder_mode && let Err(error) = validate_proxy_placeholder_endpoint(&base_url) {
+            if placeholder_mode
+                && let Err(error) = BedrockRouteContext::validate_placeholder_endpoint(&base_url)
+            {
                 return Box::pin(stream::iter(vec![Err(error)]));
             }
             let timeout = request.timeout;
@@ -576,6 +607,18 @@ impl BedrockRouteContext {
             };
 
             let snapshot = crate::stream::ProducerSnapshot::with_projection(projection);
+            let mut mapper = BedrockMapper::new(&self.provider_identity, &model_id);
+            if disable_preferred_strict {
+                mapper
+                    .partial
+                    .diagnostics
+                    .push(crate::stream::AssistantDiagnostic {
+                        kind: "bedrock_strict_tools_fallback".to_owned(),
+                        reason: "strict_tool_limits_exceeded".to_owned(),
+                        detail: None,
+                    });
+                snapshot.record(&mapper.partial);
+            }
             let producer_snapshot = snapshot.clone();
             let (tx, rx) = tokio::sync::mpsc::channel(64);
             let producer_cancel = cancel.clone();
@@ -585,27 +628,26 @@ impl BedrockRouteContext {
             // producer task runs under the captured parent/Dispatch when
             // provided; omission observes nothing.
             let telemetry = request.telemetry_context.clone();
-            let provider_identity = self.provider_identity.clone();
             let producer = async move {
                 let run = async {
                     let result = async {
-                        let body = callbacks
-                            .apply_payload_async(crate::callbacks::ORDINARY_PAYLOAD_VARIANT, body)
+                        payload.body = callbacks
+                            .apply_payload_async(variant.label(), payload.body)
                             .await?;
                         Self::stream_http(
                             http_client,
-                            provider_identity,
+                            mapper,
                             credentials,
                             bearer_token,
                             base_url,
                             &model_id,
-                            &body,
+                            payload,
                             producer_cancel.clone(),
                             timeout,
                             model_headers,
                             extra_headers,
                             callbacks,
-                            producer_snapshot,
+                            producer_snapshot.clone(),
                             &tx,
                         )
                         .await
@@ -614,6 +656,11 @@ impl BedrockRouteContext {
                     match result {
                         Ok(()) | Err(ProviderError::Cancelled) => {}
                         Err(error) => {
+                            let error = if disable_preferred_strict {
+                                producer_snapshot.failure(error)
+                            } else {
+                                error
+                            };
                             let _ = send_or_cancel(&producer_cancel, &tx, Err(error)).await;
                         }
                     }
@@ -657,24 +704,20 @@ impl Provider for BedrockWireAdapter {
 
     fn stream_attempt(
         &self,
-        mut request: Request,
+        request: Request,
         auth: crate::auth::ResolvedAuth,
         attempt: AttemptContext,
     ) -> EventStream {
-        request
-            .extra_headers
-            .push(("amz-sdk-invocation-id".to_owned(), attempt.invocation_id));
-        request.extra_headers.push((
-            "amz-sdk-request".to_owned(),
-            format!("attempt={}; max={}", attempt.attempt, attempt.max_attempts),
-        ));
-        self.provider
-            .stream_prepared_with_options(request, auth, self.native_options.clone())
+        self.provider.stream_prepared_with_options(
+            request,
+            auth,
+            self.native_options.clone(),
+            Some(attempt),
+        )
     }
 
     fn stream_prepared(&self, request: Request, auth: crate::auth::ResolvedAuth) -> EventStream {
-        self.provider
-            .stream_prepared_with_options(request, auth, self.native_options.clone())
+        self.stream_simple(request, auth)
     }
 }
 
@@ -686,12 +729,12 @@ impl BedrockRouteContext {
     #[allow(clippy::too_many_arguments)]
     async fn stream_http(
         client: reqwest::Client,
-        provider_identity: String,
+        mut mapper: BedrockMapper,
         credentials: Option<AwsCredentials>,
         bearer_token: Option<SecretString>,
         base_url: String,
         model_id: &str,
-        body: &serde_json::Value,
+        payload: ConversePayload,
         cancel: CancellationToken,
         timeout: Option<std::time::Duration>,
         model_headers: Vec<(String, Option<String>)>,
@@ -714,7 +757,11 @@ impl BedrockRouteContext {
             .await?;
         extra_headers.extend(attempt_headers);
         let path = format!("/model/{model_id}/converse-stream");
-        let payload = serde_json::to_vec(body).unwrap_or_default();
+        let ConversePayload {
+            body,
+            has_preferred_strict_tools,
+        } = payload;
+        let payload = serde_json::to_vec(&body).unwrap_or_default();
         let host = base_url
             .trim_start_matches("https://")
             .trim_start_matches("http://")
@@ -827,8 +874,17 @@ impl BedrockRouteContext {
             }
         })?;
 
-        // Response observer (task 20.51): status and headers exist, before
-        // any body processing or error mapping.
+        if !response.status().is_success() {
+            return Err(classify_converse_response_error(
+                response,
+                has_preferred_strict_tools,
+                &cancel,
+                timeout,
+            )
+            .await);
+        }
+        // Report only the acquired streaming response to the observer.
+        let status = response.status();
         let observed_headers: Vec<(String, String)> = response
             .headers()
             .iter()
@@ -840,18 +896,10 @@ impl BedrockRouteContext {
             })
             .collect();
 
-        let status = response.status();
-        if !status.is_success() {
-            let headers = response.headers().clone();
-            return Err(map_bedrock_status(status, &headers));
-        }
-        // Response callback (V-36): fired exactly once on the successfully
-        // acquired response; rejected dispatches never masquerade.
         snapshot.received_response();
 
         let mut byte_stream = response.bytes_stream();
         let mut buffer: Vec<u8> = Vec::new();
-        let mut mapper = BedrockMapper::new(&provider_identity, model_id);
 
         mapper.set_snapshot(snapshot);
         callbacks
@@ -1788,17 +1836,16 @@ fn map_thinking_level_to_effort(
     id: &str,
     name: &str,
 ) -> String {
-    use crate::model_info::ThinkingLevel;
+    use crate::model_info::{ThinkingLevel, ThinkingLevelMapping};
     if level == ThinkingLevel::XHigh && supports_native_xhigh_effort(id, name) {
         return "xhigh".to_owned();
     }
-    // An identity mapping is the opi synthetic default, not a source-provided
-    // level map: only an explicit mapped value overrides the fixed table.
-    if let Some(mapped) = model
-        .and_then(|model| model.thinking_level_map.resolve(level).ok().flatten())
-        .filter(|mapped| Some(mapped.as_str()) != level.wire_name())
+    // The fixed table applies to synthetic defaults. A catalog value can
+    // explicitly map a level to its own wire name, such as Max to "max".
+    if let Some(ThinkingLevelMapping::Mapped(mapped)) =
+        model.map(|model| model.thinking_level_map.mapping(level))
     {
-        return mapped;
+        return mapped.clone();
     }
     match level {
         ThinkingLevel::Minimal | ThinkingLevel::Low => "low".to_owned(),
@@ -2183,6 +2230,63 @@ fn serialize_converse_messages(
 // ---------------------------------------------------------------------------
 // Error mapping
 // ---------------------------------------------------------------------------
+
+async fn classify_converse_response_error(
+    response: reqwest::Response,
+    has_preferred_strict_tools: bool,
+    cancel: &CancellationToken,
+    timeout: Option<std::time::Duration>,
+) -> ProviderError {
+    use serde_json::{Map, Value};
+
+    let status = response.status();
+    let headers = response.headers();
+    let ordinary_error = map_bedrock_status(status, headers);
+    if status != reqwest::StatusCode::BAD_REQUEST || !has_preferred_strict_tools {
+        return ordinary_error;
+    }
+
+    let is_validation_exception = |name: &str| {
+        // Match the AWS restJson1 SDK's error-name normalization.
+        let name = name.split([',', ':']).next().unwrap_or_default();
+        name.split('#').nth(1).unwrap_or(name) == "ValidationException"
+    };
+    let header = headers.get("x-amzn-errortype");
+    if header.is_some_and(|value| !value.to_str().ok().is_some_and(is_validation_exception)) {
+        return ordinary_error;
+    }
+    let modeled_by_header = header.is_some();
+    let body = match crate::http::read_bounded_error_body(response, cancel, timeout).await {
+        Ok(Some(body)) => body,
+        Err(ProviderError::Cancelled) => return ProviderError::Cancelled,
+        _ => return ordinary_error,
+    };
+    let Ok(body) = serde_json::from_slice::<Map<String, Value>>(&body) else {
+        return ordinary_error;
+    };
+    let modeled_validation = modeled_by_header
+        || body
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("code"))
+            .map(|(_, value)| value)
+            .or_else(|| body.get("__type"))
+            .and_then(Value::as_str)
+            .is_some_and(is_validation_exception);
+    let message = body
+        .get("message")
+        .filter(|value| !value.is_null() && value.as_str() != Some(""))
+        .or_else(|| body.get("Message"))
+        .and_then(Value::as_str);
+    if modeled_validation
+        && message.is_some_and(crate::constrained_sampling::is_strict_tool_limit_message)
+    {
+        ProviderError::StrictToolLimits {
+            detail: ProviderErrorSummary::attested_static("Bedrock returned ValidationException"),
+        }
+    } else {
+        ordinary_error
+    }
+}
 
 /// Map an HTTP status + headers to a bodyless, credential-safe error.
 ///

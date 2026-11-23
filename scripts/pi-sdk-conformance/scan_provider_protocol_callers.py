@@ -17,7 +17,7 @@ OWNERS = {
     "provider-bedrock": ["bedrock"],
     "provider-gemini": ["gemini"],
     "provider-mistral": ["mistral"],
-    "provider-openai-chat": ["openai"],
+    "provider-openai-chat": ["openai", "openai_completions"],
     "provider-openai-codex-responses": ["openai_codex_responses", "codex_resources"],
     "provider-openai-responses": ["openai_responses"],
     "provider-openrouter": ["openrouter"],
@@ -84,9 +84,9 @@ def main() -> int:
         }
     shared = {
         "provider_collection": ["crates/opi-ai/src/providers/collection.rs"],
-        "shared_openai_chat": ["crates/opi-ai/src/api/openai.rs", "crates/opi-ai/src/providers/openai.rs", "crates/opi-ai/src/api/mistral.rs", "crates/opi-ai/src/providers/mistral.rs", "crates/opi-ai/src/providers/openrouter.rs", "crates/opi-ai/src/api/azure_openai.rs"],
+        "shared_openai_chat": ["crates/opi-ai/src/api/openai_completions.rs", "crates/opi-ai/src/providers/openai.rs", "crates/opi-ai/src/api/mistral.rs", "crates/opi-ai/src/providers/mistral.rs", "crates/opi-ai/src/providers/openrouter.rs", "crates/opi-ai/src/api/azure_openai.rs"],
         "shared_openai_responses": ["crates/opi-ai/src/api/shared/openai_responses.rs", "crates/opi-ai/src/api/openai_responses.rs", "crates/opi-ai/src/providers/openai_responses.rs", "crates/opi-ai/src/api/azure_openai.rs", "crates/opi-ai/src/api/openai_codex_responses.rs", "crates/opi-ai/src/providers/openai_codex.rs"],
-        "shared_openrouter_usage": ["crates/opi-ai/src/api/shared/openrouter_usage.rs", "crates/opi-ai/src/api/anthropic.rs", "crates/opi-ai/src/api/openai.rs", "crates/opi-ai/src/providers/openrouter.rs"],
+        "shared_openrouter_usage": ["crates/opi-ai/src/api/shared/openrouter_usage.rs", "crates/opi-ai/src/api/anthropic.rs", "crates/opi-ai/src/api/openai_completions.rs", "crates/opi-ai/src/providers/openrouter.rs"],
         "bedrock_profile_and_wire": ["crates/opi-ai/src/providers/bedrock.rs", "crates/opi-ai/src/api/bedrock.rs", "crates/opi-ai/src/api/bedrock/event_stream.rs", "crates/opi-ai/src/providers/collection.rs"],
         "mapped_provider_composition": ["crates/opi-ai/src/providers/mapped.rs", "crates/opi-ai/src/providers/collection.rs", "crates/opi-coding-agent/src/provider_factory.rs"],
         "shared_gemini": ["crates/opi-ai/src/api/gemini.rs", "crates/opi-ai/src/providers/gemini.rs", "crates/opi-ai/src/api/vertex.rs", "crates/opi-ai/src/providers/vertex.rs"],

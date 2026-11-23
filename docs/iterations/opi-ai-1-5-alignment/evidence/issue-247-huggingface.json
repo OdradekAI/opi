@@ -1,0 +1,70 @@
+{
+  "issue": 247,
+  "status": "done",
+  "provider": "huggingface",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 78,
+    "records_after": 78,
+    "added": 3,
+    "removed": 3,
+    "updated": 4,
+    "added_ids": [
+      "MiniMaxAI/MiniMax-M3.1-Flash",
+      "Qwen/Qwen3-8B",
+      "deepseek-ai/DeepSeek-V4.1-Flash-1017"
+    ],
+    "removed_ids": [
+      "Qwen/Qwen3-Next-80B-A3B-Thinking",
+      "XiaomiMiMo/MiMo-V2-Flash",
+      "zai-org/GLM-4.5"
+    ],
+    "updated_ids": [
+      "deepseek-ai/DeepSeek-R1-0528",
+      "Qwen/Qwen3-235B-A22B-Thinking-2507",
+      "Qwen/Qwen3-Coder-480B-A35B-Instruct",
+      "Qwen/Qwen3-Next-80B-A3B-Instruct"
+    ],
+    "author_source_sha256": "44353d7c84278d6921d10c1c817b172e04b221f10423884a5e03e3dc826dc085",
+    "bundle_sha256": "2fcfd38f04f6d73403a8662a7abec5f089d96adb3eb96f77569a8cd78c9f11a5",
+    "manifest_sha256": "e7e04c384ada9043640ac65cbff917c20d8bd779abb4d666c6bf6166e83577c0"
+  },
+  "global_after": {
+    "opi_records": 1704,
+    "reference_records": 1712,
+    "equal": 1675,
+    "only_opi": 10,
+    "only_reference": 18,
+    "changed": 19,
+    "providers_equal": 25,
+    "providers_with_differences": 17
+  },
+  "wire": {
+    "endpoint": "/v1/chat/completions",
+    "auth": "Bearer",
+    "model": "deepseek-ai/DeepSeek-R1-0528",
+    "reasoning_effort": "high",
+    "max_completion_tokens": 32768,
+    "requests": 1
+  },
+  "tests": {
+    "provider_collection_huggingface": 3,
+    "provider_collection_regression": 143,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "build_catalog_check": "PASS",
+    "clippy": "PASS",
+    "catalog_bundled_external_consumer": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

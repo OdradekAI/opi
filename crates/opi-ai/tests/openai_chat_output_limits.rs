@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use opi_ai::api::openai::OpenAiCompletionsChatApi;
+use opi_ai::api::openai_completions::OpenAiCompletionsChatApi;
 use opi_ai::auth::AuthResolver;
 use opi_ai::credential::BoxAuthFuture;
 use opi_ai::message::{AssistantContent, InputContent, Message, UserMessage};

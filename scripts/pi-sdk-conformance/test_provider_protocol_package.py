@@ -1,7 +1,13 @@
 from pathlib import Path
+import tempfile
 import unittest
 
 import run_provider_protocol_package as runner
+
+
+def provider_collection_test_paths():
+    tests = runner.REPO / "crates/opi-ai/tests"
+    return (tests / "provider_collection.rs", *sorted((tests / "provider_collection").rglob("*.rs")))
 
 
 class ProviderProtocolRunnerTests(unittest.TestCase):
@@ -75,7 +81,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
         self.assertIn("opi_ai::providers::gemini::", gemini_source)
         self.assertIn("opi_ai::providers::mistral::", mistral_source)
         self.assertIn("opi_ai::api::mistral::", mistral_source)
-        self.assertIn("opi_ai::api::openai::", openai_source)
+        self.assertIn("opi_ai::api::openai_completions::", openai_source)
         self.assertIn("opi_ai::providers::openai::", openai_source)
         self.assertIn("opi_ai::api::openai_codex_responses::", codex_source)
         self.assertIn("opi_ai::providers::openai_codex::", codex_source)
@@ -112,7 +118,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
 
     def test_openai_responses_shared_callers_use_canonical_namespace(self):
         for relative in (
-            "crates/opi-ai/src/api/openai.rs",
+            "crates/opi-ai/src/api/openai_completions.rs",
             "crates/opi-ai/src/api/openai_responses.rs",
             "crates/opi-ai/src/api/openai_codex_responses.rs",
             "crates/opi-ai/src/transport/codex.rs",
@@ -130,7 +136,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
     def test_openrouter_usage_callers_use_canonical_namespace(self):
         for relative in (
             "crates/opi-ai/src/api/anthropic.rs",
-            "crates/opi-ai/src/api/openai.rs",
+            "crates/opi-ai/src/api/openai_completions.rs",
             "crates/opi-ai/src/providers/openrouter.rs",
         ):
             source = (runner.REPO / relative).read_text(encoding="utf-8")
@@ -167,17 +173,18 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
         self.assertNotIn("pub use api_mapped", lib)
 
     def test_mapped_provider_callers_use_canonical_namespace(self):
-        for relative in (
+        for path in (
+            *provider_collection_test_paths(),
             "crates/opi-ai/src/providers/collection.rs",
             "crates/opi-coding-agent/src/provider_factory.rs",
             "crates/opi-ai/tests/api_mapped_provider.rs",
-            "crates/opi-ai/tests/provider_collection.rs",
             "crates/opi-coding-agent/tests/extension_mapped_catalog.rs",
         ):
-            source = (runner.REPO / relative).read_text(encoding="utf-8")
-            self.assertNotIn("crate::api_mapped", source, relative)
-            self.assertNotIn("opi_ai::api_mapped", source, relative)
-            self.assertNotIn("opi_ai::ApiMappedProvider", source, relative)
+            path = runner.REPO / path
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("crate::api_mapped", source, str(path))
+            self.assertNotIn("opi_ai::api_mapped", source, str(path))
+            self.assertNotIn("opi_ai::ApiMappedProvider", source, str(path))
         source = (runner.REPO / "crates/opi-ai/src/providers/collection.rs").read_text(encoding="utf-8")
         self.assertIn("crate::providers::mapped::ApiMappedProvider", source)
 
@@ -190,7 +197,6 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
     def test_provider_collection_callers_use_canonical_namespace(self):
         for relative in (
             "crates/opi-coding-agent/src/provider_factory.rs",
-            "crates/opi-ai/tests/provider_collection.rs",
             "crates/opi-ai/examples/quick_start.rs",
             "crates/opi-ai/examples/quick_start_stream.rs",
             "crates/opi-ai/examples/tool_loop.rs",
@@ -198,6 +204,12 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
             source = (runner.REPO / relative).read_text(encoding="utf-8")
             self.assertNotIn("opi_ai::provider_collection", source, relative)
             self.assertIn("opi_ai::providers::collection", source, relative)
+        collection_uses_canonical_namespace = False
+        for path in provider_collection_test_paths():
+            source = path.read_text(encoding="utf-8")
+            self.assertNotIn("opi_ai::provider_collection", source, str(path))
+            collection_uses_canonical_namespace |= "opi_ai::providers::collection" in source
+        self.assertTrue(collection_uses_canonical_namespace, "provider_collection integration tests")
         source = (runner.REPO / "crates/opi-ai/src/providers/collection.rs").read_text(encoding="utf-8")
         self.assertNotIn("crate::provider_collection", source)
 
@@ -215,7 +227,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
             "crates/opi-ai/src/providers/openai.rs",
             "crates/opi-ai/src/providers/collection.rs",
             "crates/opi-coding-agent/src/provider_factory.rs",
-            "crates/opi-ai/tests/public_utilities.rs",
+            "crates/opi-ai/tests/public_utilities/provider_configuration.rs",
         ):
             source = (runner.REPO / relative).read_text(encoding="utf-8")
             self.assertNotIn("provider_headers::", source, relative)
@@ -234,7 +246,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
         for relative in (
             "crates/opi-ai/src/api/pi_messages.rs",
             "crates/opi-ai/src/api/shared/env.rs",
-            "crates/opi-ai/tests/public_utilities.rs",
+            "crates/opi-ai/tests/public_utilities/provider_configuration.rs",
         ):
             source = (runner.REPO / relative).read_text(encoding="utf-8")
             self.assertNotIn("provider_env::", source, relative)
@@ -303,7 +315,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
             "crates/opi-ai/src/api/azure_openai.rs",
             "crates/opi-ai/src/api/gemini.rs",
             "crates/opi-ai/src/api/mistral.rs",
-            "crates/opi-ai/src/api/openai.rs",
+            "crates/opi-ai/src/api/openai_completions.rs",
             "crates/opi-ai/src/api/openai_codex_responses.rs",
             "crates/opi-ai/src/api/openai_responses.rs",
             "crates/opi-ai/src/api/pi_messages.rs",
@@ -324,7 +336,7 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
     def test_endpoint_callers_use_canonical_namespace(self):
         for relative in (
             "crates/opi-ai/src/api/mistral.rs",
-            "crates/opi-ai/src/api/openai.rs",
+            "crates/opi-ai/src/api/openai_completions.rs",
             "crates/opi-ai/src/api/openai_codex_responses.rs",
             "crates/opi-ai/src/transport/codex.rs",
             "crates/opi-ai/src/api/openai_responses.rs",
@@ -337,8 +349,19 @@ class ProviderProtocolRunnerTests(unittest.TestCase):
 
     def test_openai_chat_root_module_is_deleted(self):
         self.assertFalse((runner.REPO / "crates/opi-ai/src/openai_chat.rs").exists())
-        self.assertTrue((runner.REPO / "crates/opi-ai/src/api/openai.rs").exists())
+        self.assertFalse((runner.REPO / "crates/opi-ai/src/api/openai.rs").exists())
+        self.assertTrue((runner.REPO / "crates/opi-ai/src/api/openai_completions.rs").exists())
         self.assertTrue((runner.REPO / "crates/opi-ai/src/providers/openai.rs").exists())
+
+    def test_package_with_ambiguous_chat_module_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            api = package / "src" / "api"
+            api.mkdir(parents=True)
+            (api / "openai_completions.rs").touch()
+            (api / "openai.rs").touch()
+            with self.assertRaisesRegex(ValueError, "ambiguous api/openai"):
+                runner.check_openai_profile_layout(package)
 
     def test_openai_codex_responses_root_module_is_deleted(self):
         self.assertFalse((runner.REPO / "crates/opi-ai/src/openai_codex_responses.rs").exists())

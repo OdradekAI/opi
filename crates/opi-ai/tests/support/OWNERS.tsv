@@ -1,0 +1,17 @@
+helper	role	owner	layers	cost	runners	consumers
+catalog_store.rs	stable-tool	catalog shared test support	assembly	in-process	-	catalog_lifecycle,node4_preparation,provider_collection,radius_builtin_catalog,registry
+oauth_anthropic.rs	protocol-fixture	OAuth Anthropic test support	assembly	local-io	-	oauth_anthropic,oauth_models_store,oauth_regressions
+oauth_assembly.rs	protocol-fixture	OAuth shared assembly support	assembly	local-io	-	oauth_chatgpt,oauth_codex,oauth_copilot,oauth_kimi,oauth_meta,oauth_models_store,oauth_openrouter,oauth_radius,oauth_regressions,oauth_xai
+oauth_chatgpt.rs	protocol-fixture	OAuth ChatGPT test support	assembly	local-io	-	oauth_chatgpt,oauth_regressions
+oauth_codex.rs	protocol-fixture	OAuth Codex test support	assembly	local-io	-	oauth_codex,oauth_regressions
+oauth_copilot.rs	protocol-fixture	OAuth Copilot test support	assembly	local-io	-	oauth_copilot,oauth_regressions
+oauth_fixtures.rs	protocol-fixture	OAuth shared fixture support	assembly	local-io	-	oauth_anthropic,oauth_chatgpt,oauth_codex,oauth_copilot,oauth_kimi,oauth_meta,oauth_models_store,oauth_openrouter,oauth_radius,oauth_regressions,oauth_xai
+oauth_kimi.rs	protocol-fixture	OAuth Kimi test support	assembly	local-io	-	oauth_kimi,oauth_regressions
+oauth_loopback.rs	protocol-fixture	OAuth loopback transport support	wire,assembly	local-io	-	oauth_chatgpt,oauth_codex,oauth_regressions
+oauth_meta.rs	protocol-fixture	OAuth Meta test support	assembly	local-io	-	oauth_meta,oauth_regressions
+oauth_radius.rs	protocol-fixture	OAuth Radius test support	assembly	local-io	-	oauth_radius,oauth_regressions
+oauth_store.rs	protocol-fixture	OAuth Models store support	assembly	local-io	-	oauth_models_store,oauth_regressions
+oauth_xai.rs	protocol-fixture	OAuth xAI test support	assembly	local-io	-	oauth_regressions,oauth_xai
+pending_auth.rs	stable-tool	auth deferred shared test support	public-contract	in-process	-	classifier_contract,deferred_contract,openrouter_fixtures
+tls_fixtures.rs	platform-fixture	TLS transport test support	public-contract,wire,assembly	extended	archive@scripts/pi-sdk-conformance/package_slice.py --family ws	bedrock_fixtures,http_acceptance,oauth_copilot,oauth_regressions,tls_contract,ws_upgrade
+ws_peer.rs	platform-fixture	WebSocket transport test support	public-contract,wire	extended	archive@scripts/pi-sdk-conformance/package_slice.py --family ws	codex_native_options,service_tier_cost,ws_upgrade

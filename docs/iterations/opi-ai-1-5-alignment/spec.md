@@ -737,6 +737,8 @@ MSRV/原生平台、预算及 #94 真实 Deferred 仍开放。
 
 让第三方 Rust 开发者按 opi-ai 文档，仅依赖 opi-ai 及其声明的库依赖，就能在普通项目中使用与指定 Pi 1.5.0 对应的能力。无需 opi-agent、opi CLI、仓库私有路径或隐式全局初始化；可以保持同一 workspace，不要求独立仓库。
 
+opi 0.x 以指定 Pi 快照研究成熟的业务行为。opi 自行定义产品接口、支持的模型、参数与发行节奏。比较记录保留参考版本和来源摘要，静态目录的具体所有权与验收见 [#221](issues/221-reconcile-pi-1-5-catalog.md)。
+
 采用 Rust 原生接口，保持完整能力映射，可观察行为逐项验收；有意差异单独讨论并记录，不能算严格等价通过。目标不仅是聊天，也包括图像、分类、deferred、Faux、认证、目录、工具/schema、transcript、扩展、compat、公开辅助能力及包级工具的对应关系。
 
 本方案定义重构范围、依据和迁移次序。基准与映射保持冻结；当前开始按后续阶段迁移产品源码、Cargo 配置、文档与相关测试。第二阶段按可独立验证的切片推进，中立遥测与纯值/错误、auth/catalog 分离均已实施。已增加显式 start 的独立执行者，并迁移 agent 主循环和 preparation summary 消费者；普通 chat 入口现已调度独立执行者，受影响回归与实际包消费检查通过，当时的工作区既有失败已由 #109/#113 修复并复验；随后建立了 AI telemetry 手动 seam、`ChatStream::result()` 的 source 尾部结算，在普通 Models chat 路径自动安装 observer，并把 `opi-telemetry` tracing 适配改成默认开启但可关闭的 `opi-ai` feature。deferred fetch 现在复用同一 `ChatStream` 结算并自动产生 `pi.ai.poll`；prepared attempt 保留原始 raw seam，并新增 observed ChatStream helper；调用方持有 raw `EventStream` 时可通过公开 `ChatStream::new_with_telemetry` 复用同一 observer。prepared observed helper 的跨 attempt 聚合按已确认契约由调用方拥有，不作为自动合并缺口；其他 provider、raw/prepared/non-chat 的 observer 接线与故障语义、完整 feature 矩阵和完整 Pi 差分仍需按范围核对。本次没有发布、真实 provider 调用或整个 pi-coding-agent 的实现。opi-agent/opi-coding-agent 中已有消费者要随本次公共接口调整迁移，完整 coding-agent 能力对齐另行安排。
@@ -1334,6 +1336,554 @@ orchestration 的 8 个定义全部离开 facade，Models facade 降至 3897 行
 stream/execution、Models ownership 和当前 `.crate` 外部 consumer。G0–G6 全部
 完成，后续转入 Deferred 生产接入、平台能力、性能、fuzz 和独立的
 `types/errors` purity 工作。
+2026-11-19 的 [#209 维护性复核](issues/209-maintain-module-test-and-catalog-boundaries.md)
+为 G0–G6 后续工作建立独立验收。当时 42 个 provider profile 与 catalog 中的 14 个
+API identity 和 Pi 1.5.0 相符，bundle 沿用 Pi 1.3.0 的 provenance，模型条目
+与 metadata 存在可复现差异。各执行票分别记录语义依赖、测试目标、来源指引和目录所有权。
+
+2026-11-20 已把上述工作拆为 [#209 的 14 张执行票](issues/209-maintain-module-test-and-catalog-boundaries.md)。
+[#210](issues/210-audit-owners-and-name-classifier-adapters.md) 完成四个范围的 68 文件归属审查，
+迁移三个 classifier 公开模块，五个集成目标共 242 项通过，实际归档消费者通过。
+第二批 [#211](issues/211-restore-single-provider-feature-builds.md) 恢复了 11 个独立 provider 构建，
+[#215](issues/215-own-integration-test-targets.md) 将 112 个集成目标全部显式归属。
+新增声明的 19 个目标在 minimum/默认下分别实跑 432/433 项，改前改后用例逐名相同。
+第三批 [#212 profile 依赖](issues/212-guard-profile-to-api-imports.md) 将 profile 对 API 的直接生产引用从 18 处收至 9 处，均有具名用途；五个受影响目标的 334 项测试与 OpenRouter 归档消费者通过。
+[#216 按改动选测](issues/216-select-tests-by-changed-owner.md) 以 35 个实际 Cargo 目标与 feature 配置核对过滤结果，实跑 Decisions 和共享认证 helper 两组计划。
+第四批 [#213 底层依赖基线](issues/213-measure-lower-layer-dependencies.md) 记录 76 处现存例外、4 处合同和 0 处新增依赖。[#217 classifier 用例分组](issues/217-partition-classifier-contract-tests.md) 逐名映射 84 个用例，实跑全部七组与拒绝诊断负例。
+第五批 [#214 Copilot 请求头归属](issues/214-move-copilot-header-policy.md) 收敛到三个 wire 共用的 API 实现。底层策略定义从 3 处降至 0 处，CLI 三种 wire 的请求捕获与受管头拒绝通过。
+第六批 [#218 公共 Faux 与私有探针](issues/218-separate-faux-and-private-probes.md) 从 minimum 归档验证工具续轮、deferred 提交与 fetch，旧 UUID 探针导入失败。[#219 过期来源指引](issues/219-remove-stale-source-guidance.md) 修复三个 rustdoc 断链和双语 Bedrock 能力表，现行源码与指南的旧来源扫描为零。
+[#220](issues/220-parameterize-catalog-source.md) 将 Pi 工具收窄为只读比较，两份 Pi 1.5.0 参考可分别复现。[#221](issues/221-reconcile-pi-1-5-catalog.md) 让 opi 以自身源数据离线重建 bundle，旧 v1 全量回读并核对 1,705 条完整记录，自有模型经临时 Groq 候选验证实际路由。
+
+[#222](issues/222-refresh-radius-builtin-catalog.md) 通过 builtin Radius 的离线恢复、认证刷新、完整替换、实际请求、取消与 store 竞争用例。[#223](issues/223-disambiguate-openai-chat-module.md) 迁移 Chat Completions 公开接口，真实归档验证新入口与旧入口拒绝。#209 的 14/14 张执行票已通过本地验收。当前测试清单有 113 个显式目标、103 个源文件。能力交付继续以真实 Deferred 接入、平台、feature 组合及性能/fuzz 的验收记录衡量。
+
+2026-11-20 的后续三票分别验收目录维护中的三种变化。
+[#224](issues/224-unify-openrouter-model-facts.md) 统一 OpenRouter 四个共享模型在离线目录、独立工厂和 coding-agent 列表中的参数。
+[#225](issues/225-validate-authored-catalog.md) 在生成时检查内置路由、协议字段与类型化记录。
+[#226](issues/226-sync-provider-catalog-three-way.md) 以 Mistral 实跑三方同步，采纳 3 项新增、9 项删除及 4 项更新。当时 42 个 provider 共 1,699 条记录。
+相对固定的 1,712 条发布参考，122 条仅参考有、109 条仅 opi 有、295 条共有记录的字段有差异。其余 41 份源数据仍在原基线上；协议能力按真实请求单独验收。[执行回执](evidence/issue-224-226-catalog.json)
+
+2026-11-21，OpenRouter 的 System One 图片输入通过完整 builtin 请求验收。[#227](issues/227-openrouter-system-one-images.md)
+
+随后对齐 OpenRouter 的发布目录，共新增 37 条、删除 28 条、更新 80 条。独立工厂和 coding-agent 列表同步撤下 R1 及两个目录外的 Claude ID。后续对齐 Pi 业务时，额外保留旧行为需要先征得项目所有者同意。当时 42 个 provider 共 1,708 条记录，Mistral 和 OpenRouter 已采纳固定的 Pi 1.5 发布基线。 [#228](issues/228-sync-openrouter-catalog.md) · [验收回执](evidence/issue-227-228-openrouter-catalog.json)
+
+OpenCode Zen 已采纳同一固定发布基线，85 条变为 81 条。公开 `Models` 在本地 HTTP 服务验证了五种协议的最终路径和两个已改变的推理等级映射。 [#229](issues/229-sync-opencode-zen-catalog.md)
+
+OpenCode Go 采纳同一固定发布基线，31 条变为 30 条，7 个模型从内置查询和列表撤下。四种协议的完整请求路径、Kimi K3.1 Pro 的 effort 和 Gemini 4 Argon 的离散推理等级均经实际请求验证。 [#230](issues/230-sync-opencode-go-catalog.md)
+
+Amazon Bedrock 采纳同一发布基线，新增 4 条、更新 51 条、下线 0 条。Converse 的区域推理 profile 路径、严格工具 schema 和 Claude／GPT 推理字段通过本地请求验收。全库共 1,707 条记录，11 个 provider 与固定发布参考的身份和字段一致，31 个仍有差异。 [#231](issues/231-sync-amazon-bedrock-catalog.md)
+
+Bedrock 独立工厂和 coding-agent 统一读取同一份 197 条审核记录，三条不在发布参考中的手写默认记录已撤下。CLI 列表、查询、SigV4 Converse 请求以及只开启 `provider-bedrock` 的归档消费均通过。 [#232](issues/232-unify-amazon-bedrock-catalog-entrypoints.md)
+
+Bedrock Converse 在流交付前识别固定限额错误，最多重建一次，只降低 `Prefer` 工具的严格度。simple 和 native 路径均通过请求捕获，覆盖两份 payload、重新签名和取消边界。 [#233](issues/233-bedrock-preferred-strict-tool-limit-retry.md)
+
+GitHub Copilot 的 SDK、列表和运行工厂已统一到 27 条发布记录，三条协议和 Terra、Nano 推理参数通过本地请求验收。20 个旧 ID 已从内置入口撤下。全库剩 30 个 provider 有目录差异。 [#234](issues/234-sync-github-copilot-catalog.md)
+
+OpenAI Codex 的 SDK、列表和运行工厂已统一到 8 条发布记录。六次本地请求覆盖 `/codex/responses`、OAuth 账户头和 Terra 三档推理参数。四个旧 ID 已从内置入口撤下。全库剩 29 个 provider 有目录差异。 [#235](issues/235-sync-openai-codex-catalog.md)
+
+OpenAI 的 SDK、独立工厂和 CLI 共用 44 条聊天记录。三个新增 ID 与四条工具能力变更通过 21 次本地 `/v1/responses` 请求验收。三个下线 ID 已从 OpenAI 内置入口撤下。全库剩 28 个 provider 有目录差异，下一批是 Azure。 [#236](issues/236-sync-openai-catalog.md)
+
+Azure OpenAI 的 SDK、列表和运行工厂共用 45 条聊天记录，新增和下线各三条。14 次本地请求覆盖 Responses、DeepSeek Chat Completions、部署名映射和推理参数。三个下线 ID 已从 Azure 内置入口撤下。全库剩 27 个 provider 有目录差异。 [#237](issues/237-sync-azure-openai-catalog.md)
+
+Google Gemini 的 SDK、独立工厂、CLI 列表和运行工厂共用 23 条发布记录。16 次回环请求验证两个新增模型、推理预算和显式代理。三个失效 ID 已从 Google 内置入口撤下。全库 16 个 provider 目录一致，剩余 26 个。下一批是 Google Vertex。 [#238](issues/238-sync-google-catalog.md)
+
+Google Vertex 的 SDK、独立工厂、CLI 列表和运行工厂共用 13 条发布记录。12 次回环生成验证 Express API key、项目／区域 Bearer、推理配置和代理路径。下线模型已从内置入口撤下。全库 17 个 provider 目录一致，剩余 25 个。 [#239](issues/239-sync-google-vertex-catalog.md)
+
+Vercel AI Gateway 的 SDK 内置目录共 303 个聊天模型和 14 个分类器。五次回环请求验证 Anthropic Messages beta 路径及推理参数、System One 路径及布尔分类。12 个下线 ID 已从 Vercel 内置入口撤下。全库 18 个 provider 目录一致，剩余 24 个。下一批是 Baseten 直连。 [#240](issues/240-sync-vercel-ai-gateway-catalog.md)
+
+Baseten 的 SDK 内置直连目录共 14 条聊天记录。四次回环请求验证 `/v1/chat/completions`、Bearer 认证、OpenAI 与 Baseten 两种推理字段以及 neutral simple 的等级收敛。10 个下线 ID 已从 Baseten 内置入口撤下。全库 19 个 provider 目录一致，剩余 23 个。 [#241](issues/241-sync-baseten-catalog.md)
+
+TypeSafe 的 SDK 内置目录共 1 条分类器记录。作者源、bundle 和固定 Pi 1.5 发布目录同步增加 `image` 输入与 `assets`、图片 opt-in 声明。两次回环请求验证 `/v1/systemone`、Bearer 认证、PNG 资产编码、`TypeSafe-Danger-Zone-Images` 请求头及 `noul` 参数，未知 ID 在派发前被拒绝。TypeSafe 发布目录没有独立的下线 ID。全库 20 个 provider 目录一致，剩余 22 个。 [#242](issues/242-sync-typesafe-catalog.md)
+
+xAI 的 SDK 内置目录共 4 条 Responses 聊天记录。`grok-4.3` 和 `grok-4.5` 的 `xhigh` 推理映射与固定 Pi 1.5 发布目录一致，两次回环请求验证 `/v1/responses`、Bearer 认证、`reasoning.effort=xhigh` 和加密推理内容声明。xAI 没有新增或下线 ID。全库 21 个 provider 目录一致，剩余 21 个。 [#243](issues/243-sync-xai-catalog.md)
+
+Fireworks 的 SDK 内置目录共 29 条双协议聊天记录。7 个新增 ID 和 Qwen Max 的 adaptive XHigh 元数据与固定 Pi 1.5 发布目录一致。两次回环请求验证 Anthropic Messages、OpenAI Completions、adaptive 推理和 session-affinity。全库 22 个 provider 目录一致，剩余 20 个。 [#244](issues/244-sync-fireworks-catalog.md)
+
+Radius 的 SDK 内置 Pi Messages 目录共 28 条固定记录。新增 3 条、撤下 4 条并更新 9 条 metadata。通过带 Bearer 的 `/v1/config` 动态刷新和 `/v1/messages` Pi Messages SSE 实际请求验证，4 个下线 ID 已从所有内置入口撤下。全库 23 个 provider 目录一致，剩余 19 个。 [#245](issues/245-sync-radius-catalog.md)
+
+Together 的 SDK 内置 OpenAI Completions 目录共 15 条固定记录。新增 3 条、撤下 5 条并更新 4 条 metadata。通过 Bearer /v1/chat/completions 实际请求验证 Qwen3.7-Max 的 reasoning 和 max_tokens 参数，5 个下线 ID 已从所有内置入口撤下。全库 24 个 provider 目录一致，剩余 18 个。 [#246](issues/246-sync-together-catalog.md)
+
+Hugging Face 的 SDK 内置 OpenAI Completions 目录共 78 条固定记录。新增 3 条、撤下 3 条并更新 4 条 maxTokens。通过 Bearer /v1/chat/completions 实际请求验证 DeepSeek-R1-0528 的 max_completion_tokens 和 reasoning_effort，3 个下线 ID 已从所有内置入口撤下。全库 25 个 provider 目录一致，剩余 17 个。 [#247](issues/247-sync-huggingface-catalog.md)
+
+Cloudflare Workers AI 的 SDK 内置目录已同步为 19 条聊天记录和 5 条分类器记录，新增 3 条、撤下 0 条并更新 5 条。Cloudflare Clef 分类器通过 Bearer `/accounts/{account}/ai/run` 实际请求验证 `input.images` PNG data URL、`noul` 问题和无 TypeSafe opt-in 头，聊天路径验证 `/accounts/{account}/ai/v1/chat/completions` 与 `max_completion_tokens`。本批固定目录没有下线 ID，未知 ID 在列表、查询和派发前均被拒绝。全库 26 个 provider 目录一致，剩余 16 个。 [#248](issues/248-sync-cloudflare-workers-ai-catalog.md) · [验收回执](evidence/issue-248-cloudflare-workers-ai.json)
+
+
+Moonshot AI CN 的 SDK 内置 OpenAI Completions 目录已同步为 6 条记录，新增 `kimi-k3.1-pro` 和 `kimi-k3.1-pro-highspeed`，并更新 3 条 K2 系列价格字段。两个 K3.1 Pro 模型通过 Bearer `/v1/chat/completions` 实际请求验证 `max_tokens` 和 `reasoning_effort=high`，本批固定目录没有下线 ID，未知 ID 在列表、查询和派发前均被拒绝。全库 27 个 provider 目录一致，剩余 15 个。 [#249](issues/249-sync-moonshotai-cn-catalog.md) · [验收回执](evidence/issue-249-moonshotai-cn.json)
+
+NVIDIA 的 SDK 内置 OpenAI Completions 目录已同步为 21 条记录，新增 `minimaxai/minimax-m3.1-flash`、`nvidia/nemotron-3.5-super-vl-120b-a12b` 和 `stepfun-ai/step-5-preview`，撤下 `z-ai/glm-5.3`，并更新 `nvidia/nemotron-3-ultra-550b-a55b` 的价格字段。两个代表模型通过 Bearer `/v1/chat/completions` 实际请求验证 `max_tokens`、NVCF 轮询头和目录推理包体，NVIDIA 不发送 `reasoning_effort`。下线 ID 已从 NVIDIA 所有内置入口撤下。全库 28 个 provider 目录一致，剩余 14 个。 [#250](issues/250-sync-nvidia-catalog.md) · [验收回执](evidence/issue-250-nvidia.json)
+
+MiniMax CN 的 SDK 内置 Anthropic Messages 目录已同步为 4 条记录，新增 `MiniMax-M3.1-Flash`，并更新 3 条既有记录的价格和输出上限。M3.1 Flash 通过 API key `/anthropic/v1/messages` 实际请求验证 adaptive thinking 与 `output_config.effort=xhigh`，固定目录之外的模型在派发前被拒绝。全库 29 个 provider 目录一致，剩余 13 个。 [#251](issues/251-sync-minimax-cn-catalog.md) · [验收回执](evidence/issue-251-minimax-cn.json)
+
+Cloudflare AI Gateway 的 SDK 内置目录已按固定 Pi 1.5 artifact 从 57 条更新为 59 条，新增 `gpt-6.1-terra` 和 `workers-ai/@cf/deepseek-ai/deepseek-v4.1-flash-1017`，并更新 `claude-sonnet-5-5` 的 cacheRead 价格。Anthropic Messages、OpenAI Completions 和 OpenAI Responses 三条实际请求路径均使用 `cf-aig-authorization`，Terra 验证 `reasoning.effort=xhigh`，DeepSeek 验证 `max_tokens`，Claude 验证 adaptive XHigh。固定 artifact 实际为 59 条，已按该权威目录收敛。全库 30 个 provider 目录一致，剩余 12 个。 [#252](issues/252-sync-cloudflare-ai-gateway-catalog.md) · [验收回执](evidence/issue-252-cloudflare-ai-gateway.json)
+
+Cerebras 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 收敛为 2 条记录，修正 `gpt-oss-120b` 的 cacheRead 价格为 0.35。通过 Bearer `/v1/chat/completions` 实际请求验证 `max_completion_tokens` 和 `reasoning_effort`，固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。全库 31 个 provider 目录一致，剩余 11 个。 [#253](issues/253-sync-cerebras-catalog.md) · [验收回执](evidence/issue-253-cerebras.json)
+
+Groq 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 收敛为 7 条记录，更新 `openai/gpt-oss-safeguard-20b` 的 cacheRead 价格和 `qwen/qwen3.8-27b` 的上下文窗口。通过 Bearer `/openai/v1/chat/completions` 实际请求验证标准输出上限字段，固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。全库 32 个 provider 目录一致，剩余 10 个。 [#254](issues/254-sync-groq-catalog.md) · [验收回执](evidence/issue-254-groq.json)
+
+Kimi Coding 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 从 4 条更新为 6 条，新增 `k3.1-pro` 和 `k3.1-pro-highspeed`，并修正 `k3-256k` 的三项价格字段。通过 Bearer `/coding/v1/chat/completions` 实际请求验证 `max_tokens` 和 `reasoning_effort=high`，固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。全库 33 个 provider 目录一致，剩余 9 个。 [#255](issues/255-sync-kimi-coding-catalog.md) · [验收回执](evidence/issue-255-kimi-coding.json)
+
+Moonshot AI 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 从 4 条更新为 6 条，新增 `kimi-k3.1-pro` 和 `kimi-k3.1-pro-highspeed`。通过 Bearer `/v1/chat/completions` 实际请求验证 `max_tokens` 和 `reasoning_effort=high`，固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。全库 34 个 provider 目录一致，剩余 8 个。 [#256](issues/256-sync-moonshotai-catalog.md) · [验收回执](evidence/issue-256-moonshotai.json)
+
+Qwen Token Plan 全球入口的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 从 20 条更新为 21 条，新增 `deepseek-v4.1-flash-1017`，并验证 `/compatible-mode/v1/chat/completions` 的 Bearer 请求、1000000 上下文窗口、`max_completion_tokens` 和 Qwen thinking 参数。固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。该入口完成后全库 35 个 provider 目录一致，剩余 7 个。 [#257](issues/257-sync-qwen-token-plan-catalog.md) · [验收回执](evidence/issue-257-qwen-token-plan.json)
+
+Qwen Token Plan CN 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 从 20 条更新为 21 条，新增 `deepseek-v4.1-flash-1017`，通过同一路径和 CN Bearer 认证验证发布目录的上下文、输出上限与 thinking 参数。固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。全库 36 个 provider 目录一致，剩余 6 个。 [#258](issues/258-sync-qwen-token-plan-cn-catalog.md) · [验收回执](evidence/issue-258-qwen-token-plan-cn.json)
+
+Z.AI Coding CN 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 收敛为 4 条记录，修正 `glm-4.6v` 的 cache-read 价格为 0.05，并验证 `/api/coding/paas/v4/chat/completions` 的 Bearer 请求和 `max_tokens` 参数。固定目录没有下线 ID，目录之外的模型在列表、查询和派发前均被拒绝。全库 37 个 provider 目录一致，剩余 5 个。 [#259](issues/259-sync-zai-coding-cn-catalog.md) · [验收回执](evidence/issue-259-zai-coding-cn.json)
+
+Xiaomi 的 SDK 内置 OpenAI Completions 目录已按固定 Pi 1.5 artifact 从 6 条收敛为 3 条，撤下 `mimo-v2.5`、`mimo-v2.5-pro` 和 `mimo-v2.5-pro-ultraspeed`。通过 Bearer `/v1/chat/completions` 实际请求验证 `max_completion_tokens` 和 DeepSeek thinking 参数，下线 ID 已从 Xiaomi 所有内置入口撤下。全库仍有 4 个 provider 有差异。 [#260](issues/260-sync-xiaomi-catalog.md) · [验收回执](evidence/issue-260-xiaomi.json)
+
+Xiaomi Token Plan AMS、CN 和 SGP 的 SDK 内置 OpenAI Completions 目录均已按固定 Pi 1.5 artifact 从 4 条收敛为 2 条，撤下各自的 `mimo-v2.5` 和 `mimo-v2.5-pro`。三个区域通过各自 Bearer `/v1/chat/completions` 实际请求验证 `max_completion_tokens`、DeepSeek thinking 参数及零价格和 1048576 上下文声明。三组下线 ID 已从各自所有内置入口撤下。全库仍剩 MiniMax 1 个 provider 有差异。 [#261](issues/261-sync-xiaomi-token-plan-ams-catalog.md) [#262](issues/262-sync-xiaomi-token-plan-cn-catalog.md) [#263](issues/263-sync-xiaomi-token-plan-sgp-catalog.md) · [验收回执](evidence/issue-261-xiaomi-token-plan-ams.json) [验收回执](evidence/issue-262-xiaomi-token-plan-cn.json) [验收回执](evidence/issue-263-xiaomi-token-plan-sgp.json)
+
+MiniMax 的 SDK 内置 Anthropic Messages 目录已按固定 Pi 1.5 artifact 从 3 条增加为 4 条，新增 `MiniMax-M3.1-Flash`，并将 `MiniMax-M3` 输出上限修正为 524288。通过 API key `/anthropic/v1/messages` 实际请求验证 adaptive thinking 和 `output_config.effort=xhigh`。全库 42 个 provider 目录与固定 Pi 1.5 目录逐条一致。 [#264](issues/264-sync-minimax-catalog.md) · [验收回执](evidence/issue-264-minimax.json)
+
+2026-11-22 的 #266 完成 route context 字段 owner 表、URL/endpoint 规范化和
+OpenAI Chat/Responses 策略迁移。Vertex、Bedrock、Azure 的 provider-specific
+endpoint 逻辑不再定义在 `src/provider/routes.rs`，OpenAI route context 只承载
+中性身份、端点、模型与 transport state。compat、Responses affinity、Copilot
+headers 和 auth-invalid policy 由 configured-route policy contract 承载，provider
+factory 负责构造，wire adapter 负责消费。Azure、Vertex、OpenAI Chat、OpenAI
+Responses wire fixture 与对应独立 package consumer 均通过。Bedrock 完整 fixture
+仍有一个与 endpoint 迁移无关的 carried-in base64 redaction 失败，已单独记录，
+不阻塞 #266 的三项验收。
+
+2026-11-22 在 #267 实施前的 provider 目录对齐结构复核显示，依赖检查没有未批准的
+profile-to-api、provider-to-provider 或 Models owner 违规，但 `models.rs`
+仍有 166,987 字节和 3,956 行。测试清单已通过 [#265](issues/265-split-provider-profile-test-sources.md)
+将 11 个 provider feature-profile target 拆成独立源文件，当前为 115 个 target、
+115 个源文件。后续结构与测试边界按 [#266](issues/266-separate-route-context-contracts.md)、
+[#267](issues/267-split-models-facade-implementation.md)、
+[#268](issues/268-partition-oversized-protocol-fixtures.md)、
+[#269](issues/269-classify-shared-test-support.md) 和
+[#270](issues/270-enforce-structure-and-test-inventory.md) 独立验收，不改变已完成
+provider 目录同步和未经同意的兼容行为。
+
+本批验证还修复了两个 image fixture 的过期字段，详见
+[#271](issues/271-repair-stale-image-fixture.md) 和
+[#272](issues/272-repair-stale-openrouter-image-fixture.md)。受影响的
+`telemetry_operations` 12 项和 `openrouter_fixtures` 55 项测试通过。
+
+2026-11-22 的 [#267 Models facade 拆分](issues/267-split-models-facade-implementation.md)
+已完成。`src/models.rs` 从 3,956 行收敛到 422 行，只保留模块索引、`Models` 核心
+状态、公开转出和跨 owner 的请求编译/错误映射 seam。public contracts/errors/results
+归入 `models/contracts.rs`，构造归入 `models/facade.rs`，registry、auth、catalog、
+operation、registration、ChatCall、advanced dispatch 和 prepared execution 分别由
+各自文件拥有。`models` facade 中的 owner、registration record、ChatCall orchestration
+和 protocol branch 指标均为零，结构报告无 violation。既有 `opi_ai::Models`、
+`opi_ai::models::*` 与 crate-root 错误转出保持不变，没有加入兼容 shim 或新的兼容
+行为。246 项 focused tests、11 个 provider profile target、minimum/bundled/11 个
+provider protocol package consumer、minimum/builtins rustdoc 均通过，字段 owner 表和原始证据见
+[`267-models-facade-20261122.json`](evidence/267-models-facade-20261122.json)。
+
+2026-11-22 的 [#268 oversized protocol fixture 拆分](issues/268-partition-oversized-protocol-fixtures.md)
+完成第一批 Bedrock seam。原 `bedrock_fixtures` target 继续拥有 Converse 请求、事件流、
+认证来源和生命周期 fixture，17 个 Smithy retry、strict-tool admission、bounded
+rebuild、retry header 与 cancellation 用例迁移到独立的 `bedrock_retry` target。
+Cargo manifest、`tests/targets.tsv`、provider profile 与 `provider-bedrock` package
+consumer 的 owner 映射一致。新 target 17/17 通过，Bedrock profile 和 package consumer
+通过，原 target 168 项通过并保留一个迁移前已有的 base64 fixture 失败。没有删除
+public/parser/terminal assertion，也没有增加兼容行为。证据见
+[`268-bedrock-retry-fixture-20261122.json`](evidence/268-bedrock-retry-fixture-20261122.json)。
+
+2026-11-22 在同一 issue 的第二批 OAuth seam 拆分中，OpenRouter callback、
+manual-code、exchange、refresh identity 和 permanent-key 生命周期迁移到
+`oauth_openrouter` target。共享 scripted presenter 与 Models route assembly
+fixture 分别归入 `tests/support/oauth_fixtures.rs` 和
+`tests/support/oauth_assembly.rs`，`oauth_flows` 保留其余 provider flow 与共享
+regression。新 target 17 项通过，保留 target 178 项通过，`oauth_store_profile`
+2 项、`oauth_store_integration` 10 项和 `oauth_wire_shape` 12 项通过，`oauth-store`
+与 websocket/OAuth shared-owner package consumer 通过。
+inventory 已收敛为 115 个 target、115 个 source。外部 OAuth/store consumer 的
+feature union 明确包含 `http-transport`、`oauth-store` 与其 TLS backend，仍排除
+catalog 和 cloud protocol owner。没有删除唯一断言，也没有增加兼容行为。证据见
+[`268-oauth-openrouter-20261122.json`](evidence/268-oauth-openrouter-20261122.json)。
+
+2026-11-22 在同一 issue 的第三批 OAuth seam 拆分中，Radius discovery、
+browser/device login、token exchange、refresh 和 custom identity lifecycle 的 24 项
+断言迁移到 `oauth_radius`，`oauth_flows` 保留 154 项跨 provider flow 与共享回归。
+Radius 专属 HTTP fixture 与 factory 归入 `tests/support/oauth_radius.rs`，共享
+presenter、expiry、URL 解码和 Models route assembly 继续由对应 support owner 维护。
+`oauth_radius`、`oauth_flows`、OAuth wire/store checks 及 `oauth-store` package
+consumer 均通过，inventory 现为 116 个 target、116 个 source。没有增加兼容行为。
+证据见 [`268-oauth-radius-20261122.json`](evidence/268-oauth-radius-20261122.json)。
+
+2026-11-22 在同一 issue 的第四批 OAuth seam 拆分中，Anthropic browser/copy-code
+login、callback validation、token exchange、refresh 和 preferred-port lifecycle 的
+15 项断言迁移到 `oauth_anthropic` target，`oauth_flows` 保留 139 项其它 provider
+flow、Models store checks 与共享 regression。Anthropic 专属 HTTP fixture 与 factory
+归入 `tests/support/oauth_anthropic.rs`，通用 presenter、expiry、URL 解码和
+stored credential 继续由 `oauth_fixtures.rs` 拥有。`oauth_anthropic`、`oauth_flows`、
+OAuth wire/store checks 及 `oauth-store` package consumer 均通过，inventory 现为
+117 个 target、117 个 source。没有增加兼容行为。证据见
+[`268-oauth-anthropic-20261122.json`](evidence/268-oauth-anthropic-20261122.json)。
+
+2026-11-22 在同一 issue 的第五批 OAuth seam 拆分中，OpenAI Codex browser/device
+login、fixed-loopback fallback、token exchange、account-id extraction、refresh 和
+Models store ACK 的 11 项断言迁移到 `oauth_codex` target，`oauth_flows` 保留 128 项
+其它 provider flow、Models store checks 与共享 regression。Codex 专属 fixture 与
+factory 归入 `tests/support/oauth_codex.rs`，与 ChatGPT 共用的 1455 loopback fixture
+归入 `tests/support/oauth_loopback.rs`，通用 assembly assertion 由
+`oauth_assembly.rs` 拥有。`oauth_codex`、`oauth_flows`、OAuth wire/store checks 及
+`oauth-store` package consumer 均通过，inventory 现为 118 个 target、118 个 source。
+没有增加兼容行为。证据见
+[`268-oauth-codex-20261122.json`](evidence/268-oauth-codex-20261122.json)。
+
+2026-11-22 在同一 issue 的第六批 OAuth seam 拆分中，OpenAI ChatGPT dynamic client
+registration、browser callback、manual paste validation、1455 occupied-port terminal、
+device identity、token contract、refresh 和 Models store ACK 的 11 项断言迁移到
+`oauth_chatgpt` target，`oauth_flows` 保留 117 项其它 provider flow、Models store
+checks 与共享 regression。ChatGPT 专属 fixture 与 factory 归入
+`tests/support/oauth_chatgpt.rs`，与 Codex 共用的 1455 loopback fixture 由
+`oauth_loopback.rs` 拥有，通用 presenter、expiry、URL 解码、stored credential 和
+assembly assertion 继续由对应 support owner 维护。`oauth_chatgpt`、`oauth_flows`、
+OAuth wire/store checks 及 `oauth-store` package consumer 均通过，inventory 现为
+119 个 target、119 个 source。没有增加兼容行为。证据见
+[`268-oauth-chatgpt-20261122.json`](evidence/268-oauth-chatgpt-20261122.json)。
+
+2026-11-22 在同一 issue 的第七批 OAuth seam 拆分中，GitHub Copilot device login、
+GitHub/Copilot token exchange、model discovery、enterprise domain、policy activation、
+refresh、Models store ACK 和 source timeout clamp 的 22 项断言迁移到 `oauth_copilot`
+target，`oauth_flows` 保留 95 项其它 provider flow、Models store checks 与共享
+regression。Copilot 专属 fixture 与 TLS inference peer 归入
+`tests/support/oauth_copilot.rs`，通用 presenter、expiry、URL 解码、stored credential
+和 assembly assertion 继续由对应 support owner 维护，TLS 证书材料继续由
+`tests/support/tls_fixtures.rs` 共享。`oauth_copilot`、`oauth_flows`、OAuth wire/store
+checks 及 `oauth-store` package consumer 均通过，inventory 现为 120 个 target、120 个
+source。没有增加兼容行为。证据见
+[`268-oauth-copilot-20261122.json`](evidence/268-oauth-copilot-20261122.json)。
+
+2026-11-22 在同一 issue 的第八批 OAuth seam 拆分中，Kimi Coding device authorization、
+polling、slow_down、strict token triple、refresh、cancellation、typed error mapping、
+expiry 和 Models store ACK 的 24 项断言迁移到 `oauth_kimi` target，`oauth_flows` 保留
+71 项其它 provider flow、Models store checks 与共享 regression。Kimi 专属 fixture、
+factory、token request collector 和 stored credential 归入
+`tests/support/oauth_kimi.rs`，通用 presenter、expiry、URL 解码和 assembly assertion
+继续由对应 support owner 维护。`oauth_kimi`、`oauth_flows`、OAuth wire/store checks
+及 `oauth-store` package consumer 均通过，inventory 现为 121 个 target、121 个
+source。没有增加兼容行为。证据见
+[`268-oauth-kimi-20261122.json`](evidence/268-oauth-kimi-20261122.json)。
+
+2026-11-22 在同一 issue 的第九批 OAuth seam 拆分中，Meta device authorization、verification URI 选择、polling、slow_down、Model API key mint、refresh、cancellation、typed error mapping、expiry 和 Models store ACK 的 25 项断言迁移到 `oauth_meta` target，`oauth_flows` 保留 46 项 xAI、Models store checks 与共享 regression。Meta 专属 device/token/mint fixture、factory、请求路径过滤器和 stored credential 归入 `tests/support/oauth_meta.rs`，通用 presenter、expiry、URL 解码和 assembly assertion 继续由对应 support owner 维护。`oauth_meta`、`oauth_flows`、OAuth wire/store checks 及 `oauth-store` package consumer 均通过，inventory 现为 122 个 target、122 个 source。没有增加兼容行为。证据见 [`268-oauth-meta-20261122.json`](evidence/268-oauth-meta-20261122.json)。
+
+2026-11-22 在同一 issue 的第十批 OAuth seam 拆分中，xAI device authorization、verification URI 选择、polling、slow_down、refresh、cancellation、typed error mapping、expiry 和 Models store ACK 的 25 项断言迁移到 `oauth_xai` target，`oauth_flows` 保留 21 项 Models store checks 与共享 regression。xAI 专属 device/token fixture、factory、token request collector、stored credential 和 helper 归入 `tests/support/oauth_xai.rs`，通用 presenter、expiry、URL 解码和 assembly assertion 继续由对应 support owner 维护。`oauth_xai`、`oauth_flows`、OAuth wire/store checks 及 `oauth-store` package consumer 均通过，inventory 现为 123 个 target、123 个 source。没有增加兼容行为。证据见 [`268-oauth-xai-20261122.json`](evidence/268-oauth-xai-20261122.json)。
+
+2026-11-22 在同一 issue 的第十一批 OAuth seam 拆分中，旧 `oauth_flows` 的剩余 21 项共享断言按职责迁移到 `oauth_models_store` 的 9 项 Models store 生命周期测试和 `oauth_regressions` 的 12 项跨 provider、错误边界、取消与 metadata regression。FakeStore、StoreMode、ACK outcome 和并发序列化观察器归入 `tests/support/oauth_store.rs`，provider-specific fixture 继续由各自 support owner 维护。旧 `oauth_flows` target 和 source 已退役，所有断言均有新去向。两个新 target、所有 provider OAuth target、OAuth wire/store checks 及 `oauth-store` package consumer 均通过，inventory 现为 124 个 target、124 个 source。没有增加兼容行为。证据见 [`268-oauth-shared-20261122.json`](evidence/268-oauth-shared-20261122.json)。
+
+2026-11-22 的 #269 共享测试支持边界收敛为一份机器可校验的
+`tests/support/OWNERS.tsv`。16 个 helper 按 stable tool、protocol fixture 和
+platform fixture 归属，记录 60 条实际 target consumer edge、layer、cost 和
+archive runner。`check_support_inventory.py` 从真实 `#[path]` 模块图推导消费者，
+selector 对清单变更给出独立 inventory runner，所有 helper consumer 对照和负例均通过。
+受影响的 focused Cargo tests 通过，ws archive package slice 的 private/public stages
+通过，但其 clippy stage 被已有生产迁移代码的四个 lint 阻塞。该阻塞不由 #269 引入，
+已在[归档收尾验收](issues/269-classify-shared-test-support.md#归档收尾验收)解决。首轮证据见
+[`269-shared-test-support-20261122.json`](evidence/269-shared-test-support-20261122.json)。
+
+2026-11-22 的 #270 将 architecture、Cargo target/source inventory、shared-support
+ownership 和 selector coverage 收敛为 `check_structure_gate.py` 单一只读门禁。报告
+固定输出 schema、稳定 `summary_sha256`、已批准例外、zero-test 目标和需要扩大检查的
+路径。当前核对 124 个 target、124 个 source、16 个 shared helper、60 条消费边和
+229 个 Rust test source，architecture violations 为零。CI product job 与中英文测试
+README 使用同一入口，完整 workspace regression 仍显式运行。没有增加兼容行为。证据见
+[`270-structure-gate-20261122.json`](evidence/270-structure-gate-20261122.json)。
+
+2026-11-22 在同一 issue 的第十二批 Anthropic protocol fixture 拆分中，保留
+`anthropic_fixtures` 单一 Cargo target，按 SSE/parser/请求、strict sampling/downgrade、
+Models/direct adapter 三个 topic 子模块组织 154 项断言，并将共用成功 SSE 文本归入
+`tests/anthropic_fixtures/fixtures.rs`。三个过滤器分别覆盖 56、27、71 项，Cargo
+metadata、inventory 和 selector 保持 124/124 一致。Anthropic package consumer 两个
+feature profile、clippy 和实际 usage consumer 均通过，既有 package runner 的 3 项硬编码计数检查改为校验 5 个具名 contract tests，并保留
+未过滤且无失败的成功摘要校验。所有原断言保留，没有新增 executable 或兼容行为。证据见
+[`268-anthropic-protocol-20261122.json`](evidence/268-anthropic-protocol-20261122.json)。
+
+2026-11-22 在同一 issue 的第十三批 Codex Responses protocol fixture 拆分中，保留
+`openai_codex_responses` 单一 Cargo target，将请求 wire、strict constrained sampling、
+WebSocket path、continuation、fallback/recovery、cancellation、resource cleanup 和
+protocol regression 拆为可精确过滤的子模块。`ws_path.rs` 继续拥有本地 peer、帧读写和
+SSE 响应 fixture，`deflate_audit.rs` 作为共享 decoder helper 保持无独立断言，已有
+replay、terminal、idle、session cleanup 子模块继续维护各自 owner。8 个新增 topic
+selector 分别通过 19、3、4、4、10、2、13、20 项，完整 Codex target 87 项通过。
+Cargo metadata、`tests/targets.tsv`、selector 和 module owner 保持 124/124 一致，
+`provider-openai-codex-responses` 独立 package consumer 的 feature closure、WebSocket
+compression 和 canonical namespace 检查均通过。所有原断言保留，没有新增 executable
+或兼容行为。证据见 [`268-codex-protocol-20261122.json`](evidence/268-codex-protocol-20261122.json)。
+
+2026-11-22 在同一 issue 的第十四批 provider collection fixture 拆分中，保留
+`provider_collection` 单一 Cargo target，按 phase-17 执行状态机、registry preflight、
+catalog store refresh、retry hints 和 selected-owner management 五个跨 provider seam
+组织 48 项可精确过滤的断言。根文件继续拥有 target index、共享构造 helper 和 builtin
+composition root，27 个 provider-specific 子模块继续维护各自的目录、认证和 wire
+断言。五个 selector 分别通过 26、2、9、4、7 项，完整 target 194 项通过。Cargo
+metadata、`tests/targets.tsv`、selector 和 module owner 保持 124/124 一致，既有
+catalog-bundled/provider package consumers 保持各自边界，没有新增 executable 或兼容
+行为。证据见
+[`268-provider-collection-20261122.json`](evidence/268-provider-collection-20261122.json)。
+
+2026-11-22 在同一 issue 的第十五批 Bedrock protocol fixture 拆分中，保留
+`bedrock_fixtures` 单一 Cargo target，将 builtin route assembly、constrained sampling
+guard 和 Converse Stream adapter 拆成 `builtin_routes`、`constrained_guard` 和
+`converse_adapter` 三个主题模块。根文件继续拥有 credential-source、stream/error、
+共享 request/response helper 与 target index，`aws_source_transport.rs` 保持共享本地
+transport helper。三个 selector 分别通过 8、2、27 项，完整 target 168 项中 167 项
+通过。唯一失败仍是迁移前已记录的 carried-in base64 fixture，未因拆分新增；Cargo
+metadata、`tests/targets.tsv`、selector 和 module owner 保持 124/124 一致，没有新增
+executable 或兼容行为。证据见
+[`268-bedrock-protocol-20261122.json`](evidence/268-bedrock-protocol-20261122.json)。
+
+2026-11-22 在同一 issue 的第十六批 OpenAI Chat protocol fixture 拆分中，保留
+`openai_chat_fixtures` 单一 Cargo target，将 parser/request wire、Models lifecycle 和
+strict sampling guard 拆为 `wire`、`lifecycle`、`constrained_guard` 三个主题模块，并将
+response、request、HTTP chunk/server 与模型注册 helper 归入 `fixtures.rs`。三个
+selector 分别通过 90、24、2 项，完整 target 116 项通过，共享 `fixtures.rs` selector
+回退到完整 target。Cargo metadata、`tests/targets.tsv`、selector 和 module owner
+保持 124/124 一致，没有新增 executable 或兼容行为。证据见
+[`268-openai-chat-20261122.json`](evidence/268-openai-chat-20261122.json)。
+
+2026-11-22 在同一 issue 的第十七批 Bedrock wire/lifecycle fixture 拆分中，保留
+`bedrock_fixtures` 单一 Cargo target，将根内的 event-stream/model/error wire 断言和
+HTTP、Models、AWS credential-source lifecycle 断言分别迁入 `wire.rs`、`lifecycle.rs`，
+并将 request、event-stream bytes、auth、response 与 lifecycle helper 归入 `fixtures.rs`。
+`wire`、`lifecycle`、`builtin_routes`、`constrained_guard` 分别通过 28、102、8、2 项。
+完整 target 168 项中 167 项通过，唯一失败仍是迁移前已记录的 carried-in base64 fixture。
+共享 fixture selector 回退到完整 target，Cargo metadata、`tests/targets.tsv`、selector
+和 module owner 保持 124/124 一致，`provider-bedrock` package consumer 通过，没有新增
+executable 或兼容行为。证据见
+[`268-bedrock-wire-lifecycle-20261122.json`](evidence/268-bedrock-wire-lifecycle-20261122.json)。
+
+2026-11-22 在同一 issue 的第十八批 Bedrock lifecycle fixture 拆分中，将 AWS
+credential source、prepared credential、STS/ECS/IMDS 和 cancellation 断言迁入
+`lifecycle::aws_credentials`，将 SSO、login、refresh、expiry、cache rotation 和 DPoP
+断言迁入 `lifecycle::aws_sso`。两个嵌套 selector 分别通过 46、31 项，根 lifecycle
+保留 25 项 HTTP、Models、request-header 和 callback 断言。共享 fixture 与
+`aws_credentials` source helper 由 `aws_sso` 复用。完整 target 排除既有 carried-in
+base64 fixture 后 167 项通过，package consumer 通过，selector、Cargo metadata 和
+`tests/targets.tsv` 保持 124/124，没有新增 executable 或兼容行为。证据见
+[`268-bedrock-lifecycle-20261122.json`](evidence/268-bedrock-lifecycle-20261122.json)。
+2026-11-22 在同一 issue 的第十九批 Bedrock Converse adapter fixture 拆分中，将原
+`converse_adapter.rs` 收敛为模块索引，并把 request/message projection、stream/usage、
+persisted history/replay、Models lifecycle/telemetry 分别迁入 `projection.rs`、`stream.rs`、
+`replay.rs` 和 `lifecycle.rs`。`support.rs` 只保留 adapter-local helper。四个主题 selector
+分别通过 13、6、4、4 项默认断言，replay 的第 5 项仍是既有 carried-in base64 fixture 失败。
+完整 target 排除该失败后 167 项通过，package consumer 通过，selector、Cargo metadata 和
+`tests/targets.tsv` 保持 124/124，没有新增 executable 或兼容行为。证据见
+[`268-bedrock-converse-adapter-20261122.json`](evidence/268-bedrock-converse-adapter-20261122.json)。
+
+2026-11-22 在同一 issue 的第二十批 Bedrock AWS credential-source fixture 拆分中，将 `aws_credentials.rs` 收敛为主题索引，并把 shared source fixture、environment/profile/process precedence、assume-role/MFA/web identity、ECS/IMDS 和 Models/HTTP lifecycle 分别放入 `support.rs`、`chain.rs`、`role_sources.rs`、`metadata.rs` 与嵌套 `lifecycle.rs`。四个 selector 分别通过 15、11、9、11 项，保留原有 46 项断言；`aws_sso` 通过索引重导出继续复用 source helper。完整 target 排除既有 carried-in base64 fixture 后 167 项通过，package consumer、selector、Cargo metadata 和 `tests/targets.tsv` owner 映射一致，没有新增 executable 或兼容行为。证据见 [`268-bedrock-aws-credentials-20261122.json`](evidence/268-bedrock-aws-credentials-20261122.json)。
+
+2026-11-22 在同一 issue 的第二十一批 Bedrock AWS SSO/login fixture 拆分中，将 `aws_sso.rs` 收敛为主题索引，并把 shared SSO fixture、source discovery、expiry/refresh、login/DPoP 和 chain/throttle 分别放入 `support.rs`、`discovery.rs`、`expiry.rs`、`login.rs` 与 `chain.rs`。四个 selector 分别通过 9、11、8、3 项，保留原有 31 项断言；SSO 继续通过 `aws_credentials` 索引复用 source helper。完整 target 排除既有 carried-in base64 fixture 后 167 项通过，package consumer、selector、Cargo metadata 和 `tests/targets.tsv` owner 映射一致，没有新增 executable 或兼容行为。证据见 [`268-bedrock-aws-sso-20261122.json`](evidence/268-bedrock-aws-sso-20261122.json)。
+
+2026-11-22 在 #268 第二十二批中修复 Bedrock carried-in base64 fixture 的 Pi `atob` 空白语义差异。
+`decode_redacted_content` 补充忽略回车符，带回车的持久化 redacted signature 现在按源实现成功解码，
+非法和空输入仍然丢弃。聚焦回归 1/1、Converse replay 5/5、完整 `bedrock_fixtures` 168/168，
+`provider-bedrock` 实际包消费者、inventory、architecture gate、selector 与格式检查通过，没有增加
+兼容行为。证据见 [`268-bedrock-base64-20261122.json`](evidence/268-bedrock-base64-20261122.json)。
+
+2026-11-22 在 #268 第二十三批中拆分剩余大型 `openai_responses_fixtures` protocol target。
+保留单一 executable，将 payload/SSE、terminal/usage、route 和 acquisition sealing 放入
+`wire.rs`，grammar/strict constrained sampling 放入 `constrained_guard.rs`，Models、callback、
+native options、reasoning replay、timing 和 source compatibility 放入 `lifecycle.rs`，共享
+request/model/response/reasoning builder 放入 `fixtures.rs`。`wire::`、`constrained_guard::`、
+`lifecycle::` 分别通过 40、12、31 项，完整 target 83/83，`openai_responses_lifecycle`
+独立 target owner 保持不变且复验 15/15。inventory、support inventory、architecture gate、
+`provider-openai-responses` package consumer 和格式检查通过，没有增加兼容行为。证据见
+[`268-openai-responses-20261122.json`](evidence/268-openai-responses-20261122.json)。
+
+2026-11-22 在 #268 第二十四批中拆分剩余大型 `vertex_fixtures` protocol target。保留单一 executable，
+将 builtin routes、Vertex wire、HTTP lifecycle、Vertex/external/impersonation ADC source、callback、
+strict sampling 与 Google 4.1 adapter 分别迁入有明确 owner 的主题文件，`fixtures.rs` 只保留共享
+request/stream/provider helper。九个 focused selector 共通过 75 项，完整 target 75/75；
+`provider-vertex` 实际 package consumer、124/124 test inventory、16/60 support inventory、
+architecture gate 和 Vertex 文件 rustfmt 检查通过。全量 `cargo fmt --all --check` 仍报告此前 OpenAI Responses 批次遗留的格式 diff，本批不改动该范围。没有新增 executable、删除断言或兼容行为。证据见
+[`268-vertex-20261122.json`](evidence/268-vertex-20261122.json)。
+
+2026-11-22 在 #268 第二十五批中拆分当前剩余最大的未拆分 `gemini_fixtures` protocol target。
+保留单一 executable，将 provider/model wire 与 GenerateContent SSE 放入 `wire.rs`，HTTP auth、
+request enrichment、timeout、cancellation 与 chunk split 放入 `lifecycle.rs`，payload/raw/async
+observer 放入 `callbacks.rs`，strict sampling 放入 `constrained_guard.rs`，Google 4.0 chat
+adapter、native thinking/tool choice、signed replay 与 telemetry 放入 `google_40.rs`，共享
+provider/request/stream/server helper 放入 `fixtures.rs`。五个 focused selector 共通过 71 项，
+完整 target 71/71；`provider-gemini` 实际 package consumer、124/124 test inventory、
+16/60 support inventory、architecture gate 和 Gemini 文件 rustfmt 检查通过。全量
+`cargo fmt --all --check` 仍报告此前 OpenAI Responses 批次遗留的格式 diff，本批不改动该范围。
+没有新增 executable、删除断言或兼容行为。证据见
+[`268-gemini-20261122.json`](evidence/268-gemini-20261122.json)。
+
+2026-11-22 在 #268 第二十六批中拆分 Mistral protocol fixture。保留单一
+`mistral_fixtures` executable，将共享 OpenAI-compatible Chat 的 wire、取消和 callback
+分别放入 `chat_wire.rs`、`chat_lifecycle.rs`、`chat_callbacks.rs`，将 native Mistral Conversations
+adapter 收敛为 `native_conversations.rs` 索引及 `fixtures.rs`、`wire.rs`、`lifecycle.rs`、`replay.rs`、
+`callbacks.rs` 主题。七个 focused selector 分别通过 15、1、1、24、8、4、1 项，完整
+target 在默认 `builtins` 下通过 54/54，开启 `telemetry-tracing` 后通过 55/55；共享 fixture 与根索引仍回退到完整 target。`provider-mistral` package
+consumer、test inventory 124/124、support inventory 16/60、architecture gate 与 Mistral
+文件 Rust 2024 rustfmt 均通过，没有新增 executable、删除断言或兼容行为。全量
+`cargo fmt --all --check` 仍只报告此前 OpenAI Responses 批次的格式 diff，本批未扩大范围。
+证据见 [`268-mistral-20261122.json`](evidence/268-mistral-20261122.json)。
+
+2026-11-23 在 #268 第二十七批中拆分 OpenRouter protocol fixture。保留单一
+`openrouter_fixtures` executable，将 Chat wire/lifecycle 与 Images wire/lifecycle/callbacks
+分别放入 `chat_wire.rs`、`chat_lifecycle.rs`、`images.rs` 及其主题目录，Chat 与 Images
+fixture helper 各自归属明确。五个 focused selector 分别通过 13、3、14、15、10 项，完整
+target 通过 55/55；`provider-openrouter` package consumer、test inventory 124/124、
+support inventory 16/60、architecture gate 与 OpenRouter 文件 Rust 2024 rustfmt 均通过，
+没有新增 executable、删除断言或兼容行为。证据见
+[`268-openrouter-20261123.json`](evidence/268-openrouter-20261123.json)。
+
+2026-11-23 在 #268 第二十八批中拆分 Azure OpenAI protocol fixture。保留单一
+`azure_openai_fixtures` executable，将 Chat wire/lifecycle/callbacks 与 native Responses
+wire/lifecycle/options 分别放入主题模块，Chat 与 Responses fixture helper 各自归属明确。六个
+focused selector 分别通过 12、9、1、8、7、9 项，完整 target 通过 46/46；
+`provider-azure-openai` package consumer、test inventory 124/124、support inventory 16/60、
+architecture gate 与 Azure OpenAI 文件 Rust 2024 rustfmt 均通过，没有新增 executable、删除
+断言或兼容行为。证据见 [`268-azure-openai-20261123.json`](evidence/268-azure-openai-20261123.json)。
+
+2026-11-23 在 #268 第二十九批中拆分 Pi Messages protocol fixture。保留单一
+`chat_pi_messages` executable，将 Radius gateway/catalog、request wire、SSE stream、HTTP/
+auth/Models lifecycle、callbacks 与 Node 5 replay 分别放入主题模块，fixture helper 各自归属
+明确。六个 focused selector 分别通过 6、10、10、10、1、5 项，完整 target 通过 42/42；
+`provider-pi-messages` package consumer、test inventory 124/124、support inventory 16/60、
+architecture gate 与 Pi Messages 文件 Rust 2024 rustfmt 均通过，没有新增 executable、删除
+断言或兼容行为。证据见 [`268-chat-pi-messages-20261123.json`](evidence/268-chat-pi-messages-20261123.json)。
+2026-11-23 在 #268 第三十批中拆分 authentication contract fixture。保留单一
+`auth_contracts` executable，将 typed credential errors、resolver/source selection、serialized
+mutations、ADC native/external/impersonation families 与 scoped snapshot 分别放入主题模块，
+shared auth fixture owner 明确。七个 focused selector 分别通过 7、15、14、20、32、19、1 项，
+完整 target 通过 108/108；`opi-ai` auth package consumer、test inventory 124/124、support
+inventory 16/60、architecture gate 与 authentication 文件 Rust 2024 rustfmt 均通过，没有新增
+executable、删除断言或兼容行为。`oauth-store` 与 `cloud-auth` 两个 external package
+consumer 均通过。证据见 [`268-auth-contracts-20261123.json`](evidence/268-auth-contracts-20261123.json)。
+
+2026-11-23 在 #268 收敛 `provider_collection` 根文件，并修复认证共享 fixture 的选测漏项。
+根文件的 69 项测试归入九个主题，完整 `provider_collection` 保留 194 项并通过。
+`auth_contracts` 两项跨主题输入移至共享 fixture，完整 108 项通过。两组独立 selector、
+七条具名生产路径、统一门禁和四个实际归档消费者均通过。严格 Clippy 仍有三项既有生产诊断。
+验证边界和剩余进度见 [#268 第三十一批](issues/268-partition-oversized-protocol-fixtures.md#第三十一批-provider-collection-根文件收敛)及
+[验收证据](evidence/268-collection-root-and-auth-selection-20261123.json)。
+
+2026-11-23 在 #268 第三十二批将 `catalog_operations` 拆为发布、分发和价格三个主题。
+三个 selector 分别通过 11、8、8 项，根索引和共享 fixture 选中完整 target。工作树与实际归档
+各通过 27 项，`catalog-bundled` 和 `protocol-adapters` 外部消费者通过。
+两条具名生产路径保留原测试集合，统一结构门禁通过。边界和路径映射见
+[#268 第三十二批](issues/268-partition-oversized-protocol-fixtures.md#第三十二批目录操作测试)
+及[验收证据](evidence/268-catalog-operations-20261123.json)。
+
+2026-11-23 在 #268 第三十三批将 `execution_lifecycle` 拆为普通调用、Deferred 和终止释放。
+三条路径分别独立通过 18、12、11 项，工作树和实际解包后的 target 各通过完整 41 项。
+外部最小特性包的两个配置、独立生命周期差分驱动和统一结构门禁通过。
+边界、名称映射及剩余进度见 [#268 第三十三批](issues/268-partition-oversized-protocol-fixtures.md#第三十三批执行生命周期测试)
+及[验收证据](evidence/268-execution-lifecycle-20261123.json)。
+
+2026-11-23 在 #268 第三十四批将 `telemetry_operations` 拆为 Chat、prepared、图像、分类和
+Deferred 五个可独立选测的主题。System One 的具名筛选只命中分类的同一项。工作树与实际
+解包后的 target 各通过 12 项，外部 README 消费者的两个特性配置和统一门禁通过。
+所有权、名称映射和验收范围见 [#268 第三十四批](issues/268-partition-oversized-protocol-fixtures.md#第三十四批遥测操作测试)
+及[验收证据](evidence/268-telemetry-operations-20261123.json)。
+
+2026-11-23 在 #268 第三十五批将 `request_enrichment` 拆为请求标量与超时、受保护请求头、
+会话 affinity、payload/response 回调四个主题，分别独立通过 7、11、17、10 项。
+工作树与实际解包后的 target 各通过 45 项，外部 `protocol-adapters` 消费者及统一门禁通过。
+所有权和边界见 [#268 第三十五批](issues/268-partition-oversized-protocol-fixtures.md#第三十五批请求扩展测试)
+及[验收证据](evidence/268-request-enrichment-20261123.json)。
+
+2026-11-23 在 #268 第三十六批将 `node4_preparation` 拆为 native/simple 限额、目录恢复及
+请求投影与失败时序。三个主题分别独立通过 5、6、15 项，`catalog_store` 的五条完整 target
+选测命令均保留。工作树与实际解包后的 target 各通过 26 项，外部目录消费者和统一门禁通过。
+所有权及验收范围见 [#268 第三十六批](issues/268-partition-oversized-protocol-fixtures.md#第三十六批-models-请求准备测试)
+及[验收证据](evidence/268-node4-preparation-20261123.json)。
+
+2026-11-23 在 #268 第三十七批将 `tls_contract` 拆为协商与信任、mTLS、取消清理和
+进程级 provider 隔离。四个主题各自可选测。共享 `tls_fixtures` 仍选中六个完整 target
+及 WS 归档 runner。`crypto` 外部消费者两个配置各通过 6 项，工作树与实际解包后的
+TLS target 各通过 25 项。所有权及验收范围见
+[#268 第三十七批](issues/268-partition-oversized-protocol-fixtures.md#第三十七批-tls-公共合同测试)
+及[验收证据](evidence/268-tls-contract-20261123.json)。
+
+2026-11-23 在 #268 第三十八批将 `external_sdk` 拆为 Chat 协议矩阵、分类与图像、
+Models 公共合同。三个主题分别独立通过 1、1、9 项，两条具名筛选各通过 1 项。
+工作树与实际解包后的 target 各通过 11 项，外部 README 消费者的两种 feature
+配置和统一门禁通过。所有权及验收范围见
+[#268 第三十八批](issues/268-partition-oversized-protocol-fixtures.md#第三十八批外部-sdk-测试)
+及[验收证据](evidence/268-external-sdk-20261123.json)。
+
+2026-11-23 在 #268 第三十九批将 `http_acceptance` 拆为 HTTP 响应解析、重定向与连接
+中断、HTTPS 代理，分别独立通过 10、9、2 项。`tls_fixtures` 保留六条完整 target
+选测及 crypto 和 WS 归档映射。外部 `consumer-http` 的两个配置各通过 6 项，
+工作树与实际解包后的 target 各通过 21 项。所有权及验收范围见
+[#268 第三十九批](issues/268-partition-oversized-protocol-fixtures.md#第三十九批-http-公共合同测试)
+及[验收证据](evidence/268-http-acceptance-20261123.json)。
+
+2026-11-23 在 #268 第四十批将 `chat_capture_replay` 拆为生产者捕获、JSON 持久化恢复
+和目标协议投影。前两主题各独立覆盖五组单请求输入，投影保留并通过十三条完整链路。
+工作树及实际解包后的 target 各通过 15 项，外部 README 消费者的两种配置和统一门禁
+通过。所有权及验收范围见
+[#268 第四十批](issues/268-partition-oversized-protocol-fixtures.md#第四十批-chat-捕获与重放测试)
+及[验收证据](evidence/268-chat-capture-replay-20261123.json)。
+
+2026-11-23 在 #268 第四十一批将 `retry_backoff` 拆为响应头解析、退避策略、请求获取和
+Smithy 重试，分别独立通过 10、17、13、17 项。工作树及解包后的 target 各通过 57 项，
+外部 HTTP 消费者的两个配置各通过 6 项。所有权及验收范围见
+[#268 第四十一批](issues/268-partition-oversized-protocol-fixtures.md#第四十一批-sdk-重试合同测试)
+及[验收证据](evidence/268-retry-backoff-20261123.json)。
+
+2026-11-23 在 #268 第四十二批将 `whole_call_retry` 拆为重试判定、整次调用和回调、
+退避和取消，分别独立通过 6、14、3 项。工作树及实际解包后的 target 各通过 23 项。
+23 条分类观测及 11 条 Responses 失败观测与既有记录一致，共享 JSON 的另一具名 wire
+检查通过。
+所有权及验收范围见
+[#268 第四十二批](issues/268-partition-oversized-protocol-fixtures.md#第四十二批整次调用重试测试)
+及[验收证据](evidence/268-whole-call-retry-20261123.json)。
+
+2026-11-23 在 #268 第四十三批将 `provider_lifecycle` 拆为请求与错误映射、SSE 解码、
+取消与连接释放，分别独立通过 4、11、7 项。工作树及实际解包后的 target 各通过 22 项。
+Anthropic 请求用例补齐实际 JSON 与匹配次数检查，外部 README 消费者的两种配置
+通过。所有权及验收范围见
+[#268 第四十三批](issues/268-partition-oversized-protocol-fixtures.md#第四十三批-provider-生命周期测试)
+及[验收证据](evidence/268-provider-lifecycle-20261123.json)。
+
+2026-11-23 在 #268 第四十四批将 `deferred_contract` 拆为句柄校验、提交与获取、取消、
+重开恢复和遥测转发，分别独立通过 8、5、3、2、1 项。实际解包后的 target 通过
+全部 19 项，外部最小特性消费者验证 Faux 提交和显式获取，五条取消路由观测与固定
+Pi 1.5 的既有对照记录一致。所有权及独立验收见
+[#268 第四十四批](issues/268-partition-oversized-protocol-fixtures.md#第四十四批-deferred-合同测试)
+及[验收证据](evidence/268-deferred-contract-20261123.json)。
+
+2026-11-23 在 #268 第四十五批将 `public_utilities` 拆成八个可独立选测的主题，保留
+grammar 的具名筛选并重定位配置用例的 namespace 检查。实际解包通过全部 53 项，外部
+协议消费者验证 header 和 env API，Chat 回环的 65 个检查点与固定 Pi 1.5 对照一致。
+所有权及验收范围见
+[#268 第四十五批](issues/268-partition-oversized-protocol-fixtures.md#第四十五批公共工具测试)
+及[验收证据](evidence/268-public-utilities-20261123.json)。
+
+2026-11-23 在 #268 第四十六批将 `schema_engine` 拆为七个独立选测主题。工作树和实际
+解包各通过 73 项，冻结语料的 64 条输入及预期逐字节核对。三项深栈验证使用模块限定名
+并检查子进程完成。外部 Schema 消费者两种 feature 配置各通过 73 项公开检查。
+所有权及验收范围见
+[#268 第四十六批](issues/268-partition-oversized-protocol-fixtures.md#第四十六批-schema-engine-测试)
+及[验收证据](evidence/268-schema-engine-20261123.json)。
+
+2026-11-23 在 #268 第四十七批将 `custom_provider_registration` 拆为六个独立选测
+主题。工作树、实际解包和外部最小特性消费者的两种配置各通过 35 项。认证前拒绝用例
+分别验证选项类型、API 注册和 provider 归属，观测替换后的 resolver。两条 Models
+setup failure 探针匹配固定 Pi 1.5 的共享观测。所有权及验收范围见
+[#268 第四十七批](issues/268-partition-oversized-protocol-fixtures.md#第四十七批自定义-provider-注册测试)
+及[验收证据](evidence/268-custom-provider-registration-20261123.json)。
+
+2026-11-23 在 #268 第四十八批将 `replay_contract` 拆为七个独立选测主题。保留 22 项
+具名用例及四个既有模块限定名。工作树与实际解包各通过 22 项，外部 README 消费者
+在两种配置下验证实际工具结果续接。两组 Chat 请求体和 Anthropic 重放助手块匹配固定
+Pi 1.5 观测。所有权及验收见
+[#268 第四十八批](issues/268-partition-oversized-protocol-fixtures.md#第四十八批重放请求合同测试)
+及[验收证据](evidence/268-replay-contract-20261123.json)。
+
+2026-11-23 在 #268 第四十九批将 `model_wire_metadata` 拆为七个独立选测主题。24 项
+具名用例在工作树和实际解包中全部通过，外部目录消费者核对 42 个 provider 的 1,712 条
+记录。推理准入覆盖 provider 流的类型化错误及真实请求计数。固定 Pi 1.5 的采样与
+Anthropic fallback 测试通过。所有权及验收见
+[#268 第四十九批](issues/268-partition-oversized-protocol-fixtures.md#第四十九批模型-wire-元数据测试)
+及[验收证据](evidence/268-model-wire-metadata-20261123.json)。
+
+2026-11-23 完成 #268、#269 的结构收尾。OpenAI Responses fixture 格式与三条现行
+严格 Clippy 诊断已修复，200 项工作树测试通过。实际 SDK 归档的三种 WS 依赖图各
+通过 98 项私有协议、16 项公开 Upgrade、严格 Clippy 和 10 项外部消费者检查，归档
+rustdoc 同样通过。#270 日常门禁复验覆盖 124 个 Cargo target、402 个 Rust 测试源
+和 60 条共享支持边。[收尾证据](evidence/269-ws-archive-closeout-20261123.json)
 
 ## 规划交接记录（历史）
 

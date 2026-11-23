@@ -1,0 +1,140 @@
+{
+  "issue": 268,
+  "batch": "openai-chat-protocol-fixture",
+  "date": "2026-11-22",
+  "status": "PASS",
+  "owner_table": [
+    {
+      "owner": "tests/openai_chat_fixtures.rs",
+      "scope": "single target index, shared imports and topic module declarations",
+      "target": "openai_chat_fixtures",
+      "package_consumer": "provider-openai-chat package consumer uses the target and does not copy fixtures"
+    },
+    {
+      "owner": "tests/openai_chat_fixtures/fixtures.rs",
+      "scope": "shared response/request fixtures, HTTP chunk/server helpers, model registration and duration helpers",
+      "target": "openai_chat_fixtures shared fixture owner",
+      "package_consumer": "none; selector intentionally falls back to the full target"
+    },
+    {
+      "owner": "tests/openai_chat_fixtures/wire.rs",
+      "scope": "SSE parser, Chat request body, compatibility/projection, tool/result, callbacks, HTTP transport and cancellation",
+      "target": "openai_chat_fixtures::wire",
+      "tests": 90,
+      "package_consumer": "none"
+    },
+    {
+      "owner": "tests/openai_chat_fixtures/lifecycle.rs",
+      "scope": "Models native/simple/direct adapters, duration, source compatibility, model/profile precedence and required constraints",
+      "target": "openai_chat_fixtures::lifecycle",
+      "tests": 24,
+      "package_consumer": "none"
+    },
+    {
+      "owner": "tests/openai_chat_fixtures/constrained_guard.rs",
+      "scope": "Require/Prefer constrained sampling admission and strict projection",
+      "target": "openai_chat_fixtures::constrained_guard",
+      "tests": 2,
+      "package_consumer": "none"
+    },
+    {
+      "owner": "scripts/pi-sdk-conformance/run_provider_protocol_package.py",
+      "scope": "provider-openai-chat feature graph, canonical namespace, package build/run and forbidden package checks",
+      "target": "provider-openai-chat",
+      "package_consumer": "opi-ai package"
+    }
+  ],
+  "sizes": {
+    "crates/opi-ai/tests/openai_chat_fixtures.rs": 2003,
+    "crates/opi-ai/tests/openai_chat_fixtures/fixtures.rs": 37332,
+    "crates/opi-ai/tests/openai_chat_fixtures/wire.rs": 88447,
+    "crates/opi-ai/tests/openai_chat_fixtures/lifecycle.rs": 63380,
+    "crates/opi-ai/tests/openai_chat_fixtures/constrained_guard.rs": 2557
+  },
+  "acceptance": {
+    "target_selectable": [
+      {
+        "source": "tests/openai_chat_fixtures/wire.rs",
+        "result": "PASS",
+        "filter": "wire::",
+        "tests": 90
+      },
+      {
+        "source": "tests/openai_chat_fixtures/lifecycle.rs",
+        "result": "PASS",
+        "filter": "lifecycle::",
+        "tests": 24
+      },
+      {
+        "source": "tests/openai_chat_fixtures/constrained_guard.rs",
+        "result": "PASS",
+        "filter": "constrained_guard::",
+        "tests": 2
+      },
+      {
+        "source": "tests/openai_chat_fixtures/fixtures.rs",
+        "result": "PASS",
+        "fixture_owner": "shared helper selects full target"
+      }
+    ],
+    "inventory_and_metadata": {
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 124,
+      "sources": 124,
+      "cargo_target": "openai_chat_fixtures"
+    },
+    "tests": {
+      "full_target": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test openai_chat_fixtures",
+        "passed": 116,
+        "failed": 0
+      },
+      "filtered_topics": {
+        "wire": "90 passed, 0 failed",
+        "lifecycle": "24 passed, 0 failed",
+        "constrained_guard": "2 passed, 0 failed"
+      },
+      "selector_unit": {
+        "command": "Push-Location scripts/pi-sdk-conformance; python -m unittest -v test_select_tests.py test_check_test_inventory.py; Pop-Location",
+        "result": "PASS",
+        "cases": 23
+      },
+      "package_consumer": {
+        "runner": "scripts/pi-sdk-conformance/run_provider_protocol_package.py --owner provider-openai-chat",
+        "evidence": "268-openai-chat-package-20261122.json",
+        "result": "PASS"
+      }
+    },
+    "documentation": {
+      "cargo_fmt": "PASS",
+      "compatibility_behavior_added": false,
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS",
+      "inventory": "PASS",
+      "architecture": "PASS"
+    }
+  },
+  "test_impact": {
+    "add": [
+      "tests/openai_chat_fixtures/wire.rs",
+      "tests/openai_chat_fixtures/lifecycle.rs",
+      "tests/openai_chat_fixtures/constrained_guard.rs",
+      "tests/openai_chat_fixtures/fixtures.rs shared fixture owner",
+      "selector unit coverage for OpenAI Chat topic modules and shared fixture fallback"
+    ],
+    "update": [
+      "tests/openai_chat_fixtures.rs module index and imports",
+      "tests/targets.tsv OpenAI Chat topic owner text",
+      "test README English/Chinese",
+      "issue/spec/evidence records"
+    ],
+    "delete": [],
+    "retain": [
+      "all 116 existing OpenAI Chat fixture assertions",
+      "single openai_chat_fixtures executable",
+      "shared fixture ownership without package copies",
+      "no compatibility behavior"
+    ]
+  }
+}

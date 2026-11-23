@@ -1,4 +1,5 @@
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -53,6 +54,20 @@ class CatalogBundledRunnerTests(unittest.TestCase):
             self.assertEqual(result.returncode, 2)
             self.assertIn("evidence already exists", result.stderr)
             self.assertFalse((Path(directory) / "scratch").exists())
+
+    def test_archived_manifest_must_match_workspace_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            package = Path(directory)
+            resources = Path("resources/catalog/builtin")
+            shutil.copytree(runner.REPO / "crates/opi-ai" / resources, package / resources)
+            summary = runner.packaged_bundle_summary(package)
+            self.assertTrue(summary.startswith("catalog=sha256-"))
+            self.assertIn(" classifier=", summary)
+
+            manifest = package / resources / "manifest.json"
+            manifest.write_bytes(manifest.read_bytes() + b"\n")
+            with self.assertRaisesRegex(ValueError, "differs from workspace: manifest.json"):
+                runner.packaged_bundle_summary(package)
 
 
 if __name__ == "__main__":

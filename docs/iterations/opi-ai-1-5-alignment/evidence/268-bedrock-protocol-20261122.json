@@ -1,0 +1,136 @@
+{
+  "issue": 268,
+  "batch": "bedrock-protocol-fixture",
+  "date": "2026-11-22",
+  "status": "PASS_WITH_KNOWN_BASELINE_FAILURE",
+  "owner_table": [
+    {
+      "owner": "tests/bedrock_fixtures.rs",
+      "scope": "credential-source chains, stream/error mapping, shared request/response helpers and target index",
+      "target": "bedrock_fixtures",
+      "package_consumer": "provider-bedrock package consumer retains production feature ownership; fixtures are not copied"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/builtin_routes.rs",
+      "scope": "builtin registration, catalog admission, SigV4/bearer routing, local endpoints, strict tools and effort",
+      "target": "bedrock_fixtures::builtin_routes",
+      "tests": 8,
+      "package_consumer": "provider-bedrock package consumer does not copy fixtures"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/constrained_guard.rs",
+      "scope": "Require/Prefer constrained-sampling typed preflight and wire projection",
+      "target": "bedrock_fixtures::constrained_guard",
+      "tests": 2,
+      "package_consumer": "none"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/converse_adapter.rs",
+      "scope": "Converse body, reasoning, tool/history projection, usage, replay and Models lifecycle",
+      "target": "bedrock_fixtures::converse_adapter",
+      "tests": 28,
+      "package_consumer": "provider-bedrock feature profile/package consumer validates the public production boundary"
+    },
+    {
+      "owner": "tests/bedrock_fixtures/aws_source_transport.rs",
+      "scope": "local HTTP/TLS transport helper for AWS source exchanges; no independent assertions",
+      "target": "shared helper",
+      "package_consumer": "consumed by bedrock_fixtures"
+    }
+  ],
+  "sizes": {
+    "crates/opi-ai/tests/bedrock_fixtures.rs": 266136,
+    "crates/opi-ai/tests/bedrock_fixtures/builtin_routes.rs": 29359,
+    "crates/opi-ai/tests/bedrock_fixtures/constrained_guard.rs": 2685,
+    "crates/opi-ai/tests/bedrock_fixtures/converse_adapter.rs": 59574,
+    "crates/opi-ai/tests/bedrock_fixtures/aws_source_transport.rs": 2836
+  },
+  "acceptance": {
+    "target_selectable": [
+      {
+        "source": "tests/bedrock_fixtures/builtin_routes.rs",
+        "result": "PASS",
+        "filter": "builtin_routes::",
+        "tests": 8
+      },
+      {
+        "source": "tests/bedrock_fixtures/constrained_guard.rs",
+        "result": "PASS",
+        "filter": "constrained_guard::",
+        "tests": 2
+      },
+      {
+        "source": "tests/bedrock_fixtures/converse_adapter.rs",
+        "result": "PASS_WITH_KNOWN_BASELINE_FAILURE",
+        "filter": "converse_adapter::",
+        "tests": 27,
+        "known_failure": "persisted_redacted_bytes_follow_source_forgiving_base64_acceptance"
+      }
+    ],
+    "inventory_and_metadata": {
+      "command": "python scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 124,
+      "sources": 124,
+      "cargo_target": "bedrock_fixtures"
+    },
+    "tests": {
+      "full_target": {
+        "command": "cargo test --locked --offline -p opi-ai --no-default-features --features builtins --test bedrock_fixtures",
+        "executed": 168,
+        "passed": 167,
+        "failed": 1,
+        "known_failure": "persisted_redacted_bytes_follow_source_forgiving_base64_acceptance"
+      },
+      "filtered_topics": {
+        "builtin_routes": "8 passed, 0 failed",
+        "constrained_guard": "2 passed, 0 failed",
+        "converse_adapter": "27 passed, 1 known baseline failure"
+      },
+      "selector_inventory_unit": {
+        "command": "Push-Location scripts/pi-sdk-conformance; python -m unittest -v test_select_tests.py test_check_test_inventory.py; Pop-Location",
+        "result": "PASS",
+        "cases": 21
+      },
+      "package_consumer": {
+        "runner": "scripts/pi-sdk-conformance/run_provider_protocol_package.py --owner provider-bedrock",
+        "evidence": "268-bedrock-protocol-package-20261122.json",
+        "result": "PASS"
+      }
+    },
+    "architecture": {
+      "command": "python scripts/pi-sdk-conformance/check_architecture_boundaries.py --enforce",
+      "result": "PASS",
+      "violations": []
+    },
+    "documentation": {
+      "cargo_fmt": "PASS",
+      "opi_doc_check": "PASS",
+      "git_diff_check": "PASS",
+      "compatibility_behavior_added": false
+    }
+  },
+  "known_baseline": {
+    "test": "converse_adapter::persisted_redacted_bytes_follow_source_forgiving_base64_acceptance",
+    "observed": "expected three persisted opaque blocks, implementation returns two",
+    "decision": "retained unchanged because this batch is structural and no compatibility behavior was authorized"
+  },
+  "test_impact": {
+    "add": [
+      "three Bedrock topic module selectors",
+      "selector unit coverage for Bedrock nested modules"
+    ],
+    "update": [
+      "bedrock_fixtures target module index",
+      "tests README English/Chinese tree and boundary guidance",
+      "issue/spec/evidence records"
+    ],
+    "delete": [],
+    "retain": [
+      "all 168 existing Bedrock assertions",
+      "single bedrock_fixtures executable",
+      "aws_source_transport shared helper",
+      "no compatibility behavior"
+    ]
+  }
+}

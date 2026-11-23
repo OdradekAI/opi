@@ -26,7 +26,7 @@ def check_graph(metadata: dict, package: Path) -> dict:
         raise ValueError("consumer must resolve the extracted opi-ai package")
     nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
     sdk_features = set(nodes[sdk[0]["id"]]["features"])
-    expected_features = {"http-transport", "oauth-store"}
+    expected_features = {"http-transport", "oauth-store", "tls-backend"}
     if sdk_features != expected_features:
         raise ValueError(f"unexpected OAuth/store feature union: {sorted(sdk_features)}")
     names = {entry["name"] for entry in packages}

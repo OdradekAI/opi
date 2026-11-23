@@ -19,7 +19,7 @@ use serde_json::{Map, Number, Value};
 /// Missing keys/values are omitted, incomplete escapes are held, and malformed
 /// text is read tolerantly. Numbers/literals can appear before their delimiter.
 /// Preview numbers use finite IEEE-754 values; finalization preserves raw text.
-/// Like frozen Pi 1.5.0, large open containers can exhaust the snapshot copy
+/// Large open containers can exhaust the snapshot copy
 /// credit and temporarily return the previous value. Each append earns
 /// `256 + 8 * UTF-16 length`; a refresh spends the open containers' member/item
 /// counts plus one per container and one for a pending scalar. Empty appends

@@ -70,7 +70,7 @@ Provider protocol surface 还提供独立的 source owner：
 | --- | --- | --- |
 | 默认 | `opi-ai = "0.8.3"` | 核心、内置适配器/认证、内嵌 catalog 和 tracing carrier。 |
 | 最小 | `default-features = false` | 核心值、Models/自定义 API、凭据 Store/自定义 OAuth、中立 telemetry、工具与脚本化 Faux 测试支持。 |
-| 仅内嵌 catalog | `default-features = false, features = ["catalog-bundled"]` | 核心 catalog 值与经过校验的 Pi 内嵌 catalog，不启用网络适配器或内置认证。 |
+| 仅内嵌 catalog | `default-features = false, features = ["catalog-bundled"]` | 核心 catalog 值与经过校验的 opi 内嵌 catalog，不启用网络适配器或内置认证。 |
 | 仅共享 HTTP transport | `default-features = false, features = ["http-transport"]` | 公共 `HttpClient`、代理/重定向策略和 source-scoped TLS wiring，不启用具体 provider protocol 或内置认证。 |
 | 仅 TLS backend | `default-features = false, features = ["tls-backend"]` | 固定 rustls/AWS-LC/native-certs backend 与公共 source-scoped `opi_ai::tls` 配置，不启用 reqwest 或 provider transport。 |
 | 仅云认证 | `default-features = false, features = ["cloud-auth"]` | AWS source chain/STS、GCP ADC、共享 SigV4 与固定云 codec，并传递选择共享 HTTP/TLS，不启用 provider wire adapter 或 compression。 |
@@ -120,7 +120,10 @@ owner 列表选择对应的 `provider-*` feature；`provider-vertex`/`provider-b
 依赖。三个 onboarding 示例要求 `builtins`。最小消费者若需要
 `TelemetryContext::from_span`，可独立开启 `telemetry-tracing`。exporter、sampling、
 初始化和 shutdown 仍由宿主拥有。配对/高阶组合覆盖和原生 macOS 仍在 capability V
-矩阵中待验收。
+矩阵中分开计量。当前已有 55 个 provider-owner 配对、2 个选定高阶 provider
+组合、2 个共享 owner 配对和 Windows all-features 通过。完整 capability V 仍有
+未枚举的高阶组合、原生 macOS、Deferred 真实生产证据和 performance/fuzz 预算待闭合。
+当前 receipt 位于 `docs/iterations/opi-ai-1-5-alignment/evidence/`。
 
 ## API 总览
 

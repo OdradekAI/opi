@@ -1,0 +1,73 @@
+{
+  "issue": 249,
+  "status": "done",
+  "provider": "moonshotai-cn",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 4,
+    "records_after": 6,
+    "added": 2,
+    "removed": 0,
+    "updated": 3,
+    "added_ids": [
+      "kimi-k3.1-pro",
+      "kimi-k3.1-pro-highspeed"
+    ],
+    "removed_ids": [],
+    "updated_ids": [
+      "kimi-k2.6",
+      "kimi-k2.7-code",
+      "kimi-k2.7-code-highspeed"
+    ],
+    "author_source_sha256": "29348f6a1e29a46a15eb90dbab9eeea0f393798bd79ddaa894de37b505757c60",
+    "bundle_sha256": "d39291fc45eb4b77803d08bb9fd7cc8f9040fd0b3e8e606a57711ae9cbea33b3",
+    "manifest_sha256": "48d8449ce1913cf908cf7d2db057c92d8206cb20dd7696070f970614d72a7b7f"
+  },
+  "global_after": {
+    "opi_records": 1709,
+    "reference_records": 1712,
+    "equal": 1688,
+    "only_opi": 10,
+    "only_reference": 13,
+    "changed": 11,
+    "providers_equal": 27,
+    "providers_with_differences": 15
+  },
+  "wire": {
+    "endpoint": "/v1/chat/completions",
+    "auth": "Bearer",
+    "models": [
+      "kimi-k3.1-pro",
+      "kimi-k3.1-pro-highspeed"
+    ],
+    "reasoning_effort": "high",
+    "max_tokens": 12345,
+    "max_completion_tokens": false,
+    "requests": 2
+  },
+  "tests": {
+    "provider_collection_moonshotai_cn": 3,
+    "provider_collection_regression": 150,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "build_catalog_check": "PASS",
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "BLOCKED by pre-existing ImageModelRecord.compat compile errors in unrelated openrouter_fixtures and telemetry_operations",
+    "catalog_bundled_external_consumer": "PASS",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

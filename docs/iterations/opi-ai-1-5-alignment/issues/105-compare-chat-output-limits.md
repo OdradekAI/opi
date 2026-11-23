@@ -45,7 +45,7 @@ response for a serialized limit of one. Otherwise they return a two-token
 reason, response ID and usage for each reply.
 [Pi budget compiler](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/api/simple-options.ts#L15-L55) ·
 [Opi compiler](../../../../crates/opi-ai/src/models.rs#L4102) ·
-[Opi Chat projection](../../../../crates/opi-ai/src/api/openai.rs#L1849)
+[Opi Chat projection](../../../../crates/opi-ai/src/api/openai_completions.rs#L1550)
 
 ## Source and callers
 
@@ -61,7 +61,7 @@ budget for callers that work across providers.
 [Pi history](https://github.com/earendil-works/pi/commit/09f10595755040963796cbd4d925a0f56a7f4b97) ·
 [Pi native and simple dispatch](https://github.com/earendil-works/pi/blob/f9a26365568127461c47a07a37dcb42c140a3ac5/packages/ai/src/models.ts#L904-L947) ·
 [Opi native and simple dispatch](../../../../crates/opi-ai/src/models.rs#L5304) ·
-[Existing Opi wire tests](../../../../crates/opi-ai/tests/node4_preparation.rs#L157)
+[Existing Opi wire tests](../../../../crates/opi-ai/tests/node4_preparation/call_limits.rs)
 
 The Pi coding agent delegates ordinary requests through
 `modelRuntime.streamSimple`, and Durable also calls `Models.streamSimple`.

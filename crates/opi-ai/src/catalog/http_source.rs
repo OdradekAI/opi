@@ -1,9 +1,8 @@
 //! Public dynamic-catalog sources feeding [`crate::Models::refresh`].
 //!
 //! A [`DynamicCatalogSource`] supplies complete per-provider dynamic
-//! catalogs. Sources are an explicit input: the SDK registers none by
-//! default, never auto-fetches, and has no pi.dev/default startup policy.
-//! Hosts plug their own sources through the trait, or use the provided
+//! catalogs. Hosts register custom sources for explicit refresh rounds
+//! through the trait, or use the provided
 //! [`HttpCatalogSource`], which fetches one distribution-schema-v1 document
 //! over HTTP and is the reference real-network implementation.
 

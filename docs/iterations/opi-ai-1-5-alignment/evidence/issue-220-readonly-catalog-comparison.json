@@ -1,0 +1,95 @@
+{
+  "issue": 220,
+  "verdict": "PASS",
+  "tool": {
+    "path": "scripts/pi-catalog/pack.py",
+    "sha256": "e91a12a794b7713df6b870a683c27433b5d42a830d0d44906479d85430228a81"
+  },
+  "opi_input": {
+    "path": "crates/opi-ai/resources/catalog/builtin/catalog.json",
+    "sha256": "ffa3e98626230f378f80200debb736c4a2238b5f2ba246a92cfc7d8e19604678"
+  },
+  "pi_version_label_from": {
+    "path": ".pi/pi-1.5.0/packages/ai/package.json",
+    "sha256": "9bac9281776095c8cb1597b706e6cc43c1e082d77189c666b02d068d3c6b9aca"
+  },
+  "cli_tests": {
+    "command": [
+      "python",
+      "-B",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts/pi-catalog",
+      "-v"
+    ],
+    "exit": 0,
+    "passed": 8,
+    "log_sha256": "c376c21e3010e797aaa789bdcb2aa280cf4fa7463d7981758b26623ce6bce17d"
+  },
+  "comparisons": {
+    "published_1712": {
+      "command": [
+        "python",
+        "-B",
+        "scripts\\pi-catalog\\pack.py",
+        "--opi-catalog",
+        "crates\\opi-ai\\resources\\catalog\\builtin\\catalog.json",
+        "--pi-version",
+        "1.5.0",
+        "--pi-artifact",
+        "docs\\iterations\\opi-ai-1-5-alignment\\evidence\\phase5-model-catalog.json",
+        "--pi-pin",
+        ".pi\\pi-1.5.0\\nix\\model-catalog.json"
+      ],
+      "reference": {
+        "kind": "pi-release-artifact",
+        "revision": "sha256-f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+        "sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e",
+        "pi_version": "1.5.0"
+      },
+      "counts": {
+        "opi": 1705,
+        "reference": 1712,
+        "only_opi": 118,
+        "only_reference": 125,
+        "changed": 299,
+        "equal": 1288
+      },
+      "report_sha256": "a015f02256c36fe2042f85e3a9ce38b8d99bc84b22ceadfafefb439b617f70f3",
+      "repeat_byte_identical": true
+    },
+    "providers_1738": {
+      "command": [
+        "python",
+        "-B",
+        "scripts\\pi-catalog\\pack.py",
+        "--opi-catalog",
+        "crates\\opi-ai\\resources\\catalog\\builtin\\catalog.json",
+        "--pi-version",
+        "1.5.0",
+        "--pi-provider-data",
+        ".pi\\pi-1.5.0\\packages\\ai\\src\\providers\\data"
+      ],
+      "reference": {
+        "kind": "pi-provider-snapshot",
+        "schema_version": 6,
+        "manifest_sha256": "8058f8cdd5e3447c6e7d61cf448cb77e09e966ee8ab6ad8faba641515f4214e8",
+        "structure_sha256": "e6a53f7d795de33077771fbcca8d45b6cca0a0ac612733432cff6e035dfbac04",
+        "pi_version": "1.5.0"
+      },
+      "counts": {
+        "opi": 1705,
+        "reference": 1738,
+        "only_opi": 137,
+        "only_reference": 170,
+        "changed": 325,
+        "equal": 1243
+      },
+      "report_sha256": "cd32b7265cd10640163a39890f948519fdf455edf95c8e32fe68f1c01a524894",
+      "repeat_byte_identical": true
+    }
+  },
+  "observed_product_files_unchanged": 44
+}

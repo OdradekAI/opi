@@ -1,0 +1,135 @@
+{
+  "issue": 268,
+  "batch": "openai-responses-protocol-fixture",
+  "date": "2026-11-22",
+  "status": "PASS",
+  "scope": {
+    "target": "openai_responses_fixtures",
+    "root_before_bytes": 190632,
+    "root_after_bytes": 1570,
+    "modules": {
+      "fixtures": {
+        "path": "crates/opi-ai/tests/openai_responses_fixtures/fixtures.rs",
+        "owner": "shared fixture",
+        "assertions": 0,
+        "scope": "request, model, response and reasoning builders"
+      },
+      "wire": {
+        "path": "crates/opi-ai/tests/openai_responses_fixtures/wire.rs",
+        "selector": "wire::",
+        "assertions": 40,
+        "scope": "payload/SSE mapping, terminal/usage, route, acquisition sealing and transport"
+      },
+      "constrained_guard": {
+        "path": "crates/opi-ai/tests/openai_responses_fixtures/constrained_guard.rs",
+        "selector": "constrained_guard::",
+        "assertions": 12,
+        "scope": "grammar and strict constrained-sampling admission and stream projection"
+      },
+      "lifecycle": {
+        "path": "crates/opi-ai/tests/openai_responses_fixtures/lifecycle.rs",
+        "selector": "lifecycle::",
+        "assertions": 31,
+        "scope": "Models registration, callbacks, native options, reasoning replay, timing and source compatibility"
+      },
+      "separate_lifecycle_target": {
+        "path": "crates/opi-ai/tests/openai_responses_lifecycle.rs",
+        "owner": "existing openai_responses_lifecycle target",
+        "scope": "HTTP, data-only SSE, missing terminal and deferred submit/fetch/cancel"
+      },
+      "test_data": {
+        "paths": [
+          "crates/opi-ai/tests/data/responses-error.json",
+          "crates/opi-ai/tests/data/responses-failed.json"
+        ],
+        "owner": "existing tests/data owner"
+      }
+    }
+  },
+  "acceptance": {
+    "focused_selectors": {
+      "wire": {
+        "command": "python scripts/opi-cargo-cache.py run --target E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 -- test --locked --offline -p opi-ai --no-default-features --features builtins --test openai_responses_fixtures -- wire::",
+        "result": "PASS",
+        "passed": 40,
+        "failed": 0
+      },
+      "constrained_guard": {
+        "command": "python scripts/opi-cargo-cache.py run --target E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 -- test --locked --offline -p opi-ai --no-default-features --features builtins --test openai_responses_fixtures -- constrained_guard::",
+        "result": "PASS",
+        "passed": 12,
+        "failed": 0
+      },
+      "lifecycle": {
+        "command": "python scripts/opi-cargo-cache.py run --target E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 -- test --locked --offline -p opi-ai --no-default-features --features builtins --test openai_responses_fixtures -- lifecycle::",
+        "result": "PASS",
+        "passed": 31,
+        "failed": 0
+      }
+    },
+    "full_target": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 -- test --locked --offline -p opi-ai --no-default-features --features builtins --test openai_responses_fixtures",
+      "result": "PASS",
+      "passed": 83,
+      "failed": 0
+    },
+    "inventory": {
+      "command": "python -B scripts/pi-sdk-conformance/check_test_inventory.py",
+      "result": "PASS",
+      "targets": 124,
+      "sources": 124
+    },
+    "support_inventory": {
+      "command": "python -B scripts/pi-sdk-conformance/check_support_inventory.py",
+      "result": "PASS"
+    },
+    "architecture": {
+      "command": "python -B scripts/pi-sdk-conformance/check_architecture_boundaries.py --enforce",
+      "result": "PASS",
+      "violations": []
+    },
+    "package_consumer": {
+      "command": "python -B scripts/pi-sdk-conformance/run_provider_protocol_package.py --scratch E:\\opi\\scratch\\issue-268-openai-responses-r1 --target-dir E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 --evidence-output docs\\iterations\\opi-ai-1-5-alignment\\evidence\\268-openai-responses-package-20261122.json --owner provider-openai-responses",
+      "result": "PASS",
+      "evidence": "268-openai-responses-package-20261122.json"
+    },
+    "format": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 -- fmt --all --check",
+      "result": "PASS"
+    },
+    "documentation": {
+      "command": "python scripts/opi-doc-check.py",
+      "result": "PASS"
+    },
+    "separate_lifecycle_target": {
+      "command": "python scripts/opi-cargo-cache.py run --target E:\\opi\\cargo-targets\\opi-72fa37a0fa044958 -- test --locked --offline -p opi-ai --no-default-features --features builtins --test openai_responses_lifecycle",
+      "result": "PASS",
+      "passed": 15,
+      "failed": 0,
+      "owner_unchanged": true
+    }
+  },
+  "test_impact": {
+    "add": [
+      "tests/openai_responses_fixtures/fixtures.rs",
+      "tests/openai_responses_fixtures/wire.rs",
+      "tests/openai_responses_fixtures/constrained_guard.rs",
+      "tests/openai_responses_fixtures/lifecycle.rs"
+    ],
+    "update": [
+      "tests/openai_responses_fixtures.rs",
+      "tests/targets.tsv",
+      "tests/README.md",
+      "tests/README.zh.md",
+      "issue and spec evidence records"
+    ],
+    "delete": [],
+    "retain": [
+      "all 83 openai_responses_fixtures assertions",
+      "openai_responses_lifecycle target and owner",
+      "existing tests/data response fixtures",
+      "single fixture executable",
+      "no compatibility behavior"
+    ]
+  }
+}

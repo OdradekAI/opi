@@ -1,5 +1,4 @@
-//! Kimi Code (subscription) OAuth device flow, pinned to pi 1.3.0
-//! `packages/ai/src/auth/oauth/kimi-coding.ts` (sdk-contracts row 144).
+//! Kimi Code (subscription) OAuth device flow.
 //!
 //! RFC 8628 device authorization grant against `https://auth.kimi.com` with
 //! form-encoded requests and JSON responses. The access token authenticates

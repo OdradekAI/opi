@@ -1,0 +1,77 @@
+{
+  "issue": 248,
+  "status": "done",
+  "provider": "cloudflare-workers-ai",
+  "fixed_reference": {
+    "pi_version": "1.5.0",
+    "artifact_sha256": "f4dbabe79cda4b38aee4a761b23fd5eaf526ac2e28fed3c9ee86e37ca0e5d71e"
+  },
+  "catalog": {
+    "records_before": 21,
+    "records_after": 24,
+    "added": 3,
+    "removed": 0,
+    "updated": 5,
+    "added_ids": [
+      "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+      "@cf/cloudflare/clef-omni",
+      "typesafe/jev-1.14.0"
+    ],
+    "removed_ids": [],
+    "updated_ids": [
+      "@cf/google/gemma-4-26b-a4b-it",
+      "@cf/nvidia/nemotron-3-120b-a12b",
+      "@cf/cloudflare/clef",
+      "@cf/cloudflare/clef-flash",
+      "typesafe/jev"
+    ],
+    "author_source_sha256": "27aca4d12011bca9212eefc81815b63fa16cc458f14299c731e4a9f693d70244",
+    "bundle_sha256": "497be764242174191d94ab1c463ff187c145c5c638c137b9b9a5496b0cbca87b",
+    "manifest_sha256": "88b316b8ae826a3e93e44584003cc4d938518dd2883d3fce679ac8a02b465fb3"
+  },
+  "global_after": {
+    "opi_records": 1707,
+    "reference_records": 1712,
+    "equal": 1683,
+    "only_opi": 10,
+    "only_reference": 15,
+    "changed": 14,
+    "providers_equal": 26,
+    "providers_with_differences": 16
+  },
+  "wire": {
+    "chat_endpoint": "/accounts/account-id/ai/v1/chat/completions",
+    "classifier_endpoint": "/accounts/account-id/ai/run",
+    "auth": "Bearer",
+    "chat_model": "@cf/deepseek-ai/deepseek-v4.1-flash-1017",
+    "chat_max_completion_tokens": 321,
+    "classifier_model": "@cf/cloudflare/clef",
+    "classifier_image_input": "input.images data:image/png;base64,aGk=",
+    "classifier_assets_input": "input.assets.<image-1> data_base64=aGk=",
+    "classifier_image_opt_in_header": false,
+    "requests": 3
+  },
+  "tests": {
+    "provider_collection_cloudflare_workers_ai": 4,
+    "provider_collection_regression": 147,
+    "classifier_contract": 84,
+    "catalog_artifact": 14,
+    "catalog_operations": 27,
+    "openai_chat_fixtures": 116,
+    "external_sdk": 11,
+    "build_catalog_example": 9,
+    "build_catalog_check": "PASS",
+    "clippy_lib": "PASS (3 pre-existing warnings)",
+    "clippy_all_targets": "BLOCKED by pre-existing ImageModelRecord.compat compile errors in unrelated openrouter_fixtures and telemetry_operations",
+    "catalog_bundled_external_consumer": "PASS",
+    "pack_comparison": "PASS",
+    "cargo_fmt": "PASS",
+    "doc_check": "PASS",
+    "architecture_boundaries": "PASS"
+  },
+  "compatibility": {
+    "additional_behavior": false,
+    "legacy_model_aliases": false,
+    "legacy_catalog_fallback": false
+  }
+}

@@ -18,8 +18,8 @@ use crate::telemetry::TelemetryContext;
 use crate::types::ApiId;
 use crate::types::deferred::{DeferredError, DeferredHandle};
 
-/// Neutral options accepted by [`Models::stream_simple`] /
-/// [`Models::complete_simple`].
+/// Neutral options accepted by [`Models::stream_simple`](crate::Models::stream_simple) /
+/// [`Models::complete_simple`](crate::Models::complete_simple).
 ///
 /// `Some` fields override the corresponding request fields before the shared
 /// compiler runs; `None` leaves the request untouched.

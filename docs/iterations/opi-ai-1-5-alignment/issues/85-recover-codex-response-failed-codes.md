@@ -8,7 +8,7 @@ public output, raw callbacks and the final result. Counts start with
 the measured call, after any cache warmup.
 [Fixture](../../../../crates/opi-ai/tests/data/codex-failed-recovery.json) ·
 [Pi probe](../tools/observe_codex_failed_recovery.mjs) ·
-[Rust test](../../../../crates/opi-ai/tests/openai_codex_responses.rs#L2421)
+[Rust test](../../../../crates/opi-ai/tests/openai_codex_responses/ws_branches.rs#L204)
 
 ## Recovery before output
 

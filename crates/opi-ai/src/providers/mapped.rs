@@ -11,6 +11,7 @@ use futures_util::stream;
 
 use crate::credential::BoxAuthFuture;
 use crate::model_info::{ModelInfoError, WireApi};
+use crate::provider::operation::SimpleOptions;
 use crate::provider::{
     EventStream, ModelInfo, Provider, ProviderError, ProviderErrorSummary, Request,
 };
@@ -203,7 +204,7 @@ impl Provider for ApiMappedProvider {
     fn validate_simple_options(
         &self,
         model: &ModelInfo,
-        options: &crate::api::contract::SimpleOptions,
+        options: &SimpleOptions,
     ) -> Result<(), ProviderError> {
         let route = self.routes.get(&model.wire_api).ok_or_else(|| {
             ProviderError::UnsupportedCapability(ProviderErrorSummary::sanitized(format!(
@@ -247,7 +248,7 @@ impl Provider for ApiMappedProvider {
     fn stream_model_resource_attempt(
         &self,
         model: ModelInfo,
-        options: crate::api::contract::SimpleOptions,
+        options: SimpleOptions,
         request: Request,
         auth: crate::auth::ResolvedAuth,
         attempt: crate::provider::AttemptContext,

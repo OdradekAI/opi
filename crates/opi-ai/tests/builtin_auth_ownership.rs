@@ -454,7 +454,7 @@ async fn exercise(replace: &str) {
     let mut image = opi_ai::api::openrouter_images::default_openrouter_image_record();
     image.base_url = server.uri();
     let image = Record::Image(image);
-    let mut classifier = opi_ai::api::decisions::default_decisions_classifier_record();
+    let mut classifier = opi_ai::api::openai_decisions::default_decisions_classifier_record();
     classifier.base_url = server.uri();
     let classifier = Record::Classifier(classifier);
     let (replaced, retained) = match replace {
@@ -471,7 +471,7 @@ async fn exercise(replace: &str) {
     });
     match &replaced {
         Record::Chat(record) => {
-            let api = opi_ai::api::openai::OpenAiCompletionsChatApi::new(
+            let api = opi_ai::api::openai_completions::OpenAiCompletionsChatApi::new(
                 Arc::new(opi_ai::providers::openrouter::openrouter_provider(Some(
                     server.uri(),
                 ))),
@@ -497,7 +497,7 @@ async fn exercise(replace: &str) {
         Record::Classifier(record) => {
             models
                 .register_classifier_api(
-                    Arc::new(opi_ai::api::decisions::OpenAiDecisionsApi::new(
+                    Arc::new(opi_ai::api::openai_decisions::OpenAiDecisionsApi::new(
                         HttpClient::new(),
                         record.clone(),
                     )),
