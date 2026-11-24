@@ -336,10 +336,7 @@ fn is_unicode_label(value: &str) -> bool {
         }
     }
     // RFC 5892 Appendix A.7: katakana middle dot requires a Japanese char.
-    if chars.contains(&'\u{30FB}') && !has_japanese {
-        return false;
-    }
-    true
+    !chars.contains(&'\u{30FB}') || has_japanese
 }
 
 /// Source `format/bidi.mjs` `GetBidiClass` (the upstream's partial class map).
