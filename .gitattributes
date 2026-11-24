@@ -15,5 +15,12 @@ crates/opi-eval/scripts/fixtures/** -text
 *.py -text
 # Captured package tests end with a blank line that is part of the receipt hash.
 scripts/pi-sdk-conformance/evidence/phase*-package*/*-tests.stdout whitespace=-blank-at-eof
+# Differential receipts (phase5-* fixtures) pin the exact CRLF bytes of these
+# two inputs: keep them byte-identical and exempt only CR at EOL from the
+# scope gate. Other files in this repository are LF.
+crates/opi-ai/tests/data/incremental-argument-preview.json whitespace=cr-at-eol
+scripts/pi-sdk-conformance/differential/tools/observe_chat_finish_consumers.mjs whitespace=cr-at-eol
+# SSE fixture streams end with the blank line that terminates the last event.
+crates/opi-ai/tests/data/*.sse whitespace=-blank-at-eof
 
 *.rs diff=rust
