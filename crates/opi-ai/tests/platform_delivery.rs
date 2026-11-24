@@ -250,7 +250,9 @@ fn root_workspace_graph_is_frozen() {
         FROZEN_MEMBERS.len(),
         "workspace member set changed; update the 20.58 freeze deliberately"
     );
-    assert!(members_block.contains("resolver = \"2\""));
+    // Resolver 3 (MSRV-aware resolution) replaced resolver 2 deliberately in
+    // da55689; the freeze follows the reviewed root manifest.
+    assert!(members_block.contains("resolver = \"3\""));
 
     for field in [
         "version = \"0.8.3\"",
@@ -266,12 +268,12 @@ fn root_workspace_graph_is_frozen() {
     }
 
     // Internal dependency edges carry both the path and the published
-    // version, in lockstep with workspace.package.version.
+    // version, in lockstep with workspace.package.version. opi-coding-agent
+    // has no internal consumer, so the root owns no edge for it (1be1664).
     for dep in [
         "opi-telemetry",
         "opi-ai",
         "opi-agent",
-        "opi-coding-agent",
         "opi-protocol",
         "opi-tui",
     ] {
