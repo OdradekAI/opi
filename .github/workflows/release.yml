@@ -34,10 +34,10 @@ jobs:
             ext: tar.gz
             smoke: true
           - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
+            os: ubuntu-24.04-arm
             artifact: opi-linux-arm64
             ext: tar.gz
-            cross: true
+            smoke: true
           - target: x86_64-apple-darwin
             os: macos-latest
             artifact: opi-darwin-x64
@@ -78,18 +78,10 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      - name: Install cross
-        if: matrix.cross
-        # Task 20.58: deterministic supply chain - cross is installed from the
-        # crates.io release, never a moving git HEAD.
-        run: cargo install cross --locked --version 0.2.5
-
-      - name: Build (cross)
-        if: matrix.cross
-        run: cross build --release --locked --target ${{ matrix.target }} -p opi-coding-agent
-
-      - name: Build (native)
-        if: "!matrix.cross"
+      # Every target builds natively on a matching GitHub runner (the Linux
+      # ARM64 archive uses the arm64 runner like the sandbox archives); no leg
+      # cross-compiles.
+      - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} -p opi-coding-agent
 
       - name: Smoke test binary
