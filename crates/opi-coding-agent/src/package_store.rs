@@ -676,14 +676,10 @@ fn is_local_path(s: &str) -> bool {
     }
     // Windows drive letter: exactly one ASCII letter, then ':', then '/' or '\'
     let bytes = s.as_bytes();
-    if bytes.len() >= 3
+    bytes.len() >= 3
         && bytes[0].is_ascii_alphabetic()
         && bytes[1] == b':'
         && (bytes[2] == b'\\' || bytes[2] == b'/')
-    {
-        return true;
-    }
-    false
 }
 
 /// Normalize a path by resolving `.` and `..` components without touching the
