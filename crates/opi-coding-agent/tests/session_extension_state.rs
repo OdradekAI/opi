@@ -1,3 +1,5 @@
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -76,41 +78,9 @@ fn latest_extension_state_selects_state_for_active_branch_tip() {
     assert_eq!(state.unwrap()["todo"]["items"][0]["id"], "todo-1");
 }
 
+/// Locate the `package_adapter_example` test binary next to this test binary.
 fn example_adapter_bin() -> PathBuf {
-    let current = std::env::current_exe().expect("current exe path");
-    let deps_dir = current.parent().expect("deps directory");
-
-    let exact_name = if cfg!(windows) {
-        "package_adapter_example.exe"
-    } else {
-        "package_adapter_example"
-    };
-    let exact_path = deps_dir.join(exact_name);
-    if exact_path.exists() {
-        return exact_path;
-    }
-
-    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
-    let prefix = "package_adapter_example-";
-    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
-    if let Ok(entries) = std::fs::read_dir(deps_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with(prefix)
-                && name_str.ends_with(exe_suffix)
-                && !name_str.ends_with(".d")
-                && let Ok(meta) = entry.metadata()
-                && let Ok(modified) = meta.modified()
-                && best.as_ref().is_none_or(|(t, _)| modified > *t)
-            {
-                best = Some((modified, entry.path()));
-            }
-        }
-    }
-
-    best.map(|(_, p)| p)
-        .expect("Could not find package_adapter_example binary in deps directory")
+    common::test_binary("package_adapter_example")
 }
 
 async fn start_todo_registry() -> (Arc<AdapterHost>, ExtensionRegistry) {

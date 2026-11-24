@@ -161,40 +161,9 @@ fn rpc_parse_missing_required_field_returns_error() {
 // Subprocess tests (spawn the actual opi binary)
 // ---------------------------------------------------------------------------
 
+/// Locate a sibling test binary via `common::test_binary`.
 fn test_binary_path(name: &str) -> std::path::PathBuf {
-    let current = std::env::current_exe().expect("current exe path");
-    let deps_dir = current.parent().expect("deps directory");
-    let exact_name = if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    };
-    let exact_path = deps_dir.join(exact_name);
-    if exact_path.exists() {
-        return exact_path;
-    }
-
-    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
-    let prefix = format!("{name}-");
-    let mut best: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-    if let Ok(entries) = std::fs::read_dir(deps_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with(&prefix)
-                && name_str.ends_with(exe_suffix)
-                && !name_str.ends_with(".d")
-                && let Ok(meta) = entry.metadata()
-                && let Ok(modified) = meta.modified()
-                && best.as_ref().is_none_or(|(t, _)| modified > *t)
-            {
-                best = Some((modified, entry.path()));
-            }
-        }
-    }
-
-    best.map(|(_, p)| p)
-        .unwrap_or_else(|| panic!("Could not find {name} binary in deps directory"))
+    common::test_binary(name)
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

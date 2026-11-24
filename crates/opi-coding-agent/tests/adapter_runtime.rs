@@ -5,6 +5,8 @@
 //! tool calls, events are forwarded, state serialize/restore round-trips,
 //! model overrides are collected, and cancellation bridges through.
 
+mod common;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -38,43 +40,9 @@ impl AgentHooks for NoopHooks {
 // Test helpers
 // ---------------------------------------------------------------------------
 
-/// Locate the `adapter_host_mock` test binary, preferring the newest version
-/// when multiple hashed copies exist.
+/// Locate the `adapter_host_mock` test binary next to this test binary.
 fn mock_adapter_bin() -> PathBuf {
-    let current = std::env::current_exe().expect("current exe path");
-    let deps_dir = current.parent().expect("deps directory");
-
-    let exact_name = if cfg!(windows) {
-        "adapter_host_mock.exe"
-    } else {
-        "adapter_host_mock"
-    };
-    let exact_path = deps_dir.join(exact_name);
-    if exact_path.exists() {
-        return exact_path;
-    }
-
-    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
-    let prefix = "adapter_host_mock-";
-    let mut best: Option<(std::time::SystemTime, PathBuf)> = None;
-    if let Ok(entries) = std::fs::read_dir(deps_dir) {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if name_str.starts_with(prefix)
-                && name_str.ends_with(exe_suffix)
-                && !name_str.ends_with(".d")
-                && let Ok(meta) = entry.metadata()
-                && let Ok(modified) = meta.modified()
-                && best.as_ref().is_none_or(|(t, _)| modified > *t)
-            {
-                best = Some((modified, entry.path()));
-            }
-        }
-    }
-
-    best.map(|(_, p)| p)
-        .expect("Could not find adapter_host_mock binary in deps directory")
+    common::test_binary("adapter_host_mock")
 }
 
 fn config_for_mode(mode: &str) -> AdapterProcessConfig {

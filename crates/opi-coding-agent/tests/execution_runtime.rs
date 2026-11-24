@@ -14,6 +14,8 @@
 //!   --test execution_runtime
 //! ```
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -510,40 +512,9 @@ mod fixture {
     use opi_protocol::execution::v1::WIRE_IDENTITY;
     use opi_tui::{PermissionChoice, PermissionSummary};
 
-    /// Locate the `execution_backend_mock` test binary in the same deps dir
-    /// (mirrors `execution_protocol_host.rs::mock_bin`).
+    /// Locate the `execution_backend_mock` peer via `common::test_binary`.
     fn mock_bin() -> PathBuf {
-        let current = std::env::current_exe().expect("current exe path");
-        let deps_dir = current.parent().expect("deps directory");
-        let exact_name = if cfg!(windows) {
-            "execution_backend_mock.exe"
-        } else {
-            "execution_backend_mock"
-        };
-        let exact_path = deps_dir.join(exact_name);
-        if exact_path.exists() {
-            return exact_path;
-        }
-        let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
-        let prefix = "execution_backend_mock-";
-        if let Ok(entries) = std::fs::read_dir(deps_dir) {
-            let newest = entries
-                .flatten()
-                .filter(|entry| {
-                    let name = entry.file_name();
-                    let name = name.to_string_lossy();
-                    name.starts_with(prefix) && name.ends_with(exe_suffix) && !name.ends_with(".d")
-                })
-                .max_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).ok());
-            if let Some(entry) = newest {
-                return entry.path();
-            }
-        }
-        panic!(
-            "Could not find execution_backend_mock in {}. Build it first with \
-             `cargo test --features execution-backend-test-fixture --test execution_backend_mock --no-run`",
-            deps_dir.display()
-        );
+        crate::common::test_binary("execution_backend_mock")
     }
 
     fn canned(adapter_id: &str, pkg: &str, mode: &str) -> ActivatedContribution {

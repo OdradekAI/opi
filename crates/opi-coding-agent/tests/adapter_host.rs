@@ -4,6 +4,8 @@
 //! request/response, per-request timeout, best-effort cancel, event delivery
 //! under backpressure, crash detection, and child process reap on shutdown.
 
+mod common;
+
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -16,44 +18,9 @@ use opi_coding_agent::adapter_protocol::{
 // Test helpers
 // ---------------------------------------------------------------------------
 
-/// Locate the `adapter_host_mock` test binary in the same deps directory.
+/// Locate the `adapter_host_mock` test binary next to this test binary.
 fn mock_adapter_bin() -> PathBuf {
-    let current = std::env::current_exe().expect("current exe path");
-    let deps_dir = current.parent().expect("deps directory");
-
-    // Try exact name first (no hash suffix)
-    let exact_name = if cfg!(windows) {
-        "adapter_host_mock.exe"
-    } else {
-        "adapter_host_mock"
-    };
-    let exact_path = deps_dir.join(exact_name);
-    if exact_path.exists() {
-        return exact_path;
-    }
-
-    // Try with hash suffix — must match executable, not .d/.pdb files
-    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
-    let prefix = "adapter_host_mock-";
-    if let Ok(entries) = std::fs::read_dir(deps_dir) {
-        let newest = entries
-            .flatten()
-            .filter(|entry| {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                name.starts_with(prefix) && name.ends_with(exe_suffix) && !name.ends_with(".d")
-            })
-            .max_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).ok());
-        if let Some(entry) = newest {
-            return entry.path();
-        }
-    }
-
-    panic!(
-        "Could not find adapter_host_mock binary in {}. \
-         Ensure [[test]] target 'adapter_host_mock' is defined in Cargo.toml",
-        deps_dir.display()
-    );
+    common::test_binary("adapter_host_mock")
 }
 
 /// Build an `AdapterProcessConfig` that spawns the mock adapter with the given mode.

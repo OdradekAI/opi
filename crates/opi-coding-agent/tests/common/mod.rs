@@ -92,6 +92,71 @@ pub fn create_gitignore(dir: &std::path::Path, content: &str) {
     std::fs::write(dir.join(".gitignore"), content).unwrap();
 }
 
+/// Locate a sibling Cargo-built test executable next to the running test binary:
+/// a `[[test]] harness = false` peer such as `adapter_host_mock` that this
+/// binary spawns. Panics when no candidate exists.
+///
+/// Cargo up to 1.99 links every test executable of a package into one shared
+/// `deps/` directory. Cargo 1.100 gives each compilation unit its own
+/// `build/<package>/<hash>/out/` directory, so the peer is no longer a sibling
+/// file; it is then found by scanning the `out/` directories of the same
+/// package. Both layouts are searched. The exact unsuffixed name wins, then the
+/// newest `<name>-<hash>` match; `.d` dependency files never match.
+pub fn test_binary(name: &str) -> std::path::PathBuf {
+    use std::path::Path;
+    use std::time::SystemTime;
+
+    let current = std::env::current_exe().expect("current exe path");
+    let dir = current.parent().expect("executable directory");
+    let exe_suffix = if cfg!(windows) { ".exe" } else { "" };
+    let exact = dir.join(format!("{name}{exe_suffix}"));
+    if exact.is_file() {
+        return exact;
+    }
+
+    let mut search_dirs = vec![dir.to_path_buf()];
+    if dir.file_name().is_some_and(|segment| segment == "out")
+        && let Some(package_dir) = dir.parent().and_then(Path::parent)
+        && let Ok(entries) = std::fs::read_dir(package_dir)
+    {
+        for entry in entries.flatten() {
+            let out = entry.path().join("out");
+            if out.is_dir() {
+                search_dirs.push(out);
+            }
+        }
+    }
+
+    let prefix = format!("{name}-");
+    search_dirs
+        .into_iter()
+        .filter_map(|search| std::fs::read_dir(search).ok())
+        .flatten()
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            let file_name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            file_name.starts_with(&prefix)
+                && file_name.ends_with(exe_suffix)
+                && !file_name.ends_with(".d")
+        })
+        .max_by_key(|path| {
+            std::fs::metadata(path)
+                .and_then(|meta| meta.modified())
+                .unwrap_or(SystemTime::UNIX_EPOCH)
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "Could not find {name} test executable in or beside {}. \
+                 Ensure [[test]] target '{name}' is defined in Cargo.toml",
+                dir.display()
+            )
+        })
+}
+
 // ---------------------------------------------------------------------------
 // Phase 14.2 OAuth flow test seam
 // ---------------------------------------------------------------------------
