@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.8.4 - 2026-11-24
+
 ### Breaking Changes
 
 - The CLI now sends `openai:` requests to OpenAI Responses. The bundled model

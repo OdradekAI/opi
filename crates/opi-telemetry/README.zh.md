@@ -2,17 +2,17 @@
 
 [English](README.md)
 
-本 crate 跟随 current workspace version `0.8.3`。
+本 crate 跟随 current workspace version `0.8.4`。
 
 面向 Rust 库的显式、中立遥测。可选择 no-op、内存记录器或可选 tracing 适配，
 无需初始化全局 subscriber。默认构建不依赖 tracing、异步运行时、网络、AI、agent 或 CLI。
 
-本 crate 随尚未发布的 workspace 引入。以下配置适用于已包含对应版本的 registry；
+本 crate 在 0.8.4 中引入。以下配置适用于已包含对应版本的 registry；
 发布是独立步骤。也可以将实际 `.crate` 解包后作为 Cargo path 依赖使用，无需 Opi workspace。
 
 ```toml
 [dependencies]
-opi-telemetry = { version = "0.8.3", default-features = false }
+opi-telemetry = { version = "0.8.4", default-features = false }
 ```
 
 ## 记录一次操作

@@ -255,7 +255,7 @@ fn root_workspace_graph_is_frozen() {
     assert!(members_block.contains("resolver = \"3\""));
 
     for field in [
-        "version = \"0.8.3\"",
+        "version = \"0.8.4\"",
         "edition = \"2024\"",
         "rust-version = \"1.97\"",
         "license = \"MIT\"",
@@ -282,10 +282,10 @@ fn root_workspace_graph_is_frozen() {
             // override inherited from this workspace dependency. The
             // workspace edge owns the empty default explicitly instead.
             format!(
-                "{dep} = {{ path = \"crates/{dep}\", version = \"0.8.3\", default-features = false }}"
+                "{dep} = {{ path = \"crates/{dep}\", version = \"0.8.4\", default-features = false }}"
             )
         } else {
-            format!("{dep} = {{ path = \"crates/{dep}\", version = \"0.8.3\" }}")
+            format!("{dep} = {{ path = \"crates/{dep}\", version = \"0.8.4\" }}")
         };
         assert!(
             src.contains(&edge),
@@ -377,7 +377,7 @@ fn lockfile_is_cargo_generated_and_members_are_unique() {
             .iter()
             .find(|(n, _, _)| n == member)
             .expect("member in lockfile");
-        assert_eq!(version, "0.8.3", "member {member} version drift");
+        assert_eq!(version, "0.8.4", "member {member} version drift");
     }
 }
 

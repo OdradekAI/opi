@@ -713,5 +713,5 @@ storage. Evaluation commands consume only their explicitly supplied
 profiles, operations, or evidence; existing private profiles and sealed
 originals are not rewritten.
 
-Current crate version: `0.8.3`, inherited from the workspace package
+Current crate version: `0.8.4`, inherited from the workspace package
 version.

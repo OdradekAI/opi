@@ -8,7 +8,7 @@ Use `opi-ai` in your Rust application to stream chat, call tools, generate image
 
 ## Installation
 
-Use Rust 1.97 or later. To run this guide before **0.8.4** is published, create a binary project **next to** your checkout of `opi`:
+Use Rust 1.97 or later. To run this guide against a checkout that may contain unreleased changes, create a binary project **next to** your checkout of `opi`:
 
 ```sh
 cargo new hello-opi
@@ -23,7 +23,7 @@ opi-ai = { path = "../opi/crates/opi-ai" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-Once **0.8.4** is available on crates.io, replace the path dependency with the following line. The published `0.8.3` crate has an earlier API.
+For the published `0.8.4` crate, replace the path dependency with the following line. The published `0.8.3` crate has an earlier API.
 
 ```toml
 opi-ai = "0.8.4"

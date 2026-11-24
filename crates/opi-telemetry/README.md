@@ -2,21 +2,21 @@
 
 [简体中文](README.zh.md)
 
-This crate follows the current workspace version `0.8.3`.
+This crate follows the current workspace version `0.8.4`.
 
 Explicit, backend-neutral telemetry for Rust libraries. Use a no-op context,
 an in-memory recorder, or the optional tracing adapter without initializing a
 global subscriber. The default build has no tracing, async runtime, networking,
 AI, agent or CLI dependency.
 
-This crate is introduced in the unreleased workspace. The manifest below applies
+This crate is introduced in 0.8.4. The manifest below applies
 when the matching package is available in your registry; registry publication
 is a separate release step. You can also consume an extracted `.crate` artifact
 with a Cargo path dependency, independently of the Opi workspace.
 
 ```toml
 [dependencies]
-opi-telemetry = { version = "0.8.3", default-features = false }
+opi-telemetry = { version = "0.8.4", default-features = false }
 ```
 
 ## Record an operation

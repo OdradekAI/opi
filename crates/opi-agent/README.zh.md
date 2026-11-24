@@ -17,7 +17,7 @@ cargo add opi-agent
 
 ## 当前状态
 
-当前 crate 版本是 `0.8.3`，继承自 workspace 包版本。
+当前 crate 版本是 `0.8.4`，继承自 workspace 包版本。
 
 `opi-agent` 负责 Agent 主循环和运行时基础能力：工具契约、经由 opi-ai
 私有 schema 方言的工具参数 normalize／校验、

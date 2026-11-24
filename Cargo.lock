@@ -2271,7 +2271,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "opi-agent"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "futures-util",
  "opi-ai",
@@ -2292,7 +2292,7 @@ dependencies = [
 
 [[package]]
 name = "opi-ai"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "aws-lc-rs",
  "aws-smithy-query",
@@ -2341,7 +2341,7 @@ dependencies = [
 
 [[package]]
 name = "opi-coding-agent"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "apple-native-keyring-store",
  "base64",
@@ -2389,7 +2389,7 @@ dependencies = [
 
 [[package]]
 name = "opi-eval"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "clap",
  "libc",
@@ -2407,7 +2407,7 @@ dependencies = [
 
 [[package]]
 name = "opi-protocol"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "base64",
  "insta",
@@ -2421,7 +2421,7 @@ dependencies = [
 
 [[package]]
 name = "opi-sandbox"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "futures-core",
  "futures-util",
@@ -2442,7 +2442,7 @@ dependencies = [
 
 [[package]]
 name = "opi-telemetry"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "futures-util",
  "serde",
@@ -2453,7 +2453,7 @@ dependencies = [
 
 [[package]]
 name = "opi-tui"
-version = "0.8.3"
+version = "0.8.4"
 dependencies = [
  "base64",
  "crossterm",
